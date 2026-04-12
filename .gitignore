@@ -27,12 +27,12 @@ apps/electron/.native/
 *.sqlite-wal
 *.sqlite-shm
 
-# project state (per-project council directories)
-projects/*/.council/
-!projects/*/.council/.gitkeep
+# project state (per-project derived state)
+projects/*/.ironlore/
+!projects/*/.ironlore/.gitkeep
 
 # secrets and credentials
-.council-install.json
+.ironlore-install.json
 ipc.token
 *.enc
 *.pem
