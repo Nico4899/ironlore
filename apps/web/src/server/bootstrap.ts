@@ -41,6 +41,8 @@ export async function bootstrap(installRoot: string): Promise<void> {
   // Ensure directory structure
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(join(projectDir, DERIVED_DIR), { recursive: true });
+  mkdirSync(join(projectDir, DERIVED_DIR, "locks"), { recursive: true });
+  mkdirSync(join(projectDir, DERIVED_DIR, "wal"), { recursive: true });
 
   // Generate install record if this is a fresh install
   const installJsonPath = join(installRoot, INSTALL_JSON);

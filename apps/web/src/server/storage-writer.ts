@@ -30,13 +30,14 @@ export { ForbiddenError };
  * 6. Release mutex
  */
 export class StorageWriter {
-  private mutex = new PathMutex();
+  private mutex: PathMutex;
   private wal: Wal;
   private dataRoot: string;
 
   constructor(projectDir: string) {
     this.dataRoot = join(projectDir, "data");
     this.wal = new Wal(projectDir);
+    this.mutex = new PathMutex(join(projectDir, ".ironlore", "locks"));
   }
 
   /**
