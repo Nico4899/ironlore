@@ -7,6 +7,8 @@ import { logger } from "hono/logger";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
 import { validateBind } from "./network.js";
+import { FileWatcher } from "./file-watcher.js";
+import { GitWorker } from "./git-worker.js";
 import { createPagesApi } from "./pages-api.js";
 import { StorageWriter } from "./storage-writer.js";
 
@@ -79,6 +81,14 @@ async function start() {
   // Mount page API
   const pagesApi = createPagesApi(writer);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/pages`, pagesApi);
+
+  // Start git worker (background commit grouping)
+  const gitWorker = new GitWorker(projectDir, writer.getWal());
+  await gitWorker.start();
+
+  // Start filesystem watcher for external edits
+  const fileWatcher = new FileWatcher(writer.getDataRoot(), writer.getWal());
+  fileWatcher.start();
 
   ready = true;
   readyReason = "";
