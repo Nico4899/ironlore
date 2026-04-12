@@ -1,0 +1,6 @@
+{
+  "name": "@ironlore/electron",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Electron shell for Ironlore — deferred to Phase 5"
+}

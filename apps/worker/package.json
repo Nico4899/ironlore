@@ -1,0 +1,13 @@
+{
+  "name": "@ironlore/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch"
+  },
+  "dependencies": {
+    "@ironlore/core": "workspace:*"
+  }
+}
