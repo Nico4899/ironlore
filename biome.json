@@ -47,7 +47,17 @@
     "formatter": { "enabled": false }
   },
   "files": {
-    "includes": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.json", "**/*.css"]
+    "includes": [
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.json",
+      "**/*.css",
+      "!**/dist",
+      "!**/out",
+      "!**/node_modules"
+    ]
   },
   "overrides": [
     {
