@@ -15,7 +15,7 @@ function encodeTime(now: number, len: number): string {
   let remaining = now;
   for (let i = len; i > 0; i--) {
     const mod = remaining % ENCODING_LEN;
-    str = ENCODING[mod]! + str;
+    str = ENCODING.charAt(mod) + str;
     remaining = (remaining - mod) / ENCODING_LEN;
   }
   return str;
@@ -26,7 +26,8 @@ function encodeRandom(len: number): string {
   crypto.getRandomValues(bytes);
   let str = "";
   for (let i = 0; i < len; i++) {
-    str += ENCODING[bytes[i]! % ENCODING_LEN]!;
+    const byte = bytes[i] ?? 0;
+    str += ENCODING.charAt(byte % ENCODING_LEN);
   }
   return str;
 }
