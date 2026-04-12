@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { ulid } from "@ironlore/core";
+import { AGENTS_DIR, AGENTS_LIBRARY_DIR, AGENTS_SHARED_DIR, ulid } from "@ironlore/core";
 
 /**
  * Write a file only if it doesn't already exist. Non-destructive seeding.
@@ -184,14 +184,14 @@ icon: lucide:megaphone
   // -------------------------------------------------------------------------
   // Agent library personas
   // -------------------------------------------------------------------------
-  const agentLibDir = join(dataDir, ".agents", ".library");
-  const sharedSkillsDir = join(dataDir, ".agents", ".shared", "skills");
+  const agentLibDir = join(dataDir, AGENTS_LIBRARY_DIR);
+  const sharedSkillsDir = join(dataDir, AGENTS_SHARED_DIR, "skills");
   mkdirSync(agentLibDir, { recursive: true });
   mkdirSync(sharedSkillsDir, { recursive: true });
 
   // General agent (seeded, not deletable)
   seedFile(
-    join(dataDir, ".agents", "general", "persona.md"),
+    join(dataDir, AGENTS_DIR, "general", "persona.md"),
     `---
 name: General
 slug: general
@@ -220,7 +220,7 @@ to help users find and understand information across their pages.
 
   // Editor agent (seeded, not deletable)
   seedFile(
-    join(dataDir, ".agents", "editor", "persona.md"),
+    join(dataDir, AGENTS_DIR, "editor", "persona.md"),
     `---
 name: Editor
 slug: editor
