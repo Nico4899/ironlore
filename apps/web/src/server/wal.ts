@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import Database from "better-sqlite3";
 
 export interface WalEntry {

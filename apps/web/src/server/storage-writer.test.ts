@@ -91,7 +91,7 @@ describe("StorageWriter", () => {
   });
 
   it("handles concurrent writes to same path (serialized)", async () => {
-    const { writer, projectDir } = createWriter();
+    const { writer } = createWriter();
 
     // First write
     await writer.write("page.md", "v1", null);

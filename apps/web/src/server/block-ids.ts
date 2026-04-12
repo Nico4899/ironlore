@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { ulid } from "@ironlore/core";
 
 const BLOCK_ID_RE = /<!-- #blk_([A-Z0-9]{26}) -->/;
@@ -78,7 +77,7 @@ export function parseBlocks(markdown: string): Block[] {
 
       while (i < lines.length) {
         const fenceLine = lines[i] ?? "";
-        blockText += "\n" + fenceLine;
+        blockText += `\n${fenceLine}`;
         offset += fenceLine.length + 1;
         i++;
         if (fenceLine.startsWith(fence) && fenceLine.trim() === fence) break;
@@ -117,7 +116,7 @@ export function parseBlocks(markdown: string): Block[] {
       i++;
       while (i < lines.length && (lines[i] ?? "").startsWith("|")) {
         const tableLine = lines[i] ?? "";
-        blockText += "\n" + tableLine;
+        blockText += `\n${tableLine}`;
         offset += tableLine.length + 1;
         i++;
       }
@@ -139,7 +138,7 @@ export function parseBlocks(markdown: string): Block[] {
       i++;
       while (i < lines.length && (lines[i] ?? "").startsWith(">")) {
         const quoteLine = lines[i] ?? "";
-        blockText += "\n" + quoteLine;
+        blockText += `\n${quoteLine}`;
         offset += quoteLine.length + 1;
         i++;
       }
@@ -163,7 +162,7 @@ export function parseBlocks(markdown: string): Block[] {
         const listLine = lines[i] ?? "";
         if (listLine.trim() === "") break;
         if (/^(\s*[-*+]|\s*\d+\.)\s/.test(listLine) || /^\s{2,}/.test(listLine)) {
-          blockText += "\n" + listLine;
+          blockText += `\n${listLine}`;
           offset += listLine.length + 1;
           i++;
         } else {
@@ -188,7 +187,7 @@ export function parseBlocks(markdown: string): Block[] {
       i++;
       while (i < lines.length && (lines[i] ?? "").trim() !== "") {
         const htmlLine = lines[i] ?? "";
-        blockText += "\n" + htmlLine;
+        blockText += `\n${htmlLine}`;
         offset += htmlLine.length + 1;
         i++;
       }
@@ -222,7 +221,7 @@ export function parseBlocks(markdown: string): Block[] {
         ) {
           break;
         }
-        blockText += "\n" + nextLine;
+        blockText += `\n${nextLine}`;
         offset += nextLine.length + 1;
         i++;
       }

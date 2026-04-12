@@ -102,7 +102,7 @@ export class FileWatcher {
 
       // The filesystem write already happened, so mark committed immediately
       // (the WAL entry is just for git tracking)
-      const entries = this.wal.getCommittedPending(1);
+      const _entries = this.wal.getCommittedPending(1);
       // Mark the latest uncommitted entry for this path
       const uncommitted = this.wal.getUncommitted().filter((e) => e.path === relPath);
       for (const entry of uncommitted) {

@@ -25,7 +25,7 @@ export class PathMutex {
       await existing;
       return await fn();
     } finally {
-      release!();
+      release?.();
       // Clean up if we're the last waiter
       if (this.locks.get(key) === next) {
         this.locks.delete(key);

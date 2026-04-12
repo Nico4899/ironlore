@@ -32,7 +32,6 @@ export class StorageWriter {
   private mutex = new PathMutex();
   private wal: Wal;
   private dataRoot: string;
-  private projectDir: string;
 
   constructor(projectDir: string) {
     this.projectDir = projectDir;

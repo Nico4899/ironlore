@@ -95,7 +95,8 @@ export class GitWorker {
       if (
         current &&
         current.author === entry.author &&
-        entryTime - new Date(current.entries[current.entries.length - 1]!.createdAt).getTime() <
+        entryTime -
+          new Date(current.entries.at(-1)?.createdAt ?? entry.createdAt).getTime() <
           this.commitWindowMs
       ) {
         current.entries.push(entry);
@@ -151,14 +152,15 @@ export class GitWorker {
     const paths = [...group.paths];
 
     if (paths.length === 1) {
-      const entry = group.entries[0]!;
+      const entry = group.entries[0];
+      if (!entry) return `Update ${paths[0]}`;
       return entry.message || `${entry.op === "delete" ? "Delete" : "Update"} ${paths[0]}`;
     }
 
     const summary =
       paths.length <= 5 ? `Update ${paths.join(", ")}` : `Update ${paths.length} files`;
 
-    const details = group.entries.map((e) => `- ${e.message || e.op + " " + e.path}`).join("\n");
+    const details = group.entries.map((e) => `- ${e.message || `${e.op} ${e.path}`}`).join("\n");
 
     return `${summary}\n\n${details}`;
   }
