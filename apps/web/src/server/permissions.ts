@@ -1,6 +1,11 @@
 import { statSync } from "node:fs";
 import { join } from "node:path";
-import { DEFAULT_PROJECT_ID, INSTALL_JSON, IPC_TOKEN_FILE, SENSITIVE_FILE_MODE } from "@ironlore/core";
+import {
+  DEFAULT_PROJECT_ID,
+  INSTALL_JSON,
+  IPC_TOKEN_FILE,
+  SENSITIVE_FILE_MODE,
+} from "@ironlore/core";
 
 /**
  * Sensitive files that must have POSIX mode 0600 (owner read/write only).

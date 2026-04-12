@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
-import { authRateLimiter, agentRateLimiter } from "./rate-limit.js";
+import { describe, expect, it } from "vitest";
+import { agentRateLimiter, authRateLimiter } from "./rate-limit.js";
 
 describe("authRateLimiter", () => {
   it("allows requests within the limit", async () => {

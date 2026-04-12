@@ -46,11 +46,7 @@ export async function fetchForProject(
   return fetch(parsed, init);
 }
 
-function isAllowed(
-  hostname: string,
-  policy: string,
-  allowlist: string[] | undefined,
-): boolean {
+function isAllowed(hostname: string, policy: string, allowlist: string[] | undefined): boolean {
   switch (policy) {
     case "open":
       return true;

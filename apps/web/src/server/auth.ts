@@ -1,17 +1,17 @@
-import { randomBytes, sign, verify as cryptoVerify, generateKeyPairSync } from "node:crypto";
+import { verify as cryptoVerify, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { hash, verify } from "@node-rs/argon2";
 import {
   AUTH_RATE_LIMIT,
   DEFAULT_PROJECT_ID,
   INSTALL_JSON,
   SENSITIVE_FILE_MODE,
 } from "@ironlore/core";
+import { hash, verify } from "@node-rs/argon2";
+import Database from "better-sqlite3";
 import type { Context, Next } from "hono";
 import { Hono } from "hono";
-import { getCookie, setCookie, deleteCookie } from "hono/cookie";
-import Database from "better-sqlite3";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -83,9 +83,9 @@ export class SessionStore {
   // -- User management --
 
   getUser(username: string): UserRow | undefined {
-    return this.db
-      .prepare("SELECT * FROM users WHERE username = ?")
-      .get(username) as UserRow | undefined;
+    return this.db.prepare("SELECT * FROM users WHERE username = ?").get(username) as
+      | UserRow
+      | undefined;
   }
 
   createUser(username: string, passwordHash: string, mustChange: boolean): string {
@@ -122,14 +122,18 @@ export class SessionStore {
     return id;
   }
 
-  getSession(sessionId: string): (SessionRow & { username: string; must_change_password: number }) | undefined {
+  getSession(
+    sessionId: string,
+  ): (SessionRow & { username: string; must_change_password: number }) | undefined {
     return this.db
       .prepare(
         `SELECT s.*, u.username, u.must_change_password
          FROM sessions s JOIN users u ON s.user_id = u.id
          WHERE s.id = ? AND s.expires_at > datetime('now')`,
       )
-      .get(sessionId) as (SessionRow & { username: string; must_change_password: number }) | undefined;
+      .get(sessionId) as
+      | (SessionRow & { username: string; must_change_password: number })
+      | undefined;
   }
 
   touchSession(sessionId: string): void {
@@ -183,10 +187,7 @@ async function hashPassword(password: string, salt: Buffer): Promise<string> {
   return hash(password, { salt });
 }
 
-async function verifyPassword(
-  passwordHash: string,
-  password: string,
-): Promise<boolean> {
+async function verifyPassword(passwordHash: string, password: string): Promise<boolean> {
   return verify(passwordHash, password);
 }
 
@@ -218,10 +219,7 @@ function signSessionId(sessionId: string, privateKey: string): string {
   return `${sessionId}.${sig.toString("base64url")}`;
 }
 
-function verifySessionCookie(
-  cookie: string,
-  publicKey: string,
-): string | null {
+function verifySessionCookie(cookie: string, publicKey: string): string | null {
   const dotIdx = cookie.lastIndexOf(".");
   if (dotIdx === -1) return null;
   const sessionId = cookie.slice(0, dotIdx);
@@ -266,7 +264,10 @@ function isRateLimited(key: string): boolean {
 // Auth API factory
 // ---------------------------------------------------------------------------
 
-export function createAuthApi(installRoot: string, store: SessionStore): {
+export function createAuthApi(
+  installRoot: string,
+  store: SessionStore,
+): {
   api: Hono;
   middleware: (c: Context, next: Next) => Promise<Response | void>;
   signingKeys: SigningKeys;

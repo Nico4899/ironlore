@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { DEFAULT_PROJECT_ID } from "@ironlore/core";
 import Database from "better-sqlite3";
 import { simpleGit } from "simple-git";
 

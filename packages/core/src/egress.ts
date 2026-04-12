@@ -8,8 +8,6 @@ export class EgressBlockedError extends Error {
     public readonly host: string,
     public readonly policy: string,
   ) {
-    super(
-      `Egress blocked: project "${projectId}" cannot reach "${host}" (policy: ${policy})`,
-    );
+    super(`Egress blocked: project "${projectId}" cannot reach "${host}" (policy: ${policy})`);
   }
 }

@@ -1,8 +1,6 @@
-import { mkdirSync, writeFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 describe("fetchForProject", () => {
@@ -24,9 +22,7 @@ describe("fetchForProject", () => {
   }
 
   async function loadModule() {
-    return import("./fetch-for-project.js") as Promise<
-      typeof import("./fetch-for-project.js")
-    >;
+    return import("./fetch-for-project.js") as Promise<typeof import("./fetch-for-project.js")>;
   }
 
   it("allows requests matching the allowlist", async () => {
@@ -42,10 +38,7 @@ egress:
     const fakeFetch = vi.fn().mockResolvedValue(new Response("ok"));
     vi.stubGlobal("fetch", fakeFetch);
 
-    await mod.fetchForProject(
-      projectDir,
-      "https://api.anthropic.com/v1/messages",
-    );
+    await mod.fetchForProject(projectDir, "https://api.anthropic.com/v1/messages");
 
     expect(fakeFetch).toHaveBeenCalledOnce();
   });
@@ -61,9 +54,9 @@ egress:
 `);
     const mod = await loadModule();
 
-    await expect(
-      mod.fetchForProject(projectDir, "https://evil.example.com/steal"),
-    ).rejects.toThrow("Egress blocked");
+    await expect(mod.fetchForProject(projectDir, "https://evil.example.com/steal")).rejects.toThrow(
+      "Egress blocked",
+    );
   });
 
   it("allows all requests with open policy", async () => {
@@ -77,10 +70,7 @@ egress:
     const fakeFetch = vi.fn().mockResolvedValue(new Response("ok"));
     vi.stubGlobal("fetch", fakeFetch);
 
-    await mod.fetchForProject(
-      projectDir,
-      "https://anything.example.com/path",
-    );
+    await mod.fetchForProject(projectDir, "https://anything.example.com/path");
 
     expect(fakeFetch).toHaveBeenCalledOnce();
   });
@@ -125,10 +115,7 @@ egress:
     const fakeFetch = vi.fn().mockResolvedValue(new Response("ok"));
     vi.stubGlobal("fetch", fakeFetch);
 
-    await mod.fetchForProject(
-      projectDir,
-      "https://hooks.slack.com/services/T00/B00/xxx",
-    );
+    await mod.fetchForProject(projectDir, "https://hooks.slack.com/services/T00/B00/xxx");
 
     expect(fakeFetch).toHaveBeenCalledOnce();
   });

@@ -74,10 +74,7 @@ export function authRateLimiter() {
     const key = `auth:${ip}`;
 
     if (!authBucket.consume(key)) {
-      return c.json(
-        { error: "Too many login attempts. Please wait before trying again." },
-        429,
-      );
+      return c.json({ error: "Too many login attempts. Please wait before trying again." }, 429);
     }
 
     await next();
@@ -101,10 +98,7 @@ export function agentRateLimiter() {
     const key = `agent:${projectId}:${agentSlug}`;
 
     if (!agentBucket.consume(key)) {
-      return c.json(
-        { error: "Agent rate limit exceeded. Please wait before retrying." },
-        429,
-      );
+      return c.json({ error: "Agent rate limit exceeded. Please wait before retrying." }, 429);
     }
 
     await next();

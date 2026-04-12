@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { INSTALL_JSON, SENSITIVE_FILE_MODE } from "@ironlore/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SessionStore, createAuthApi } from "./auth.js";
+import { createAuthApi, SessionStore } from "./auth.js";
 
 describe("SessionStore", () => {
   let installRoot: string;
@@ -88,11 +88,9 @@ describe("Auth API", () => {
       initial_password: "TestPassword123456789012",
       created_at: new Date().toISOString(),
     };
-    writeFileSync(
-      join(installRoot, INSTALL_JSON),
-      JSON.stringify(record),
-      { mode: SENSITIVE_FILE_MODE },
-    );
+    writeFileSync(join(installRoot, INSTALL_JSON), JSON.stringify(record), {
+      mode: SENSITIVE_FILE_MODE,
+    });
 
     store = new SessionStore(installRoot);
   });
