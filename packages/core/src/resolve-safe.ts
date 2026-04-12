@@ -62,7 +62,7 @@ export function resolveSafe(
 
   if (real !== absoluteRoot && !real.startsWith(prefix)) {
     // Symlink points outside the root — check if it's a registered link
-    if (linkedPathValidator && linkedPathValidator(real)) {
+    if (linkedPathValidator?.(real)) {
       return real;
     }
     throw new ForbiddenError(userPath, "symlink escapes project root");

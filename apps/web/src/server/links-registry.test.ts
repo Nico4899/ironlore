@@ -59,9 +59,7 @@ describe("LinksRegistry", () => {
     const { registry } = createRegistry();
     const extDir = makeExternalDir(false);
 
-    expect(() => registry.registerLink("external/bad", extDir)).toThrow(
-      LinkMarkerMissingError,
-    );
+    expect(() => registry.registerLink("external/bad", extDir)).toThrow(LinkMarkerMissingError);
   });
 
   it("rejects duplicate symlink_path registration", () => {
@@ -134,8 +132,8 @@ describe("LinksRegistry", () => {
 
     const all = registry.list();
     expect(all).toHaveLength(2);
-    expect(all[0].symlink_path).toBe("external/a");
-    expect(all[1].symlink_path).toBe("external/b");
+    expect(all[0]?.symlink_path).toBe("external/a");
+    expect(all[1]?.symlink_path).toBe("external/b");
   });
 
   // -------------------------------------------------------------------------
@@ -168,9 +166,9 @@ describe("LinksRegistry", () => {
     mkdirSync(join(dataRoot, "external"), { recursive: true });
     symlinkSync(extDir, join(dataRoot, "external", "sneaky"));
 
-    expect(() =>
-      resolveSafe(dataRoot, "external/sneaky", registry.validator()),
-    ).toThrow("symlink escapes project root");
+    expect(() => resolveSafe(dataRoot, "external/sneaky", registry.validator())).toThrow(
+      "symlink escapes project root",
+    );
   });
 
   it("resolveSafe rejects a hand-planted symlink without marker", () => {
@@ -182,8 +180,8 @@ describe("LinksRegistry", () => {
     symlinkSync(extDir, join(dataRoot, "external", "planted"));
 
     // Can't even register without marker, so validator will return false
-    expect(() =>
-      resolveSafe(dataRoot, "external/planted", registry.validator()),
-    ).toThrow("symlink escapes project root");
+    expect(() => resolveSafe(dataRoot, "external/planted", registry.validator())).toThrow(
+      "symlink escapes project root",
+    );
   });
 });

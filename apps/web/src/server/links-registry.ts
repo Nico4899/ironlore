@@ -95,9 +95,7 @@ export class LinksRegistry {
    * Returns true if a row was deleted.
    */
   removeLink(symlinkPath: string): boolean {
-    const stmt = this.db.prepare(
-      "DELETE FROM linked_directories WHERE symlink_path = ?",
-    );
+    const stmt = this.db.prepare("DELETE FROM linked_directories WHERE symlink_path = ?");
     return stmt.run(symlinkPath).changes > 0;
   }
 
