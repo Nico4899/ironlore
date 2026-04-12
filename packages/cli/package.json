@@ -1,0 +1,19 @@
+{
+  "name": "ironlore",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": {
+    "ironlore": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch"
+  },
+  "dependencies": {
+    "@ironlore/core": "workspace:*",
+    "commander": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0"
+  }
+}
