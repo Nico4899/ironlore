@@ -16,7 +16,18 @@
       },
       "style": {
         "noNonNullAssertion": "warn",
-        "useConst": "error"
+        "useConst": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "node:child_process": "Use spawnSafe() from spawn-safe.ts instead of direct child_process imports.",
+              "child_process": "Use spawnSafe() from spawn-safe.ts instead of direct child_process imports.",
+              "node:https": "Use fetchForProject() from fetch-for-project.ts instead of direct https imports.",
+              "axios": "Use fetchForProject() from fetch-for-project.ts instead of direct axios imports."
+            }
+          }
+        }
       },
       "security": {
         "noDangerouslySetInnerHtml": "error"
@@ -71,6 +82,16 @@
         "rules": {
           "suspicious": {
             "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/web/src/server/spawn-safe.ts", "apps/web/src/server/fetch-for-project.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
           }
         }
       }
