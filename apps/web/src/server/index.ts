@@ -1,12 +1,6 @@
 import { serve } from "@hono/node-server";
-import type { HealthResponse, InstallRecord, ReadyResponse } from "@ironlore/core";
-import {
-  DEFAULT_HOST,
-  DEFAULT_PORT,
-  DEFAULT_PROJECT_ID,
-  INSTALL_JSON,
-  SENSITIVE_FILE_MODE,
-} from "@ironlore/core";
+import type { HealthResponse, ReadyResponse } from "@ironlore/core";
+import { DEFAULT_HOST, DEFAULT_PORT } from "@ironlore/core";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";

@@ -33,6 +33,6 @@ describe("createCorsConfig", () => {
     process.env.IRONLORE_ALLOWED_ORIGINS = "https://a.com, https://b.com";
     const config = createCorsConfig();
     expect(config).not.toBeNull();
-    expect(config!.origin).toEqual(["https://a.com", "https://b.com"]);
+    expect(config?.origin).toEqual(["https://a.com", "https://b.com"]);
   });
 });
