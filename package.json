@@ -15,5 +15,13 @@
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "tsc -b"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
   }
 }

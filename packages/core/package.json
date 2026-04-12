@@ -5,16 +5,19 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
     },
     "./messages": {
-      "types": "./dist/messages.d.ts",
-      "import": "./dist/messages.js"
+      "types": "./src/messages.ts",
+      "import": "./src/messages.ts"
     }
   },
   "scripts": {
     "build": "tsc -b",
     "dev": "tsc -b --watch"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
   }
 }
