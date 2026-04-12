@@ -9,5 +9,8 @@
   },
   "dependencies": {
     "@ironlore/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0"
   }
 }
