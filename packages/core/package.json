@@ -8,6 +8,10 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts"
     },
+    "./server": {
+      "types": "./src/server.ts",
+      "import": "./src/server.ts"
+    },
     "./messages": {
       "types": "./src/messages.ts",
       "import": "./src/messages.ts"
