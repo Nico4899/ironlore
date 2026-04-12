@@ -1,5 +1,14 @@
-import { extname } from "node:path";
 import type { PageType } from "./types.js";
+
+/** Browser-safe extname — returns ".foo" or "" just like node:path.extname. */
+function extname(filePath: string): string {
+  const dot = filePath.lastIndexOf(".");
+  if (dot <= 0 || dot === filePath.length - 1) return "";
+  // Ignore dots that are part of a directory separator
+  const slash = filePath.lastIndexOf("/");
+  if (slash > dot) return "";
+  return filePath.slice(dot);
+}
 
 const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
 const VIDEO_EXTS = new Set([".mp4", ".webm", ".mov"]);
