@@ -1,12 +1,14 @@
 import { serve } from "@hono/node-server";
 import type { HealthResponse, ReadyResponse } from "@ironlore/core";
-import { DEFAULT_HOST, DEFAULT_PORT } from "@ironlore/core";
+import { DEFAULT_HOST, DEFAULT_PORT, DEFAULT_PROJECT_ID } from "@ironlore/core";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
 import { validateBind } from "./network.js";
+import { createPagesApi } from "./pages-api.js";
+import { StorageWriter } from "./storage-writer.js";
 
 const app = new Hono();
 
@@ -50,13 +52,6 @@ app.get("/ready", (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// API placeholder
-// ---------------------------------------------------------------------------
-app.get("/api/projects/:projectId/pages", (c) => {
-  return c.json({ pages: [], projectId: c.req.param("projectId") });
-});
-
-// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 const host = process.env.IRONLORE_BIND ?? DEFAULT_HOST;
@@ -67,6 +62,23 @@ validateBind(host);
 async function start() {
   const installRoot = process.cwd();
   await bootstrap(installRoot);
+
+  // Initialize StorageWriter for the default project
+  const projectDir = `${installRoot}/projects/${DEFAULT_PROJECT_ID}`;
+  const writer = new StorageWriter(projectDir);
+
+  // Crash recovery — replay any uncommitted WAL entries
+  const { recovered, warnings } = writer.recover();
+  if (recovered > 0) {
+    console.log(`WAL recovery: replayed ${recovered} entries`);
+  }
+  for (const w of warnings) {
+    console.warn(`WAL recovery warning: ${w}`);
+  }
+
+  // Mount page API
+  const pagesApi = createPagesApi(writer);
+  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/pages`, pagesApi);
 
   ready = true;
   readyReason = "";
