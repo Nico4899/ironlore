@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { computeEtag, ResolveSafeError, resolveSafe } from "@ironlore/core";
+import { computeEtag, ForbiddenError, resolveSafe } from "@ironlore/core";
 import { PathMutex } from "./mutex.js";
 import { Wal } from "./wal.js";
 
@@ -16,7 +16,7 @@ export class EtagMismatchError extends Error {
   }
 }
 
-export { ResolveSafeError };
+export { ForbiddenError };
 
 /**
  * StorageWriter — the single write path for all page mutations.
@@ -59,7 +59,7 @@ export class StorageWriter {
    * @param author - Author of the change (default: "user")
    * @returns New ETag after write
    * @throws {EtagMismatchError} if the file has been modified since last read
-   * @throws {ResolveSafeError} if path escapes project root
+   * @throws {ForbiddenError} if path escapes project root
    */
   async write(
     pagePath: string,

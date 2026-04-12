@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import { join, relative } from "node:path";
-import { parseEtag, ResolveSafeError } from "@ironlore/core";
+import { parseEtag, ForbiddenError } from "@ironlore/core";
 import { createPatch } from "diff";
 import { Hono } from "hono";
 import { assignBlockIds, parseBlocks, writeBlocksSidecar } from "./block-ids.js";
@@ -49,7 +49,7 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
         blocks: blocks.map((b) => ({ id: b.id, type: b.type, text: b.text })),
       });
     } catch (err) {
-      if (err instanceof ResolveSafeError) {
+      if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);
       }
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {
@@ -106,7 +106,7 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
           409,
         );
       }
-      if (err instanceof ResolveSafeError) {
+      if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);
       }
       throw err;
@@ -147,7 +147,7 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
           409,
         );
       }
-      if (err instanceof ResolveSafeError) {
+      if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);
       }
       if ((err as NodeJS.ErrnoException).code === "ENOENT") {

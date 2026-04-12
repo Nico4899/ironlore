@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
  * Every GET returns this; every PUT must cite it via `If-Match`.
  */
 export function computeEtag(content: string | Buffer): string {
-  const hash = createHash("sha256").update(content).digest("hex").slice(0, 32);
+  const hash = createHash("sha256").update(content).digest("hex");
   return `"sha256-${hash}"`;
 }
 

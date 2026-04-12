@@ -3,7 +3,7 @@ import { mkdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ResolveSafeError, resolveSafe } from "./resolve-safe.js";
+import { ForbiddenError, resolveSafe } from "./resolve-safe.js";
 
 function makeTmpRoot(): string {
   const dir = join(tmpdir(), `ironlore-test-${randomBytes(4).toString("hex")}`);
@@ -48,17 +48,17 @@ describe("resolveSafe", () => {
 
   it("rejects ../  traversal", () => {
     const root = createRoot();
-    expect(() => resolveSafe(root, "../etc/passwd")).toThrow(ResolveSafeError);
+    expect(() => resolveSafe(root, "../etc/passwd")).toThrow(ForbiddenError);
   });
 
   it("rejects absolute paths outside root", () => {
     const root = createRoot();
-    expect(() => resolveSafe(root, "/etc/passwd")).toThrow(ResolveSafeError);
+    expect(() => resolveSafe(root, "/etc/passwd")).toThrow(ForbiddenError);
   });
 
   it("rejects ../../ deep traversal", () => {
     const root = createRoot();
-    expect(() => resolveSafe(root, "sub/../../etc/passwd")).toThrow(ResolveSafeError);
+    expect(() => resolveSafe(root, "sub/../../etc/passwd")).toThrow(ForbiddenError);
   });
 
   it("rejects symlink escape", () => {
@@ -67,7 +67,7 @@ describe("resolveSafe", () => {
     writeFileSync(join(outsideDir, "secret.md"), "secret");
     symlinkSync(outsideDir, join(root, "escape"));
 
-    expect(() => resolveSafe(root, "escape/secret.md")).toThrow(ResolveSafeError);
+    expect(() => resolveSafe(root, "escape/secret.md")).toThrow(ForbiddenError);
   });
 
   it("allows symlink within root", () => {

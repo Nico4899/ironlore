@@ -27,7 +27,7 @@ export function resolveSafe(projectId: string, userPath: string): string {
   // Logical resolve — catches ../../../etc/passwd style attacks
   const joined = resolve(absoluteRoot, userPath);
   if (joined !== absoluteRoot && !joined.startsWith(prefix)) {
-    throw new ResolveSafeError(userPath, "path escapes project root");
+    throw new ForbiddenError(userPath, "path escapes project root");
   }
 
   // Realpath resolve — catches symlink escapes
@@ -41,14 +41,14 @@ export function resolveSafe(projectId: string, userPath: string): string {
   }
 
   if (real !== absoluteRoot && !real.startsWith(prefix)) {
-    throw new ResolveSafeError(userPath, "symlink escapes project root");
+    throw new ForbiddenError(userPath, "symlink escapes project root");
   }
 
   return real;
 }
 
-export class ResolveSafeError extends Error {
-  override readonly name = "ResolveSafeError";
+export class ForbiddenError extends Error {
+  override readonly name = "ForbiddenError";
   constructor(
     public readonly path: string,
     reason: string,

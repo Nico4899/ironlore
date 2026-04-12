@@ -4,7 +4,7 @@ import { computeEtag, parseEtag } from "./etag.js";
 describe("computeEtag", () => {
   it("returns a quoted sha256 hash", () => {
     const etag = computeEtag("hello world");
-    expect(etag).toMatch(/^"sha256-[a-f0-9]{32}"$/);
+    expect(etag).toMatch(/^"sha256-[a-f0-9]{64}"$/);
   });
 
   it("returns the same hash for the same content", () => {
