@@ -1,4 +1,5 @@
 export * from "./constants.js";
+export * from "./egress.js";
 export * from "./etag.js";
 export * from "./page-type.js";
 export * from "./resolve-safe.js";
