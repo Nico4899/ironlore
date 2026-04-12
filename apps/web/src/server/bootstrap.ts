@@ -9,6 +9,7 @@ import {
   IPC_TOKEN_FILE,
   SENSITIVE_FILE_MODE,
 } from "@ironlore/core";
+import { ProjectRegistry } from "./project-registry.js";
 import { seed } from "./seed.js";
 
 /**
@@ -69,6 +70,11 @@ export async function bootstrap(installRoot: string): Promise<void> {
   const ipcTokenPath = join(installRoot, IPC_TOKEN_FILE);
   const token = randomBytes(32).toString("hex");
   writeRestricted(ipcTokenPath, token);
+
+  // Ensure default project is registered
+  const registry = new ProjectRegistry(installRoot);
+  registry.ensureProject(DEFAULT_PROJECT_ID, "Main", "main");
+  registry.close();
 
   // Seed content (non-destructive: skips existing files)
   await seed(dataDir);
