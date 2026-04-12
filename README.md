@@ -69,27 +69,6 @@ ironlore/
     └── kb/               Test fixture pages
 ```
 
-## Architecture
-
-See the [docs/](docs/) directory for the full design:
-
-| Doc | Topic |
-|-----|-------|
-| 00 | Design principles |
-| 01 | Content model (pages, frontmatter, block IDs, page types) |
-| 02 | Storage and sync (StorageWriter, WAL, ETags, git) |
-| 03 | Editor (ProseMirror, markdown-native, conflict UI) |
-| 04 | AI and agents (provider interface, structured tools, memory) |
-| 05 | Jobs and security (durable queue, auth, egress, sandboxing) |
-| 06 | Implementation roadmap (7 phases) |
-| 07 | Tech stack (choices and rationale) |
-| 08 | Projects and isolation (the lethal-trifecta fix) |
-| 09 | UI and brand (layout, color system, stores, a11y) |
-
-## Tech stack
-
-TypeScript (strict) · Node.js 22 · pnpm workspaces · Vite + React · Hono · Tailwind + shadcn/ui · ProseMirror · CodeMirror 6 · SQLite (better-sqlite3, FTS5) · simple-git · Zustand · TanStack Query · Zod · Argon2id · Vitest + Playwright · Biome
-
 ## License
 
 [Apache-2.0](LICENSE)
