@@ -10,6 +10,7 @@ import { createCorsConfig } from "./cors.js";
 import { FileWatcher } from "./file-watcher.js";
 import { GitWorker } from "./git-worker.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
+import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
 import { createPagesApi } from "./pages-api.js";
 import { checkPermissions } from "./permissions.js";
@@ -30,6 +31,11 @@ let wal: Wal | null = null;
 // Middleware
 // ---------------------------------------------------------------------------
 app.use("*", logger());
+
+// Metrics middleware — records request latency per route (when enabled)
+if (process.env.IRONLORE_METRICS === "true") {
+  app.use("*", metricsMiddleware());
+}
 
 const corsConfig = createCorsConfig();
 if (corsConfig) {
@@ -114,6 +120,13 @@ async function start() {
 
   // Expose WAL for health endpoint
   wal = writer.getWal();
+
+  // Mount /metrics endpoint (Prometheus text format, behind auth, opt-in)
+  if (process.env.IRONLORE_METRICS === "true") {
+    const metricsApi = createMetricsEndpoint(() => wal);
+    app.use("/metrics", authMiddleware);
+    app.route("/metrics", metricsApi);
+  }
 
   // Start git worker (background commit grouping)
   const gitWorker = new GitWorker(projectDir, wal);
