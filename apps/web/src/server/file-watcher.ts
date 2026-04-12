@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
-import { relative } from "node:path";
+import { existsSync, readFileSync, watch as fsWatch } from "node:fs";
+import { join, relative } from "node:path";
 import { computeEtag } from "@ironlore/core";
-import { type FSWatcher, watch } from "chokidar";
+import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from "chokidar";
 import type { SearchIndex } from "./search-index.js";
 import type { Wal } from "./wal.js";
 
@@ -9,10 +9,14 @@ import type { Wal } from "./wal.js";
  * Filesystem watcher that detects external edits (e.g. user editing
  * markdown files in VS Code or vim) and feeds them into the WAL.
  *
+ * Uses chokidar in development and Node's built-in fs.watch in production
+ * for a lighter runtime footprint.
+ *
  * Debounced at 200ms to avoid churn from editor save-write patterns.
  */
 export class FileWatcher {
-  private watcher: FSWatcher | null = null;
+  private chokidarWatcher: ChokidarWatcher | null = null;
+  private fsWatcher: ReturnType<typeof fsWatch> | null = null;
   private wal: Wal;
   private dataRoot: string;
   private searchIndex: SearchIndex | null;
@@ -29,7 +33,47 @@ export class FileWatcher {
    * Start watching the data directory for changes.
    */
   start(): void {
-    this.watcher = watch(this.dataRoot, {
+    if (process.env.NODE_ENV === "production") {
+      this.startFsWatch();
+    } else {
+      this.startChokidar();
+    }
+  }
+
+  /**
+   * Production backend: Node's built-in fs.watch with recursive mode.
+   * Available on macOS, Windows, and Linux (Node 19.1+).
+   */
+  private startFsWatch(): void {
+    this.fsWatcher = fsWatch(this.dataRoot, { recursive: true }, (eventType, filename) => {
+      if (!filename || typeof filename !== "string") return;
+
+      // Skip non-markdown, hidden files, sidecars, and temp files
+      if (!filename.endsWith(".md")) return;
+      if (/(^|[/\\])\./.test(filename)) return;
+
+      const absPath = join(this.dataRoot, filename);
+
+      if (eventType === "rename") {
+        // 'rename' covers both creation and deletion — check existence
+        if (existsSync(absPath)) {
+          this.handleChange(absPath);
+        } else {
+          this.handleDelete(absPath);
+        }
+      } else {
+        // 'change' — file content was modified
+        this.handleChange(absPath);
+      }
+    });
+  }
+
+  /**
+   * Development backend: chokidar with richer event handling and
+   * awaitWriteFinish for editor save patterns.
+   */
+  private startChokidar(): void {
+    this.chokidarWatcher = chokidarWatch(this.dataRoot, {
       ignored: [
         /(^|[/\\])\../, // hidden files
         /\.blocks\.json$/, // sidecar files
@@ -43,15 +87,15 @@ export class FileWatcher {
       },
     });
 
-    this.watcher.on("change", (filePath: string) => {
+    this.chokidarWatcher.on("change", (filePath: string) => {
       this.handleChange(filePath);
     });
 
-    this.watcher.on("add", (filePath: string) => {
+    this.chokidarWatcher.on("add", (filePath: string) => {
       this.handleChange(filePath);
     });
 
-    this.watcher.on("unlink", (filePath: string) => {
+    this.chokidarWatcher.on("unlink", (filePath: string) => {
       this.handleDelete(filePath);
     });
   }
@@ -143,9 +187,13 @@ export class FileWatcher {
   }
 
   stop(): void {
-    if (this.watcher) {
-      this.watcher.close();
-      this.watcher = null;
+    if (this.chokidarWatcher) {
+      this.chokidarWatcher.close();
+      this.chokidarWatcher = null;
+    }
+    if (this.fsWatcher) {
+      this.fsWatcher.close();
+      this.fsWatcher = null;
     }
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
