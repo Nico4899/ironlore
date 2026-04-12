@@ -8,8 +8,10 @@ import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
 import { FileWatcher } from "./file-watcher.js";
 import { GitWorker } from "./git-worker.js";
+import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { validateBind } from "./network.js";
 import { createPagesApi } from "./pages-api.js";
+import { checkPermissions } from "./permissions.js";
 import { SearchIndex } from "./search-index.js";
 import { StorageWriter } from "./storage-writer.js";
 import type { Wal } from "./wal.js";
@@ -67,6 +69,19 @@ validateBind(host);
 async function start() {
   const installRoot = process.cwd();
   await bootstrap(installRoot);
+
+  // Check sensitive file permissions (refuse to start if too broad)
+  const violations = checkPermissions(installRoot);
+  if (violations.length > 0) {
+    console.error("Refusing to start — sensitive files have insecure permissions:");
+    for (const v of violations) {
+      console.error(`  ${v}`);
+    }
+    process.exit(1);
+  }
+
+  // Mount IPC auth middleware for worker ↔ web internal routes
+  app.use("/api/internal/*", createIpcAuthMiddleware(installRoot));
 
   // Initialize StorageWriter for the default project
   const projectDir = `${installRoot}/projects/${DEFAULT_PROJECT_ID}`;
