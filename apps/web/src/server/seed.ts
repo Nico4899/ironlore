@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { AGENTS_DIR, AGENTS_LIBRARY_DIR, AGENTS_SHARED_DIR, ulid } from "@ironlore/core";
 
 /**
@@ -7,7 +7,7 @@ import { AGENTS_DIR, AGENTS_LIBRARY_DIR, AGENTS_SHARED_DIR, ulid } from "@ironlo
  */
 function seedFile(filePath: string, content: string): void {
   if (existsSync(filePath)) return;
-  const dir = filePath.substring(0, filePath.lastIndexOf("/"));
+  const dir = dirname(filePath);
   mkdirSync(dir, { recursive: true });
   writeFileSync(filePath, content, "utf-8");
 }
