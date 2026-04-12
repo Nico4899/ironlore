@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
-import { computeEtag, ForbiddenError, resolveSafe } from "@ironlore/core";
+import { computeEtag, ForbiddenError, resolveSafe } from "@ironlore/core/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { StorageWriter } from "./storage-writer.js";
 

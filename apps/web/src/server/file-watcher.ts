@@ -1,6 +1,6 @@
 import { existsSync, watch as fsWatch, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { computeEtag } from "@ironlore/core";
+import { computeEtag } from "@ironlore/core/server";
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from "chokidar";
 import type { SearchIndex } from "./search-index.js";
 import type { Wal } from "./wal.js";

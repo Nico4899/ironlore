@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { computeEtag } from "@ironlore/core";
+import { computeEtag } from "@ironlore/core/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { EtagMismatchError, StorageWriter } from "./storage-writer.js";
 
