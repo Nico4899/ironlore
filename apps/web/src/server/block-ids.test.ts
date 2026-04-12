@@ -39,9 +39,9 @@ describe("parseBlocks", () => {
   });
 
   it("preserves existing block IDs", () => {
-    const md = "## Roadmap <!-- #blk_01HY0AEXAMPLEULID00000 -->";
+    const md = "## Roadmap <!-- #blk_01HY0AEXAMPLEULID0000ABCDE -->";
     const blocks = parseBlocks(md);
-    expect(blocks[0]?.id).toBe("blk_01HY0AEXAMPLEULID00000");
+    expect(blocks[0]?.id).toBe("blk_01HY0AEXAMPLEULID0000ABCDE");
   });
 
   it("assigns new IDs to blocks without them", () => {
@@ -94,9 +94,9 @@ describe("assignBlockIds", () => {
   });
 
   it("preserves existing block IDs", () => {
-    const original = "## Roadmap <!-- #blk_01HY0AEXAMPLEULID00000 -->";
+    const original = "## Roadmap <!-- #blk_01HY0AEXAMPLEULID0000ABCDE -->";
     const { markdown } = assignBlockIds(original);
-    expect(markdown).toContain("blk_01HY0AEXAMPLEULID00000");
+    expect(markdown).toContain("blk_01HY0AEXAMPLEULID0000ABCDE");
     // Should not add a duplicate
     const matches = markdown.match(/<!-- #blk_/g);
     expect(matches).toHaveLength(1);

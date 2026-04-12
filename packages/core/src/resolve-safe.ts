@@ -10,7 +10,14 @@ import { resolve, sep } from "node:path";
  * @throws {ResolveSafeError} if the resolved path escapes the root
  */
 export function resolveSafe(root: string, userPath: string): string {
-  const absoluteRoot = resolve(root);
+  // Resolve the root itself through realpath so that platform symlinks
+  // (e.g. macOS /tmp → /private/tmp) don't cause false rejections.
+  let absoluteRoot: string;
+  try {
+    absoluteRoot = realpathSync(resolve(root));
+  } catch {
+    absoluteRoot = resolve(root);
+  }
   const prefix = absoluteRoot + sep;
 
   // Logical resolve — catches ../../../etc/passwd style attacks
