@@ -9,16 +9,7 @@ import { resolveSafe } from "@ironlore/core";
  * Everything else — ANTHROPIC_API_KEY, AWS_*, GITHUB_TOKEN, database URLs,
  * ambient secrets — is stripped.
  */
-const ALLOWED_ENV_KEYS = new Set([
-  "PATH",
-  "HOME",
-  "LANG",
-  "TERM",
-  "USER",
-  "SHELL",
-  "TMPDIR",
-  "XDG_RUNTIME_DIR",
-]);
+const ALLOWED_ENV_KEYS = new Set(["PATH", "HOME", "LANG", "TERM"]);
 
 /**
  * Build a sanitized PATH that enriches common tool locations.
