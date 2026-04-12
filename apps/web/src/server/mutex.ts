@@ -15,7 +15,7 @@ export class PathMutex {
     // Wait for any existing lock on this key
     const existing = this.locks.get(key) ?? Promise.resolve();
 
-    let release: () => void;
+    let release: (() => void) | undefined;
     const next = new Promise<void>((resolve) => {
       release = resolve;
     });

@@ -34,7 +34,6 @@ export class StorageWriter {
   private dataRoot: string;
 
   constructor(projectDir: string) {
-    this.projectDir = projectDir;
     this.dataRoot = join(projectDir, "data");
     this.wal = new Wal(projectDir);
   }

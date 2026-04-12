@@ -95,8 +95,7 @@ export class GitWorker {
       if (
         current &&
         current.author === entry.author &&
-        entryTime -
-          new Date(current.entries.at(-1)?.createdAt ?? entry.createdAt).getTime() <
+        entryTime - new Date(current.entries.at(-1)?.createdAt ?? entry.createdAt).getTime() <
           this.commitWindowMs
       ) {
         current.entries.push(entry);
