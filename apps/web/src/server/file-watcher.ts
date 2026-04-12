@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { relative } from "node:path";
 import { computeEtag } from "@ironlore/core";
 import { type FSWatcher, watch } from "chokidar";
+import type { SearchIndex } from "./search-index.js";
 import type { Wal } from "./wal.js";
 
 /**
@@ -14,12 +15,14 @@ export class FileWatcher {
   private watcher: FSWatcher | null = null;
   private wal: Wal;
   private dataRoot: string;
+  private searchIndex: SearchIndex | null;
   private knownHashes = new Map<string, string>();
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  constructor(dataRoot: string, wal: Wal) {
+  constructor(dataRoot: string, wal: Wal, searchIndex?: SearchIndex) {
     this.dataRoot = dataRoot;
     this.wal = wal;
+    this.searchIndex = searchIndex ?? null;
   }
 
   /**
@@ -102,12 +105,13 @@ export class FileWatcher {
 
       // The filesystem write already happened, so mark committed immediately
       // (the WAL entry is just for git tracking)
-      const _entries = this.wal.getCommittedPending(1);
-      // Mark the latest uncommitted entry for this path
       const uncommitted = this.wal.getUncommitted().filter((e) => e.path === relPath);
       for (const entry of uncommitted) {
         this.wal.markCommitted(entry.id);
       }
+
+      // Update search index
+      this.searchIndex?.indexPage(relPath, content, "external");
 
       // Update known hash
       this.knownHashes.set(filePath, newHash);
@@ -131,6 +135,9 @@ export class FileWatcher {
       author: "external",
       message: `External delete: ${relPath}`,
     });
+
+    // Remove from search index
+    this.searchIndex?.removePage(relPath);
 
     this.knownHashes.delete(filePath);
   }

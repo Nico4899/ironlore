@@ -10,6 +10,7 @@ import { FileWatcher } from "./file-watcher.js";
 import { GitWorker } from "./git-worker.js";
 import { validateBind } from "./network.js";
 import { createPagesApi } from "./pages-api.js";
+import { SearchIndex } from "./search-index.js";
 import { StorageWriter } from "./storage-writer.js";
 import type { Wal } from "./wal.js";
 
@@ -80,8 +81,11 @@ async function start() {
     console.warn(`WAL recovery warning: ${w}`);
   }
 
+  // Initialize search index (FTS5 + backlinks + tags + recent-edits)
+  const searchIndex = new SearchIndex(projectDir);
+
   // Mount page API
-  const pagesApi = createPagesApi(writer);
+  const pagesApi = createPagesApi(writer, searchIndex);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/pages`, pagesApi);
 
   // Expose WAL for health endpoint
@@ -92,7 +96,7 @@ async function start() {
   await gitWorker.start();
 
   // Start filesystem watcher for external edits
-  const fileWatcher = new FileWatcher(writer.getDataRoot(), wal);
+  const fileWatcher = new FileWatcher(writer.getDataRoot(), wal, searchIndex);
   fileWatcher.start();
 
   ready = true;

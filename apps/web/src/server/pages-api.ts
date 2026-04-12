@@ -4,6 +4,7 @@ import { parseEtag, ResolveSafeError } from "@ironlore/core";
 import { createPatch } from "diff";
 import { Hono } from "hono";
 import { assignBlockIds, parseBlocks, writeBlocksSidecar } from "./block-ids.js";
+import type { SearchIndex } from "./search-index.js";
 import { EtagMismatchError, type StorageWriter } from "./storage-writer.js";
 
 /**
@@ -15,7 +16,7 @@ import { EtagMismatchError, type StorageWriter } from "./storage-writer.js";
  *   DELETE /pages/*path ← If-Match → 204 | 409 | 404
  *   GET  /pages        → 200 { pages: TreeEntry[] }
  */
-export function createPagesApi(writer: StorageWriter): Hono {
+export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex): Hono {
   const api = new Hono();
 
   // -----------------------------------------------------------------------
@@ -88,6 +89,9 @@ export function createPagesApi(writer: StorageWriter): Hono {
       const absPath = join(writer.getDataRoot(), pagePath);
       writeBlocksSidecar(absPath, blocks);
 
+      // Update search index + backlinks
+      searchIndex.indexPage(pagePath, annotated, "user");
+
       c.header("ETag", etag);
       return c.json({ etag });
     } catch (err) {
@@ -126,6 +130,10 @@ export function createPagesApi(writer: StorageWriter): Hono {
     try {
       const parsed = parseEtag(ifMatch);
       await writer.delete(pagePath, `"${parsed}"`);
+
+      // Remove from search index
+      searchIndex.removePage(pagePath);
+
       return c.body(null, 204);
     } catch (err) {
       if (err instanceof EtagMismatchError) {
