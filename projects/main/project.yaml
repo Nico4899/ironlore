@@ -1,0 +1,7 @@
+kind: main
+name: Main
+egress:
+  policy: allowlist
+  allowlist:
+    - "https://api.anthropic.com"
+    - "https://api.openai.com"
