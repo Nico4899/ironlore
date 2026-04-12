@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PageFrontmatterSchema, ProjectConfigSchema, InstallRecordSchema } from "./schemas.js";
+import { InstallRecordSchema, PageFrontmatterSchema, ProjectConfigSchema } from "./schemas.js";
 
 describe("PageFrontmatterSchema", () => {
   it("validates a minimal valid frontmatter", () => {

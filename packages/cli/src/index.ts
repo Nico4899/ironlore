@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import { Command } from "commander";
-import { reindex } from "./commands/reindex.js";
-import { migrate } from "./commands/migrate.js";
-import { repair } from "./commands/repair.js";
 import { backup } from "./commands/backup.js";
+import { migrate } from "./commands/migrate.js";
+import { reindex } from "./commands/reindex.js";
+import { repair } from "./commands/repair.js";
 import { restore } from "./commands/restore.js";
 
 const program = new Command();
@@ -21,10 +21,7 @@ program
   .option("--project <id>", "Project ID to reindex", "main")
   .action(reindex);
 
-program
-  .command("migrate")
-  .description("Run pending database migrations")
-  .action(migrate);
+program.command("migrate").description("Run pending database migrations").action(migrate);
 
 program
   .command("repair")

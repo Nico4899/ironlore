@@ -1,13 +1,13 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync, chmodSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { InstallRecord } from "@ironlore/core";
 import {
   DEFAULT_PROJECT_ID,
   INSTALL_JSON,
   IPC_TOKEN_FILE,
   SENSITIVE_FILE_MODE,
 } from "@ironlore/core";
-import type { InstallRecord } from "@ironlore/core";
 import { seed } from "./seed.js";
 
 /**

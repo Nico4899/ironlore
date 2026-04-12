@@ -20,9 +20,7 @@ export function AIPanel() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-3" role="log" aria-live="polite">
         {messages.length === 0 ? (
-          <p className="text-xs text-secondary">
-            Ask about your knowledge base...
-          </p>
+          <p className="text-xs text-secondary">Ask about your knowledge base...</p>
         ) : (
           messages.map((msg, i) => (
             <div key={i} className="mb-3 text-sm">
@@ -31,9 +29,7 @@ export function AIPanel() {
               )}
               {msg.type === "assistant" && <div className="px-1">{msg.text}</div>}
               {msg.type === "error" && (
-                <div className="rounded bg-signal-red/10 px-3 py-2 text-signal-red">
-                  {msg.text}
-                </div>
+                <div className="rounded bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
               )}
             </div>
           ))

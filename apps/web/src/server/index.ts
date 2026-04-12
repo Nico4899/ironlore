@@ -1,7 +1,5 @@
 import { serve } from "@hono/node-server";
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import type { HealthResponse, InstallRecord, ReadyResponse } from "@ironlore/core";
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
@@ -9,7 +7,9 @@ import {
   INSTALL_JSON,
   SENSITIVE_FILE_MODE,
 } from "@ironlore/core";
-import type { HealthResponse, InstallRecord, ReadyResponse } from "@ironlore/core";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
 import { validateBind } from "./network.js";

@@ -20,7 +20,9 @@ export function StatusBar() {
       )}
       <div className="flex-1" />
       <div className="flex items-center gap-3">
-        <span>{editorStatus === "dirty" ? "Unsaved" : editorStatus === "syncing" ? "Saving..." : ""}</span>
+        <span>
+          {editorStatus === "dirty" ? "Unsaved" : editorStatus === "syncing" ? "Saving..." : ""}
+        </span>
         <span className={wsConnected ? "text-signal-green" : "text-signal-red"}>
           {wsConnected ? "Connected" : "Disconnected"}
         </span>

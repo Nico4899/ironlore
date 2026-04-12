@@ -17,7 +17,9 @@
     "typecheck": "tsc -b"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",

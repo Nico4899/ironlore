@@ -24,8 +24,7 @@ export const useEditorStore = create<EditorStore>((set) => ({
   mode: "wysiwyg",
   selection: null,
 
-  setFile: (path, markdown, etag) =>
-    set({ filePath: path, markdown, etag, status: "clean" }),
+  setFile: (path, markdown, etag) => set({ filePath: path, markdown, etag, status: "clean" }),
   setMarkdown: (markdown) => set({ markdown, status: "dirty" }),
   setStatus: (status) => set({ status }),
   setMode: (mode) => set({ mode }),

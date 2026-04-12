@@ -1,6 +1,6 @@
-import { Sidebar } from "./components/Sidebar.js";
-import { ContentArea } from "./components/ContentArea.js";
 import { AIPanel } from "./components/AIPanel.js";
+import { ContentArea } from "./components/ContentArea.js";
+import { Sidebar } from "./components/Sidebar.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { useAppStore } from "./stores/app.js";
 

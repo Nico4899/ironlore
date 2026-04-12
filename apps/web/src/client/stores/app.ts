@@ -1,5 +1,5 @@
-import { create } from "zustand";
 import { DEFAULT_PROJECT_ID } from "@ironlore/core";
+import { create } from "zustand";
 
 interface AppStore {
   currentProjectId: string;

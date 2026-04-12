@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCorsConfig } from "./cors.js";
 
 describe("createCorsConfig", () => {
