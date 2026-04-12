@@ -7,10 +7,9 @@ export function Sidebar() {
   const loading = useTreeStore((s) => s.loading);
 
   return (
-    <aside
+    <nav
       className="flex flex-col border-r border-border bg-ironlore-slate"
       style={{ width: `${width}px`, minWidth: "220px", maxWidth: "420px" }}
-      role="navigation"
       aria-label="Page tree"
     >
       {/* Search trigger */}
@@ -32,7 +31,7 @@ export function Sidebar() {
           <p className="px-2 py-4 text-xs text-secondary">No pages yet</p>
         ) : (
           nodes.map((node) => (
-            <div key={node.id} role="treeitem" className="px-2 py-1 text-sm">
+            <div key={node.id} role="treeitem" tabIndex={0} className="px-2 py-1 text-sm">
               {node.name}
             </div>
           ))
@@ -48,6 +47,6 @@ export function Sidebar() {
           New page
         </button>
       </div>
-    </aside>
+    </nav>
   );
 }

@@ -23,6 +23,7 @@ export function AIPanel() {
           <p className="text-xs text-secondary">Ask about your knowledge base...</p>
         ) : (
           messages.map((msg, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: messages are append-only, no stable ID yet
             <div key={i} className="mb-3 text-sm">
               {msg.type === "user" && (
                 <div className="rounded bg-ironlore-blue/10 px-3 py-2">{msg.text}</div>
