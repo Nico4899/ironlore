@@ -22,6 +22,7 @@ export function validateBind(host: string): void {
         `or omit IRONLORE_BIND to use the default (${DEFAULT_HOST}).`,
     );
     process.exit(1);
+    return; // unreachable at runtime, satisfies control flow when exit is mocked
   }
 
   if (!publicUrl.startsWith("https://")) {
