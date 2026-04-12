@@ -9,6 +9,7 @@ import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
 import { FileWatcher } from "./file-watcher.js";
 import { GitWorker } from "./git-worker.js";
+import { LinksRegistry } from "./links-registry.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
@@ -102,7 +103,8 @@ async function start() {
 
   // Initialize StorageWriter for the default project
   const projectDir = `${installRoot}/projects/${DEFAULT_PROJECT_ID}`;
-  const writer = new StorageWriter(projectDir);
+  const linksRegistry = new LinksRegistry(projectDir);
+  const writer = new StorageWriter(projectDir, linksRegistry.validator());
 
   // Crash recovery — replay any uncommitted WAL entries
   const { recovered, warnings } = writer.recover();

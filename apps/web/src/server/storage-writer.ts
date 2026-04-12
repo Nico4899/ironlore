@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { computeEtag, ForbiddenError, resolveSafe } from "@ironlore/core/server";
+import { computeEtag, ForbiddenError, type LinkedPathValidator, resolveSafe } from "@ironlore/core/server";
 import { PathMutex } from "./mutex.js";
 import { Wal } from "./wal.js";
 
@@ -33,11 +33,13 @@ export class StorageWriter {
   private mutex: PathMutex;
   private wal: Wal;
   private dataRoot: string;
+  private linkedPathValidator?: LinkedPathValidator;
 
-  constructor(projectDir: string) {
+  constructor(projectDir: string, linkedPathValidator?: LinkedPathValidator) {
     this.dataRoot = join(projectDir, "data");
     this.wal = new Wal(projectDir);
     this.mutex = new PathMutex(join(projectDir, ".ironlore", "locks"));
+    this.linkedPathValidator = linkedPathValidator;
   }
 
   /**
@@ -45,7 +47,7 @@ export class StorageWriter {
    * Path is validated through resolveSafe.
    */
   read(pagePath: string): { content: string; etag: string } {
-    const absPath = resolveSafe(this.dataRoot, pagePath);
+    const absPath = resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator);
     const content = readFileSync(absPath, "utf-8");
     const etag = computeEtag(content);
     return { content, etag };
@@ -68,7 +70,7 @@ export class StorageWriter {
     ifMatch: string | null,
     author = "user",
   ): Promise<{ etag: string }> {
-    const absPath = resolveSafe(this.dataRoot, pagePath);
+    const absPath = resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator);
     const relPath = relative(this.dataRoot, absPath);
 
     return this.mutex.withLock(relPath, async () => {
@@ -137,7 +139,7 @@ export class StorageWriter {
    * Delete a page with ETag check.
    */
   async delete(pagePath: string, ifMatch: string, author = "user"): Promise<void> {
-    const absPath = resolveSafe(this.dataRoot, pagePath);
+    const absPath = resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator);
     const relPath = relative(this.dataRoot, absPath);
 
     return this.mutex.withLock(relPath, async () => {
@@ -168,8 +170,8 @@ export class StorageWriter {
    */
   exists(pagePath: string): boolean {
     try {
-      resolveSafe(this.dataRoot, pagePath);
-      readFileSync(resolveSafe(this.dataRoot, pagePath));
+      resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator);
+      readFileSync(resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator));
       return true;
     } catch {
       return false;
