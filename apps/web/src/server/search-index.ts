@@ -32,7 +32,10 @@ function extractTags(markdown: string): string[] {
   // Single-line: tags: [a, b, c]
   const inlineMatch = /^tags:\s*\[([^\]]*)\]/m.exec(frontmatter);
   if (inlineMatch?.[1]) {
-    return inlineMatch[1].split(",").map((t) => t.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+    return inlineMatch[1]
+      .split(",")
+      .map((t) => t.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean);
   }
 
   // Multi-line: tags:\n  - a\n  - b
@@ -59,8 +62,7 @@ function extractTags(markdown: string): string[] {
  */
 export function extractWikiLinks(markdown: string): string[] {
   const links = new Set<string>();
-  let match: RegExpExecArray | null;
-  while ((match = WIKILINK_RE.exec(markdown)) !== null) {
+  for (const match of markdown.matchAll(WIKILINK_RE)) {
     const target = match[1]?.trim();
     if (target) links.add(target);
   }
@@ -160,11 +162,9 @@ export class SearchIndex {
     const txn = this.db.transaction(() => {
       // FTS5: delete old, insert new
       this.db.prepare("DELETE FROM pages_fts WHERE path = ?").run(pagePath);
-      this.db.prepare("INSERT INTO pages_fts (path, title, content) VALUES (?, ?, ?)").run(
-        pagePath,
-        title,
-        content,
-      );
+      this.db
+        .prepare("INSERT INTO pages_fts (path, title, content) VALUES (?, ?, ?)")
+        .run(pagePath, title, content);
 
       // Backlinks: delete old outgoing links, insert new
       this.db.prepare("DELETE FROM backlinks WHERE source_path = ?").run(pagePath);
@@ -228,7 +228,9 @@ export class SearchIndex {
    */
   getBacklinks(targetPath: string): BacklinkEntry[] {
     return this.db
-      .prepare("SELECT source_path AS sourcePath, link_text AS linkText FROM backlinks WHERE target_path = ?")
+      .prepare(
+        "SELECT source_path AS sourcePath, link_text AS linkText FROM backlinks WHERE target_path = ?",
+      )
       .all(targetPath) as BacklinkEntry[];
   }
 
@@ -246,9 +248,9 @@ export class SearchIndex {
    * Get pages by tag.
    */
   getPagesByTag(tag: string): string[] {
-    const rows = this.db
-      .prepare("SELECT path FROM tags WHERE tag = ?")
-      .all(tag) as Array<{ path: string }>;
+    const rows = this.db.prepare("SELECT path FROM tags WHERE tag = ?").all(tag) as Array<{
+      path: string;
+    }>;
     return rows.map((r) => r.path);
   }
 
@@ -283,7 +285,10 @@ export class SearchIndex {
     const walk = (dir: string) => {
       let items: import("node:fs").Dirent[];
       try {
-        items = readdirSync(dir, { withFileTypes: true, encoding: "utf-8" }) as import("node:fs").Dirent[];
+        items = readdirSync(dir, {
+          withFileTypes: true,
+          encoding: "utf-8",
+        }) as import("node:fs").Dirent[];
       } catch {
         return;
       }
