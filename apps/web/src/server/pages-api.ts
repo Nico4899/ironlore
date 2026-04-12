@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import { join, relative } from "node:path";
-import { parseEtag, ForbiddenError } from "@ironlore/core";
+import { ForbiddenError, parseEtag } from "@ironlore/core";
 import { createPatch } from "diff";
 import { Hono } from "hono";
 import { assignBlockIds, parseBlocks, writeBlocksSidecar } from "./block-ids.js";

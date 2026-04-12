@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, watch as fsWatch } from "node:fs";
+import { existsSync, watch as fsWatch, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { computeEtag } from "@ironlore/core";
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from "chokidar";
