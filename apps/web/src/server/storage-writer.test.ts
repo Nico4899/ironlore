@@ -1,9 +1,9 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { computeEtag } from "@ironlore/core";
+import { afterEach, describe, expect, it } from "vitest";
 import { EtagMismatchError, StorageWriter } from "./storage-writer.js";
 
 function makeTmpProject(): string {
@@ -53,9 +53,7 @@ describe("StorageWriter", () => {
     writeFileSync(join(projectDir, "data", "page.md"), "original");
 
     const staleEtag = computeEtag("something else");
-    await expect(writer.write("page.md", "updated", staleEtag)).rejects.toThrow(
-      EtagMismatchError,
-    );
+    await expect(writer.write("page.md", "updated", staleEtag)).rejects.toThrow(EtagMismatchError);
 
     // Content should be unchanged
     const content = readFileSync(join(projectDir, "data", "page.md"), "utf-8");

@@ -1,7 +1,7 @@
+import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { randomBytes } from "node:crypto";
-import { computeEtag, resolveSafe, ResolveSafeError } from "@ironlore/core";
+import { computeEtag, ResolveSafeError, resolveSafe } from "@ironlore/core";
 import { PathMutex } from "./mutex.js";
 import { Wal } from "./wal.js";
 

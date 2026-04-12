@@ -1,14 +1,15 @@
-import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
+import { mkdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveSafe, ResolveSafeError } from "./resolve-safe.js";
+import { ResolveSafeError, resolveSafe } from "./resolve-safe.js";
 
 function makeTmpRoot(): string {
   const dir = join(tmpdir(), `ironlore-test-${randomBytes(4).toString("hex")}`);
   mkdirSync(dir, { recursive: true });
-  return dir;
+  // Return realpath to handle platform symlinks (macOS /tmp → /private/tmp)
+  return realpathSync(dir);
 }
 
 describe("resolveSafe", () => {

@@ -1,4 +1,4 @@
-import { simpleGit, type SimpleGit } from "simple-git";
+import { type SimpleGit, simpleGit } from "simple-git";
 import type { Wal, WalEntry } from "./wal.js";
 
 /** Default time window for grouping commits by author (ms). */
@@ -76,8 +76,6 @@ export class GitWorker {
           committed += group.entries.length;
         } catch (err) {
           console.error(`Git commit failed for author "${group.author}":`, err);
-          // Don't delete these entries — they'll be retried next drain
-          continue;
         }
       }
 
@@ -158,9 +156,7 @@ export class GitWorker {
     }
 
     const summary =
-      paths.length <= 5
-        ? `Update ${paths.join(", ")}`
-        : `Update ${paths.length} files`;
+      paths.length <= 5 ? `Update ${paths.join(", ")}` : `Update ${paths.length} files`;
 
     const details = group.entries.map((e) => `- ${e.message || e.op + " " + e.path}`).join("\n");
 

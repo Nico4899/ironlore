@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { relative } from "node:path";
-import { watch, type FSWatcher } from "chokidar";
 import { computeEtag } from "@ironlore/core";
+import { type FSWatcher, watch } from "chokidar";
 import type { Wal } from "./wal.js";
 
 /**
@@ -104,9 +104,7 @@ export class FileWatcher {
       // (the WAL entry is just for git tracking)
       const entries = this.wal.getCommittedPending(1);
       // Mark the latest uncommitted entry for this path
-      const uncommitted = this.wal
-        .getUncommitted()
-        .filter((e) => e.path === relPath);
+      const uncommitted = this.wal.getUncommitted().filter((e) => e.path === relPath);
       for (const entry of uncommitted) {
         this.wal.markCommitted(entry.id);
       }

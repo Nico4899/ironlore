@@ -72,15 +72,7 @@ code
 
     const blocks = parseBlocks(md);
     const types = blocks.map((b) => b.type);
-    expect(types).toEqual([
-      "heading",
-      "paragraph",
-      "list",
-      "code",
-      "blockquote",
-      "hr",
-      "table",
-    ]);
+    expect(types).toEqual(["heading", "paragraph", "list", "code", "blockquote", "hr", "table"]);
   });
 });
 

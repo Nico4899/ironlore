@@ -6,9 +6,9 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
-import { validateBind } from "./network.js";
 import { FileWatcher } from "./file-watcher.js";
 import { GitWorker } from "./git-worker.js";
+import { validateBind } from "./network.js";
 import { createPagesApi } from "./pages-api.js";
 import { StorageWriter } from "./storage-writer.js";
 

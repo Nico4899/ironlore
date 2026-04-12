@@ -1,6 +1,6 @@
-import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import Database from "better-sqlite3";
 
 export interface WalEntry {
   id: number;
@@ -126,9 +126,7 @@ export class Wal {
   deleteConsumed(ids: number[]): void {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => "?").join(",");
-    this.db
-      .prepare(`DELETE FROM wal_entries WHERE id IN (${placeholders})`)
-      .run(...ids);
+    this.db.prepare(`DELETE FROM wal_entries WHERE id IN (${placeholders})`).run(...ids);
   }
 
   close(): void {
