@@ -99,10 +99,19 @@ importers:
       '@ironlore/core':
         specifier: workspace:*
         version: link:../core
+      better-sqlite3:
+        specifier: ^12.9.0
+        version: 12.9.0
       commander:
         specifier: ^14.0.0
         version: 14.0.3
+      simple-git:
+        specifier: ^3.36.0
+        version: 3.36.0
     devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
       '@types/node':
         specifier: ^22.15.0
         version: 22.19.17

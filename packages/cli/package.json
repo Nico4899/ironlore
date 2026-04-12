@@ -11,9 +11,12 @@
   },
   "dependencies": {
     "@ironlore/core": "workspace:*",
-    "commander": "^14.0.0"
+    "better-sqlite3": "^12.9.0",
+    "commander": "^14.0.0",
+    "simple-git": "^3.36.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.0"
   }
 }

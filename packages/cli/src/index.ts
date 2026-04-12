@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import { backup } from "./commands/backup.js";
+import { flush } from "./commands/flush.js";
 import { migrate } from "./commands/migrate.js";
 import { reindex } from "./commands/reindex.js";
 import { repair } from "./commands/repair.js";
@@ -20,6 +21,12 @@ program
   .option("--all", "Reindex all projects")
   .option("--project <id>", "Project ID to reindex", "main")
   .action(reindex);
+
+program
+  .command("flush")
+  .description("Drain all pending WAL entries into git immediately")
+  .option("--project <id>", "Project ID to flush", "main")
+  .action(flush);
 
 program.command("migrate").description("Run pending database migrations").action(migrate);
 
