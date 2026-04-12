@@ -1,4 +1,6 @@
-import type { CorsOptions } from "hono/cors";
+import type { cors } from "hono/cors";
+
+type CorsOptions = NonNullable<Parameters<typeof cors>[0]>;
 
 /**
  * Build CORS configuration from IRONLORE_ALLOWED_ORIGINS.

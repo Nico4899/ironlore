@@ -6,6 +6,7 @@ node_modules/
 dist/
 out/
 *.tsbuildinfo
+*.d.ts.map
 
 docs/
 

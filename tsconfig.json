@@ -16,6 +16,7 @@
     "sourceMap": true,
     "composite": true
   },
+  "files": [],
   "references": [
     { "path": "packages/core" },
     { "path": "packages/cli" },
