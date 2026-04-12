@@ -38,136 +38,114 @@ describe("exit criteria: 1000 concurrent writes", () => {
     writers.length = 0;
   });
 
-  it(
-    "1000 concurrent writes to the same path end up with consistent state",
-    async () => {
-      const projectDir = makeTmpProject();
-      const writer = new StorageWriter(projectDir);
-      writers.push(writer);
+  it("1000 concurrent writes to the same path end up with consistent state", async () => {
+    const projectDir = makeTmpProject();
+    const writer = new StorageWriter(projectDir);
+    writers.push(writer);
 
-      const N = 1000;
+    const N = 1000;
 
-      // Fire 1000 concurrent writes to the same path.
-      // Using ifMatch: null means "create or overwrite without ETag check".
-      // The mutex serializes them — every one should succeed sequentially.
-      const promises: Promise<{ etag: string }>[] = [];
-      for (let i = 0; i < N; i++) {
-        promises.push(
-          writer.write("stress.md", `# Version ${i}\n`, null, `writer-${i}`),
-        );
-      }
+    // Fire 1000 concurrent writes to the same path.
+    // Using ifMatch: null means "create or overwrite without ETag check".
+    // The mutex serializes them — every one should succeed sequentially.
+    const promises: Promise<{ etag: string }>[] = [];
+    for (let i = 0; i < N; i++) {
+      promises.push(writer.write("stress.md", `# Version ${i}\n`, null, `writer-${i}`));
+    }
 
-      const results = await Promise.allSettled(promises);
-      const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const results = await Promise.allSettled(promises);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
 
-      // All 1000 writes should succeed (mutex serializes, no ETag conflict
-      // because ifMatch is null)
-      expect(fulfilled).toHaveLength(N);
+    // All 1000 writes should succeed (mutex serializes, no ETag conflict
+    // because ifMatch is null)
+    expect(fulfilled).toHaveLength(N);
 
-      // Final file should contain one of the written versions
-      const finalContent = readFileSync(
-        join(projectDir, "data", "stress.md"),
-        "utf-8",
+    // Final file should contain one of the written versions
+    const finalContent = readFileSync(join(projectDir, "data", "stress.md"), "utf-8");
+    expect(finalContent).toMatch(/^# Version \d+\n$/);
+
+    // The final ETag should match the file content
+    const { content, etag } = writer.read("stress.md");
+    expect(content).toBe(finalContent);
+    expect(etag).toBe(computeEtag(finalContent));
+
+    // WAL should have exactly N committed entries (first write creates,
+    // remaining 999 update — but the skip-when-unchanged optimization
+    // means some may be skipped if content happens to repeat).
+    // Since every write has unique content "# Version i", all N should
+    // produce WAL entries.
+    const wal = writer.getWal();
+    const pending = wal.getCommittedPending(N + 10);
+    expect(pending).toHaveLength(N);
+
+    // All WAL entries should be for the same path
+    for (const entry of pending) {
+      expect(entry.path).toBe("stress.md");
+      expect(entry.op).toBe("write");
+    }
+  }, 30_000);
+
+  it("1000 concurrent writes to different paths all succeed in parallel", async () => {
+    const projectDir = makeTmpProject();
+    const writer = new StorageWriter(projectDir);
+    writers.push(writer);
+
+    const N = 1000;
+    const promises: Promise<{ etag: string }>[] = [];
+    for (let i = 0; i < N; i++) {
+      promises.push(writer.write(`pages/page-${i}.md`, `# Page ${i}\n`, null));
+    }
+
+    const results = await Promise.allSettled(promises);
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    expect(fulfilled).toHaveLength(N);
+
+    // Verify all files exist with correct content
+    for (let i = 0; i < N; i++) {
+      const content = readFileSync(join(projectDir, "data", "pages", `page-${i}.md`), "utf-8");
+      expect(content).toBe(`# Page ${i}\n`);
+    }
+  }, 30_000);
+
+  it("1000 concurrent writes with ETag contention — exactly one wins per round", async () => {
+    const projectDir = makeTmpProject();
+    const writer = new StorageWriter(projectDir);
+    writers.push(writer);
+
+    // Seed the file
+    await writer.write("contention.md", "v0", null);
+    let currentEtag = computeEtag("v0");
+
+    const N = 1000;
+    let successCount = 0;
+
+    // Fire N concurrent writes all claiming the same ETag.
+    // Mutex serializes: the first one succeeds, the rest fail with 409.
+    const promises: Promise<void>[] = [];
+    for (let i = 0; i < N; i++) {
+      promises.push(
+        writer
+          .write("contention.md", `v${i + 1}`, currentEtag)
+          .then((result) => {
+            successCount++;
+            currentEtag = result.etag;
+          })
+          .catch(() => {
+            // EtagMismatchError — expected for losers
+          }),
       );
-      expect(finalContent).toMatch(/^# Version \d+\n$/);
+    }
 
-      // The final ETag should match the file content
-      const { content, etag } = writer.read("stress.md");
-      expect(content).toBe(finalContent);
-      expect(etag).toBe(computeEtag(finalContent));
+    await Promise.all(promises);
 
-      // WAL should have exactly N committed entries (first write creates,
-      // remaining 999 update — but the skip-when-unchanged optimization
-      // means some may be skipped if content happens to repeat).
-      // Since every write has unique content "# Version i", all N should
-      // produce WAL entries.
-      const wal = writer.getWal();
-      const pending = wal.getCommittedPending(N + 10);
-      expect(pending).toHaveLength(N);
+    // Exactly 1 should have won (the first in the mutex queue)
+    expect(successCount).toBe(1);
 
-      // All WAL entries should be for the same path
-      for (const entry of pending) {
-        expect(entry.path).toBe("stress.md");
-        expect(entry.op).toBe("write");
-      }
-    },
-    30_000,
-  );
-
-  it(
-    "1000 concurrent writes to different paths all succeed in parallel",
-    async () => {
-      const projectDir = makeTmpProject();
-      const writer = new StorageWriter(projectDir);
-      writers.push(writer);
-
-      const N = 1000;
-      const promises: Promise<{ etag: string }>[] = [];
-      for (let i = 0; i < N; i++) {
-        promises.push(
-          writer.write(`pages/page-${i}.md`, `# Page ${i}\n`, null),
-        );
-      }
-
-      const results = await Promise.allSettled(promises);
-      const fulfilled = results.filter((r) => r.status === "fulfilled");
-      expect(fulfilled).toHaveLength(N);
-
-      // Verify all files exist with correct content
-      for (let i = 0; i < N; i++) {
-        const content = readFileSync(
-          join(projectDir, "data", "pages", `page-${i}.md`),
-          "utf-8",
-        );
-        expect(content).toBe(`# Page ${i}\n`);
-      }
-    },
-    30_000,
-  );
-
-  it(
-    "1000 concurrent writes with ETag contention — exactly one wins per round",
-    async () => {
-      const projectDir = makeTmpProject();
-      const writer = new StorageWriter(projectDir);
-      writers.push(writer);
-
-      // Seed the file
-      await writer.write("contention.md", "v0", null);
-      let currentEtag = computeEtag("v0");
-
-      const N = 1000;
-      let successCount = 0;
-
-      // Fire N concurrent writes all claiming the same ETag.
-      // Mutex serializes: the first one succeeds, the rest fail with 409.
-      const promises: Promise<void>[] = [];
-      for (let i = 0; i < N; i++) {
-        promises.push(
-          writer
-            .write("contention.md", `v${i + 1}`, currentEtag)
-            .then((result) => {
-              successCount++;
-              currentEtag = result.etag;
-            })
-            .catch(() => {
-              // EtagMismatchError — expected for losers
-            }),
-        );
-      }
-
-      await Promise.all(promises);
-
-      // Exactly 1 should have won (the first in the mutex queue)
-      expect(successCount).toBe(1);
-
-      // File state should be consistent
-      const { content, etag } = writer.read("contention.md");
-      expect(etag).toBe(currentEtag);
-      expect(content).toMatch(/^v\d+$/);
-    },
-    30_000,
-  );
+    // File state should be consistent
+    const { content, etag } = writer.read("contention.md");
+    expect(etag).toBe(currentEtag);
+    expect(content).toMatch(/^v\d+$/);
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------
@@ -285,8 +263,9 @@ describe("exit criteria: 200 path-traversal fuzz inputs", () => {
     "..%2fetc/PASSWD",
 
     // Length stress — very deep nesting
-    ...Array.from({ length: 10 }, (_, i) =>
-      "sub/".repeat(i + 5) + "../".repeat(i + 6) + "etc/passwd",
+    ...Array.from(
+      { length: 10 },
+      (_, i) => "sub/".repeat(i + 5) + "../".repeat(i + 6) + "etc/passwd",
     ),
 
     // Combinations with valid-looking prefixes
@@ -324,13 +303,8 @@ describe("exit criteria: 200 path-traversal fuzz inputs", () => {
     const depth = Math.floor(Math.random() * 10) + 1;
     const sep = Math.random() > 0.5 ? "/" : "\\";
     const dotdot = Math.random() > 0.5 ? ".." : "%2e%2e";
-    const target =
-      Math.random() > 0.5
-        ? "etc/passwd"
-        : ".ironlore-install.json";
-    TRAVERSAL_PAYLOADS.push(
-      Array(depth).fill(dotdot).join(sep) + sep + target,
-    );
+    const target = Math.random() > 0.5 ? "etc/passwd" : ".ironlore-install.json";
+    TRAVERSAL_PAYLOADS.push(Array(depth).fill(dotdot).join(sep) + sep + target);
   }
 
   // Deduplicate and ensure exactly 200
@@ -339,14 +313,11 @@ describe("exit criteria: 200 path-traversal fuzz inputs", () => {
   // Pad if dedup reduced below 200
   while (uniquePayloads.length < 200) {
     const i = uniquePayloads.length;
-    uniquePayloads.push(`${"../".repeat(i % 20 + 1)}etc/passwd-${i}`);
+    uniquePayloads.push(`${"../".repeat((i % 20) + 1)}etc/passwd-${i}`);
   }
 
   it(`all ${uniquePayloads.length} traversal inputs are rejected or resolve within root`, () => {
-    const rawRoot = join(
-      tmpdir(),
-      `ironlore-fuzz-${randomBytes(4).toString("hex")}`,
-    );
+    const rawRoot = join(tmpdir(), `ironlore-fuzz-${randomBytes(4).toString("hex")}`);
     mkdirSync(rawRoot, { recursive: true });
     // Resolve realpath so comparisons work on macOS (/tmp → /private/tmp)
     const root = realpathSync(rawRoot);
@@ -368,9 +339,7 @@ describe("exit criteria: 200 path-traversal fuzz inputs", () => {
         // resolveSafe returns realpath-resolved paths, so comparison is safe.
         if (resolved !== root && !resolved.startsWith(rootPrefix)) {
           escaped++;
-          console.error(
-            `ESCAPE: payload=${JSON.stringify(payload)} resolved to ${resolved}`,
-          );
+          console.error(`ESCAPE: payload=${JSON.stringify(payload)} resolved to ${resolved}`);
         }
       } catch {
         // ForbiddenError or other errors (invalid characters, etc.) are
@@ -443,9 +412,7 @@ describe("exit criteria: kill -9 crash recovery", () => {
     });
 
     // File should NOT exist on disk (simulating crash before fs write)
-    expect(
-      existsSync(join(projectDir, "data", "crash-page.md")),
-    ).toBe(false);
+    expect(existsSync(join(projectDir, "data", "crash-page.md"))).toBe(false);
 
     // Simulate restart
     writer.close();
@@ -457,10 +424,7 @@ describe("exit criteria: kill -9 crash recovery", () => {
     expect(warnings).toHaveLength(0);
 
     // File should now exist with correct content
-    const restored = readFileSync(
-      join(projectDir, "data", "crash-page.md"),
-      "utf-8",
-    );
+    const restored = readFileSync(join(projectDir, "data", "crash-page.md"), "utf-8");
     expect(restored).toBe(content);
     expect(computeEtag(restored)).toBe(computeEtag(content));
   });
@@ -498,10 +462,7 @@ describe("exit criteria: kill -9 crash recovery", () => {
     expect(warnings).toHaveLength(0);
 
     // File should still have correct content
-    const restored = readFileSync(
-      join(projectDir, "data", "already-written.md"),
-      "utf-8",
-    );
+    const restored = readFileSync(join(projectDir, "data", "already-written.md"), "utf-8");
     expect(restored).toBe(content);
   });
 
@@ -561,9 +522,7 @@ describe("exit criteria: kill -9 crash recovery", () => {
 
     // Verify none exist on disk
     for (let i = 0; i < entries; i++) {
-      expect(
-        existsSync(join(projectDir, "data", "batch", `page-${i}.md`)),
-      ).toBe(false);
+      expect(existsSync(join(projectDir, "data", "batch", `page-${i}.md`))).toBe(false);
     }
 
     // Simulate restart
@@ -577,10 +536,7 @@ describe("exit criteria: kill -9 crash recovery", () => {
 
     // All files should now exist with correct content
     for (let i = 0; i < entries; i++) {
-      const content = readFileSync(
-        join(projectDir, "data", "batch", `page-${i}.md`),
-        "utf-8",
-      );
+      const content = readFileSync(join(projectDir, "data", "batch", `page-${i}.md`), "utf-8");
       expect(content).toBe(`# Page ${i}\n`);
     }
   });
@@ -609,10 +565,7 @@ describe("exit criteria: kill -9 crash recovery", () => {
     });
 
     // External edit happened (simulating concurrent modification)
-    writeFileSync(
-      join(projectDir, "data", "conflicted.md"),
-      externalContent,
-    );
+    writeFileSync(join(projectDir, "data", "conflicted.md"), externalContent);
 
     // Simulate restart
     writer.close();
@@ -625,10 +578,7 @@ describe("exit criteria: kill -9 crash recovery", () => {
     expect(warnings[0]).toContain("matches neither pre nor post");
 
     // External content should be preserved (don't clobber it)
-    const content = readFileSync(
-      join(projectDir, "data", "conflicted.md"),
-      "utf-8",
-    );
+    const content = readFileSync(join(projectDir, "data", "conflicted.md"), "utf-8");
     expect(content).toBe(externalContent);
   });
 
@@ -662,10 +612,7 @@ describe("exit criteria: kill -9 crash recovery", () => {
     expect(r2.warnings).toHaveLength(0);
 
     // File content unchanged
-    const restored = readFileSync(
-      join(projectDir, "data", "idem.md"),
-      "utf-8",
-    );
+    const restored = readFileSync(join(projectDir, "data", "idem.md"), "utf-8");
     expect(restored).toBe(content);
   });
 });
