@@ -1,8 +1,6 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
-  "organizeImports": {
-    "enabled": true
-  },
+  "$schema": "https://biomejs.dev/schemas/2.4.11/schema.json",
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
   "linter": {
     "enabled": true,
     "rules": {
@@ -44,14 +42,23 @@
     }
   },
   "files": {
-    "ignore": [
-      "node_modules",
-      "dist",
-      "out",
-      "*.sqlite",
-      "coverage",
-      "playwright-report",
-      "projects/main/data"
-    ]
-  }
+    "includes": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.json", "**/*.css"]
+  },
+  "overrides": [
+    {
+      "includes": [
+        "packages/cli/**",
+        "packages/create-ironlore/**",
+        "apps/web/src/server/**",
+        "apps/worker/**"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    }
+  ]
 }
