@@ -1,0 +1,80 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+out/
+*.tsbuildinfo
+
+docs/
+
+# vite
+apps/web/.vite/
+
+# electron
+apps/electron/out/
+apps/electron/.native/
+*.dmg
+*.exe
+*.AppImage
+*.snap
+*.deb
+*.rpm
+
+# sqlite
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# project state (per-project council directories)
+projects/*/.council/
+!projects/*/.council/.gitkeep
+
+# secrets and credentials
+.council-install.json
+ipc.token
+*.enc
+*.pem
+.env
+.env.*
+!.env.example
+
+# os
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# editors
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# debug logs
+npm-debug.log*
+pnpm-debug.log*
+
+# test output
+coverage/
+playwright-report/
+test-results/
+
+# claude code
+.claude/
+
+# data: track seed content only
+projects/main/data/**
+!projects/main/data/
+!projects/main/data/getting-started/
+!projects/main/data/getting-started/**
+!projects/main/data/.agents/
+!projects/main/data/.agents/.library/
+!projects/main/data/.agents/.library/**
+!projects/main/data/.agents/.shared/
+!projects/main/data/.agents/.shared/**
+!projects/main/data/index.md
+!projects/main/data/CLAUDE.md
