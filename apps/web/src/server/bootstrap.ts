@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { InstallRecord } from "@ironlore/core";
 import {
   DEFAULT_PROJECT_ID,
+  DERIVED_DIR,
   INSTALL_JSON,
   IPC_TOKEN_FILE,
   SENSITIVE_FILE_MODE,
@@ -39,7 +40,7 @@ export async function bootstrap(installRoot: string): Promise<void> {
 
   // Ensure directory structure
   mkdirSync(dataDir, { recursive: true });
-  mkdirSync(join(projectDir, ".ironlore"), { recursive: true });
+  mkdirSync(join(projectDir, DERIVED_DIR), { recursive: true });
 
   // Generate install record if this is a fresh install
   const installJsonPath = join(installRoot, INSTALL_JSON);

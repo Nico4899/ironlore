@@ -77,5 +77,11 @@ projects/main/data/**
 !projects/main/data/.agents/.library/**
 !projects/main/data/.agents/.shared/
 !projects/main/data/.agents/.shared/**
+!projects/main/data/carousel-factory/
+!projects/main/data/carousel-factory/**
+!projects/main/data/.agents/general/
+!projects/main/data/.agents/general/**
+!projects/main/data/.agents/editor/
+!projects/main/data/.agents/editor/**
 !projects/main/data/index.md
 !projects/main/data/CLAUDE.md
