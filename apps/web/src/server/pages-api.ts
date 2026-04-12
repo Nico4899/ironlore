@@ -1,6 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { parseEtag, ResolveSafeError } from "@ironlore/core";
+import { createPatch } from "diff";
 import { Hono } from "hono";
 import { assignBlockIds, parseBlocks } from "./block-ids.js";
 import { EtagMismatchError, type StorageWriter } from "./storage-writer.js";
@@ -87,11 +88,12 @@ export function createPagesApi(writer: StorageWriter): Hono {
       return c.json({ etag });
     } catch (err) {
       if (err instanceof EtagMismatchError) {
+        const diff = createPatch(pagePath, annotated, err.currentContent);
         return c.json(
           {
             error: "Conflict",
             currentEtag: err.currentEtag,
-            providedEtag: err.providedEtag,
+            diff,
           },
           409,
         );
@@ -123,11 +125,12 @@ export function createPagesApi(writer: StorageWriter): Hono {
       return c.body(null, 204);
     } catch (err) {
       if (err instanceof EtagMismatchError) {
+        const diff = createPatch(pagePath, "", err.currentContent);
         return c.json(
           {
             error: "Conflict",
             currentEtag: err.currentEtag,
-            providedEtag: err.providedEtag,
+            diff,
           },
           409,
         );

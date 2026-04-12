@@ -10,6 +10,7 @@ export class EtagMismatchError extends Error {
   constructor(
     public readonly currentEtag: string,
     public readonly providedEtag: string,
+    public readonly currentContent: string,
   ) {
     super(`ETag mismatch: expected ${providedEtag}, current is ${currentEtag}`);
   }
@@ -78,7 +79,7 @@ export class StorageWriter {
 
         // ETag check — no silent last-writer-wins
         if (ifMatch && ifMatch !== preHash) {
-          throw new EtagMismatchError(preHash, ifMatch);
+          throw new EtagMismatchError(preHash, ifMatch, current);
         }
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "ENOENT") {
@@ -143,7 +144,7 @@ export class StorageWriter {
       const currentEtag = computeEtag(current);
 
       if (ifMatch !== currentEtag) {
-        throw new EtagMismatchError(currentEtag, ifMatch);
+        throw new EtagMismatchError(currentEtag, ifMatch, current);
       }
 
       const walId = this.wal.append({
