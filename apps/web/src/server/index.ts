@@ -4,6 +4,7 @@ import { DEFAULT_HOST, DEFAULT_PORT, DEFAULT_PROJECT_ID } from "@ironlore/core";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { SessionStore, createAuthApi } from "./auth.js";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
 import { FileWatcher } from "./file-watcher.js";
@@ -82,6 +83,14 @@ async function start() {
 
   // Mount IPC auth middleware for worker ↔ web internal routes
   app.use("/api/internal/*", createIpcAuthMiddleware(installRoot));
+
+  // Initialize auth system (sessions, login, password change)
+  const sessionStore = new SessionStore(installRoot);
+  const { api: authApi, middleware: authMiddleware } = createAuthApi(installRoot, sessionStore);
+  app.route("/api/auth", authApi);
+
+  // Protect all non-auth API routes with session middleware
+  app.use("/api/projects/*", authMiddleware);
 
   // Initialize StorageWriter for the default project
   const projectDir = `${installRoot}/projects/${DEFAULT_PROJECT_ID}`;
