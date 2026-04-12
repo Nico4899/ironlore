@@ -41,6 +41,11 @@
       "trailingCommas": "none"
     }
   },
+  "css": {
+    "parser": { "cssModules": false, "tailwindDirectives": true },
+    "linter": { "enabled": false },
+    "formatter": { "enabled": false }
+  },
   "files": {
     "includes": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.json", "**/*.css"]
   },
