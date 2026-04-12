@@ -12,6 +12,7 @@ import { GitWorker } from "./git-worker.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
+import { authRateLimiter } from "./rate-limit.js";
 import { createPagesApi } from "./pages-api.js";
 import { checkPermissions } from "./permissions.js";
 import { SearchIndex } from "./search-index.js";
@@ -93,6 +94,7 @@ async function start() {
   // Initialize auth system (sessions, login, password change)
   const sessionStore = new SessionStore(installRoot);
   const { api: authApi, middleware: authMiddleware } = createAuthApi(installRoot, sessionStore);
+  app.use("/api/auth/*", authRateLimiter());
   app.route("/api/auth", authApi);
 
   // Protect all non-auth API routes with session middleware
