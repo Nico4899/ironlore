@@ -18,6 +18,8 @@
   },
   "references": [
     { "path": "packages/core" },
+    { "path": "packages/cli" },
+    { "path": "packages/create-ironlore" },
     { "path": "apps/web" },
     { "path": "apps/worker" }
   ],
