@@ -5,18 +5,22 @@ import { resolve, sep } from "node:path";
  * Resolve a user-supplied path safely within a project's data root.
  *
  * Both the logical resolve AND the realpath (following symlinks) must land
- * inside `root`. This prevents directory traversal attacks and symlink escapes.
+ * inside the project root. This prevents directory traversal attacks and
+ * symlink escapes.
  *
- * @throws {ResolveSafeError} if the resolved path escapes the root
+ * @param projectId - Project data root path. In multi-project (Phase 5) this
+ *   will be resolved from a project ID via `projects.dataRoot(projectId)`.
+ * @param userPath - Untrusted user-supplied relative path.
+ * @throws {ForbiddenError} if the resolved path escapes the root
  */
-export function resolveSafe(root: string, userPath: string): string {
+export function resolveSafe(projectId: string, userPath: string): string {
   // Resolve the root itself through realpath so that platform symlinks
   // (e.g. macOS /tmp → /private/tmp) don't cause false rejections.
   let absoluteRoot: string;
   try {
-    absoluteRoot = realpathSync(resolve(root));
+    absoluteRoot = realpathSync(resolve(projectId));
   } catch {
-    absoluteRoot = resolve(root);
+    absoluteRoot = resolve(projectId);
   }
   const prefix = absoluteRoot + sep;
 
