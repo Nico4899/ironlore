@@ -11,6 +11,7 @@ import { GitWorker } from "./git-worker.js";
 import { validateBind } from "./network.js";
 import { createPagesApi } from "./pages-api.js";
 import { StorageWriter } from "./storage-writer.js";
+import type { Wal } from "./wal.js";
 
 const app = new Hono();
 
@@ -19,6 +20,7 @@ const app = new Hono();
 // ---------------------------------------------------------------------------
 let ready = false;
 let readyReason = "Server starting up";
+let wal: Wal | null = null;
 
 // ---------------------------------------------------------------------------
 // Middleware
@@ -37,7 +39,7 @@ app.get("/health", (c) => {
   const body: HealthResponse = {
     status: "ok",
     activeJobs: 0,
-    walDepth: 0,
+    walDepth: wal?.getDepth() ?? 0,
     wsSubscribers: 0,
     projects: 1, // single-project until Phase 5
   };
@@ -82,12 +84,15 @@ async function start() {
   const pagesApi = createPagesApi(writer);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/pages`, pagesApi);
 
+  // Expose WAL for health endpoint
+  wal = writer.getWal();
+
   // Start git worker (background commit grouping)
-  const gitWorker = new GitWorker(projectDir, writer.getWal());
+  const gitWorker = new GitWorker(projectDir, wal);
   await gitWorker.start();
 
   // Start filesystem watcher for external edits
-  const fileWatcher = new FileWatcher(writer.getDataRoot(), writer.getWal());
+  const fileWatcher = new FileWatcher(writer.getDataRoot(), wal);
   fileWatcher.start();
 
   ready = true;

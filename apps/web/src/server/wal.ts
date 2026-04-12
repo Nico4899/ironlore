@@ -129,6 +129,16 @@ export class Wal {
     this.db.prepare(`DELETE FROM wal_entries WHERE id IN (${placeholders})`).run(...ids);
   }
 
+  /**
+   * Count of uncommitted WAL entries (for health endpoint).
+   */
+  getDepth(): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS cnt FROM wal_entries WHERE committed = 0")
+      .get() as { cnt: number };
+    return row.cnt;
+  }
+
   close(): void {
     this.db.close();
   }
