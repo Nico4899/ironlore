@@ -3,7 +3,7 @@ import { join, relative } from "node:path";
 import { parseEtag, ResolveSafeError } from "@ironlore/core";
 import { createPatch } from "diff";
 import { Hono } from "hono";
-import { assignBlockIds, parseBlocks } from "./block-ids.js";
+import { assignBlockIds, parseBlocks, writeBlocksSidecar } from "./block-ids.js";
 import { EtagMismatchError, type StorageWriter } from "./storage-writer.js";
 
 /**
@@ -75,7 +75,7 @@ export function createPagesApi(writer: StorageWriter): Hono {
     }
 
     // Assign block IDs to new blocks before writing
-    const { markdown: annotated } = assignBlockIds(body.markdown);
+    const { markdown: annotated, blocks } = assignBlockIds(body.markdown);
 
     try {
       const parsedIfMatch = ifMatch ? parseEtag(ifMatch) : null;
@@ -83,6 +83,10 @@ export function createPagesApi(writer: StorageWriter): Hono {
       const ifMatchQuoted = parsedIfMatch ? `"${parsedIfMatch}"` : null;
 
       const { etag } = await writer.write(pagePath, annotated, ifMatchQuoted);
+
+      // Write .blocks.json sidecar alongside the markdown file
+      const absPath = join(writer.getDataRoot(), pagePath);
+      writeBlocksSidecar(absPath, blocks);
 
       c.header("ETag", etag);
       return c.json({ etag });
