@@ -105,6 +105,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["apps/web/src/client/components/viewers/MediaViewer.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useMediaCaption": "off"
+          }
+        }
+      }
     }
   ]
 }
