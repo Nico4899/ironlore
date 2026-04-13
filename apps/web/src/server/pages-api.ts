@@ -94,8 +94,8 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
   // -----------------------------------------------------------------------
   // Read a page
   // -----------------------------------------------------------------------
-  api.get("/*", (c) => {
-    const pagePath = c.req.param("*") ?? "";
+  api.get("/:path{.+}", (c) => {
+    const pagePath = c.req.param("path") ?? "";
     if (!pagePath) {
       return c.json({ error: "Path required" }, 400);
     }
@@ -125,8 +125,8 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
   // -----------------------------------------------------------------------
   // Write a page
   // -----------------------------------------------------------------------
-  api.put("/*", async (c) => {
-    const pagePath = c.req.param("*") ?? "";
+  api.put("/:path{.+}", async (c) => {
+    const pagePath = c.req.param("path") ?? "";
     if (!pagePath) {
       return c.json({ error: "Path required" }, 400);
     }
@@ -179,8 +179,8 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
   // -----------------------------------------------------------------------
   // Delete a page
   // -----------------------------------------------------------------------
-  api.delete("/*", async (c) => {
-    const pagePath = c.req.param("*") ?? "";
+  api.delete("/:path{.+}", async (c) => {
+    const pagePath = c.req.param("path") ?? "";
     if (!pagePath) {
       return c.json({ error: "Path required" }, 400);
     }
@@ -236,8 +236,8 @@ export function createRawApi(writer: StorageWriter): Hono {
   // -----------------------------------------------------------------------
   // Serve raw file content
   // -----------------------------------------------------------------------
-  api.get("/*", (c) => {
-    const filePath = c.req.param("*") ?? "";
+  api.get("/:path{.+}", (c) => {
+    const filePath = c.req.param("path") ?? "";
     if (!filePath) {
       return c.json({ error: "Path required" }, 400);
     }
@@ -267,8 +267,8 @@ export function createRawApi(writer: StorageWriter): Hono {
   // -----------------------------------------------------------------------
   // Write raw text content (CSV only)
   // -----------------------------------------------------------------------
-  api.put("/*", async (c) => {
-    const filePath = c.req.param("*") ?? "";
+  api.put("/:path{.+}", async (c) => {
+    const filePath = c.req.param("path") ?? "";
     if (!filePath) {
       return c.json({ error: "Path required" }, 400);
     }

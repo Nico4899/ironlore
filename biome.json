@@ -67,7 +67,9 @@
       "**/*.css",
       "!**/dist",
       "!**/out",
-      "!**/node_modules"
+      "!**/node_modules",
+      "!**/projects/*/data",
+      "!**/.ironlore-install.json"
     ]
   },
   "overrides": [
