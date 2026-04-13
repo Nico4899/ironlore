@@ -77,7 +77,10 @@ const corpus: Array<{ name: string; md: string }> = [
   { name: "three paragraphs", md: "First\n\nSecond\n\nThird" },
   { name: "paragraph with soft break", md: "Line one\nLine two" },
   { name: "paragraph with hard break", md: "Line one  \nLine two" },
-  { name: "long paragraph", md: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua." },
+  {
+    name: "long paragraph",
+    md: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
+  },
 
   // --- Inline formatting ---
   { name: "bold", md: "**bold text**" },
@@ -157,9 +160,15 @@ const corpus: Array<{ name: string; md: string }> = [
   { name: "multiple headings", md: "# First\n\nText\n\n## Second\n\nMore text" },
   { name: "bold and links", md: "This is **bold** with [links](https://a.com) and *italic*." },
   { name: "mixed inline", md: "Normal **bold** `code` *italic* ~~strike~~" },
-  { name: "code after heading", md: "### API\n\n```ts\nfunction hello(): void {}\n```\n\nParagraph after." },
+  {
+    name: "code after heading",
+    md: "### API\n\n```ts\nfunction hello(): void {}\n```\n\nParagraph after.",
+  },
   { name: "nested formatting", md: "**bold *bold-italic* bold**" },
-  { name: "paragraph with all inline", md: "Here is **bold**, *italic*, `code`, and [link](https://x.com)." },
+  {
+    name: "paragraph with all inline",
+    md: "Here is **bold**, *italic*, `code`, and [link](https://x.com).",
+  },
 
   // --- Edge cases ---
   { name: "empty document", md: "" },
@@ -207,7 +216,7 @@ const corpus: Array<{ name: string; md: string }> = [
   // --- More code block variations ---
   { name: "code block empty", md: "```\n\n```" },
   { name: "code block typescript", md: "```typescript\ninterface Foo {\n  bar: string;\n}\n```" },
-  { name: "code block rust", md: "```rust\nfn main() {\n    println!(\"hello\");\n}\n```" },
+  { name: "code block rust", md: '```rust\nfn main() {\n    println!("hello");\n}\n```' },
   { name: "code block json", md: '```json\n{"key": "value"}\n```' },
   { name: "code block yaml", md: "```yaml\nkey: value\nlist:\n  - item\n```" },
   { name: "code block markdown", md: "```markdown\n# Heading\n\nParagraph\n```" },
@@ -277,9 +286,18 @@ const corpus: Array<{ name: string; md: string }> = [
   { name: "paragraph bold italic code", md: "The **quick** *brown* `fox` jumped." },
   { name: "link and image together", md: "[link](https://a.com) and ![img](https://b.com/i.png)" },
   { name: "heading with everything", md: "## **Bold** *Italic* `Code` [Link](https://x.com)" },
-  { name: "long code block", md: "```\n" + Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join("\n") + "\n```" },
-  { name: "many list items", md: Array.from({ length: 15 }, (_, i) => `* item ${i + 1}`).join("\n") },
-  { name: "many paragraphs", md: Array.from({ length: 10 }, (_, i) => `Paragraph ${i + 1}`).join("\n\n") },
+  {
+    name: "long code block",
+    md: "```\n" + Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join("\n") + "\n```",
+  },
+  {
+    name: "many list items",
+    md: Array.from({ length: 15 }, (_, i) => `* item ${i + 1}`).join("\n"),
+  },
+  {
+    name: "many paragraphs",
+    md: Array.from({ length: 10 }, (_, i) => `Paragraph ${i + 1}`).join("\n\n"),
+  },
   {
     name: "alternating elements",
     md: "# H1\n\nPara\n\n> Quote\n\n* List\n\n---\n\n```\ncode\n```\n\nPara again",
@@ -311,7 +329,10 @@ const corpus: Array<{ name: string; md: string }> = [
   { name: "mixed bold italic deep", md: "Normal ***bold italic*** normal" },
   { name: "paragraph ends with code", md: "End with `code`" },
   { name: "paragraph starts with link", md: "[Start](https://x.com) then text" },
-  { name: "all formatting types", md: "**bold** *italic* `code` [link](https://x.com) ![img](https://x.com/i.png)" },
+  {
+    name: "all formatting types",
+    md: "**bold** *italic* `code` [link](https://x.com) ![img](https://x.com/i.png)",
+  },
   { name: "code block with special chars", md: "```\n<div>&amp;</div>\n```" },
   { name: "blockquote empty line", md: "> line 1\n>\n> line 3" },
   { name: "list with nested blockquote", md: "* item\n\n  > quoted in list" },
@@ -347,9 +368,7 @@ describe("roundtrip fidelity", () => {
 
   describe("50-cycle stability", () => {
     // Test a representative subset for 50-cycle stability
-    const stabilitySubset = corpus.filter(
-      (_, i) => i % 10 === 0 || i < 5,
-    );
+    const stabilitySubset = corpus.filter((_, i) => i % 10 === 0 || i < 5);
 
     for (const { name, md } of stabilitySubset) {
       it(`${name} (50 cycles)`, () => {
@@ -373,14 +392,14 @@ describe("renderMarkdownSafe sanitization", () => {
   it("strips XSS payloads from rendered output", () => {
     const xssPayloads = [
       '<script>alert("xss")</script>',
-      '<img src=x onerror=alert(1)>',
+      "<img src=x onerror=alert(1)>",
       '<a href="javascript:alert(1)">click</a>',
       '<iframe src="https://evil.com"></iframe>',
-      '<style>body{display:none}</style>',
+      "<style>body{display:none}</style>",
       '<form action="https://evil.com"><input type="submit"></form>',
       '<svg onload="alert(1)">',
-      '<math><mi>x</mi></math>',
-      '<marquee>scroll</marquee>',
+      "<math><mi>x</mi></math>",
+      "<marquee>scroll</marquee>",
       '<object data="evil.swf">',
     ];
 
