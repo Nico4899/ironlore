@@ -1,5 +1,6 @@
 import { existsSync, watch as fsWatch, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
+import { isSupportedExtension } from "@ironlore/core";
 import { computeEtag } from "@ironlore/core/server";
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from "chokidar";
 import type { SearchIndex } from "./search-index.js";
@@ -48,8 +49,8 @@ export class FileWatcher {
     this.fsWatcher = fsWatch(this.dataRoot, { recursive: true }, (eventType, filename) => {
       if (!filename || typeof filename !== "string") return;
 
-      // Skip non-markdown, hidden files, sidecars, and temp files
-      if (!filename.endsWith(".md")) return;
+      // Skip unsupported, hidden files, sidecars, and temp files
+      if (!isSupportedExtension(filename)) return;
       if (/(^|[/\\])\./.test(filename)) return;
 
       const absPath = join(this.dataRoot, filename);
@@ -109,8 +110,7 @@ export class FileWatcher {
   }
 
   private handleChange(filePath: string): void {
-    // Only watch markdown files
-    if (!filePath.endsWith(".md")) return;
+    if (!isSupportedExtension(basename(filePath))) return;
 
     // Debounce
     const existing = this.debounceTimers.get(filePath);
@@ -127,8 +127,10 @@ export class FileWatcher {
 
   private processChange(filePath: string): void {
     try {
-      const content = readFileSync(filePath, "utf-8");
-      const newHash = computeEtag(content);
+      // Read as buffer for binary-safe hashing; decode to string for text files
+      const buffer = readFileSync(filePath);
+      const newHash = computeEtag(buffer);
+      const content = buffer.toString("utf-8");
       const knownHash = this.knownHashes.get(filePath);
 
       // If hash matches our last known write, this is our own write — skip
@@ -165,7 +167,7 @@ export class FileWatcher {
   }
 
   private handleDelete(filePath: string): void {
-    if (!filePath.endsWith(".md")) return;
+    if (!isSupportedExtension(basename(filePath))) return;
 
     const relPath = relative(this.dataRoot, filePath);
     const knownHash = this.knownHashes.get(filePath);
