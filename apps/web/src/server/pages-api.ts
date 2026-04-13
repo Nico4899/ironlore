@@ -1,6 +1,4 @@
-import { readdirSync } from "node:fs";
-import { extname, join, relative } from "node:path";
-import { detectPageType, isSupportedExtension, type PageType } from "@ironlore/core";
+import { extname, join } from "node:path";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
@@ -83,11 +81,10 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
   const api = new Hono();
 
   // -----------------------------------------------------------------------
-  // List pages (tree)
+  // List pages (tree) — served from SQLite index
   // -----------------------------------------------------------------------
   api.get("/", (c) => {
-    const dataRoot = writer.getDataRoot();
-    const entries = walkTree(dataRoot, dataRoot);
+    const entries = searchIndex.getTree();
     return c.json({ pages: entries });
   });
 
@@ -309,41 +306,3 @@ export function createRawApi(writer: StorageWriter): Hono {
   return api;
 }
 
-// ---------------------------------------------------------------------------
-// Tree walking
-// ---------------------------------------------------------------------------
-
-interface TreeEntry {
-  name: string;
-  path: string;
-  type: PageType | "directory";
-}
-
-function walkTree(dir: string, root: string): TreeEntry[] {
-  const entries: TreeEntry[] = [];
-
-  try {
-    const items = readdirSync(dir, { withFileTypes: true });
-    for (const item of items) {
-      // Skip hidden files/dirs except .agents
-      if (item.name.startsWith(".") && item.name !== ".agents") continue;
-      // Skip sidecar files
-      if (item.name.endsWith(".blocks.json")) continue;
-
-      const fullPath = join(dir, item.name);
-      const relPath = relative(root, fullPath);
-
-      if (item.isDirectory()) {
-        entries.push({ name: item.name, path: relPath, type: "directory" });
-        entries.push(...walkTree(fullPath, root));
-      } else if (isSupportedExtension(item.name)) {
-        const pageType = detectPageType(item.name);
-        entries.push({ name: item.name, path: relPath, type: pageType });
-      }
-    }
-  } catch {
-    // Directory doesn't exist or isn't readable
-  }
-
-  return entries;
-}

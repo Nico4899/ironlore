@@ -14,6 +14,7 @@ import { LinksRegistry } from "./links-registry.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
 import { createPagesApi, createRawApi } from "./pages-api.js";
+import { createSearchApi } from "./search-api.js";
 import { checkPermissions } from "./permissions.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { SearchIndex } from "./search-index.js";
@@ -120,8 +121,12 @@ async function start() {
     console.warn(`WAL recovery warning: ${w}`);
   }
 
-  // Initialize search index (FTS5 + backlinks + tags + recent-edits)
+  // Initialize search index (FTS5 + backlinks + tags + recent-edits + pages tree)
   const searchIndex = new SearchIndex(projectDir);
+
+  // Reindex on startup to ensure the pages table is populated
+  const { indexed } = searchIndex.reindexAll(writer.getDataRoot());
+  console.log(`Search index: ${indexed} pages indexed`);
 
   // Mount page API
   const pagesApi = createPagesApi(writer, searchIndex);
@@ -130,6 +135,10 @@ async function start() {
   // Mount raw file API (binary + CSV write)
   const rawApi = createRawApi(writer);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/raw`, rawApi);
+
+  // Mount search API (FTS5, backlinks, recent edits)
+  const searchApi = createSearchApi(searchIndex);
+  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/search`, searchApi);
 
   // Expose WAL for health endpoint
   wal = writer.getWal();

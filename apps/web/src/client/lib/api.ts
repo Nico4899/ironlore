@@ -143,6 +143,85 @@ export async function saveCsv(
 }
 
 // ---------------------------------------------------------------------------
+// Search API
+// ---------------------------------------------------------------------------
+
+const SEARCH_BASE = `${BASE}/search`;
+
+export interface SearchResult {
+  path: string;
+  title: string;
+  snippet: string;
+  rank: number;
+}
+
+export interface BacklinkEntry {
+  sourcePath: string;
+  linkText: string;
+}
+
+export interface RecentEdit {
+  path: string;
+  updatedAt: string;
+  author: string;
+}
+
+/** Full-text search via FTS5. */
+export async function searchPages(query: string, limit = 20): Promise<SearchResult[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const res = await apiFetch(`${SEARCH_BASE}/search?${params}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { results: SearchResult[] };
+  return data.results;
+}
+
+/** Get pages that link to the given path. */
+export async function fetchBacklinks(path: string): Promise<BacklinkEntry[]> {
+  const params = new URLSearchParams({ path });
+  const res = await apiFetch(`${SEARCH_BASE}/backlinks?${params}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { backlinks: BacklinkEntry[] };
+  return data.backlinks;
+}
+
+/** Get recently edited pages. */
+export async function fetchRecentEdits(limit = 20): Promise<RecentEdit[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await apiFetch(`${SEARCH_BASE}/recent?${params}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { pages: RecentEdit[] };
+  return data.pages;
+}
+
+/** Create a new page (PUT with no If-Match). */
+export async function createPage(
+  pagePath: string,
+  content: string,
+): Promise<SaveResponse> {
+  const res = await apiFetch(`${PAGES_BASE}/${pagePath}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ markdown: content }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<SaveResponse>;
+}
+
+/** Move a page to a new path. */
+export async function movePage(
+  sourcePath: string,
+  destination: string,
+): Promise<SaveResponse> {
+  const res = await apiFetch(`${PAGES_BASE}/${sourcePath}/move`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ destination }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<SaveResponse>;
+}
+
+// ---------------------------------------------------------------------------
 // Auth API
 // ---------------------------------------------------------------------------
 

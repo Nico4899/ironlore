@@ -1,5 +1,6 @@
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
+import { detectPageType, isSupportedExtension, type PageType } from "@ironlore/core";
 import Database from "better-sqlite3";
 
 /**
@@ -149,6 +150,21 @@ export class SearchIndex {
         author     TEXT NOT NULL DEFAULT 'user'
       )
     `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS pages (
+        path       TEXT NOT NULL PRIMARY KEY,
+        name       TEXT NOT NULL,
+        parent     TEXT,
+        file_type  TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_pages_parent
+      ON pages(parent)
+    `);
   }
 
   /**
@@ -192,6 +208,10 @@ export class SearchIndex {
     });
 
     txn();
+
+    // Update pages table (outside FTS transaction for simplicity)
+    const fileType = detectPageType(pagePath);
+    this.upsertPage(pagePath, fileType);
   }
 
   /**
@@ -205,6 +225,8 @@ export class SearchIndex {
       this.db.prepare("DELETE FROM recent_edits WHERE path = ?").run(pagePath);
     });
     txn();
+
+    this.deletePage(pagePath);
   }
 
   /**
@@ -277,10 +299,11 @@ export class SearchIndex {
       this.db.prepare("DELETE FROM backlinks").run();
       this.db.prepare("DELETE FROM tags").run();
       this.db.prepare("DELETE FROM recent_edits").run();
+      this.db.prepare("DELETE FROM pages").run();
     });
     clear();
 
-    // Walk data directory and index all .md files
+    // Walk data directory and index all supported files
     let indexed = 0;
     const walk = (dir: string) => {
       let items: import("node:fs").Dirent[];
@@ -293,25 +316,101 @@ export class SearchIndex {
         return;
       }
       for (const item of items) {
-        if (item.name.startsWith(".")) continue;
+        if (item.name.startsWith(".") && item.name !== ".agents") continue;
         const fullPath = join(dir, item.name);
+        const relPath = relative(dataRoot, fullPath);
+
         if (item.isDirectory()) {
+          this.upsertPage(relPath, "directory");
           walk(fullPath);
-        } else if (item.name.endsWith(".md")) {
-          try {
-            const content = readFileSync(fullPath, "utf-8");
-            const relPath = relative(dataRoot, fullPath);
-            this.indexPage(relPath, content, "reindex");
-            indexed++;
-          } catch {
-            // Skip unreadable files
+        } else if (isSupportedExtension(item.name)) {
+          const fileType = detectPageType(item.name);
+          this.upsertPage(relPath, fileType);
+
+          // Only index text content for markdown files (FTS + backlinks + tags)
+          if (item.name.endsWith(".md")) {
+            try {
+              const content = readFileSync(fullPath, "utf-8");
+              this.indexPage(relPath, content, "reindex");
+            } catch {
+              // Skip unreadable files
+            }
           }
+          indexed++;
         }
       }
     };
 
     walk(dataRoot);
     return { indexed };
+  }
+
+  // -------------------------------------------------------------------------
+  // Tree (pages table)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Insert or update a page entry in the pages table.
+   * Also ensures all ancestor directories exist as entries.
+   */
+  upsertPage(pagePath: string, fileType: PageType | "directory"): void {
+    const name = basename(pagePath);
+    const parentDir = dirname(pagePath);
+    const parent = parentDir === "." ? null : parentDir;
+
+    // Ensure ancestor directories exist
+    if (parent) {
+      this.ensureDirectoryChain(parent);
+    }
+
+    this.db
+      .prepare(
+        `INSERT INTO pages (path, name, parent, file_type, updated_at)
+         VALUES (?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(path) DO UPDATE SET
+           name = excluded.name,
+           parent = excluded.parent,
+           file_type = excluded.file_type,
+           updated_at = datetime('now')`,
+      )
+      .run(pagePath, name, parent, fileType);
+  }
+
+  /**
+   * Ensure all directories in the chain exist as page entries.
+   */
+  private ensureDirectoryChain(dirPath: string): void {
+    const parts = dirPath.split("/");
+    let current = "";
+    for (const part of parts) {
+      current = current ? `${current}/${part}` : part;
+      const parentDir = dirname(current);
+      const parent = parentDir === "." ? null : parentDir;
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO pages (path, name, parent, file_type)
+           VALUES (?, ?, ?, 'directory')`,
+        )
+        .run(current, part, parent);
+    }
+  }
+
+  /**
+   * Delete a page from the pages table.
+   */
+  deletePage(pagePath: string): void {
+    this.db.prepare("DELETE FROM pages WHERE path = ?").run(pagePath);
+  }
+
+  /**
+   * Get all pages for the tree, ordered by path.
+   */
+  getTree(): Array<{ path: string; name: string; type: PageType | "directory" }> {
+    return this.db
+      .prepare(
+        "SELECT path, name, file_type AS type FROM pages ORDER BY path",
+      )
+      .all() as Array<{ path: string; name: string; type: PageType | "directory" }>;
   }
 
   close(): void {
