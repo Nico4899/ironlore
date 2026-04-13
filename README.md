@@ -28,6 +28,9 @@ pnpm install
 # start the Vite dev server (proxies API to Hono on :3000)
 pnpm dev
 
+# start the API server in dev (separate terminal)
+cd apps/web && npx tsx watch src/server/index.ts
+
 # run unit + integration tests
 pnpm test
 
@@ -49,9 +52,28 @@ pnpm typecheck
 
 ## First run
 
-On first start, Ironlore generates a random admin password, prints it to stdout, and writes the bootstrap record to `.ironlore-install.json` (mode 0600). Save the password — it will not be shown again.
+On first start, Ironlore seeds the `projects/main/data/` directory with getting-started content, example files (CSV, PDF, PNG, Mermaid, TypeScript), and agent personas.
+
+It also generates a random admin password, prints it to stdout, and writes the bootstrap record to `.ironlore-install.json` (mode 0600). Save the password — it will not be shown again.
 
 On first login you will be forced to change the password. The install record is deleted after the change completes; there is no shipped credential to forget to rotate.
+
+## Supported file types
+
+Ironlore is not markdown-only. Every file type in the content model has a dedicated viewer:
+
+| Type | Extensions | Viewer | Editable |
+|---|---|---|---|
+| Markdown | `.md` | ProseMirror WYSIWYG + CodeMirror source | Yes (auto-save) |
+| CSV | `.csv` | Spreadsheet table (papaparse) | Yes (auto-save) |
+| PDF | `.pdf` | PDF.js canvas renderer (lazy-loaded) | Read-only |
+| Image | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.svg` | Zoomable image viewer | Read-only |
+| Video | `.mp4` `.webm` `.mov` | HTML5 video player | Read-only |
+| Audio | `.mp3` `.wav` `.m4a` `.ogg` | HTML5 audio player | Read-only |
+| Source code | `.ts` `.js` `.py` `.go` `.rs` + 20 more | Read-only CodeMirror with syntax highlighting | Read-only |
+| Mermaid | `.mermaid` `.mmd` | Mermaid diagram renderer (lazy-loaded) | Read-only |
+
+The sidebar shows file-type-specific Lucide icons. `ContentArea` dispatches to the correct viewer based on the `PageType` detected from the file extension.
 
 ## Configuration
 
@@ -71,10 +93,30 @@ All configuration is via environment variables. Unset means "safe default".
 ironlore/
 ├── apps/
 │   ├── web/              Vite + React SPA + Hono API server
+│   │   └── src/
+│   │       ├── client/           React 19 SPA
+│   │       │   ├── components/
+│   │       │   │   ├── editor/   ProseMirror + CodeMirror editors
+│   │       │   │   ├── viewers/  File type viewers (6 components)
+│   │       │   │   ├── ContentArea.tsx   Viewer dispatch hub
+│   │       │   │   └── Sidebar.tsx       Tree nav with type icons
+│   │       │   ├── hooks/        useAutoSave, etc.
+│   │       │   ├── lib/          API client, markdown rendering
+│   │       │   └── stores/       Zustand (app, editor, tree, aiPanel)
+│   │       └── server/           Hono API server
+│   │           ├── pages-api.ts  /pages/* and /raw/* endpoints
+│   │           ├── storage-writer.ts   File I/O + WAL + ETag
+│   │           ├── file-watcher.ts     External edit detection
+│   │           ├── search-index.ts     FTS5 + backlinks
+│   │           └── seed.ts             First-run content seeding
 │   ├── worker/           Jobs daemon (stub — ships in Phase 4)
 │   └── electron/         Desktop shell (placeholder — ships in Phase 5)
 ├── packages/
 │   ├── core/             Shared types, schemas, constants, utilities
+│   │   └── src/
+│   │       ├── page-type.ts     PageType detection + extension helpers
+│   │       ├── types.ts         Shared type definitions
+│   │       └── messages.ts      UI string constants
 │   ├── cli/              `ironlore` CLI (reindex, flush, migrate, repair, backup, restore)
 │   └── create-ironlore/  `npx create-ironlore` project scaffolder
 ├── projects/
