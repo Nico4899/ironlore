@@ -1,6 +1,7 @@
-import { mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ProjectKind } from "@ironlore/core";
+import { SENSITIVE_FILE_MODE } from "@ironlore/core";
 import Database from "better-sqlite3";
 
 export interface ProjectRecord {
@@ -24,6 +25,8 @@ export class ProjectRegistry {
     mkdirSync(dirname(dbPath), { recursive: true });
 
     this.db = new Database(dbPath);
+    // Restrict permissions — projects.sqlite is a sensitive file (0600)
+    chmodSync(dbPath, SENSITIVE_FILE_MODE);
     this.db.pragma("journal_mode = WAL");
     this.init();
   }

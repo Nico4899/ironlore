@@ -32,9 +32,13 @@ apps/electron/.native/
 projects/*/.ironlore/
 !projects/*/.ironlore/.gitkeep
 
+# runtime project data created when server runs from apps/web/
+apps/web/projects/
+
 # secrets and credentials
 .ironlore-install.json
 ipc.token
+password.salt
 *.enc
 *.pem
 .env
