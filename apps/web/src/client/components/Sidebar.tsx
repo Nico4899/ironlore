@@ -12,9 +12,10 @@ import {
   Video,
   Workflow,
 } from "lucide-react";
+import { messages } from "@ironlore/core";
 import type { KeyboardEvent } from "react";
-import { useCallback, useEffect, useRef } from "react";
-import { fetchTree } from "../lib/api.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPage, fetchTree, movePage } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { useTreeStore } from "../stores/tree.js";
 
@@ -52,6 +53,7 @@ export function Sidebar() {
   const expandedPaths = useTreeStore((s) => s.expandedPaths);
   const loading = useTreeStore((s) => s.loading);
   const treeRef = useRef<HTMLDivElement>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   // Load tree on mount
   useEffect(() => {
@@ -80,6 +82,44 @@ export function Sidebar() {
       useTreeStore.getState().toggleExpanded(path);
     } else {
       useAppStore.getState().setActivePath(path);
+    }
+  }, []);
+
+  const handleDragStart = useCallback((e: React.DragEvent, path: string) => {
+    e.dataTransfer.setData("text/plain", path);
+    e.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, path: string, isDir: boolean) => {
+    if (!isDir) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropTarget(path);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDropTarget(null);
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetDir: string) => {
+    e.preventDefault();
+    setDropTarget(null);
+    const sourcePath = e.dataTransfer.getData("text/plain");
+    if (!sourcePath) return;
+
+    // Build destination: targetDir/filename
+    const fileName = sourcePath.includes("/")
+      ? sourcePath.slice(sourcePath.lastIndexOf("/") + 1)
+      : sourcePath;
+    const destination = `${targetDir}/${fileName}`;
+
+    if (sourcePath === destination) return;
+
+    try {
+      await movePage(sourcePath, destination);
+      // Tree updates via WebSocket — no manual update needed
+    } catch {
+      // Move failed — tree state is unchanged
     }
   }, []);
 
@@ -192,8 +232,13 @@ export function Sidebar() {
                 data-path={node.path}
                 aria-expanded={isDir ? isExpanded : undefined}
                 aria-selected={isActive}
+                draggable={!isDir}
                 className={`flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue ${
-                  isActive ? "bg-ironlore-slate-hover font-medium" : "hover:bg-ironlore-slate-hover"
+                  isActive
+                    ? "bg-ironlore-slate-hover font-medium"
+                    : dropTarget === node.path
+                      ? "border border-ironlore-blue bg-ironlore-slate-hover"
+                      : "hover:bg-ironlore-slate-hover"
                 }`}
                 onClick={() => handleSelect(node.path, node.type)}
                 onKeyDown={(e) => {
@@ -201,6 +246,12 @@ export function Sidebar() {
                     e.preventDefault();
                     handleSelect(node.path, node.type);
                   }
+                }}
+                onDragStart={(e) => handleDragStart(e, node.path)}
+                onDragOver={(e) => handleDragOver(e, node.path, isDir)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => {
+                  if (isDir) handleDrop(e, node.path);
                 }}
               >
                 {isDir ? (
@@ -219,15 +270,94 @@ export function Sidebar() {
         )}
       </div>
 
-      {/* New page button */}
-      <div className="border-t border-border px-3 py-2">
-        <button
-          type="button"
-          className="w-full rounded bg-ironlore-blue px-3 py-1.5 text-xs font-medium text-white"
-        >
-          New page
-        </button>
-      </div>
+      {/* New page */}
+      <NewPageFooter />
     </nav>
+  );
+}
+
+function NewPageFooter() {
+  const [creating, setCreating] = useState(false);
+  const [pageName, setPageName] = useState("");
+  const activePath = useAppStore((s) => s.activePath);
+
+  const handleCreate = useCallback(async () => {
+    const name = pageName.trim();
+    if (!name) return;
+
+    // Determine parent directory from active path
+    const activeNode = useTreeStore
+      .getState()
+      .nodes.find((n) => n.path === activePath);
+    let parentDir = "";
+    if (activeNode) {
+      parentDir =
+        activeNode.type === "directory"
+          ? activeNode.path
+          : activeNode.path.includes("/")
+            ? activeNode.path.slice(0, activeNode.path.lastIndexOf("/"))
+            : "";
+    }
+
+    const fileName = name.endsWith(".md") ? name : `${name}.md`;
+    const fullPath = parentDir ? `${parentDir}/${fileName}` : fileName;
+    const title = name.replace(/\.md$/, "");
+
+    try {
+      await createPage(fullPath, `# ${title}\n`);
+      useAppStore.getState().setActivePath(fullPath);
+      setCreating(false);
+      setPageName("");
+    } catch {
+      // Error creating page — stay in create mode
+    }
+  }, [pageName, activePath]);
+
+  if (creating) {
+    return (
+      <div className="border-t border-border px-3 py-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleCreate();
+          }}
+          className="flex gap-1"
+        >
+          <input
+            ref={(el) => el?.focus()}
+            type="text"
+            value={pageName}
+            onChange={(e) => setPageName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setCreating(false);
+                setPageName("");
+              }
+            }}
+            placeholder="Page name"
+            className="flex-1 rounded border border-border bg-transparent px-2 py-1 text-xs text-primary focus:border-ironlore-blue focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={!pageName.trim()}
+            className="rounded bg-ironlore-blue px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+          >
+            Add
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-border px-3 py-2">
+      <button
+        type="button"
+        className="w-full rounded bg-ironlore-blue px-3 py-1.5 text-xs font-medium text-white"
+        onClick={() => setCreating(true)}
+      >
+        {messages.sidebarNewPage}
+      </button>
+    </div>
   );
 }

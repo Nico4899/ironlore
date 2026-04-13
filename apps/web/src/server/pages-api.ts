@@ -1,4 +1,5 @@
-import { extname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { basename, extname, join } from "node:path";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
@@ -207,6 +208,54 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
           409,
         );
       }
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return c.json({ error: "Not found" }, 404);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Move a page
+  // -----------------------------------------------------------------------
+  api.post("/:path{.+}/move", async (c) => {
+    const sourcePath = c.req.param("path") ?? "";
+    if (!sourcePath) {
+      return c.json({ error: "Path required" }, 400);
+    }
+
+    const body = await c.req.json<{ destination: string }>();
+    if (!body.destination || typeof body.destination !== "string") {
+      return c.json({ error: "destination string required in body" }, 400);
+    }
+
+    try {
+      // Read source content
+      const { content, etag: sourceEtag } = writer.read(sourcePath);
+
+      // Write to destination (no If-Match — new file)
+      const { etag } = await writer.write(body.destination, content, null);
+
+      // Delete source with ETag check
+      await writer.delete(sourcePath, sourceEtag);
+
+      // Update search index
+      searchIndex.removePage(sourcePath);
+      searchIndex.indexPage(body.destination, content, "user");
+
+      // Move .blocks.json sidecar if it exists
+      const srcSidecar = join(writer.getDataRoot(), `${sourcePath}.blocks.json`);
+      const dstSidecar = join(writer.getDataRoot(), `${body.destination}.blocks.json`);
+      if (existsSync(srcSidecar)) {
+        const { renameSync } = await import("node:fs");
+        renameSync(srcSidecar, dstSidecar);
+      }
+
+      return c.json({ etag });
+    } catch (err) {
       if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);
       }
