@@ -160,6 +160,7 @@ export function Sidebar() {
           type="button"
           className="flex-1 rounded bg-ironlore-slate-hover px-3 py-1.5 text-left text-xs text-secondary"
           aria-label="Search pages"
+          onClick={() => useAppStore.getState().toggleSearchDialog()}
         >
           Search pages...
         </button>

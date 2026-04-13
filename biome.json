@@ -99,7 +99,10 @@
       }
     },
     {
-      "includes": ["apps/web/src/client/components/editor/MarkdownPreview.tsx"],
+      "includes": [
+        "apps/web/src/client/components/editor/MarkdownPreview.tsx",
+        "apps/web/src/client/components/SearchDialog.tsx"
+      ],
       "linter": {
         "rules": {
           "security": {

@@ -4,6 +4,7 @@ import { AIPanel } from "./components/AIPanel.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { LoginPage } from "./components/LoginPage.js";
+import { SearchDialog } from "./components/SearchDialog.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
@@ -42,10 +43,24 @@ function AppShell() {
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
+  const searchDialogOpen = useAppStore((s) => s.searchDialogOpen);
 
   const handleLogout = useCallback(async () => {
     await logout();
     useAuthStore.getState().clearSession();
+  }, []);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Cmd+K / Ctrl+K — toggle search dialog
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        useAppStore.getState().toggleSearchDialog();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
   return (
@@ -90,6 +105,9 @@ function AppShell() {
 
       {/* Status bar */}
       <StatusBar />
+
+      {/* Search dialog (Cmd+K) */}
+      {searchDialogOpen && <SearchDialog />}
     </div>
   );
 }
