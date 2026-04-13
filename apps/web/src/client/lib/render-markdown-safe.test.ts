@@ -28,10 +28,15 @@ describe("renderMarkdownSafe", () => {
     expect(html).toContain('<a href="https://example.com">link</a>');
   });
 
-  it("renders images", () => {
-    const html = renderMarkdownSafe('![alt text](https://example.com/img.png "title")');
+  it("renders images with relative src", () => {
+    const html = renderMarkdownSafe('![alt text](assets/img.png "title")');
     expect(html).toContain("img");
     expect(html).toContain('alt="alt text"');
+    expect(html).toContain('src="assets/img.png"');
+  });
+
+  it("allows http/https image src (remote images permitted)", () => {
+    const html = renderMarkdownSafe("![alt](https://example.com/img.png)");
     expect(html).toContain('src="https://example.com/img.png"');
   });
 

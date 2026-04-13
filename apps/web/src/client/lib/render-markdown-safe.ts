@@ -69,7 +69,7 @@ export const ironloreSchema = {
   },
   protocols: {
     href: ["http", "https", "mailto"],
-    src: [],
+    src: ["http", "https"],
   },
   required: {
     input: { type: "checkbox", disabled: true },
