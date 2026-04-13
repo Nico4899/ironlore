@@ -145,6 +145,29 @@ describe("StorageWriter", () => {
     expect(readFileSync(join(projectDir, "data", "keep.md"), "utf-8")).toBe("keep me");
   });
 
+  describe("readRaw", () => {
+    it("reads a binary file and returns buffer + etag", () => {
+      const { writer, projectDir } = createWriter();
+      const binary = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01, 0x02]);
+      writeFileSync(join(projectDir, "data", "image.png"), binary);
+
+      const { buffer, etag } = writer.readRaw("image.png");
+      expect(Buffer.isBuffer(buffer)).toBe(true);
+      expect(buffer).toEqual(binary);
+      expect(etag).toBe(computeEtag(binary));
+    });
+
+    it("throws ENOENT for missing file", () => {
+      const { writer } = createWriter();
+      expect(() => writer.readRaw("missing.png")).toThrow();
+    });
+
+    it("rejects path traversal attempts", () => {
+      const { writer } = createWriter();
+      expect(() => writer.readRaw("../../etc/passwd")).toThrow();
+    });
+  });
+
   describe("crash recovery", () => {
     it("replays uncommitted writes", async () => {
       const { writer, projectDir } = createWriter();
