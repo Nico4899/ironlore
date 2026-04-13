@@ -75,11 +75,11 @@ export function ConflictBanner({ conflict, onResolved }: ConflictBannerProps) {
   };
 
   const handleDiscard = async () => {
-    const { filePath, setFile } = useEditorStore.getState();
+    const { filePath, fileType, setFile } = useEditorStore.getState();
     if (!filePath) return;
 
     const page = await fetchPage(filePath);
-    setFile(filePath, page.content, page.etag);
+    setFile(filePath, page.content, page.etag, fileType ?? "markdown");
     onResolved();
   };
 

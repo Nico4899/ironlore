@@ -1,7 +1,7 @@
 import { AUTOSAVE_DEBOUNCE_MS } from "@ironlore/core";
 import { useCallback, useEffect, useRef } from "react";
 import type { ConflictResponse } from "../lib/api.js";
-import { savePage } from "../lib/api.js";
+import { saveCsv, savePage } from "../lib/api.js";
 import { useEditorStore } from "../stores/editor.js";
 
 /**
@@ -20,14 +20,21 @@ export function useAutoSave(onConflict: (conflict: ConflictResponse) => void) {
   onConflictRef.current = onConflict;
 
   const save = useCallback(async () => {
-    const { filePath, markdown, etag, status, setStatus, setEtag } = useEditorStore.getState();
+    const { filePath, fileType, markdown, etag, status, setStatus, setEtag } =
+      useEditorStore.getState();
 
     if (!filePath || status !== "dirty") return;
+
+    // Only auto-save markdown and CSV — other types are read-only
+    if (fileType !== "markdown" && fileType !== "csv") return;
 
     setStatus("syncing");
 
     try {
-      const result = await savePage(filePath, markdown, etag);
+      const result =
+        fileType === "csv"
+          ? await saveCsv(filePath, markdown, etag)
+          : await savePage(filePath, markdown, etag);
 
       if ("error" in result && result.error === "Conflict") {
         setStatus("conflict");
