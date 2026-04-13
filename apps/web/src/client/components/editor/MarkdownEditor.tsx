@@ -10,7 +10,7 @@ import {
 import { keymap } from "prosemirror-keymap";
 import { defaultMarkdownParser, defaultMarkdownSerializer } from "prosemirror-markdown";
 import type { Schema } from "prosemirror-model";
-import { EditorState } from "prosemirror-state";
+import { EditorState, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef } from "react";
 import "./editor.css";
@@ -42,11 +42,10 @@ function stripBlockIds(markdown: string): {
   const lines = markdown.split("\n");
   const cleaned: string[] = [];
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
+  for (const line of lines) {
     const match = line.match(/<!-- #(blk_[A-Z0-9]{26}) -->/);
-    if (match) {
-      blockIds.set(cleaned.length, match[1]!);
+    if (match?.[1]) {
+      blockIds.set(cleaned.length, match[1]);
       const stripped = line.replace(BLOCK_ID_RE, "").trimEnd();
       cleaned.push(stripped);
     } else {
@@ -70,11 +69,12 @@ function reinsertBlockIds(markdown: string, blockIds: Map<number, string>): stri
   const result: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
     const blockId = blockIds.get(i);
-    if (blockId && !lines[i]!.includes(`<!-- #${blockId} -->`)) {
-      result.push(`${lines[i]} <!-- #${blockId} -->`);
+    if (blockId && !line.includes(`<!-- #${blockId} -->`)) {
+      result.push(`${line} <!-- #${blockId} -->`);
     } else {
-      result.push(lines[i]!);
+      result.push(line);
     }
   }
 
@@ -128,6 +128,14 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
       const doc = defaultMarkdownParser.parse(cleaned);
       if (!doc) return null;
 
+      // The default markdown schema always has these marks
+      const { strong, em, code } = schema.marks;
+      const markKeys: Record<string, (s: EditorState, d?: (tr: Transaction) => void) => boolean> =
+        {};
+      if (strong) markKeys["Mod-b"] = toggleMark(strong);
+      if (em) markKeys["Mod-i"] = toggleMark(em);
+      if (code) markKeys["Mod-`"] = toggleMark(code);
+
       const state = EditorState.create({
         doc,
         plugins: [
@@ -136,9 +144,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
             "Mod-z": undo,
             "Mod-Shift-z": redo,
             "Mod-y": redo,
-            "Mod-b": toggleMark(schema.marks.strong),
-            "Mod-i": toggleMark(schema.marks.em),
-            "Mod-`": toggleMark(schema.marks.code),
+            ...markKeys,
           }),
           keymap(baseKeymap),
           history(),
@@ -206,11 +212,5 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     suppressRef.current = false;
   }, [markdown]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="flex-1 overflow-y-auto px-8 py-6"
-      aria-label="Markdown editor"
-    />
-  );
+  return <div ref={containerRef} className="flex-1 overflow-y-auto px-8 py-6" />;
 }

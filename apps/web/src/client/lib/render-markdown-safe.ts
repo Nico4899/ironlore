@@ -70,7 +70,7 @@ export const ironloreSchema = {
   required: {
     input: { type: "checkbox", disabled: true },
   },
-} as const;
+};
 
 const processor = unified()
   .use(remarkParse)

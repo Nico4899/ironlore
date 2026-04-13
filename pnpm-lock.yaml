@@ -46,6 +46,9 @@ importers:
       '@ironlore/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@lezer/highlight':
+        specifier: ^1.2.3
+        version: 1.2.3
       '@node-rs/argon2':
         specifier: ^2.0.2
         version: 2.0.2

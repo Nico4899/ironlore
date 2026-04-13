@@ -10,6 +10,11 @@ export function App() {
 
   return (
     <div className="flex h-screen flex-col bg-ironlore-slate text-primary">
+      {/* Skip navigation (a11y) */}
+      <a href="#main-content" className="skip-nav">
+        Skip to content
+      </a>
+
       {/* Header */}
       <header className="flex h-12 items-center border-b border-border px-4">
         <div className="flex items-center gap-2">

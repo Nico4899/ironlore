@@ -54,9 +54,7 @@ export function ConflictBanner({ conflict, onResolved }: ConflictBannerProps) {
       className="flex items-center gap-3 border-b border-signal-amber bg-signal-amber/10 px-4 py-2 text-sm"
       role="alert"
     >
-      <span className="flex-1 font-medium text-signal-amber">
-        {messages.editorConflictBanner}
-      </span>
+      <span className="flex-1 font-medium text-signal-amber">{messages.editorConflictBanner}</span>
       <div className="flex gap-2">
         <button
           type="button"

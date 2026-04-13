@@ -1,5 +1,5 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown as markdownLang } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { search, searchKeymap } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
@@ -98,7 +98,7 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
         lineNumbers(),
         history(),
         search(),
-        markdown(),
+        markdownLang(),
         editorTheme,
         highlightStyle,
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
@@ -135,11 +135,5 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
     });
   }, [markdown]);
 
-  return (
-    <div
-      ref={containerRef}
-      className="flex-1 overflow-hidden"
-      aria-label="Source editor"
-    />
-  );
+  return <div ref={containerRef} className="flex-1 overflow-hidden" />;
 }
