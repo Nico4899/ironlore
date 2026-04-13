@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectPageType } from "./page-type.js";
+import { detectPageType, isSupportedExtension } from "./page-type.js";
 
 describe("detectPageType", () => {
   it("detects markdown files", () => {
@@ -50,5 +50,29 @@ describe("detectPageType", () => {
 
   it("defaults to markdown for directories", () => {
     expect(detectPageType("some-dir", true)).toBe("markdown");
+  });
+});
+
+describe("isSupportedExtension", () => {
+  it("returns true for recognized extensions", () => {
+    expect(isSupportedExtension("readme.md")).toBe(true);
+    expect(isSupportedExtension("data.csv")).toBe(true);
+    expect(isSupportedExtension("photo.png")).toBe(true);
+    expect(isSupportedExtension("clip.mp4")).toBe(true);
+    expect(isSupportedExtension("song.mp3")).toBe(true);
+    expect(isSupportedExtension("app.ts")).toBe(true);
+    expect(isSupportedExtension("flow.mmd")).toBe(true);
+    expect(isSupportedExtension("doc.pdf")).toBe(true);
+  });
+
+  it("returns false for unrecognized extensions", () => {
+    expect(isSupportedExtension("file.xyz")).toBe(false);
+    expect(isSupportedExtension("archive.zip")).toBe(false);
+    expect(isSupportedExtension("binary.exe")).toBe(false);
+  });
+
+  it("returns false for files with no extension", () => {
+    expect(isSupportedExtension("Makefile")).toBe(false);
+    expect(isSupportedExtension(".gitignore")).toBe(false);
   });
 });

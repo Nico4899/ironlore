@@ -10,10 +10,10 @@ function extname(filePath: string): string {
   return filePath.slice(dot);
 }
 
-const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
-const VIDEO_EXTS = new Set([".mp4", ".webm", ".mov"]);
-const AUDIO_EXTS = new Set([".mp3", ".wav", ".m4a", ".ogg"]);
-const CODE_EXTS = new Set([
+export const IMAGE_EXTS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"]);
+export const VIDEO_EXTS = new Set([".mp4", ".webm", ".mov"]);
+export const AUDIO_EXTS = new Set([".mp3", ".wav", ".m4a", ".ogg"]);
+export const CODE_EXTS = new Set([
   ".ts",
   ".tsx",
   ".js",
@@ -47,7 +47,7 @@ const CODE_EXTS = new Set([
   ".css",
   ".scss",
 ]);
-const MERMAID_EXTS = new Set([".mermaid", ".mmd"]);
+export const MERMAID_EXTS = new Set([".mermaid", ".mmd"]);
 
 /**
  * Detect the page type from a file path or directory structure.
@@ -73,4 +73,25 @@ export function detectPageType(filePath: string, isDirectory = false): PageType 
   if (MERMAID_EXTS.has(ext)) return "mermaid";
 
   return "markdown"; // fallback
+}
+
+/** All recognized file extensions (lowercase, with leading dot). */
+const ALL_SUPPORTED_EXTS = new Set([
+  ".md",
+  ".pdf",
+  ".csv",
+  ...IMAGE_EXTS,
+  ...VIDEO_EXTS,
+  ...AUDIO_EXTS,
+  ...CODE_EXTS,
+  ...MERMAID_EXTS,
+]);
+
+/**
+ * Returns true if the filename has a recognized extension that maps to a
+ * known PageType (not the fallback). Use this to filter tree walks.
+ */
+export function isSupportedExtension(filename: string): boolean {
+  const ext = extname(filename).toLowerCase();
+  return ext !== "" && ALL_SUPPORTED_EXTS.has(ext);
 }
