@@ -33,6 +33,10 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
       const updated = parsed.map((row) => [...row]);
       const targetRow = updated[rowIdx + 1];
       if (targetRow) {
+        // Pad short rows so the column index is valid
+        while (targetRow.length <= colIdx) {
+          targetRow.push("");
+        }
         targetRow[colIdx] = value;
       }
       const csv = Papa.unparse(updated);
