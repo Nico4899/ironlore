@@ -128,6 +128,60 @@ export async function saveCsv(
   return res.json() as Promise<SaveResponse>;
 }
 
+// ---------------------------------------------------------------------------
+// Auth API
+// ---------------------------------------------------------------------------
+
+export interface AuthSession {
+  authenticated: boolean;
+  username: string;
+  currentProjectId: string;
+  mustChangePassword: boolean;
+}
+
+interface LoginResponse {
+  username: string;
+  mustChangePassword: boolean;
+}
+
+/** Probe session state. Returns null if not authenticated. */
+export async function fetchMe(): Promise<AuthSession | null> {
+  const res = await fetch("/api/auth/me");
+  if (res.status === 401) return null;
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<AuthSession>;
+}
+
+/** Log in with username and password. Throws on bad creds (401) or rate limit (429). */
+export async function login(username: string, password: string): Promise<LoginResponse> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<LoginResponse>;
+}
+
+/** Log out and clear the session cookie. */
+export async function logout(): Promise<void> {
+  await fetch("/api/auth/logout", { method: "POST" });
+}
+
+/** Change password. Throws on wrong current password (401) or validation error (400). */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  const res = await fetch("/api/auth/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+}
+
+// ---------------------------------------------------------------------------
+// Error class
+// ---------------------------------------------------------------------------
+
 export class ApiError extends Error {
   override readonly name = "ApiError";
   constructor(
