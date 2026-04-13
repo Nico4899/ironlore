@@ -1,5 +1,5 @@
 import { verify as cryptoVerify, generateKeyPairSync, randomBytes, sign } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   AUTH_RATE_LIMIT,
@@ -56,6 +56,7 @@ export class SessionStore {
   constructor(installRoot: string) {
     const dbPath = join(installRoot, "sessions.sqlite");
     this.db = new Database(dbPath);
+    chmodSync(dbPath, SENSITIVE_FILE_MODE);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = FULL");
 
