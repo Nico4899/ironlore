@@ -8,7 +8,7 @@ export function AIPanel() {
 
   return (
     <aside
-      className="flex w-[380px] flex-col border-l border-border bg-ironlore-slate"
+      className="flex w-95 flex-col border-l border-border bg-ironlore-slate"
       aria-label="AI panel"
     >
       {/* Header */}
