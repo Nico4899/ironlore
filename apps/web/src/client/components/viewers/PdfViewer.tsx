@@ -54,10 +54,12 @@ export function PdfViewer({ path }: PdfViewerProps) {
   }, []);
 
   // Render pages when scale or document changes
+  // biome-ignore lint/correctness/useExhaustiveDependencies: numPages triggers re-render after PDF load completes
   useEffect(() => {
-    const pdf = pdfDocRef.current as
-      | { numPages: number; getPage: (n: number) => Promise<PdfPage> }
-      | null;
+    const pdf = pdfDocRef.current as {
+      numPages: number;
+      getPage: (n: number) => Promise<PdfPage>;
+    } | null;
     const container = containerRef.current;
     if (!pdf || !container) return;
 

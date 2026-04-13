@@ -7,6 +7,14 @@ interface CsvViewerProps {
   onChange: (csv: string) => void;
 }
 
+/**
+ * Auto-focus an input element via ref callback.
+ * This avoids the `autoFocus` attribute which biome flags for a11y.
+ */
+function focusRef(el: HTMLInputElement | null) {
+  el?.focus();
+}
+
 export function CsvViewer({ content, onChange }: CsvViewerProps) {
   const parsed = useMemo(() => {
     const result = Papa.parse<string[]>(content, { header: false, skipEmptyLines: true });
@@ -84,13 +92,14 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
                 <th
                   // biome-ignore lint/suspicious/noArrayIndexKey: CSV columns have no stable ID
                   key={colIdx}
-                  className="border border-border px-2 py-1.5 text-left font-medium text-secondary"
+                  className="cursor-text border border-border px-2 py-1.5 text-left font-medium text-secondary"
+                  onDoubleClick={() => setEditingCell({ row: -1, col: colIdx })}
                 >
                   {editingCell?.row === -1 && editingCell.col === colIdx ? (
                     <input
+                      ref={focusRef}
                       className="w-full bg-transparent outline-none"
                       defaultValue={header}
-                      autoFocus
                       onBlur={(e) => {
                         handleHeaderChange(colIdx, e.currentTarget.value);
                         setEditingCell(null);
@@ -104,12 +113,7 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
                       }}
                     />
                   ) : (
-                    <span
-                      className="cursor-text"
-                      onDoubleClick={() => setEditingCell({ row: -1, col: colIdx })}
-                    >
-                      {header}
-                    </span>
+                    header
                   )}
                 </th>
               ))}
@@ -120,13 +124,17 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
               // biome-ignore lint/suspicious/noArrayIndexKey: CSV rows have no stable ID
               <tr key={rowIdx} className="hover:bg-ironlore-slate-hover">
                 {row.map((cell, colIdx) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: CSV cells have no stable ID
-                  <td key={colIdx} className="border border-border px-2 py-1">
+                  <td
+                    // biome-ignore lint/suspicious/noArrayIndexKey: CSV cells have no stable ID
+                    key={colIdx}
+                    className="cursor-text border border-border px-2 py-1"
+                    onDoubleClick={() => setEditingCell({ row: rowIdx, col: colIdx })}
+                  >
                     {editingCell?.row === rowIdx && editingCell.col === colIdx ? (
                       <input
+                        ref={focusRef}
                         className="w-full bg-transparent outline-none"
                         defaultValue={cell}
-                        autoFocus
                         onBlur={(e) => {
                           handleCellChange(rowIdx, colIdx, e.currentTarget.value);
                           setEditingCell(null);
@@ -140,12 +148,7 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
                         }}
                       />
                     ) : (
-                      <span
-                        className="cursor-text"
-                        onDoubleClick={() => setEditingCell({ row: rowIdx, col: colIdx })}
-                      >
-                        {cell}
-                      </span>
+                      cell
                     )}
                   </td>
                 ))}

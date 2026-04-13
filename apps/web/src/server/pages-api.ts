@@ -1,10 +1,6 @@
 import { readdirSync } from "node:fs";
 import { extname, join, relative } from "node:path";
-import {
-  type PageType,
-  detectPageType,
-  isSupportedExtension,
-} from "@ironlore/core";
+import { detectPageType, isSupportedExtension, type PageType } from "@ironlore/core";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";

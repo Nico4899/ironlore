@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { useAutoSave } from "../hooks/useAutoSave.js";
 import type { ConflictResponse } from "../lib/api.js";
 import { fetchPage, fetchRaw } from "../lib/api.js";
@@ -182,7 +182,13 @@ interface MarkdownContentProps {
   onSelectionChange: (selection: { from: number; to: number } | null) => void;
 }
 
-function MarkdownContent({ markdown, mode, status, onChange, onSelectionChange }: MarkdownContentProps) {
+function MarkdownContent({
+  markdown,
+  mode,
+  status,
+  onChange,
+  onSelectionChange,
+}: MarkdownContentProps) {
   return (
     <>
       {/* Toolbar: mode toggle */}

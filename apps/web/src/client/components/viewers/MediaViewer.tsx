@@ -12,12 +12,7 @@ export function MediaViewer({ path, fileType }: MediaViewerProps) {
   return (
     <div className="flex flex-1 items-center justify-center overflow-auto p-8">
       {fileType === "video" ? (
-        <video
-          src={url}
-          controls
-          className="max-h-full max-w-full rounded"
-          aria-label={path}
-        >
+        <video src={url} controls className="max-h-full max-w-full rounded" aria-label={path}>
           <track kind="captions" />
         </video>
       ) : (
