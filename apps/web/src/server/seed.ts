@@ -496,4 +496,157 @@ If no brand voice page exists, use a professional, concise tone:
 - Technical accuracy without jargon overload
 `,
   );
+
+  // -------------------------------------------------------------------------
+  // Example files for file viewers (Phase 2.5)
+  // -------------------------------------------------------------------------
+
+  seedFile(
+    join(dataDir, "examples", "sample.csv"),
+    `Name,Role,Department,Start Date,Email
+Alice Johnson,Engineer,Engineering,2024-01-15,alice@example.com
+Bob Smith,Designer,Product,2023-06-01,bob@example.com
+Carol Lee,PM,Product,2024-03-20,carol@example.com
+Dan Brown,Engineer,Engineering,2023-11-10,dan@example.com
+Eve Davis,Analyst,Data,2024-07-01,eve@example.com`,
+  );
+
+  seedFile(
+    join(dataDir, "examples", "sample.mermaid"),
+    `graph TD
+    A[User opens file] --> B{File type?}
+    B -->|Markdown| C[ProseMirror Editor]
+    B -->|PDF| D[PDF.js Viewer]
+    B -->|CSV| E[Spreadsheet Viewer]
+    B -->|Image| F[Image Viewer]
+    B -->|Code| G[CodeMirror Viewer]
+    B -->|Mermaid| H[Diagram Renderer]
+    C --> I[Auto-save]
+    E --> I`,
+  );
+
+  seedFile(
+    join(dataDir, "examples", "sample.ts"),
+    `/**
+ * Sample TypeScript file for testing the source code viewer.
+ */
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "editor" | "viewer";
+}
+
+function greet(user: User): string {
+  return \`Hello, \${user.name}! You are logged in as \${user.role}.\`;
+}
+
+const users: User[] = [
+  { id: "1", name: "Alice", email: "alice@example.com", role: "admin" },
+  { id: "2", name: "Bob", email: "bob@example.com", role: "editor" },
+];
+
+for (const user of users) {
+  console.log(greet(user));
+}
+
+export { type User, greet };
+`,
+  );
+
+  // Minimal valid PDF (displays "Hello" on one page)
+  seedBinaryFile(
+    join(dataDir, "examples", "sample.pdf"),
+    createMinimalPdf(),
+  );
+
+  // Minimal 1x1 red PNG (67 bytes)
+  seedBinaryFile(
+    join(dataDir, "examples", "sample.png"),
+    createMinimalPng(),
+  );
+
+  seedFile(
+    join(dataDir, "examples", "media-note.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Media Files
+kind: page
+created: ${new Date().toISOString()}
+modified: ${new Date().toISOString()}
+tags: [examples]
+---
+
+# Adding Media Files
+
+Ironlore supports video and audio playback. To test the media viewers,
+drop your own files into the \`examples/\` directory:
+
+- **Video:** \`.mp4\`, \`.webm\`, \`.mov\`
+- **Audio:** \`.mp3\`, \`.wav\`, \`.m4a\`, \`.ogg\`
+
+The files will appear in the sidebar with the appropriate icon and open
+in the native HTML5 media player.
+`,
+  );
+}
+
+/**
+ * Write a binary file only if it doesn't already exist. Non-destructive seeding.
+ */
+function seedBinaryFile(filePath: string, data: Uint8Array): void {
+  if (existsSync(filePath)) return;
+  const dir = dirname(filePath);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(filePath, data);
+}
+
+/**
+ * Create a minimal valid PDF that displays "Hello" on one page.
+ * Hand-crafted to be self-contained (~220 bytes).
+ */
+function createMinimalPdf(): Uint8Array {
+  const pdf = `%PDF-1.0
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/MediaBox[0 0 612 792]/Parent 2 0 R/Resources<</Font<</F1 4 0 R>>>>>>endobj
+4 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
+5 0 obj<</Length 44>>stream
+BT /F1 24 Tf 100 700 Td (Hello) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000266 00000 n
+0000000340 00000 n
+trailer<</Size 6/Root 1 0 R>>
+startxref
+434
+%%EOF`;
+  return new TextEncoder().encode(pdf);
+}
+
+/**
+ * Create a minimal 1x1 red PNG image.
+ */
+function createMinimalPng(): Uint8Array {
+  // Pre-computed minimal PNG: 1x1 pixel, red (#FF0000), 67 bytes
+  return new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xde,
+    0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, // IDAT chunk
+    0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00, 0x00,
+    0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc, 0x33,
+    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, // IEND chunk
+    0xae, 0x42, 0x60, 0x82,
+  ]);
 }
