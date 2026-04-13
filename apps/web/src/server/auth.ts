@@ -523,5 +523,13 @@ export function createAuthApi(
     await next();
   };
 
-  return { api, middleware, signingKeys };
+  /**
+   * Validate a session cookie string. Returns the session ID if valid, null otherwise.
+   * Exported for use by the WebSocket upgrade handler.
+   */
+  const validateCookie = (cookie: string): string | null => {
+    return verifySessionCookie(cookie, signingKeys.publicKey);
+  };
+
+  return { api, middleware, signingKeys, validateCookie };
 }

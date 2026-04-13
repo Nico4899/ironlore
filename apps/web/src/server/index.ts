@@ -19,6 +19,7 @@ import { authRateLimiter } from "./rate-limit.js";
 import { SearchIndex } from "./search-index.js";
 import { StorageWriter } from "./storage-writer.js";
 import type { Wal } from "./wal.js";
+import { WebSocketManager } from "./ws.js";
 
 const app = new Hono();
 
@@ -28,6 +29,7 @@ const app = new Hono();
 let ready = false;
 let readyReason = "Server starting up";
 let wal: Wal | null = null;
+let wsManager: WebSocketManager | null = null;
 
 // ---------------------------------------------------------------------------
 // Middleware
@@ -52,7 +54,7 @@ app.get("/health", (c) => {
     status: "ok",
     activeJobs: 0,
     walDepth: wal?.getDepth() ?? 0,
-    wsSubscribers: 0,
+    wsSubscribers: wsManager?.getSubscriberCount() ?? 0,
     projects: 1, // single-project until Phase 5
   };
   return c.json(body);
@@ -94,7 +96,10 @@ async function start() {
 
   // Initialize auth system (sessions, login, password change)
   const sessionStore = new SessionStore(installRoot);
-  const { api: authApi, middleware: authMiddleware } = createAuthApi(installRoot, sessionStore);
+  const { api: authApi, middleware: authMiddleware, validateCookie } = createAuthApi(
+    installRoot,
+    sessionStore,
+  );
   app.use("/api/auth/*", authRateLimiter());
   app.route("/api/auth", authApi);
 
@@ -144,11 +149,24 @@ async function start() {
   const fileWatcher = new FileWatcher(writer.getDataRoot(), wal, searchIndex);
   fileWatcher.start();
 
+  // Initialize WebSocket manager for real-time events
+  wsManager = new WebSocketManager(sessionStore, validateCookie);
+
   ready = true;
   readyReason = "";
 
-  serve({ fetch: app.fetch, hostname: host, port }, (info) => {
+  const server = serve({ fetch: app.fetch, hostname: host, port }, (info) => {
     console.log(`ironlore listening on http://${info.address}:${info.port}`);
+  });
+
+  // Attach WebSocket upgrade handler to the HTTP server
+  const wsMgr = wsManager;
+  server.on("upgrade", (req, socket, head) => {
+    if (req.url === "/ws") {
+      wsMgr.handleUpgrade(req, socket, head);
+    } else {
+      socket.destroy();
+    }
   });
 }
 
