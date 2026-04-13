@@ -14,6 +14,9 @@ export default defineConfig({
       "/ready": "http://127.0.0.1:3000",
     },
   },
+  optimizeDeps: {
+    include: ["pdfjs-dist"],
+  },
   build: {
     outDir: "dist/client",
     sourcemap: true,
