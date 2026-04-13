@@ -6,6 +6,7 @@ import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
+import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
 
 export function ContentArea() {
@@ -122,7 +123,12 @@ export function ContentArea() {
           onSelectionChange={handleSelectionChange}
         />
       ) : (
-        <SourceEditor markdown={markdown} onChange={handleChange} />
+        <div className="flex flex-1 overflow-hidden">
+          <SourceEditor markdown={markdown} onChange={handleChange} />
+          <div className="border-l border-border" style={{ flex: "0 0 50%" }}>
+            <MarkdownPreview markdown={markdown} />
+          </div>
+        </div>
       )}
     </main>
   );

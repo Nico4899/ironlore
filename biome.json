@@ -95,6 +95,16 @@
           }
         }
       }
+    },
+    {
+      "includes": ["apps/web/src/client/components/editor/MarkdownPreview.tsx"],
+      "linter": {
+        "rules": {
+          "security": {
+            "noDangerouslySetInnerHtml": "off"
+          }
+        }
+      }
     }
   ]
 }
