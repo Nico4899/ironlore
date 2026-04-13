@@ -13,7 +13,7 @@ import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { LinksRegistry } from "./links-registry.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
-import { createPagesApi } from "./pages-api.js";
+import { createPagesApi, createRawApi } from "./pages-api.js";
 import { checkPermissions } from "./permissions.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { SearchIndex } from "./search-index.js";
@@ -121,6 +121,10 @@ async function start() {
   // Mount page API
   const pagesApi = createPagesApi(writer, searchIndex);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/pages`, pagesApi);
+
+  // Mount raw file API (binary + CSV write)
+  const rawApi = createRawApi(writer);
+  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/raw`, rawApi);
 
   // Expose WAL for health endpoint
   wal = writer.getWal();

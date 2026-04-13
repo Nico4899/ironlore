@@ -1,11 +1,78 @@
 import { readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { extname, join, relative } from "node:path";
+import {
+  type PageType,
+  detectPageType,
+  isSupportedExtension,
+} from "@ironlore/core";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
 import { assignBlockIds, parseBlocks, writeBlocksSidecar } from "./block-ids.js";
 import type { SearchIndex } from "./search-index.js";
 import { EtagMismatchError, type StorageWriter } from "./storage-writer.js";
+
+// ---------------------------------------------------------------------------
+// MIME type map for raw file serving
+// ---------------------------------------------------------------------------
+
+const MIME_MAP: Record<string, string> = {
+  // Images
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".svg": "image/svg+xml",
+  // Video
+  ".mp4": "video/mp4",
+  ".webm": "video/webm",
+  ".mov": "video/quicktime",
+  // Audio
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".m4a": "audio/mp4",
+  ".ogg": "audio/ogg",
+  // Documents
+  ".pdf": "application/pdf",
+  ".csv": "text/csv",
+  // Code / text
+  ".md": "text/markdown",
+  ".mermaid": "text/plain",
+  ".mmd": "text/plain",
+  ".ts": "text/plain",
+  ".tsx": "text/plain",
+  ".js": "text/plain",
+  ".jsx": "text/plain",
+  ".py": "text/plain",
+  ".go": "text/plain",
+  ".rs": "text/plain",
+  ".rb": "text/plain",
+  ".java": "text/plain",
+  ".kt": "text/plain",
+  ".swift": "text/plain",
+  ".c": "text/plain",
+  ".cpp": "text/plain",
+  ".h": "text/plain",
+  ".hpp": "text/plain",
+  ".cs": "text/plain",
+  ".php": "text/plain",
+  ".sh": "text/plain",
+  ".bash": "text/plain",
+  ".zsh": "text/plain",
+  ".fish": "text/plain",
+  ".lua": "text/plain",
+  ".r": "text/plain",
+  ".sql": "text/plain",
+  ".yaml": "text/plain",
+  ".yml": "text/plain",
+  ".toml": "text/plain",
+  ".json": "application/json",
+  ".xml": "text/xml",
+  ".html": "text/html",
+  ".css": "text/css",
+  ".scss": "text/plain",
+};
 
 /**
  * Create page API routes for a project.
@@ -160,11 +227,102 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
   return api;
 }
 
+/**
+ * Create raw file serving API for non-markdown content.
+ *
+ * Routes:
+ *   GET  /raw/*path → raw file bytes with correct Content-Type
+ *   PUT  /raw/*path ← raw text body (CSV only) → 200 { etag } | 409
+ */
+export function createRawApi(writer: StorageWriter): Hono {
+  const api = new Hono();
+
+  // -----------------------------------------------------------------------
+  // Serve raw file content
+  // -----------------------------------------------------------------------
+  api.get("/*", (c) => {
+    const filePath = c.req.path.replace(/^\//, "");
+    if (!filePath) {
+      return c.json({ error: "Path required" }, 400);
+    }
+
+    try {
+      const { buffer, etag } = writer.readRaw(filePath);
+      const ext = extname(filePath).toLowerCase();
+      const contentType = MIME_MAP[ext] ?? "application/octet-stream";
+
+      c.header("ETag", etag);
+      c.header("Cache-Control", "no-cache");
+      c.header("Content-Type", contentType);
+      c.header("Content-Disposition", "inline");
+      c.header("Content-Length", String(buffer.length));
+      // Convert Node Buffer to a standard ArrayBuffer for Hono's c.body()
+      const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+      return c.body(ab as ArrayBuffer);
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return c.json({ error: "Not found" }, 404);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Write raw text content (CSV only)
+  // -----------------------------------------------------------------------
+  api.put("/*", async (c) => {
+    const filePath = c.req.path.replace(/^\//, "");
+    if (!filePath) {
+      return c.json({ error: "Path required" }, 400);
+    }
+
+    const ext = extname(filePath).toLowerCase();
+    if (ext !== ".csv") {
+      return c.json({ error: "Only CSV files can be written via /raw" }, 400);
+    }
+
+    const ifMatch = c.req.header("If-Match");
+    const body = await c.req.text();
+
+    try {
+      const parsedIfMatch = ifMatch ? parseEtag(ifMatch) : null;
+      const ifMatchQuoted = parsedIfMatch ? `"${parsedIfMatch}"` : null;
+
+      const { etag } = await writer.write(filePath, body, ifMatchQuoted);
+
+      c.header("ETag", etag);
+      return c.json({ etag });
+    } catch (err) {
+      if (err instanceof EtagMismatchError) {
+        return c.json(
+          {
+            error: "Conflict",
+            currentEtag: err.currentEtag,
+          },
+          409,
+        );
+      }
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      throw err;
+    }
+  });
+
+  return api;
+}
+
+// ---------------------------------------------------------------------------
+// Tree walking
+// ---------------------------------------------------------------------------
+
 interface TreeEntry {
   name: string;
   path: string;
-  type: "file" | "directory";
-  kind?: string;
+  type: PageType | "directory";
 }
 
 function walkTree(dir: string, root: string): TreeEntry[] {
@@ -184,8 +342,9 @@ function walkTree(dir: string, root: string): TreeEntry[] {
       if (item.isDirectory()) {
         entries.push({ name: item.name, path: relPath, type: "directory" });
         entries.push(...walkTree(fullPath, root));
-      } else if (item.name.endsWith(".md")) {
-        entries.push({ name: item.name, path: relPath, type: "file" });
+      } else if (isSupportedExtension(item.name)) {
+        const pageType = detectPageType(item.name);
+        entries.push({ name: item.name, path: relPath, type: pageType });
       }
     }
   } catch {

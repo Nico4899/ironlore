@@ -59,6 +59,17 @@ export class StorageWriter {
   }
 
   /**
+   * Read a file as a raw Buffer + ETag (for non-text/binary files).
+   * Path is validated through resolveSafe.
+   */
+  readRaw(pagePath: string): { buffer: Buffer; etag: string } {
+    const absPath = resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator);
+    const buffer = readFileSync(absPath);
+    const etag = computeEtag(buffer);
+    return { buffer, etag };
+  }
+
+  /**
    * Write a page with ETag-based optimistic concurrency.
    *
    * @param pagePath - Relative path within project data dir
