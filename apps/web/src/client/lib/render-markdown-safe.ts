@@ -12,6 +12,10 @@ import { unified } from "unified";
  * else is stripped. This is the single sanitization code path for all
  * rendered markdown in Ironlore — editor preview, transcript viewer,
  * mermaid viewer, agent output.
+ *
+ * Callouts (e.g. GFM alerts `> [!NOTE]`) are deferred until a syntax and
+ * remark plugin are chosen. When added, include the relevant callout
+ * container elements here.
  */
 export const ironloreSchema = {
   strip: ["script", "style"],
@@ -65,7 +69,7 @@ export const ironloreSchema = {
   },
   protocols: {
     href: ["http", "https", "mailto"],
-    src: ["http", "https"],
+    src: [],
   },
   required: {
     input: { type: "checkbox", disabled: true },
