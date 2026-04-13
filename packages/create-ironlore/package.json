@@ -9,9 +9,6 @@
     "build": "tsc -b",
     "dev": "tsc -b --watch"
   },
-  "dependencies": {
-    "@ironlore/core": "workspace:*"
-  },
   "devDependencies": {
     "@types/node": "^22.15.0"
   }
