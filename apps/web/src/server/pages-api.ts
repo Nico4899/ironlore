@@ -95,7 +95,7 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
   // Read a page
   // -----------------------------------------------------------------------
   api.get("/*", (c) => {
-    const pagePath = c.req.path.replace(/^\//, "");
+    const pagePath = c.req.param("*") ?? "";
     if (!pagePath) {
       return c.json({ error: "Path required" }, 400);
     }
@@ -126,7 +126,7 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
   // Write a page
   // -----------------------------------------------------------------------
   api.put("/*", async (c) => {
-    const pagePath = c.req.path.replace(/^\//, "");
+    const pagePath = c.req.param("*") ?? "";
     if (!pagePath) {
       return c.json({ error: "Path required" }, 400);
     }
@@ -180,7 +180,7 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
   // Delete a page
   // -----------------------------------------------------------------------
   api.delete("/*", async (c) => {
-    const pagePath = c.req.path.replace(/^\//, "");
+    const pagePath = c.req.param("*") ?? "";
     if (!pagePath) {
       return c.json({ error: "Path required" }, 400);
     }
@@ -237,7 +237,7 @@ export function createRawApi(writer: StorageWriter): Hono {
   // Serve raw file content
   // -----------------------------------------------------------------------
   api.get("/*", (c) => {
-    const filePath = c.req.path.replace(/^\//, "");
+    const filePath = c.req.param("*") ?? "";
     if (!filePath) {
       return c.json({ error: "Path required" }, 400);
     }
@@ -270,7 +270,7 @@ export function createRawApi(writer: StorageWriter): Hono {
   // Write raw text content (CSV only)
   // -----------------------------------------------------------------------
   api.put("/*", async (c) => {
-    const filePath = c.req.path.replace(/^\//, "");
+    const filePath = c.req.param("*") ?? "";
     if (!filePath) {
       return c.json({ error: "Path required" }, 400);
     }
