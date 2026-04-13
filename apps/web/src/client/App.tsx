@@ -26,6 +26,7 @@ export function App() {
             type="button"
             className="rounded px-2 py-1 text-xs text-secondary hover:bg-ironlore-slate-hover"
             onClick={() => useAppStore.getState().toggleAIPanel()}
+            aria-label="Toggle AI panel"
           >
             AI
           </button>
