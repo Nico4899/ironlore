@@ -24,8 +24,8 @@ describe("SessionStore", () => {
     const id = store.createUser("alice", "hash123", false);
     const user = store.getUser("alice");
     expect(user).toBeDefined();
-    expect(user!.id).toBe(id);
-    expect(user!.username).toBe("alice");
+    expect(user?.id).toBe(id);
+    expect(user?.username).toBe("alice");
   });
 
   it("creates and retrieves a session", () => {
@@ -33,9 +33,9 @@ describe("SessionStore", () => {
     const sessionId = store.createSession(userId, "main");
     const session = store.getSession(sessionId);
     expect(session).toBeDefined();
-    expect(session!.user_id).toBe(userId);
-    expect(session!.current_project_id).toBe("main");
-    expect(session!.username).toBe("bob");
+    expect(session?.user_id).toBe(userId);
+    expect(session?.current_project_id).toBe("main");
+    expect(session?.username).toBe("bob");
   });
 
   it("deletes a session", () => {
@@ -51,18 +51,18 @@ describe("SessionStore", () => {
     const sessionId = store.createSession(userId, "main");
     store.updateSessionProject(sessionId, "research");
     const session = store.getSession(sessionId);
-    expect(session!.current_project_id).toBe("research");
+    expect(session?.current_project_id).toBe("research");
   });
 
   it("updates password and clears must_change flag", () => {
     const userId = store.createUser("eve", "oldHash", true);
     const user = store.getUser("eve");
-    expect(user!.must_change_password).toBe(1);
+    expect(user?.must_change_password).toBe(1);
 
     store.updatePassword(userId, "newHash");
     const updated = store.getUser("eve");
-    expect(updated!.password_hash).toBe("newHash");
-    expect(updated!.must_change_password).toBe(0);
+    expect(updated?.password_hash).toBe("newHash");
+    expect(updated?.must_change_password).toBe(0);
   });
 
   it("counts users", () => {
@@ -153,7 +153,7 @@ describe("Auth API", () => {
     const setCookieHeader = loginRes.headers.get("set-cookie") ?? "";
     const cookieMatch = /ironlore_session=([^;]+)/.exec(setCookieHeader);
     expect(cookieMatch).toBeTruthy();
-    const cookie = cookieMatch![1];
+    const cookie = cookieMatch?.[1];
 
     // Check /me
     const meRes = await api.request("/me", {
@@ -185,7 +185,7 @@ describe("Auth API", () => {
     });
     const setCookieHeader = loginRes.headers.get("set-cookie") ?? "";
     const cookieMatch = /ironlore_session=([^;]+)/.exec(setCookieHeader);
-    const cookie = cookieMatch![1];
+    const cookie = cookieMatch?.[1];
 
     // Logout
     const logoutRes = await api.request("/logout", {

@@ -25,8 +25,9 @@ function observeLatency(route: string, durationS: number): void {
   entry.sum += durationS;
   entry.count++;
   for (let i = 0; i < BUCKETS.length; i++) {
-    if (durationS <= BUCKETS[i]!) {
-      entry.buckets[i]!++;
+    const threshold = BUCKETS[i];
+    if (threshold !== undefined && durationS <= threshold) {
+      entry.buckets[i] = (entry.buckets[i] ?? 0) + 1;
     }
   }
 }
@@ -81,7 +82,7 @@ export function createMetricsEndpoint(getWal: () => Wal | null): Hono {
       const label = route.replace(/"/g, '\\"');
       let cumulative = 0;
       for (let i = 0; i < BUCKETS.length; i++) {
-        cumulative += entry.buckets[i]!;
+        cumulative += entry.buckets[i] ?? 0;
         lines.push(
           `ironlore_http_request_duration_seconds_bucket{route="${label}",le="${BUCKETS[i]}"} ${cumulative}`,
         );
@@ -105,7 +106,7 @@ export function createMetricsEndpoint(getWal: () => Wal | null): Hono {
     lines.push(`ironlore_ws_connections ${activeWsConnections}`);
 
     c.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
-    return c.text(lines.join("\n") + "\n");
+    return c.text(`${lines.join("\n")}\n`);
   });
 
   return api;

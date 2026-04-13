@@ -288,7 +288,7 @@ const corpus: Array<{ name: string; md: string }> = [
   { name: "heading with everything", md: "## **Bold** *Italic* `Code` [Link](https://x.com)" },
   {
     name: "long code block",
-    md: "```\n" + Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join("\n") + "\n```",
+    md: `\`\`\`\n${Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join("\n")}\n\`\`\``,
   },
   {
     name: "many list items",

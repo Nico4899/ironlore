@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
-import { computeEtag, ForbiddenError, resolveSafe } from "@ironlore/core/server";
+import { computeEtag, resolveSafe } from "@ironlore/core/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { StorageWriter } from "./storage-writer.js";
 
@@ -163,7 +163,7 @@ describe("exit criteria: 200 path-traversal fuzz inputs", () => {
     "../../../../../etc/passwd",
 
     // Deep traversal
-    ...Array.from({ length: 20 }, (_, i) => "../".repeat(i + 1) + "etc/passwd"),
+    ...Array.from({ length: 20 }, (_, i) => `${"../".repeat(i + 1)}etc/passwd`),
 
     // Encoded traversal
     "..%2fetc%2fpasswd",
@@ -265,7 +265,7 @@ describe("exit criteria: 200 path-traversal fuzz inputs", () => {
     // Length stress — very deep nesting
     ...Array.from(
       { length: 10 },
-      (_, i) => "sub/".repeat(i + 5) + "../".repeat(i + 6) + "etc/passwd",
+      (_, i) => `${"sub/".repeat(i + 5) + "../".repeat(i + 6)}etc/passwd`,
     ),
 
     // Combinations with valid-looking prefixes

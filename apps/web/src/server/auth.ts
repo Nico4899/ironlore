@@ -270,7 +270,7 @@ export function createAuthApi(
   store: SessionStore,
 ): {
   api: Hono;
-  middleware: (c: Context, next: Next) => Promise<Response | void>;
+  middleware: (c: Context, next: Next) => Promise<Response | undefined>;
   signingKeys: SigningKeys;
 } {
   const api = new Hono();
@@ -490,7 +490,7 @@ export function createAuthApi(
   // ----------------------------------------------------------------
   // Auth middleware — validates session cookie on protected routes
   // ----------------------------------------------------------------
-  const middleware = async (c: Context, next: Next): Promise<Response | void> => {
+  const middleware = async (c: Context, next: Next): Promise<Response | undefined> => {
     const cookie = getCookie(c, SESSION_COOKIE);
     if (!cookie) {
       return c.json({ error: "Authentication required" }, 401);

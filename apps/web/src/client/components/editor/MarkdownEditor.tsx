@@ -173,7 +173,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
       return view;
     },
     // Only recreate view when markdown identity changes from outside
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only callback; external markdown sync handled by separate useEffect
     [],
   );
 

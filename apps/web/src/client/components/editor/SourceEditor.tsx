@@ -115,7 +115,7 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
       viewRef.current = null;
     };
     // Only mount once — external markdown changes handled by the effect below
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect; markdown sync is handled by the separate useEffect below
   }, []);
 
   // Sync external markdown changes (e.g., after merge or mode switch)
