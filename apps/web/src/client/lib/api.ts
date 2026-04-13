@@ -35,8 +35,22 @@ const BASE = `/api/projects/${DEFAULT_PROJECT_ID}`;
 const PAGES_BASE = `${BASE}/pages`;
 const RAW_BASE = `${BASE}/raw`;
 
+/**
+ * Fetch wrapper that intercepts 401 responses and clears the auth session.
+ * All data API functions use this instead of raw fetch.
+ */
+async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(url, init);
+  if (res.status === 401) {
+    const { useAuthStore } = await import("../stores/auth.js");
+    useAuthStore.getState().clearSession();
+    throw new ApiError(401, "Session expired");
+  }
+  return res;
+}
+
 export async function fetchPage(pagePath: string): Promise<PageResponse> {
-  const res = await fetch(`${PAGES_BASE}/${pagePath}`);
+  const res = await apiFetch(`${PAGES_BASE}/${pagePath}`);
   if (!res.ok) {
     throw new ApiError(res.status, await res.text());
   }
@@ -55,7 +69,7 @@ export async function savePage(
     headers["If-Match"] = etag;
   }
 
-  const res = await fetch(`${PAGES_BASE}/${pagePath}`, {
+  const res = await apiFetch(`${PAGES_BASE}/${pagePath}`, {
     method: "PUT",
     headers,
     body: JSON.stringify({ markdown }),
@@ -73,7 +87,7 @@ export async function savePage(
 }
 
 export async function fetchTree(): Promise<{ pages: TreeEntry[] }> {
-  const res = await fetch(PAGES_BASE);
+  const res = await apiFetch(PAGES_BASE);
   if (!res.ok) {
     throw new ApiError(res.status, await res.text());
   }
@@ -91,7 +105,7 @@ export function fetchRawUrl(pagePath: string): string {
 
 /** Fetch raw file content as a Response (for text-based viewers). */
 export async function fetchRaw(pagePath: string): Promise<Response> {
-  const res = await fetch(`${RAW_BASE}/${pagePath}`);
+  const res = await apiFetch(`${RAW_BASE}/${pagePath}`);
   if (!res.ok) {
     throw new ApiError(res.status, await res.text());
   }
@@ -111,7 +125,7 @@ export async function saveCsv(
     headers["If-Match"] = etag;
   }
 
-  const res = await fetch(`${RAW_BASE}/${pagePath}`, {
+  const res = await apiFetch(`${RAW_BASE}/${pagePath}`, {
     method: "PUT",
     headers,
     body: content,
