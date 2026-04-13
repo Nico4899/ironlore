@@ -630,7 +630,7 @@ startxref
  * Create a minimal 1x1 red PNG image.
  */
 function createMinimalPng(): Uint8Array {
-  // Pre-computed minimal PNG: 1x1 pixel, red (#FF0000), 67 bytes
+  // Pre-computed minimal PNG: 1x1 pixel, red (#FF0000)
   return new Uint8Array([
     0x89,
     0x50,

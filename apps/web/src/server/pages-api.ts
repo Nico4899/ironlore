@@ -252,9 +252,7 @@ export function createRawApi(writer: StorageWriter): Hono {
       c.header("Content-Type", contentType);
       c.header("Content-Disposition", "inline");
       c.header("Content-Length", String(buffer.length));
-      // Convert Node Buffer to a standard ArrayBuffer for Hono's c.body()
-      const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-      return c.body(ab as ArrayBuffer);
+      return c.body(new Uint8Array(buffer));
     } catch (err) {
       if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);

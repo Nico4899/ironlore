@@ -63,9 +63,16 @@ export function useAutoSave(onConflict: (conflict: ConflictResponse) => void) {
         clearTimeout(timerRef.current);
       }
 
+      // Capture file identity at debounce-trigger time to prevent
+      // saving content to the wrong file if the user switches pages
+      const { filePath: capturedPath, fileType: capturedType } = state;
+
       // Schedule a new save
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
+        // Verify the file hasn't changed since we scheduled the save
+        const current = useEditorStore.getState();
+        if (current.filePath !== capturedPath || current.fileType !== capturedType) return;
         save();
       }, AUTOSAVE_DEBOUNCE_MS);
     });
