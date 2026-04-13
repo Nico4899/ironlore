@@ -48,6 +48,11 @@ export function PdfViewer({ path }: PdfViewerProps) {
 
     return () => {
       cancelled = true;
+      const pdf = pdfDocRef.current as { destroy?: () => void } | null;
+      if (pdf?.destroy) {
+        pdf.destroy();
+        pdfDocRef.current = null;
+      }
     };
   }, []);
 
