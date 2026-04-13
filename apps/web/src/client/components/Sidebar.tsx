@@ -1,8 +1,49 @@
+import type { PageType } from "@ironlore/core";
+import {
+  ChevronDown,
+  ChevronRight,
+  FileCode,
+  FileSpreadsheet,
+  FileText,
+  FileType,
+  FolderClosed,
+  Image,
+  Music,
+  Video,
+  Workflow,
+} from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef } from "react";
 import { fetchTree } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { useTreeStore } from "../stores/tree.js";
+
+/** Map PageType → Lucide icon component. */
+function FileIcon({ type }: { type: PageType | "directory" }) {
+  const cls = "h-4 w-4 shrink-0 text-secondary";
+  switch (type) {
+    case "directory":
+      return <FolderClosed className={cls} />;
+    case "markdown":
+      return <FileText className={cls} />;
+    case "pdf":
+      return <FileType className={cls} />;
+    case "csv":
+      return <FileSpreadsheet className={cls} />;
+    case "image":
+      return <Image className={cls} />;
+    case "video":
+      return <Video className={cls} />;
+    case "audio":
+      return <Music className={cls} />;
+    case "source-code":
+      return <FileCode className={cls} />;
+    case "mermaid":
+      return <Workflow className={cls} />;
+    default:
+      return <FileText className={cls} />;
+  }
+}
 
 export function Sidebar() {
   const width = useAppStore((s) => s.sidebarWidth);
@@ -22,7 +63,7 @@ export function Sidebar() {
             id: p.path,
             name: p.name,
             path: p.path,
-            type: p.type === "directory" ? ("directory" as const) : ("markdown" as const),
+            type: p.type,
           })),
         );
       })
@@ -150,7 +191,7 @@ export function Sidebar() {
                 data-path={node.path}
                 aria-expanded={isDir ? isExpanded : undefined}
                 aria-selected={isActive}
-                className={`cursor-pointer rounded px-2 py-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue ${
+                className={`flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue ${
                   isActive ? "bg-ironlore-slate-hover font-medium" : "hover:bg-ironlore-slate-hover"
                 }`}
                 onClick={() => handleSelect(node.path, node.type)}
@@ -161,10 +202,16 @@ export function Sidebar() {
                   }
                 }}
               >
-                <span className="mr-1.5 text-secondary">
-                  {isDir ? (isExpanded ? "▾" : "▸") : "·"}
-                </span>
-                {node.name}
+                {isDir ? (
+                  isExpanded ? (
+                    <ChevronDown className="h-4 w-4 shrink-0 text-secondary" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0 text-secondary" />
+                  )
+                ) : (
+                  <FileIcon type={node.type} />
+                )}
+                <span className="truncate">{node.name}</span>
               </div>
             );
           })
