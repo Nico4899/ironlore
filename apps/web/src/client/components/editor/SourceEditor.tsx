@@ -82,6 +82,7 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
   onChangeRef.current = onChange;
 
   // Mount CodeMirror
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect; markdown sync is handled by the separate useEffect below
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -114,8 +115,6 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
       view.destroy();
       viewRef.current = null;
     };
-    // Only mount once — external markdown changes handled by the effect below
-    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect; markdown sync is handled by the separate useEffect below
   }, []);
 
   // Sync external markdown changes (e.g., after merge or mode switch)

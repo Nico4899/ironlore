@@ -572,7 +572,7 @@ describe("exit criteria: kill -9 crash recovery", () => {
     const writer2 = new StorageWriter(projectDir);
     writers.push(writer2);
 
-    const { recovered, warnings } = writer2.recover();
+    const { warnings } = writer2.recover();
     // The entry doesn't match pre or post hash — should warn
     expect(warnings.length).toBeGreaterThan(0);
     expect(warnings[0]).toContain("matches neither pre nor post");

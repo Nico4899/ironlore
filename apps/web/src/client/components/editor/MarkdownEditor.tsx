@@ -119,63 +119,58 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
   onChangeRef.current = onChange;
   onSelectionChangeRef.current = onSelectionChange;
 
-  const createView = useCallback(
-    (container: HTMLDivElement) => {
-      const { cleaned, blockIds } = stripBlockIds(markdown);
-      blockIdsRef.current = blockIds;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only callback; external markdown sync handled by separate useEffect
+  const createView = useCallback((container: HTMLDivElement) => {
+    const { cleaned, blockIds } = stripBlockIds(markdown);
+    blockIdsRef.current = blockIds;
 
-      const schema = defaultMarkdownParser.schema;
-      const doc = defaultMarkdownParser.parse(cleaned);
-      if (!doc) return null;
+    const schema = defaultMarkdownParser.schema;
+    const doc = defaultMarkdownParser.parse(cleaned);
+    if (!doc) return null;
 
-      // The default markdown schema always has these marks
-      const { strong, em, code } = schema.marks;
-      const markKeys: Record<string, (s: EditorState, d?: (tr: Transaction) => void) => boolean> =
-        {};
-      if (strong) markKeys["Mod-b"] = toggleMark(strong);
-      if (em) markKeys["Mod-i"] = toggleMark(em);
-      if (code) markKeys["Mod-`"] = toggleMark(code);
+    // The default markdown schema always has these marks
+    const { strong, em, code } = schema.marks;
+    const markKeys: Record<string, (s: EditorState, d?: (tr: Transaction) => void) => boolean> = {};
+    if (strong) markKeys["Mod-b"] = toggleMark(strong);
+    if (em) markKeys["Mod-i"] = toggleMark(em);
+    if (code) markKeys["Mod-`"] = toggleMark(code);
 
-      const state = EditorState.create({
-        doc,
-        plugins: [
-          buildInputRules(schema),
-          keymap({
-            "Mod-z": undo,
-            "Mod-Shift-z": redo,
-            "Mod-y": redo,
-            ...markKeys,
-          }),
-          keymap(baseKeymap),
-          history(),
-        ],
-      });
+    const state = EditorState.create({
+      doc,
+      plugins: [
+        buildInputRules(schema),
+        keymap({
+          "Mod-z": undo,
+          "Mod-Shift-z": redo,
+          "Mod-y": redo,
+          ...markKeys,
+        }),
+        keymap(baseKeymap),
+        history(),
+      ],
+    });
 
-      const view = new EditorView(container, {
-        state,
-        dispatchTransaction(tr) {
-          const newState = view.state.apply(tr);
-          view.updateState(newState);
+    const view = new EditorView(container, {
+      state,
+      dispatchTransaction(tr) {
+        const newState = view.state.apply(tr);
+        view.updateState(newState);
 
-          if (tr.docChanged && !suppressRef.current) {
-            const serialized = defaultMarkdownSerializer.serialize(newState.doc);
-            const withIds = reinsertBlockIds(serialized, blockIdsRef.current);
-            onChangeRef.current(withIds);
-          }
+        if (tr.docChanged && !suppressRef.current) {
+          const serialized = defaultMarkdownSerializer.serialize(newState.doc);
+          const withIds = reinsertBlockIds(serialized, blockIdsRef.current);
+          onChangeRef.current(withIds);
+        }
 
-          if (tr.selectionSet && onSelectionChangeRef.current) {
-            const { from, to } = newState.selection;
-            onSelectionChangeRef.current(from === to ? null : { from, to });
-          }
-        },
-      });
+        if (tr.selectionSet && onSelectionChangeRef.current) {
+          const { from, to } = newState.selection;
+          onSelectionChangeRef.current(from === to ? null : { from, to });
+        }
+      },
+    });
 
-      return view;
-    },
-    // Only recreate view when markdown identity changes from outside
-    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only callback; external markdown sync handled by separate useEffect
-    [],
-  );
+    return view;
+  }, []);
 
   // Mount / unmount the editor view
   useEffect(() => {
