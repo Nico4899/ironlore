@@ -14,7 +14,6 @@ export function App() {
   const authStatus = useAuthStore((s) => s.status);
 
   // Check session on mount
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only session probe
   useEffect(() => {
     useAuthStore.getState().checkSession();
   }, []);
