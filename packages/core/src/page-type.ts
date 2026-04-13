@@ -87,6 +87,18 @@ const ALL_SUPPORTED_EXTS = new Set([
   ...MERMAID_EXTS,
 ]);
 
+/** Extensions for binary file types (not safely representable as UTF-8). */
+const BINARY_EXTS = new Set([".pdf", ...IMAGE_EXTS, ...VIDEO_EXTS, ...AUDIO_EXTS]);
+
+/**
+ * Returns true if the file is a binary type (PDF, image, video, audio).
+ * Binary files cannot be safely decoded as UTF-8 text.
+ */
+export function isBinaryExtension(filename: string): boolean {
+  const ext = extname(filename).toLowerCase();
+  return BINARY_EXTS.has(ext);
+}
+
 /**
  * Returns true if the filename has a recognized extension that maps to a
  * known PageType (not the fallback). Use this to filter tree walks.

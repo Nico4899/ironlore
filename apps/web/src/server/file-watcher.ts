@@ -1,6 +1,6 @@
 import { existsSync, watch as fsWatch, readFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
-import { isSupportedExtension } from "@ironlore/core";
+import { isBinaryExtension, isSupportedExtension } from "@ironlore/core";
 import { computeEtag } from "@ironlore/core/server";
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from "chokidar";
 import type { SearchIndex } from "./search-index.js";
@@ -127,16 +127,20 @@ export class FileWatcher {
 
   private processChange(filePath: string): void {
     try {
-      // Read as buffer for binary-safe hashing; decode to string for text files
+      // Read as buffer for binary-safe hashing
       const buffer = readFileSync(filePath);
       const newHash = computeEtag(buffer);
-      const content = buffer.toString("utf-8");
       const knownHash = this.knownHashes.get(filePath);
 
       // If hash matches our last known write, this is our own write — skip
       if (knownHash === newHash) return;
 
       const relPath = relative(this.dataRoot, filePath);
+      const binary = isBinaryExtension(basename(filePath));
+      // Binary files (PDF, images, video, audio) cannot be safely decoded
+      // as UTF-8 — store null content. The file already exists on disk;
+      // the WAL entry is only for git tracking.
+      const content = binary ? null : buffer.toString("utf-8");
 
       // External edit detected — record in WAL
       this.wal.append({
@@ -156,8 +160,10 @@ export class FileWatcher {
         this.wal.markCommitted(entry.id);
       }
 
-      // Update search index
-      this.searchIndex?.indexPage(relPath, content, "external");
+      // Update search index (text files only)
+      if (!binary) {
+        this.searchIndex?.indexPage(relPath, content ?? "", "external");
+      }
 
       // Update known hash
       this.knownHashes.set(filePath, newHash);

@@ -25,10 +25,8 @@ export function PdfViewer({ path }: PdfViewerProps) {
     (async () => {
       try {
         const pdfjsLib = await import("pdfjs-dist");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-          "pdfjs-dist/build/pdf.worker.min.mjs",
-          import.meta.url,
-        ).href;
+        const workerModule = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerModule.default;
 
         const url = fetchRawUrl(path);
         const loadingTask = pdfjsLib.getDocument(url);
