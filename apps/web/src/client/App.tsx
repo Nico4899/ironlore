@@ -6,6 +6,7 @@ import { ContentArea } from "./components/ContentArea.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { useWebSocket } from "./hooks/useWebSocket.js";
 import { logout } from "./lib/api.js";
 import { useAppStore } from "./stores/app.js";
 import { useAuthStore } from "./stores/auth.js";
@@ -37,6 +38,8 @@ export function App() {
 }
 
 function AppShell() {
+  useWebSocket();
+
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
 
