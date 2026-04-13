@@ -31,6 +31,13 @@ export function MermaidViewer({ content }: MermaidViewerProps) {
         const doc = parser.parseFromString(svg, "image/svg+xml");
         const svgEl = doc.documentElement;
 
+        // Defense-in-depth: strip potentially dangerous elements from SVG
+        for (const tag of ["script", "foreignObject", "use"]) {
+          for (const el of svgEl.querySelectorAll(tag)) {
+            el.remove();
+          }
+        }
+
         container.replaceChildren(svgEl);
         setError(null);
       } catch (err) {
