@@ -18,7 +18,6 @@ export function MarkdownPreview({ markdown }: { markdown: string }) {
   return (
     <div
       className="ProseMirror flex-1 overflow-y-auto px-8 py-6"
-      // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitized through renderMarkdownSafe
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

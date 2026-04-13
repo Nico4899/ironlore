@@ -29,6 +29,7 @@ function DiffView({ diff }: { diff: string }) {
         }
 
         return (
+          // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are static and never reorder
           <div key={`${i}:${line}`} className={className}>
             {line}
           </div>
