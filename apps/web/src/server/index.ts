@@ -14,9 +14,9 @@ import { LinksRegistry } from "./links-registry.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
 import { createPagesApi, createRawApi } from "./pages-api.js";
-import { createSearchApi } from "./search-api.js";
 import { checkPermissions } from "./permissions.js";
 import { authRateLimiter } from "./rate-limit.js";
+import { createSearchApi } from "./search-api.js";
 import { SearchIndex } from "./search-index.js";
 import { StorageWriter } from "./storage-writer.js";
 import { TerminalManager } from "./terminal.js";
@@ -99,10 +99,11 @@ async function start() {
 
   // Initialize auth system (sessions, login, password change)
   const sessionStore = new SessionStore(installRoot);
-  const { api: authApi, middleware: authMiddleware, validateCookie } = createAuthApi(
-    installRoot,
-    sessionStore,
-  );
+  const {
+    api: authApi,
+    middleware: authMiddleware,
+    validateCookie,
+  } = createAuthApi(installRoot, sessionStore);
   app.use("/api/auth/*", authRateLimiter());
   app.route("/api/auth", authApi);
 

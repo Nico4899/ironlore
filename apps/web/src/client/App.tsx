@@ -1,7 +1,6 @@
 import { LogOut } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect } from "react";
 import { AIPanel } from "./components/AIPanel.js";
-const Terminal = lazy(() => import("./components/Terminal.js"));
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { LoginPage } from "./components/LoginPage.js";
@@ -12,6 +11,8 @@ import { useWebSocket } from "./hooks/useWebSocket.js";
 import { logout } from "./lib/api.js";
 import { useAppStore } from "./stores/app.js";
 import { useAuthStore } from "./stores/auth.js";
+
+const Terminal = lazy(() => import("./components/Terminal.js"));
 
 export function App() {
   const authStatus = useAuthStore((s) => s.status);

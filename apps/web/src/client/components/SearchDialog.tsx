@@ -1,12 +1,7 @@
 import { messages } from "@ironlore/core";
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  fetchRecentEdits,
-  searchPages,
-  type RecentEdit,
-  type SearchResult,
-} from "../lib/api.js";
+import { fetchRecentEdits, type RecentEdit, type SearchResult, searchPages } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 
 /** Auto-focus an input element via ref callback. */
@@ -147,9 +142,7 @@ export function SearchDialog() {
             placeholder={messages.sidebarSearchPlaceholder}
             className="flex-1 bg-transparent text-sm text-primary outline-none placeholder:text-secondary"
           />
-          {loading && (
-            <span className="text-xs text-secondary">...</span>
-          )}
+          {loading && <span className="text-xs text-secondary">...</span>}
         </div>
 
         {/* Results */}
@@ -161,9 +154,7 @@ export function SearchDialog() {
           )}
 
           {displayItems.length === 0 && query.trim() && !loading && (
-            <div className="px-4 py-6 text-center text-sm text-secondary">
-              No results found
-            </div>
+            <div className="px-4 py-6 text-center text-sm text-secondary">No results found</div>
           )}
 
           {displayItems.map((item, idx) => (
@@ -171,9 +162,7 @@ export function SearchDialog() {
               key={item.path}
               type="button"
               className={`flex w-full flex-col gap-0.5 px-4 py-2 text-left ${
-                idx === selectedIdx
-                  ? "bg-ironlore-slate-hover"
-                  : "hover:bg-ironlore-slate-hover"
+                idx === selectedIdx ? "bg-ironlore-slate-hover" : "hover:bg-ironlore-slate-hover"
               }`}
               onClick={() => selectResult(item.path)}
               onMouseEnter={() => setSelectedIdx(idx)}

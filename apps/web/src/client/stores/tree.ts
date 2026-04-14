@@ -90,17 +90,13 @@ export const useTreeStore = create<TreeStore>((set) => ({
   deleteNode: (path) =>
     set((s) => ({
       // Remove the node and any children (for directory deletion)
-      nodes: s.nodes.filter(
-        (n) => n.path !== path && !n.path.startsWith(`${path}/`),
-      ),
+      nodes: s.nodes.filter((n) => n.path !== path && !n.path.startsWith(`${path}/`)),
     })),
 
   moveNode: (oldPath, newPath, name, fileType) =>
     set((s) => {
       // Remove old node
-      const nodes = s.nodes.filter(
-        (n) => n.path !== oldPath && !n.path.startsWith(`${oldPath}/`),
-      );
+      const nodes = s.nodes.filter((n) => n.path !== oldPath && !n.path.startsWith(`${oldPath}/`));
       // Insert new node in sorted position
       const newNode: TreeNode = {
         id: newPath,

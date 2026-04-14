@@ -24,7 +24,6 @@ function parseCookieValue(cookieHeader: string | undefined, name: string): strin
 // ---------------------------------------------------------------------------
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
-const HEARTBEAT_TIMEOUT_MS = 10_000;
 
 interface ClientState {
   ws: WebSocket;
@@ -39,10 +38,7 @@ export class WebSocketManager {
   private sessionStore: SessionStore;
   private verifySessionCookie: (cookie: string) => string | null;
 
-  constructor(
-    sessionStore: SessionStore,
-    verifySessionCookie: (cookie: string) => string | null,
-  ) {
+  constructor(sessionStore: SessionStore, verifySessionCookie: (cookie: string) => string | null) {
     this.sessionStore = sessionStore;
     this.verifySessionCookie = verifySessionCookie;
     this.wss = new WebSocketServer({ noServer: true });

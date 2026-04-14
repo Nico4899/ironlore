@@ -407,9 +407,7 @@ export class SearchIndex {
    */
   getTree(): Array<{ path: string; name: string; type: PageType | "directory" }> {
     return this.db
-      .prepare(
-        "SELECT path, name, file_type AS type FROM pages ORDER BY path",
-      )
+      .prepare("SELECT path, name, file_type AS type FROM pages ORDER BY path")
       .all() as Array<{ path: string; name: string; type: PageType | "directory" }>;
   }
 

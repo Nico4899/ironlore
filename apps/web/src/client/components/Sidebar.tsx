@@ -1,4 +1,5 @@
 import type { PageType } from "@ironlore/core";
+import { messages } from "@ironlore/core";
 import {
   ChevronDown,
   ChevronRight,
@@ -12,7 +13,6 @@ import {
   Video,
   Workflow,
 } from "lucide-react";
-import { messages } from "@ironlore/core";
 import type { KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPage, fetchTree, movePage } from "../lib/api.js";
@@ -286,9 +286,7 @@ function NewPageFooter() {
     if (!name) return;
 
     // Determine parent directory from active path
-    const activeNode = useTreeStore
-      .getState()
-      .nodes.find((n) => n.path === activePath);
+    const activeNode = useTreeStore.getState().nodes.find((n) => n.path === activePath);
     let parentDir = "";
     if (activeNode) {
       parentDir =

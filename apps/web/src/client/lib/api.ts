@@ -194,10 +194,7 @@ export async function fetchRecentEdits(limit = 20): Promise<RecentEdit[]> {
 }
 
 /** Create a new page (PUT with no If-Match). */
-export async function createPage(
-  pagePath: string,
-  content: string,
-): Promise<SaveResponse> {
+export async function createPage(pagePath: string, content: string): Promise<SaveResponse> {
   const res = await apiFetch(`${PAGES_BASE}/${pagePath}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -208,10 +205,7 @@ export async function createPage(
 }
 
 /** Move a page to a new path. */
-export async function movePage(
-  sourcePath: string,
-  destination: string,
-): Promise<SaveResponse> {
+export async function movePage(sourcePath: string, destination: string): Promise<SaveResponse> {
   const res = await apiFetch(`${PAGES_BASE}/${sourcePath}/move`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

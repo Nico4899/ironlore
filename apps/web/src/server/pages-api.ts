@@ -388,4 +388,3 @@ export function createRawApi(writer: StorageWriter): Hono {
 
   return api;
 }
-
