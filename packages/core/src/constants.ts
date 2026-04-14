@@ -45,3 +45,17 @@ export const AUTOSAVE_DEBOUNCE_MS = 500;
 
 /** Frontmatter schema version. */
 export const FRONTMATTER_SCHEMA_VERSION = 1;
+
+/**
+ * Install-root files excluded from `ironlore backup`.
+ * Credentials and session tokens don't belong in a portable archive —
+ * restoring is a fresh `create-ironlore` install plus `ironlore restore`.
+ * See docs/01-content-model.md.
+ */
+export const BACKUP_EXCLUDED_FILES = [
+  "password.salt",
+  "sessions.sqlite",
+  "projects.sqlite",
+  "ipc.token",
+  ".ironlore-install.json",
+] as const;

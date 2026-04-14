@@ -29,7 +29,7 @@ export type AgentStatus = "active" | "paused" | "exhausted";
 export type PauseReason = "failure_streak" | "user" | "budget";
 
 /** Provider identifier. */
-export type ProviderId = "anthropic" | "openai" | "ollama" | "claude-cli" | "acp";
+export type ProviderId = "anthropic" | "openai" | "ollama" | "claude-cli";
 
 /** Project preset — onboarding template for isolation and egress policy. */
 export type ProjectPreset = "main" | "research" | "sandbox";
