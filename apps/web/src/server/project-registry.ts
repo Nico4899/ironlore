@@ -1,13 +1,13 @@
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ProjectKind } from "@ironlore/core";
+import type { ProjectPreset } from "@ironlore/core";
 import { SENSITIVE_FILE_MODE } from "@ironlore/core";
 import Database from "better-sqlite3";
 
 export interface ProjectRecord {
   id: string;
   name: string;
-  kind: ProjectKind;
+  preset: ProjectPreset;
   createdAt: string;
 }
 
@@ -36,19 +36,24 @@ export class ProjectRegistry {
       CREATE TABLE IF NOT EXISTS projects (
         id         TEXT    PRIMARY KEY,
         name       TEXT    NOT NULL,
-        kind       TEXT    NOT NULL CHECK(kind IN ('main', 'research', 'sandbox')),
+        preset     TEXT    NOT NULL CHECK(preset IN ('main', 'research', 'sandbox')),
         created_at TEXT    NOT NULL DEFAULT (datetime('now'))
       )
     `);
+    // Rename legacy `kind` column on pre-existing dev databases.
+    const cols = this.db.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>;
+    if (cols.some((c) => c.name === "kind") && !cols.some((c) => c.name === "preset")) {
+      this.db.exec("ALTER TABLE projects RENAME COLUMN kind TO preset");
+    }
   }
 
   /**
    * Ensure a project exists in the registry. Inserts if missing.
    */
-  ensureProject(id: string, name: string, kind: ProjectKind): void {
+  ensureProject(id: string, name: string, preset: ProjectPreset): void {
     this.db
-      .prepare("INSERT OR IGNORE INTO projects (id, name, kind) VALUES (?, ?, ?)")
-      .run(id, name, kind);
+      .prepare("INSERT OR IGNORE INTO projects (id, name, preset) VALUES (?, ?, ?)")
+      .run(id, name, preset);
   }
 
   /**
@@ -56,7 +61,7 @@ export class ProjectRegistry {
    */
   get(id: string): ProjectRecord | null {
     const row = this.db
-      .prepare("SELECT id, name, kind, created_at AS createdAt FROM projects WHERE id = ?")
+      .prepare("SELECT id, name, preset, created_at AS createdAt FROM projects WHERE id = ?")
       .get(id) as ProjectRecord | undefined;
     return row ?? null;
   }
@@ -66,7 +71,7 @@ export class ProjectRegistry {
    */
   list(): ProjectRecord[] {
     return this.db
-      .prepare("SELECT id, name, kind, created_at AS createdAt FROM projects ORDER BY created_at")
+      .prepare("SELECT id, name, preset, created_at AS createdAt FROM projects ORDER BY created_at")
       .all() as ProjectRecord[];
   }
 

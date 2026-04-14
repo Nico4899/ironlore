@@ -10,7 +10,7 @@ if (!projectDir) {
   console.error("Usage: create-ironlore <directory>");
   console.error("");
   console.error("Example:");
-  console.error("  npx create-ironlore@next my-ironlore");
+  console.error("  npx create-ironlore@latest my-ironlore");
   process.exit(1);
 }
 
@@ -56,7 +56,7 @@ writeFileSync(
 // Write project.yaml
 writeFileSync(
   join(targetDir, "projects", "main", "project.yaml"),
-  `kind: main
+  `preset: main
 name: Main
 egress:
   policy: allowlist

@@ -16,6 +16,11 @@ function loadProjectConfig(projectDir: string): ProjectConfig {
 
   const raw = readFileSync(join(projectDir, "project.yaml"), "utf-8");
   const parsed = load(raw);
+  // Accept legacy `kind:` key from pre-rename project.yaml files.
+  if (parsed && typeof parsed === "object" && "kind" in parsed && !("preset" in parsed)) {
+    (parsed as Record<string, unknown>).preset = (parsed as Record<string, unknown>).kind;
+    delete (parsed as Record<string, unknown>).kind;
+  }
   const config = ProjectConfigSchema.parse(parsed);
   configCache.set(projectDir, config);
   return config;

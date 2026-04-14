@@ -31,8 +31,8 @@ export type PauseReason = "failure_streak" | "user" | "budget";
 /** Provider identifier. */
 export type ProviderId = "anthropic" | "openai" | "ollama" | "claude-cli" | "acp";
 
-/** Project kind — controls isolation and egress policy. */
-export type ProjectKind = "main" | "research" | "sandbox";
+/** Project preset — onboarding template for isolation and egress policy. */
+export type ProjectPreset = "main" | "research" | "sandbox";
 
 /** Frontmatter for a page. */
 export interface PageFrontmatter {
@@ -86,7 +86,7 @@ export interface InstallRecord {
 
 /** project.yaml configuration. */
 export interface ProjectConfig {
-  kind: ProjectKind;
+  preset: ProjectPreset;
   name: string;
   egress?: {
     policy: "open" | "allowlist" | "blocked";

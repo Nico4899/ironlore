@@ -27,7 +27,7 @@ describe("fetchForProject", () => {
 
   it("allows requests matching the allowlist", async () => {
     writeConfig(`
-kind: main
+preset: main
 name: Main
 egress:
   policy: allowlist
@@ -45,7 +45,7 @@ egress:
 
   it("blocks requests not on the allowlist", async () => {
     writeConfig(`
-kind: main
+preset: main
 name: Main
 egress:
   policy: allowlist
@@ -61,7 +61,7 @@ egress:
 
   it("allows all requests with open policy", async () => {
     writeConfig(`
-kind: research
+preset: research
 name: Research
 egress:
   policy: open
@@ -77,7 +77,7 @@ egress:
 
   it("blocks all requests with blocked policy", async () => {
     writeConfig(`
-kind: sandbox
+preset: sandbox
 name: Sandbox
 egress:
   policy: blocked
@@ -91,7 +91,7 @@ egress:
 
   it("defaults to allowlist when egress section is omitted", async () => {
     writeConfig(`
-kind: main
+preset: main
 name: Main
 `);
     const mod = await loadModule();
@@ -104,7 +104,7 @@ name: Main
 
   it("strips protocol from allowlist entries for hostname comparison", async () => {
     writeConfig(`
-kind: main
+preset: main
 name: Main
 egress:
   policy: allowlist

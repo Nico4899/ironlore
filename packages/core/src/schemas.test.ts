@@ -57,7 +57,7 @@ describe("PageFrontmatterSchema", () => {
 describe("ProjectConfigSchema", () => {
   it("validates a main project config", () => {
     const result = ProjectConfigSchema.safeParse({
-      kind: "main",
+      preset: "main",
       name: "Main",
     });
     expect(result.success).toBe(true);
@@ -65,7 +65,7 @@ describe("ProjectConfigSchema", () => {
 
   it("validates a research project with egress", () => {
     const result = ProjectConfigSchema.safeParse({
-      kind: "research",
+      preset: "research",
       name: "Research",
       egress: {
         policy: "allowlist",
@@ -75,9 +75,9 @@ describe("ProjectConfigSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects invalid project kind", () => {
+  it("rejects invalid project preset", () => {
     const result = ProjectConfigSchema.safeParse({
-      kind: "invalid",
+      preset: "invalid",
       name: "Test",
     });
     expect(result.success).toBe(false);

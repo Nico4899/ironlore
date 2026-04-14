@@ -22,7 +22,7 @@ export const PageFrontmatterSchema = z.object({
 
 /** Zod schema for project.yaml. */
 export const ProjectConfigSchema = z.object({
-  kind: z.enum(["main", "research", "sandbox"]),
+  preset: z.enum(["main", "research", "sandbox"]),
   name: z.string().min(1),
   egress: z
     .object({

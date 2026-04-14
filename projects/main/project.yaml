@@ -1,4 +1,4 @@
-kind: main
+preset: main
 name: Main
 egress:
   policy: allowlist
