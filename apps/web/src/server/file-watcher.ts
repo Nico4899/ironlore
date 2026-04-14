@@ -1,10 +1,13 @@
 import { existsSync, watch as fsWatch, readFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
-import { isBinaryExtension, isSupportedExtension } from "@ironlore/core";
+import type { WsEventInput } from "@ironlore/core";
+import { detectPageType, isBinaryExtension, isSupportedExtension } from "@ironlore/core";
 import { computeEtag } from "@ironlore/core/server";
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from "chokidar";
 import type { SearchIndex } from "./search-index.js";
 import type { Wal } from "./wal.js";
+
+type BroadcastFn = (event: WsEventInput) => void;
 
 /**
  * Filesystem watcher that detects external edits (e.g. user editing
@@ -21,13 +24,16 @@ export class FileWatcher {
   private wal: Wal;
   private dataRoot: string;
   private searchIndex: SearchIndex | null;
+  private broadcast: BroadcastFn | null;
+  private knownPaths = new Set<string>();
   private knownHashes = new Map<string, string>();
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  constructor(dataRoot: string, wal: Wal, searchIndex?: SearchIndex) {
+  constructor(dataRoot: string, wal: Wal, searchIndex?: SearchIndex, broadcast?: BroadcastFn) {
     this.dataRoot = dataRoot;
     this.wal = wal;
     this.searchIndex = searchIndex ?? null;
+    this.broadcast = broadcast ?? null;
   }
 
   /**
@@ -163,6 +169,25 @@ export class FileWatcher {
       // Update search index (text files only)
       if (!binary) {
         this.searchIndex?.indexPage(relPath, content ?? "", "external");
+      } else {
+        // Binary files aren't in FTS5, but still register in pages table
+        this.searchIndex?.upsertPage(relPath, detectPageType(relPath));
+      }
+
+      // Broadcast WS event (tree:add or tree:update)
+      const isNew = !this.knownPaths.has(filePath);
+      this.knownPaths.add(filePath);
+      if (this.broadcast) {
+        if (isNew) {
+          this.broadcast({
+            type: "tree:add",
+            path: relPath,
+            name: basename(relPath),
+            fileType: detectPageType(relPath),
+          });
+        } else {
+          this.broadcast({ type: "tree:update", path: relPath, etag: `"${newHash}"` });
+        }
       }
 
       // Update known hash
@@ -192,6 +217,10 @@ export class FileWatcher {
     this.searchIndex?.removePage(relPath);
 
     this.knownHashes.delete(filePath);
+    this.knownPaths.delete(filePath);
+
+    // Broadcast delete event
+    this.broadcast?.({ type: "tree:delete", path: relPath });
   }
 
   stop(): void {

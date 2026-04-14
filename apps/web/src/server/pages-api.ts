@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, extname, join } from "node:path";
+import type { WsEventInput } from "@ironlore/core";
+import { detectPageType } from "@ironlore/core";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
@@ -78,7 +80,13 @@ const MIME_MAP: Record<string, string> = {
  *   DELETE /pages/*path ← If-Match → 204 | 409 | 404
  *   GET  /pages        → 200 { pages: TreeEntry[] }
  */
-export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex): Hono {
+type BroadcastFn = (event: WsEventInput) => void;
+
+export function createPagesApi(
+  writer: StorageWriter,
+  searchIndex: SearchIndex,
+  broadcast?: BroadcastFn,
+): Hono {
   const api = new Hono();
 
   // -----------------------------------------------------------------------
@@ -144,14 +152,30 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
       // Re-wrap for comparison: computeEtag returns quoted
       const ifMatchQuoted = parsedIfMatch ? `"${parsedIfMatch}"` : null;
 
+      const absPath = join(writer.getDataRoot(), pagePath);
+      const isNew = !existsSync(absPath);
+
       const { etag } = await writer.write(pagePath, annotated, ifMatchQuoted);
 
       // Write .blocks.json sidecar alongside the markdown file
-      const absPath = join(writer.getDataRoot(), pagePath);
       writeBlocksSidecar(absPath, blocks);
 
       // Update search index + backlinks
       searchIndex.indexPage(pagePath, annotated, "user");
+
+      // Broadcast tree event
+      if (broadcast) {
+        if (isNew) {
+          broadcast({
+            type: "tree:add",
+            path: pagePath,
+            name: basename(pagePath),
+            fileType: detectPageType(pagePath),
+          });
+        } else {
+          broadcast({ type: "tree:update", path: pagePath, etag });
+        }
+      }
 
       c.header("ETag", etag);
       return c.json({ etag });
@@ -194,6 +218,8 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
 
       // Remove from search index
       searchIndex.removePage(pagePath);
+
+      broadcast?.({ type: "tree:delete", path: pagePath });
 
       return c.body(null, 204);
     } catch (err) {
@@ -253,6 +279,14 @@ export function createPagesApi(writer: StorageWriter, searchIndex: SearchIndex):
         const { renameSync } = await import("node:fs");
         renameSync(srcSidecar, dstSidecar);
       }
+
+      broadcast?.({
+        type: "tree:move",
+        oldPath: sourcePath,
+        newPath: body.destination,
+        name: basename(body.destination),
+        fileType: detectPageType(body.destination),
+      });
 
       return c.json({ etag });
     } catch (err) {

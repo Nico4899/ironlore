@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import type { WsEvent } from "@ironlore/core";
+import type { WsEvent, WsEventInput } from "@ironlore/core";
 import { WebSocket, WebSocketServer } from "ws";
 import type { SessionStore } from "./auth.js";
 
@@ -106,7 +106,7 @@ export class WebSocketManager {
    * Broadcast an event to all connected clients.
    * Assigns a monotonically increasing sequence number.
    */
-  broadcast(event: Omit<WsEvent, "seq">): void {
+  broadcast(event: WsEventInput): void {
     this.seq++;
     const payload = JSON.stringify({ ...event, seq: this.seq });
 

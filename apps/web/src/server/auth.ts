@@ -272,6 +272,7 @@ export function createAuthApi(
   api: Hono;
   middleware: (c: Context, next: Next) => Promise<Response | undefined>;
   signingKeys: SigningKeys;
+  validateCookie: (cookie: string) => string | null;
 } {
   const api = new Hono();
   const salt = loadSalt(installRoot);

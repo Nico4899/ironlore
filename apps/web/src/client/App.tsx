@@ -1,6 +1,7 @@
 import { LogOut } from "lucide-react";
-import { useCallback, useEffect } from "react";
+import { lazy, Suspense, useCallback, useEffect } from "react";
 import { AIPanel } from "./components/AIPanel.js";
+const Terminal = lazy(() => import("./components/Terminal.js"));
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { LoginPage } from "./components/LoginPage.js";
@@ -44,6 +45,7 @@ function AppShell() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
   const searchDialogOpen = useAppStore((s) => s.searchDialogOpen);
+  const terminalOpen = useAppStore((s) => s.terminalOpen);
 
   const handleLogout = useCallback(async () => {
     await logout();
@@ -57,6 +59,11 @@ function AppShell() {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         useAppStore.getState().toggleSearchDialog();
+      }
+      // Ctrl+` — toggle terminal
+      if (e.ctrlKey && e.key === "`") {
+        e.preventDefault();
+        useAppStore.getState().toggleTerminal();
       }
     };
     window.addEventListener("keydown", handler);
@@ -102,6 +109,13 @@ function AppShell() {
         <ContentArea />
         {aiPanelOpen && <AIPanel />}
       </div>
+
+      {/* Terminal panel (Ctrl+`) */}
+      {terminalOpen && (
+        <Suspense fallback={<div className="h-64 border-t border-border" />}>
+          <Terminal />
+        </Suspense>
+      )}
 
       {/* Status bar */}
       <StatusBar />

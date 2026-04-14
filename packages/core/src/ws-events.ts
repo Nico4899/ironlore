@@ -53,6 +53,13 @@ export type WsEvent =
   | SearchReindexedEvent
   | ConnectedEvent;
 
+/** Distributive Omit — preserves union discrimination on `type`. */
+export type WsEventInput = WsEvent extends infer T
+  ? T extends { type: string }
+    ? Omit<T, "seq">
+    : never
+  : never;
+
 // ---------------------------------------------------------------------------
 // Client → Server commands
 // ---------------------------------------------------------------------------

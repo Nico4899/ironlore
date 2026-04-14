@@ -19,6 +19,7 @@ import { checkPermissions } from "./permissions.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { SearchIndex } from "./search-index.js";
 import { StorageWriter } from "./storage-writer.js";
+import { TerminalManager } from "./terminal.js";
 import type { Wal } from "./wal.js";
 import { WebSocketManager } from "./ws.js";
 
@@ -31,6 +32,7 @@ let ready = false;
 let readyReason = "Server starting up";
 let wal: Wal | null = null;
 let wsManager: WebSocketManager | null = null;
+let terminalManager: TerminalManager | null = null;
 
 // ---------------------------------------------------------------------------
 // Middleware
@@ -128,8 +130,15 @@ async function start() {
   const { indexed } = searchIndex.reindexAll(writer.getDataRoot());
   console.log(`Search index: ${indexed} pages indexed`);
 
+  // Create broadcast callback that forwards to the WebSocket manager
+  // (wsManager is assigned below; the closure reads the module-level
+  // reference at call time, so late binding is fine).
+  const broadcast = (event: Parameters<WebSocketManager["broadcast"]>[0]) => {
+    wsManager?.broadcast(event);
+  };
+
   // Mount page API
-  const pagesApi = createPagesApi(writer, searchIndex);
+  const pagesApi = createPagesApi(writer, searchIndex, broadcast);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/pages`, pagesApi);
 
   // Mount raw file API (binary + CSV write)
@@ -155,11 +164,14 @@ async function start() {
   await gitWorker.start();
 
   // Start filesystem watcher for external edits
-  const fileWatcher = new FileWatcher(writer.getDataRoot(), wal, searchIndex);
+  const fileWatcher = new FileWatcher(writer.getDataRoot(), wal, searchIndex, broadcast);
   fileWatcher.start();
 
   // Initialize WebSocket manager for real-time events
   wsManager = new WebSocketManager(sessionStore, validateCookie);
+
+  // Initialize terminal manager (single-session PTY over WS)
+  terminalManager = new TerminalManager(writer.getDataRoot(), sessionStore, validateCookie);
 
   ready = true;
   readyReason = "";
@@ -170,9 +182,12 @@ async function start() {
 
   // Attach WebSocket upgrade handler to the HTTP server
   const wsMgr = wsManager;
+  const termMgr = terminalManager;
   server.on("upgrade", (req, socket, head) => {
     if (req.url === "/ws") {
       wsMgr.handleUpgrade(req, socket, head);
+    } else if (req.url === "/ws/terminal") {
+      termMgr.handleUpgrade(req, socket, head);
     } else {
       socket.destroy();
     }
