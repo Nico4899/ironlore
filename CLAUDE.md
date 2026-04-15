@@ -44,7 +44,7 @@ To run the API server in dev: `cd apps/web && npx tsx watch src/server/index.ts`
 
 ## Content model and file types
 
-The content model supports 8 page types, detected by file extension via `detectPageType()` in `packages/core/src/page-type.ts`:
+The content model supports 13 page types, detected by file extension via `detectPageType()` in `packages/core/src/page-type.ts`:
 
 - **markdown** (`.md`) — primary content type, editable via ProseMirror/CodeMirror
 - **csv** (`.csv`) — editable spreadsheet table, auto-saves via `PUT /raw/*`
@@ -54,11 +54,22 @@ The content model supports 8 page types, detected by file extension via `detectP
 - **audio** (`.mp3`, `.wav`, `.m4a`, `.ogg`) — HTML5 player
 - **source-code** (`.ts`, `.js`, `.py`, `.go`, `.rs`, + 20 more) — read-only CodeMirror
 - **mermaid** (`.mermaid`, `.mmd`) — diagram renderer (lazy-loaded via `React.lazy`)
+- **text** (`.txt`, `.log`) — read-only CodeMirror, no language highlighting
+- **transcript** (`.vtt`, `.srt`) — timestamp + caption table, parsed client-side
+- **word** (`.docx`) — mammoth → sanitized HTML (lazy-loaded)
+- **excel** (`.xlsx`) — SheetJS tabbed grid (lazy-loaded, 500-row render cap)
+- **email** (`.eml`) — postal-mime → header block + text body (lazy-loaded)
+
+Word/Excel/Email are ingest-only containers. Viewers and server-side
+FTS5 ingestion share a single extractor module at
+`packages/core/src/extractors/` (`extract(format, buffer)` dispatcher +
+per-format implementations). Dynamic imports keep heavy libraries off
+the critical path.
 
 Key helpers in `packages/core/src/page-type.ts`:
 - `detectPageType(filePath)` — returns `PageType` from extension
 - `isSupportedExtension(filename)` — true if extension maps to a known type (for tree walks, file watcher)
-- `isBinaryExtension(filename)` — true for PDF/image/video/audio (cannot decode as UTF-8)
+- `isBinaryExtension(filename)` — true for binary types (PDF, image, video, audio, docx, xlsx)
 
 ## Server API
 
@@ -86,14 +97,18 @@ Two Hono sub-apps handle file I/O:
   - `MediaViewer` — shared video/audio with HTML5 controls
   - `MermaidViewer` — DOMParser SVG injection (sanitized), diagram/source toggle
   - `PdfViewer` — PDF.js canvas-per-page, zoom controls
-  - `SourceCodeViewer` — read-only CodeMirror with language detection
+  - `SourceCodeViewer` — read-only CodeMirror with language detection (also drives the `text` type)
+  - `TranscriptViewer` — parses `.vtt` / `.srt` into a timestamp + caption table
+  - `DocxViewer` — lazy, runs `extract("word", buf)`, sanitizes HTML via `sanitizeHtml()` in `apps/web/src/client/lib/sanitize-html.ts`
+  - `XlsxViewer` — lazy, runs `extract("excel", buf)`, tabbed sheet grid
+  - `EmailViewer` — lazy, runs `extract("email", buf)`, header block + text body
 
 - **Sidebar** (`apps/web/src/client/components/Sidebar.tsx`) — tree navigation with file-type-specific Lucide icons per `PageType`
 
 - **Client API** (`apps/web/src/client/lib/api.ts`):
   - `fetchPage()` / `savePage()` — markdown JSON API
   - `fetchRawUrl()` — returns URL string for `<img>`/`<video>`/`<audio>` src attributes
-  - `fetchRaw()` — returns `Response` for text viewers (source, CSV, mermaid)
+  - `fetchRaw()` — returns `Response` for text viewers (source, CSV, mermaid, text, transcript, email)
   - `saveCsv()` — PUT raw text to `/raw/*`
 
 - **Stores** — `useEditorStore` has `fileType: PageType | null` field. `setFile(path, content, etag, fileType)` sets all fields atomically.
