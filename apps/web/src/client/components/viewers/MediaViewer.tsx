@@ -40,10 +40,7 @@ export function MediaViewer({ path, fileType }: MediaViewerProps) {
       <div className="flex flex-1 items-center justify-center overflow-auto p-8">
         {failed ? (
           <div className="text-center text-sm text-secondary">
-            <AlertTriangle
-              className="mx-auto mb-2 h-8 w-8 text-signal-amber"
-              aria-hidden="true"
-            />
+            <AlertTriangle className="mx-auto mb-2 h-8 w-8 text-signal-amber" aria-hidden="true" />
             <p className="font-medium text-primary">
               Cannot play this {fileType === "video" ? "video" : "audio"} file
             </p>

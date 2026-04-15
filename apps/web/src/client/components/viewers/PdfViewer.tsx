@@ -328,10 +328,9 @@ interface PdfViewport {
 
 interface PdfPage {
   getViewport: (params: { scale: number; rotation?: number }) => PdfViewport;
-  render: (params: {
-    canvasContext: CanvasRenderingContext2D;
-    viewport: PdfViewport;
-  }) => { promise: Promise<void> };
+  render: (params: { canvasContext: CanvasRenderingContext2D; viewport: PdfViewport }) => {
+    promise: Promise<void>;
+  };
   /** PDF.js text layer source — an opaque object handed to TextLayer. */
   getTextContent: () => Promise<unknown>;
 }

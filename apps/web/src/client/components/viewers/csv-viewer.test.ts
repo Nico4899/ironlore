@@ -38,28 +38,30 @@ function editHeader(csv: string, colIdx: number, next: string): string {
 describe("CSV editing — round-trip", () => {
   const SIMPLE = "name,role\nAlice,Engineer\nBob,Designer";
 
+  // Papa.unparse always emits `\r\n` between rows; split on the
+  // cross-platform separator so we test content not line endings.
+  const splitLines = (csv: string): string[] => csv.split(/\r?\n/);
+
   it("edits a body cell without disturbing siblings", () => {
-    const updated = editCell(SIMPLE, 0, 1, "PM");
-    const lines = updated.split("\n");
-    expect(lines[0]).toBe("name,role");
-    expect(lines[1]).toBe("Alice,PM");
-    expect(lines[2]).toBe("Bob,Designer");
+    const updated = splitLines(editCell(SIMPLE, 0, 1, "PM"));
+    expect(updated[0]).toBe("name,role");
+    expect(updated[1]).toBe("Alice,PM");
+    expect(updated[2]).toBe("Bob,Designer");
   });
 
   it("edits a header cell without disturbing data rows", () => {
-    const updated = editHeader(SIMPLE, 1, "title");
-    const lines = updated.split("\n");
-    expect(lines[0]).toBe("name,title");
-    expect(lines[1]).toBe("Alice,Engineer");
-    expect(lines[2]).toBe("Bob,Designer");
+    const updated = splitLines(editHeader(SIMPLE, 1, "title"));
+    expect(updated[0]).toBe("name,title");
+    expect(updated[1]).toBe("Alice,Engineer");
+    expect(updated[2]).toBe("Bob,Designer");
   });
 
   it("pads short rows when editing a column past the row's current length", () => {
     const sparse = "a,b,c\n1\n2";
-    // Edit the third column of the first data row; it currently has 1 cell.
-    const updated = editCell(sparse, 0, 2, "x");
-    const lines = updated.split("\n");
-    expect(lines[1]).toBe(",,x");
+    // First data row starts as `["1"]`; after padding to col index 2
+    // and writing "x" it becomes `["1", "", "x"]` → `1,,x`.
+    const updated = splitLines(editCell(sparse, 0, 2, "x"));
+    expect(updated[1]).toBe("1,,x");
   });
 
   it("preserves quoted values containing commas", () => {

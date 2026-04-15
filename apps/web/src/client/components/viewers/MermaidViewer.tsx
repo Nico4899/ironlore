@@ -59,7 +59,7 @@ export function MermaidViewer({ content }: MermaidViewerProps) {
     return () => {
       cancelled = true;
     };
-  }, [content, mode]);
+  }, [content, mode, isEmpty]);
 
   const toggleMode = useCallback(() => {
     setMode((m) => (m === "diagram" ? "source" : "diagram"));
