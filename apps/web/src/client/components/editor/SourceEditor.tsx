@@ -35,11 +35,11 @@ const editorTheme = EditorView.theme({
   ".cm-cursor": {
     borderLeftColor: "var(--color-ironlore-blue)",
   },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-    backgroundColor: "oklch(0.35 0.05 255 / 0.5)",
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+    backgroundColor: "oklch(from var(--color-ironlore-blue) l c h / 0.35)",
   },
   ".cm-activeLine": {
-    backgroundColor: "oklch(0.28 0.01 260)",
+    backgroundColor: "oklch(from var(--color-ironlore-slate-hover) l c h / 0.5)",
   },
   ".cm-gutters": {
     backgroundColor: "transparent",

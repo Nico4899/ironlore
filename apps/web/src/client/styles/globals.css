@@ -85,16 +85,27 @@ body {
   font-size: 14px;
   line-height: 1.5;
   margin: 0;
-  background-color: var(--color-ironlore-slate);
+  background-color: var(--color-background);
   color: var(--color-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.005em;
 }
 
 code,
 pre,
 kbd {
   font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Text selection — primary tint, slightly darker than the background so
+ * the selected span reads as an elevated surface rather than a bright
+ * blue rectangle. Applies everywhere outside CodeMirror/ProseMirror
+ * (those have their own selection rules). */
+::selection {
+  background-color: oklch(from var(--color-ironlore-blue) l c h / 0.35);
+  color: var(--color-primary);
 }
 
 /* ─── Skip navigation (a11y) ─── */

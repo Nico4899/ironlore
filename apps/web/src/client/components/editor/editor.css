@@ -224,6 +224,14 @@
 
 /* ─── Selection & cursor ─── */
 
+/* Use the brand blue at ~35% alpha for selection so highlighted text
+ * reads as "same text, lifted surface" instead of the default OS blue
+ * which fights the Ironlore palette. */
+.ProseMirror ::selection {
+  background-color: oklch(from var(--color-ironlore-blue) l c h / 0.35);
+  color: var(--color-primary);
+}
+
 .ProseMirror .ProseMirror-gapcursor {
   display: none;
   pointer-events: none;
