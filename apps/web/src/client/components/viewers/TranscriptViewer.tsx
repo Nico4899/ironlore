@@ -29,7 +29,8 @@ export function timestampAnchor(time: string): string {
   const normalized = time.replace(",", ".");
   const [clock, ms = "000"] = normalized.split(".");
   const parts = (clock ?? "").split(":");
-  const [hhRaw, mmRaw, ssRaw] = parts.length === 3 ? parts : ["00", parts[0] ?? "0", parts[1] ?? "0"];
+  const [hhRaw, mmRaw, ssRaw] =
+    parts.length === 3 ? parts : ["00", parts[0] ?? "0", parts[1] ?? "0"];
   const hh = String(hhRaw ?? "0").padStart(2, "0");
   const mm = String(mmRaw ?? "0").padStart(2, "0");
   const ss = String(ssRaw ?? "0").padStart(2, "0");
@@ -75,7 +76,7 @@ export function TranscriptViewer({ content, path }: TranscriptViewerProps) {
   // Scroll to the `ts_...` anchor on mount if one is in the URL hash.
   useEffect(() => {
     const hash = window.location.hash.slice(1);
-    if (!hash || !hash.startsWith("ts_")) return;
+    if (!hash?.startsWith("ts_")) return;
     const row = tableRef.current?.querySelector(`[id="${CSS.escape(hash)}"]`);
     if (row instanceof HTMLElement) {
       row.scrollIntoView({ block: "center" });
@@ -105,10 +106,9 @@ export function TranscriptViewer({ content, path }: TranscriptViewerProps) {
       <table ref={tableRef} className="w-full border-collapse text-sm">
         <caption className="sr-only">Transcript ({cues.length} cues)</caption>
         <tbody>
-          {cues.map((cue, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: cues render-only, never reordered
+          {cues.map((cue) => (
             <tr
-              key={`${cue.anchor}-${i}`}
+              key={`${cue.anchor}-${cue.text.slice(0, 16)}`}
               id={cue.anchor}
               className="border-b border-border align-top transition-colors"
             >
