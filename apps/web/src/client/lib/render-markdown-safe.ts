@@ -84,6 +84,20 @@ const processor = unified()
   .use(rehypeStringify);
 
 /**
+ * Strip a leading YAML frontmatter block (`---\n…\n---\n`) so the
+ * preview renders the body only. Without this, the renderer treats the
+ * delimiters as horizontal rules and the YAML body collapses into a
+ * single paragraph (see Pass 1 review). The frontmatter is still
+ * visible in source mode and is the source of truth for tags / id /
+ * acl, so dropping it from the preview is non-destructive.
+ */
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+
+export function stripFrontmatter(md: string): string {
+  return md.replace(FRONTMATTER_RE, "");
+}
+
+/**
  * Render markdown to sanitized HTML.
  *
  * All rendered markdown — editor preview, transcript viewer, mermaid
@@ -91,5 +105,5 @@ const processor = unified()
  * code path. Zero `dangerouslySetInnerHTML` without this on the input side.
  */
 export function renderMarkdownSafe(md: string): string {
-  return processor.processSync(md).toString();
+  return processor.processSync(stripFrontmatter(md)).toString();
 }

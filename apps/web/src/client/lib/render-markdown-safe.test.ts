@@ -1,7 +1,48 @@
 import { describe, expect, it } from "vitest";
-import { renderMarkdownSafe } from "./render-markdown-safe.js";
+import { renderMarkdownSafe, stripFrontmatter } from "./render-markdown-safe.js";
+
+describe("stripFrontmatter", () => {
+  it("removes a leading YAML frontmatter block", () => {
+    const md = "---\ntitle: Hello\ntags: [a, b]\n---\n\n# Body\n\nText.";
+    expect(stripFrontmatter(md)).toBe("\n# Body\n\nText.");
+  });
+
+  it("handles CRLF line endings", () => {
+    const md = "---\r\ntitle: Hello\r\n---\r\n# Body";
+    expect(stripFrontmatter(md)).toBe("# Body");
+  });
+
+  it("leaves the body unchanged when there is no frontmatter", () => {
+    const md = "# Body\n\nText.";
+    expect(stripFrontmatter(md)).toBe(md);
+  });
+
+  it("does not strip a non-leading `---` (treated as a horizontal rule)", () => {
+    const md = "# Heading\n\n---\n\nMore text.";
+    expect(stripFrontmatter(md)).toBe(md);
+  });
+});
 
 describe("renderMarkdownSafe", () => {
+  it("strips YAML frontmatter before rendering the body", () => {
+    const md = [
+      "---",
+      "title: Editor",
+      "type: default",
+      'role: "Page editor"',
+      "---",
+      "",
+      "# Behavior",
+      "",
+      "Body text.",
+    ].join("\n");
+    const html = renderMarkdownSafe(md);
+    expect(html).toContain("<h1>Behavior</h1>");
+    expect(html).toContain("<p>Body text.</p>");
+    expect(html).not.toContain("title: Editor");
+    expect(html).not.toContain("Page editor");
+  });
+
   // -------------------------------------------------------------------------
   // Basic rendering
   // -------------------------------------------------------------------------
