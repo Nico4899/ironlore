@@ -155,14 +155,16 @@ export class FileWatcher {
       // the WAL entry is only for git tracking.
       const content = binary ? null : buffer.toString("utf-8");
 
-      // External edit detected — record in WAL
+      // External edit detected — record in WAL. Attribution is "system"
+      // per docs/02-storage-and-sync.md §External edits so `git log`
+      // reads *"system: external edit"* rather than a synthetic user.
       this.wal.append({
         path: relPath,
         op: "write",
         preHash: knownHash ?? null,
         postHash: newHash,
         content,
-        author: "external",
+        author: "system",
         message: `External edit: ${relPath}`,
       });
 
@@ -177,7 +179,7 @@ export class FileWatcher {
       // extractable containers get extractor output fed into FTS5;
       // opaque binaries like PDF/images only land in the pages table).
       if (!binary) {
-        this.searchIndex?.indexPage(relPath, content ?? "", "external");
+        this.searchIndex?.indexPage(relPath, content ?? "", "system");
       } else {
         this.searchIndex?.upsertPage(relPath, detectPageType(relPath));
         const format = extractableFormat(basename(filePath));
@@ -188,7 +190,7 @@ export class FileWatcher {
           );
           void extract(format, arrayBuffer)
             .then((result) => {
-              this.searchIndex?.indexPage(relPath, result.text, "external");
+              this.searchIndex?.indexPage(relPath, result.text, "system");
             })
             .catch((err) => {
               console.warn(`FTS extractor failed for ${relPath}:`, err);
@@ -231,7 +233,7 @@ export class FileWatcher {
       preHash: knownHash ?? null,
       postHash: null,
       content: null,
-      author: "external",
+      author: "system",
       message: `External delete: ${relPath}`,
     });
 
