@@ -231,8 +231,18 @@ export class SearchIndex {
 
   /**
    * Full-text search via FTS5. Returns results ranked by relevance.
+   *
+   * Each bare token is wrapped in double-quotes (to escape FTS operators)
+   * and suffixed with `*` for prefix matching — so typing "carou" matches
+   * "carousel". Empty queries short-circuit to an empty result.
    */
   search(query: string, limit = 20): SearchResult[] {
+    const tokens = query
+      .split(/\s+/)
+      .map((t) => t.replace(/"/g, ""))
+      .filter((t) => t.length > 0);
+    if (tokens.length === 0) return [];
+    const ftsQuery = tokens.map((t) => `"${t}"*`).join(" ");
     return this.db
       .prepare(
         `SELECT path, title, snippet(pages_fts, 2, '<mark>', '</mark>', '…', 32) AS snippet,
@@ -242,7 +252,7 @@ export class SearchIndex {
          ORDER BY rank
          LIMIT ?`,
       )
-      .all(query, limit) as SearchResult[];
+      .all(ftsQuery, limit) as SearchResult[];
   }
 
   /**
