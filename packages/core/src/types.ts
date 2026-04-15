@@ -16,8 +16,7 @@ export type PageType =
   | "word"
   | "excel"
   | "email"
-  | "app-fullscreen"
-  | "app-embedded"
+  | "notebook"
   | "linked-repo"
   | "linked-dir";
 

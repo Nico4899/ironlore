@@ -40,6 +40,7 @@ const MIME_MAP: Record<string, string> = {
   ".eml": "message/rfc822",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ipynb": "application/x-ipynb+json",
   // Code / text
   ".md": "text/markdown",
   ".mermaid": "text/plain",

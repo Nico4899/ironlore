@@ -60,6 +60,11 @@ describe("detectPageType", () => {
     expect(detectPageType("thread.eml")).toBe("email");
   });
 
+  it("detects Jupyter notebooks", () => {
+    expect(detectPageType("analysis.ipynb")).toBe("notebook");
+    expect(detectPageType("nested/path/model.IPYNB")).toBe("notebook");
+  });
+
   it("defaults to markdown for unknown extensions", () => {
     expect(detectPageType("unknown.xyz")).toBe("markdown");
   });
@@ -84,6 +89,7 @@ describe("isSupportedExtension", () => {
     expect(isSupportedExtension("spec.docx")).toBe(true);
     expect(isSupportedExtension("budget.xlsx")).toBe(true);
     expect(isSupportedExtension("thread.eml")).toBe(true);
+    expect(isSupportedExtension("analysis.ipynb")).toBe(true);
   });
 
   it("returns false for unrecognized extensions", () => {

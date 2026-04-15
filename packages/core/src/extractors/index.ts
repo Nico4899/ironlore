@@ -1,6 +1,12 @@
 import type { ExtractableFormat, ExtractResult } from "./types.js";
 
-export type { EmailHeaders, ExtractableFormat, ExtractedSheet, ExtractResult } from "./types.js";
+export type {
+  EmailHeaders,
+  ExtractableFormat,
+  ExtractedSheet,
+  ExtractResult,
+  NotebookCell,
+} from "./types.js";
 
 /**
  * Dispatch to the right extractor. Heavy libraries are imported inside each
@@ -23,9 +29,14 @@ export async function extract(
       const { extractEml } = await import("./eml.js");
       return extractEml(buffer);
     }
+    case "notebook": {
+      const { extractIpynb } = await import("./ipynb.js");
+      return extractIpynb(buffer);
+    }
   }
 }
 
 export { extractDocx } from "./docx.js";
 export { extractEml } from "./eml.js";
+export { extractIpynb } from "./ipynb.js";
 export { extractXlsx } from "./xlsx.js";

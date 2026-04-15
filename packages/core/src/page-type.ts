@@ -54,6 +54,7 @@ export const TRANSCRIPT_EXTS = new Set([".vtt", ".srt"]);
 export const WORD_EXTS = new Set([".docx"]);
 export const EXCEL_EXTS = new Set([".xlsx"]);
 export const EMAIL_EXTS = new Set([".eml"]);
+export const NOTEBOOK_EXTS = new Set([".ipynb"]);
 
 /**
  * Detect the page type from a file path or directory structure.
@@ -82,6 +83,7 @@ export function detectPageType(filePath: string, isDirectory = false): PageType 
   if (WORD_EXTS.has(ext)) return "word";
   if (EXCEL_EXTS.has(ext)) return "excel";
   if (EMAIL_EXTS.has(ext)) return "email";
+  if (NOTEBOOK_EXTS.has(ext)) return "notebook";
 
   return "markdown"; // fallback
 }
@@ -101,6 +103,7 @@ const ALL_SUPPORTED_EXTS = new Set([
   ...WORD_EXTS,
   ...EXCEL_EXTS,
   ...EMAIL_EXTS,
+  ...NOTEBOOK_EXTS,
 ]);
 
 /**
@@ -137,14 +140,17 @@ export function isSupportedExtension(filename: string): boolean {
 
 /**
  * Map a filename to an `ExtractableFormat` from `@ironlore/core/extractors`
- * if the file has an extractor (docx / xlsx / eml), else null. Used by the
- * server's FTS5 ingestion path to decide whether to run an extractor before
- * indexing.
+ * if the file has an extractor (docx / xlsx / eml / ipynb), else null.
+ * Used by the server's FTS5 ingestion path to decide whether to run an
+ * extractor before indexing.
  */
-export function extractableFormat(filename: string): "word" | "excel" | "email" | null {
+export function extractableFormat(
+  filename: string,
+): "word" | "excel" | "email" | "notebook" | null {
   const ext = extname(filename).toLowerCase();
   if (WORD_EXTS.has(ext)) return "word";
   if (EXCEL_EXTS.has(ext)) return "excel";
   if (EMAIL_EXTS.has(ext)) return "email";
+  if (NOTEBOOK_EXTS.has(ext)) return "notebook";
   return null;
 }

@@ -26,6 +26,17 @@ export interface EmailHeaders {
   cc?: string;
 }
 
+export interface NotebookCell {
+  /** "markdown" | "code" | "raw" — preserved from the .ipynb JSON. */
+  kind: "markdown" | "code" | "raw";
+  /** Source text of the cell, already joined from the JSON source array. */
+  source: string;
+  /** Text outputs (stdout / stderr / text/plain mime) — code cells only. */
+  outputs: string[];
+  /** Execution count for code cells, null when never run. */
+  executionCount: number | null;
+}
+
 export interface ExtractResult {
   /** Plain text — always populated; load-bearing for FTS5 indexing. */
   text: string;
@@ -36,8 +47,12 @@ export interface ExtractResult {
   sheets?: ExtractedSheet[];
   /** Parsed headers for .eml. */
   email?: EmailHeaders;
+  /** Cells for .ipynb, in notebook order. */
+  notebook?: NotebookCell[];
+  /** Detected kernel language for .ipynb (e.g. "python", "r"). */
+  notebookLanguage?: string;
   /** Non-fatal parse warnings. Extractors must not throw on malformed input. */
   warnings: string[];
 }
 
-export type ExtractableFormat = "word" | "excel" | "email";
+export type ExtractableFormat = "word" | "excel" | "email" | "notebook";
