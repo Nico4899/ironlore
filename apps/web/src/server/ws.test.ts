@@ -1,5 +1,5 @@
-import type { WsEvent } from "@ironlore/core";
 import { EventEmitter } from "node:events";
+import type { WsEvent } from "@ironlore/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type WebSocketType from "ws";
 import type { SessionStore } from "./auth.js";
@@ -122,7 +122,12 @@ describe("WebSocketManager — replay buffer", () => {
     // Overflow the buffer. Each broadcast adds one event; the cap is
     // 1024. Feed 1100 so we guarantee eviction.
     for (let i = 0; i < 1100; i++) {
-      manager.broadcast({ type: "tree:add", path: `p${i}.md`, name: `p${i}.md`, fileType: "markdown" });
+      manager.broadcast({
+        type: "tree:add",
+        path: `p${i}.md`,
+        name: `p${i}.md`,
+        fileType: "markdown",
+      });
     }
     expect(manager.getOldestBufferedSeq()).toBeGreaterThan(1);
 
@@ -178,7 +183,12 @@ describe("WebSocketManager — replay buffer", () => {
 
   it("evicts oldest entries without dropping monotonicity of seq", () => {
     for (let i = 0; i < 1100; i++) {
-      manager.broadcast({ type: "tree:add", path: `p${i}.md`, name: `p${i}.md`, fileType: "markdown" });
+      manager.broadcast({
+        type: "tree:add",
+        path: `p${i}.md`,
+        name: `p${i}.md`,
+        fileType: "markdown",
+      });
     }
     const oldest = manager.getOldestBufferedSeq();
     expect(oldest).not.toBeNull();

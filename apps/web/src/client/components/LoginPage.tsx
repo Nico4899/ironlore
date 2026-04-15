@@ -73,7 +73,12 @@ export function LoginPage() {
 
         {/* Error — aria-live so SRs announce failures; aria-describedby links it to the input. */}
         {error && (
-          <p id="login-error" role="alert" aria-live="assertive" className="text-xs text-signal-red">
+          <p
+            id="login-error"
+            role="alert"
+            aria-live="assertive"
+            className="text-xs text-signal-red"
+          >
             {error}
           </p>
         )}

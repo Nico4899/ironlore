@@ -85,7 +85,11 @@ function EditorStatusPill({
   }
   if (status === "conflict") {
     return (
-      <span role="status" aria-live="assertive" className="flex items-center gap-1 text-signal-amber">
+      <span
+        role="status"
+        aria-live="assertive"
+        className="flex items-center gap-1 text-signal-amber"
+      >
         <AlertTriangle className="h-3 w-3" aria-hidden="true" />
         Conflict
       </span>

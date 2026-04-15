@@ -48,15 +48,11 @@ function oklchToOklab({ l, c, h }: Oklch): { L: number; a: number; b: number } {
   return { L: l, a: c * Math.cos(hRad), b: c * Math.sin(hRad) };
 }
 
-function oklabToLinearSrgb({
-  L,
-  a,
-  b,
-}: {
-  L: number;
-  a: number;
+function oklabToLinearSrgb({ L, a, b }: { L: number; a: number; b: number }): {
+  r: number;
+  g: number;
   b: number;
-}): { r: number; g: number; b: number } {
+} {
   // Inverse of the matrix from the OKLab paper.
   const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
   const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
@@ -117,10 +113,6 @@ function luminance(color: Oklch | string): number {
 /**
  * Convenience: does `fg` over `bg` meet the given WCAG threshold?
  */
-export function meetsContrast(
-  fg: Oklch | string,
-  bg: Oklch | string,
-  threshold: number,
-): boolean {
+export function meetsContrast(fg: Oklch | string, bg: Oklch | string, threshold: number): boolean {
   return contrastRatio(fg, bg) >= threshold;
 }
