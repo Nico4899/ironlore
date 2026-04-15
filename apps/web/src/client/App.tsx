@@ -9,6 +9,7 @@ import { LoginPage } from "./components/LoginPage.js";
 import { SearchDialog } from "./components/SearchDialog.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { StatusBar } from "./components/StatusBar.js";
+import { useResponsiveLayout } from "./hooks/useResponsiveLayout.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
 import { logout } from "./lib/api.js";
 import { useAppStore } from "./stores/app.js";
@@ -44,6 +45,7 @@ export function App() {
 
 function AppShell() {
   useWebSocket();
+  useResponsiveLayout();
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
