@@ -139,6 +139,7 @@ export function ContentArea() {
     return (
       <main
         id="main-content"
+        aria-label="Workspace"
         className="flex flex-1 flex-col overflow-hidden"
         style={{ minWidth: "480px" }}
       >

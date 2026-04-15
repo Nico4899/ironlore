@@ -65,11 +65,18 @@ export function LoginPage() {
             placeholder={messages.authPasswordPlaceholder}
             className="rounded border border-border bg-transparent px-3 py-2 text-sm text-primary focus:border-ironlore-blue focus:outline-none"
             autoComplete="current-password"
+            aria-invalid={error !== null}
+            aria-describedby={error ? "login-error" : undefined}
+            required
           />
         </div>
 
-        {/* Error */}
-        {error && <p className="text-xs text-signal-red">{error}</p>}
+        {/* Error — aria-live so SRs announce failures; aria-describedby links it to the input. */}
+        {error && (
+          <p id="login-error" role="alert" aria-live="assertive" className="text-xs text-signal-red">
+            {error}
+          </p>
+        )}
 
         {/* Submit */}
         <button

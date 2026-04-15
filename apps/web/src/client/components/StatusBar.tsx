@@ -1,3 +1,4 @@
+import { AlertTriangle, CircleDot, Loader2, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
@@ -48,23 +49,74 @@ export function StatusBar() {
       )}
       <div className="flex-1" />
       <div className="flex items-center gap-3">
-        <span role="status" aria-live="polite">
-          {editorStatus === "dirty"
-            ? "Unsaved"
-            : editorStatus === "syncing"
-              ? "Saving..."
-              : editorStatus === "conflict"
-                ? "Conflict"
-                : savedLabel}
-        </span>
-        <span
-          role="status"
-          aria-live="polite"
-          className={wsConnected ? "text-signal-green" : "text-signal-red"}
-        >
-          {wsConnected ? "Connected" : "Disconnected"}
-        </span>
+        <EditorStatusPill status={editorStatus} savedLabel={savedLabel} />
+        <ConnectionPill connected={wsConnected} />
       </div>
     </footer>
+  );
+}
+
+/**
+ * Editor save-state pill. An icon sits beside the text so the meaning
+ * survives color-blindness, greyscale, and silent screen readers.
+ */
+function EditorStatusPill({
+  status,
+  savedLabel,
+}: {
+  status: "clean" | "dirty" | "syncing" | "conflict";
+  savedLabel: string;
+}) {
+  if (status === "dirty") {
+    return (
+      <span role="status" aria-live="polite" className="flex items-center gap-1 text-secondary">
+        <CircleDot className="h-3 w-3" aria-hidden="true" />
+        Unsaved
+      </span>
+    );
+  }
+  if (status === "syncing") {
+    return (
+      <span role="status" aria-live="polite" className="flex items-center gap-1 text-secondary">
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+        Saving…
+      </span>
+    );
+  }
+  if (status === "conflict") {
+    return (
+      <span role="status" aria-live="assertive" className="flex items-center gap-1 text-signal-amber">
+        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+        Conflict
+      </span>
+    );
+  }
+  // clean
+  return (
+    <span role="status" aria-live="off" className="text-secondary">
+      {savedLabel}
+    </span>
+  );
+}
+
+/**
+ * WebSocket connection pill. Text + icon so greyscale users still see
+ * the status. Uses Wifi / WifiOff to mirror the OfflineBanner chrome.
+ */
+function ConnectionPill({ connected }: { connected: boolean }) {
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      aria-label={connected ? "Live connection active" : "Disconnected from server"}
+      className={`flex items-center gap-1 ${connected ? "text-signal-green" : "text-signal-red"}`}
+    >
+      {connected ? (
+        <Wifi className="h-3 w-3" aria-hidden="true" />
+      ) : (
+        <WifiOff className="h-3 w-3" aria-hidden="true" />
+      )}
+      {connected ? "Live" : "Offline"}
+    </span>
   );
 }
