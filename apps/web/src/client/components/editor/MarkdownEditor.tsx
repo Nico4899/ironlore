@@ -1,3 +1,4 @@
+import { Sparkles } from "lucide-react";
 import { baseKeymap, toggleMark } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
 import {
@@ -361,9 +362,14 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     suppressRef.current = false;
   }, [markdown]);
 
+  const bodyText = markdown.replace(/^---[\s\S]*?^---[\r\n]*/m, "").trim();
+  const headingOnly = /^#{1,6}\s+\S+\s*$/.test(bodyText);
+  const showStartCard = bodyText.length === 0 || headingOnly;
+
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden">
       <div ref={containerRef} className="flex-1 overflow-y-auto px-8 py-6" />
+      {showStartCard && <EditorStartCard />}
       {slashMenu && (
         <div
           role="listbox"
@@ -406,6 +412,54 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Empty-state card shown over the editor when the body is blank (or only
+ * carries the title heading). Pointer events pass through the wrapper so
+ * the user can click anywhere to land the caret in the editor, but the
+ * card itself accepts the prompt input.
+ *
+ * The placeholder wires into the AI panel: typing here and pressing
+ * Enter seeds the AI panel's prompt and opens it — no hunting for the
+ * sparkle icon on first file open.
+ */
+function EditorStartCard() {
+  const [draft, setDraft] = useState("");
+
+  const submit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    // Lazy require to avoid a circular import between editor and stores.
+    import("../../stores/ai-panel.js").then(({ useAIPanelStore }) => {
+      useAIPanelStore.getState().setInputDraft(trimmed);
+      useAppStore.getState().toggleAIPanel();
+    });
+    setDraft("");
+  }, [draft]);
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-24 flex justify-center px-6">
+      <form
+        className="pointer-events-auto flex w-1/2 min-w-[320px] max-w-[520px] items-center gap-2 rounded-2xl border border-border-strong bg-ironlore-slate/90 px-4 py-2.5 shadow-xl backdrop-blur"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <Sparkles className="h-4 w-4 shrink-0 text-ironlore-blue" />
+        <input
+          className="flex-1 bg-transparent text-sm text-primary placeholder:text-secondary focus:outline-none"
+          placeholder="Ask AI to draft something, or start writing below…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <kbd className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-secondary">
+          ↵
+        </kbd>
+      </form>
     </div>
   );
 }
