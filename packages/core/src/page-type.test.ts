@@ -79,6 +79,11 @@ describe("isSupportedExtension", () => {
     expect(isSupportedExtension("app.ts")).toBe(true);
     expect(isSupportedExtension("flow.mmd")).toBe(true);
     expect(isSupportedExtension("doc.pdf")).toBe(true);
+    expect(isSupportedExtension("notes.txt")).toBe(true);
+    expect(isSupportedExtension("captions.vtt")).toBe(true);
+    expect(isSupportedExtension("spec.docx")).toBe(true);
+    expect(isSupportedExtension("budget.xlsx")).toBe(true);
+    expect(isSupportedExtension("thread.eml")).toBe(true);
   });
 
   it("returns false for unrecognized extensions", () => {
