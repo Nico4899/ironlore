@@ -23,7 +23,10 @@ export function PdfViewer({ path }: PdfViewerProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const pdfDocRef = useRef<unknown>(null);
-  const pageElsRef = useRef<HTMLCanvasElement[]>([]);
+  // Per-page wrapper element (canvas + textLayer share its coordinate
+  // space). Used by the IntersectionObserver below to track the
+  // currently-visible page during scroll.
+  const pageElsRef = useRef<HTMLDivElement[]>([]);
 
   const url = fetchRawUrl(path);
   const fileName = path.split("/").pop() ?? "document.pdf";
@@ -106,7 +109,13 @@ export function PdfViewer({ path }: PdfViewerProps) {
     };
   }, []);
 
-  // Render pages when scale/rotation/document changes
+  // Render pages when scale/rotation/document changes.
+  //
+  // Per page we build a positioned wrapper containing both the canvas
+  // (raster pixels) and a `TextLayer` overlay (transparent positioned
+  // spans) so users can drag-select text, the OS "find in page" finds
+  // hits, and the global `HighlightToolbar` activates inside PDFs.
+  //
   // biome-ignore lint/correctness/useExhaustiveDependencies: numPages triggers re-render after PDF load completes
   useEffect(() => {
     const pdf = pdfDocRef.current as {
@@ -119,8 +128,16 @@ export function PdfViewer({ path }: PdfViewerProps) {
     let cancelled = false;
 
     (async () => {
+      // Preserve scroll position across re-render so zoom/rotate
+      // doesn't dump the user back to page 1 (Phase 2.5 audit Step 3).
+      const fractional =
+        container.scrollHeight > 0 ? container.scrollTop / container.scrollHeight : 0;
+
       container.replaceChildren();
       pageElsRef.current = [];
+
+      const pdfjsLib = await import("pdfjs-dist");
+      const TextLayer = (pdfjsLib as unknown as { TextLayer: TextLayerCtor }).TextLayer;
 
       for (let i = 1; i <= pdf.numPages; i++) {
         if (cancelled) return;
@@ -128,18 +145,56 @@ export function PdfViewer({ path }: PdfViewerProps) {
         const page = await pdf.getPage(i);
         const viewport = page.getViewport({ scale, rotation });
 
+        // Per-page wrapper — canvas + textLayer share its coordinate
+        // space via absolute positioning.
+        const wrapper = document.createElement("div");
+        wrapper.className = "ir-pdf-page shadow-md";
+        wrapper.style.width = `${viewport.width}px`;
+        wrapper.style.height = `${viewport.height}px`;
+        wrapper.dataset.pageNumber = String(i);
+        container.appendChild(wrapper);
+        pageElsRef.current[i - 1] = wrapper;
+
         const canvas = document.createElement("canvas");
         canvas.width = viewport.width;
         canvas.height = viewport.height;
-        canvas.className = "mb-4 shadow-md";
-        canvas.dataset.pageNumber = String(i);
-        container.appendChild(canvas);
-        pageElsRef.current[i - 1] = canvas;
+        canvas.style.display = "block";
+        wrapper.appendChild(canvas);
+
+        const textDiv = document.createElement("div");
+        textDiv.className = "ir-pdf-textLayer";
+        textDiv.style.width = `${viewport.width}px`;
+        textDiv.style.height = `${viewport.height}px`;
+        // PDF.js >=4 uses `--scale-factor` to size the spans relative to
+        // the viewport. Without this, text spans render at 1px height.
+        textDiv.style.setProperty("--scale-factor", String(scale));
+        wrapper.appendChild(textDiv);
 
         const ctx = canvas.getContext("2d");
         if (ctx) {
           await page.render({ canvasContext: ctx, viewport }).promise;
         }
+
+        if (cancelled) return;
+
+        // Render the text layer second so the user sees the canvas
+        // immediately and selection arrives a frame later. Fall back
+        // silently for scanned PDFs that have no extractable text.
+        try {
+          const textContent = await page.getTextContent();
+          const textLayer = new TextLayer({
+            textContentSource: textContent,
+            container: textDiv,
+            viewport,
+          });
+          await textLayer.render();
+        } catch {
+          // No extractable text — selection just won't activate here.
+        }
+      }
+
+      if (!cancelled && container.scrollHeight > 0) {
+        container.scrollTop = fractional * container.scrollHeight;
       }
     })();
 
@@ -259,14 +314,33 @@ export function PdfViewer({ path }: PdfViewerProps) {
   );
 }
 
-/** Minimal PDF.js page type for internal use. */
+/**
+ * Minimal PDF.js types for the surface we actually call. We keep these
+ * structural types here instead of pulling pdfjs-dist's full `.d.ts`
+ * into the call sites — the dynamic `import("pdfjs-dist")` already
+ * deferred the runtime cost; bringing the static types back into the
+ * viewer just to type three method shapes isn't worth the ergonomics.
+ */
+interface PdfViewport {
+  width: number;
+  height: number;
+}
+
 interface PdfPage {
-  getViewport: (params: { scale: number; rotation?: number }) => {
-    width: number;
-    height: number;
-  };
+  getViewport: (params: { scale: number; rotation?: number }) => PdfViewport;
   render: (params: {
     canvasContext: CanvasRenderingContext2D;
-    viewport: { width: number; height: number };
+    viewport: PdfViewport;
   }) => { promise: Promise<void> };
+  /** PDF.js text layer source — an opaque object handed to TextLayer. */
+  getTextContent: () => Promise<unknown>;
+}
+
+/** Constructor signature for the dynamically-imported `TextLayer`. */
+interface TextLayerCtor {
+  new (params: {
+    textContentSource: unknown;
+    container: HTMLElement;
+    viewport: PdfViewport;
+  }): { render: () => Promise<void> };
 }

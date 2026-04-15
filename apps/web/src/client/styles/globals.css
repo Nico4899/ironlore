@@ -124,6 +124,51 @@ kbd {
   top: 0;
 }
 
+/* ─── PDF text layer (Phase 2.5 §PDF text selection) ─────────────────
+ *
+ * pdfjs-dist emits invisible positioned spans on top of each page
+ * canvas so the user can drag-select text, the OS find-in-page works,
+ * and screen readers announce semantic content. The browser's selection
+ * styling (set globally above) carries through to highlighted spans.
+ *
+ * Class names live under the `ir-pdf-` namespace so we don't conflict
+ * with the upstream PDF.js viewer styles in case anyone imports them
+ * later. Keep this CSS minimal — PDF.js itself only needs
+ * absolute-positioned, transparent, line-height-1 spans to work. */
+.ir-pdf-page {
+  position: relative;
+  display: block;
+  margin: 0 auto 1rem;
+}
+
+.ir-pdf-textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  opacity: 1;
+  line-height: 1;
+  user-select: text;
+}
+
+.ir-pdf-textLayer span,
+.ir-pdf-textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+/* PDF.js uses `endOfContent` as a tail marker; keep it invisible. */
+.ir-pdf-textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: -1;
+  cursor: default;
+  user-select: none;
+}
+
 /* ─── Focus rings (a11y) ─── */
 
 /*
