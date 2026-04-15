@@ -141,20 +141,46 @@ describe("SearchIndex", () => {
     expect(edits.find((e) => e.path === "second.md")?.author).toBe("bob");
   });
 
-  it("reindexAll rebuilds from filesystem", () => {
+  it("reindexAll rebuilds from filesystem", async () => {
     const { index, projectDir } = createIndex();
     const dataRoot = join(projectDir, "data");
     writeFileSync(join(dataRoot, "page-a.md"), "# Page A\n\nLinks to [[Page B]].\n");
     writeFileSync(join(dataRoot, "page-b.md"), "# Page B\n\nHello world.\n");
 
-    const { indexed } = index.reindexAll(dataRoot);
+    const { indexed } = await index.reindexAll(dataRoot);
     expect(indexed).toBe(2);
 
     expect(index.search("hello")).toHaveLength(1);
     expect(index.getBacklinks("Page B")).toHaveLength(1);
   });
 
-  it("reindexAll clears stale entries", () => {
+  it("reindexAll extracts and indexes .eml content for FTS5", async () => {
+    const { index, projectDir } = createIndex();
+    const dataRoot = join(projectDir, "data");
+
+    const eml = [
+      "From: Alice <alice@example.com>",
+      "To: Bob <bob@example.com>",
+      "Subject: Quarterly roadmap sync",
+      "Date: Tue, 1 Apr 2026 10:00:00 +0000",
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      "Let's review the peppercorn migration plan on Thursday.",
+      "",
+    ].join("\r\n");
+    writeFileSync(join(dataRoot, "inbox.eml"), eml);
+
+    const { indexed } = await index.reindexAll(dataRoot);
+    expect(indexed).toBe(1);
+
+    // Subject line from headers
+    expect(index.search("peppercorn")).toHaveLength(1);
+    // Body content
+    expect(index.search("roadmap")).toHaveLength(1);
+  });
+
+  it("reindexAll clears stale entries", async () => {
     const { index, projectDir } = createIndex();
     const dataRoot = join(projectDir, "data");
 
@@ -164,7 +190,7 @@ describe("SearchIndex", () => {
 
     // Reindex from disk (stale.md doesn't exist on disk)
     writeFileSync(join(dataRoot, "fresh.md"), "# Fresh\n");
-    index.reindexAll(dataRoot);
+    await index.reindexAll(dataRoot);
 
     expect(index.search("stale")).toHaveLength(0);
     expect(index.search("fresh")).toHaveLength(1);

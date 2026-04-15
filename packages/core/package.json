@@ -19,6 +19,10 @@
     "./extractors": {
       "types": "./src/extractors/index.ts",
       "import": "./src/extractors/index.ts"
+    },
+    "./fixtures/generate-large-kb": {
+      "types": "./src/fixtures/generate-large-kb.ts",
+      "import": "./src/fixtures/generate-large-kb.ts"
     }
   },
   "scripts": {

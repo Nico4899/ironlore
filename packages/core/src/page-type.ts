@@ -134,3 +134,17 @@ export function isSupportedExtension(filename: string): boolean {
   const ext = extname(filename).toLowerCase();
   return ext !== "" && ALL_SUPPORTED_EXTS.has(ext);
 }
+
+/**
+ * Map a filename to an `ExtractableFormat` from `@ironlore/core/extractors`
+ * if the file has an extractor (docx / xlsx / eml), else null. Used by the
+ * server's FTS5 ingestion path to decide whether to run an extractor before
+ * indexing.
+ */
+export function extractableFormat(filename: string): "word" | "excel" | "email" | null {
+  const ext = extname(filename).toLowerCase();
+  if (WORD_EXTS.has(ext)) return "word";
+  if (EXCEL_EXTS.has(ext)) return "excel";
+  if (EMAIL_EXTS.has(ext)) return "email";
+  return null;
+}
