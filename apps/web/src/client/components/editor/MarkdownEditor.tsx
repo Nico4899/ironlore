@@ -312,7 +312,9 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           // Clamp carry-over selection when the list shrinks from filtering.
           index: prev ? Math.min(prev.index, filtered.length - 1) : 0,
           query: ctx.query,
-          coords: { left: coords.left, top: coords.bottom },
+          // `top` anchors the bottom of the menu above the current line so
+          // the popup never covers what the user is typing.
+          coords: { left: coords.left, top: coords.top },
           from: ctx.from,
           to: ctx.to,
         }));
@@ -366,8 +368,14 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
         <div
           role="listbox"
           aria-label="Slash commands"
-          className="fixed z-50 min-w-56 rounded border border-border bg-ironlore-slate py-1 shadow-lg"
-          style={{ left: slashMenu.coords.left, top: slashMenu.coords.top + 4 }}
+          className="fixed z-50 min-w-56 rounded-md border border-border bg-ironlore-slate py-1 shadow-xl"
+          style={{
+            left: slashMenu.coords.left,
+            // Anchor the menu's bottom 6px above the current caret line so
+            // it sits above what the user is typing (was below, which hid
+            // the trigger line as the list grew).
+            bottom: `${Math.max(window.innerHeight - slashMenu.coords.top + 6, 8)}px`,
+          }}
         >
           {slashMenu.items.map((item, i) => (
             <div key={item.title}>
