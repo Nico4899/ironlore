@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createFolder,
   createPage,
+  createRawFile,
   deleteFolder,
   deletePage,
   fetchTree,
@@ -229,8 +230,12 @@ export function Sidebar() {
         } else if (edit.kind === "new-file") {
           const fileName = trimmed.includes(".") ? trimmed : `${trimmed}.md`;
           const fullPath = edit.parentPath ? `${edit.parentPath}/${fileName}` : fileName;
-          const title = fileName.replace(/\.md$/, "");
-          await createPage(fullPath, `# ${title}\n`);
+          if (fileName.toLowerCase().endsWith(".md")) {
+            const title = fileName.replace(/\.md$/i, "");
+            await createPage(fullPath, `# ${title}\n`);
+          } else {
+            await createRawFile(fullPath, "");
+          }
           useAppStore.getState().setActivePath(fullPath);
         } else if (edit.kind === "new-folder") {
           const fullPath = edit.parentPath ? `${edit.parentPath}/${trimmed}` : trimmed;

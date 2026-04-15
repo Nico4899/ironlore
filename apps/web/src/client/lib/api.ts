@@ -112,6 +112,19 @@ export async function fetchRaw(pagePath: string): Promise<Response> {
   return res;
 }
 
+/**
+ * Create a new text-based file through the raw API. Used for non-markdown
+ * file creation from the sidebar (e.g. `.py`, `.csv`, `.mermaid`).
+ */
+export async function createRawFile(pagePath: string, content: string): Promise<void> {
+  const res = await apiFetch(`${RAW_BASE}/${pagePath}`, {
+    method: "PUT",
+    headers: { "Content-Type": "text/plain" },
+    body: content,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+}
+
 /** Save CSV content via the raw API. */
 export async function saveCsv(
   pagePath: string,

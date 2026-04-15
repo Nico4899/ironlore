@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { WsEventInput } from "@ironlore/core";
-import { detectPageType } from "@ironlore/core";
+import { detectPageType, isBinaryExtension } from "@ironlore/core";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
@@ -198,6 +198,10 @@ export function createPagesApi(
     const pagePath = c.req.param("path") ?? "";
     if (!pagePath) {
       return c.json({ error: "Path required" }, 400);
+    }
+
+    if (extname(pagePath).toLowerCase() !== ".md") {
+      return c.json({ error: "This endpoint only accepts markdown files" }, 400);
     }
 
     const ifMatch = c.req.header("If-Match");
@@ -417,8 +421,11 @@ export function createRawApi(writer: StorageWriter): Hono {
     }
 
     const ext = extname(filePath).toLowerCase();
-    if (ext !== ".csv") {
-      return c.json({ error: "Only CSV files can be written via /raw" }, 400);
+    // Binary file types must be uploaded through their dedicated routes.
+    // Everything else (csv, source code, text, transcript, mermaid) is text-
+    // writable through /raw.
+    if (isBinaryExtension(filePath) || ext === ".md") {
+      return c.json({ error: "This file type cannot be written via /raw" }, 400);
     }
 
     const ifMatch = c.req.header("If-Match");
