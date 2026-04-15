@@ -52,6 +52,59 @@ function tabIcon(type: PageType) {
 }
 
 /**
+ * Compute display labels for a list of tab paths. When two or more paths
+ * share a basename, walk parent segments outward until each label is
+ * unique — `editor / persona.md` vs `general / persona.md` instead of
+ * two indistinguishable `persona.md` tabs.
+ *
+ * Result keys are the original paths so the caller can look up labels in
+ * stable iteration order.
+ */
+export function disambiguateTabLabels(paths: readonly string[]): Map<string, string> {
+  const labels = new Map<string, string>();
+  if (paths.length === 0) return labels;
+
+  // Pre-split each path into segments so we can grow labels segment-by-segment.
+  const segments = new Map<string, string[]>();
+  for (const p of paths) segments.set(p, p.split("/"));
+
+  // Start every label at depth 1 (basename only); expand collided labels
+  // until each is unique.
+  const depths = new Map<string, number>();
+  for (const p of paths) depths.set(p, 1);
+
+  while (true) {
+    const current = new Map<string, string[]>();
+    for (const p of paths) {
+      const segs = segments.get(p) ?? [];
+      const depth = Math.min(depths.get(p) ?? 1, segs.length);
+      const label = segs.slice(-depth).join(" / ");
+      if (!current.has(label)) current.set(label, []);
+      current.get(label)?.push(p);
+    }
+
+    let didExpand = false;
+    for (const [, owners] of current) {
+      if (owners.length <= 1) continue;
+      for (const p of owners) {
+        const segs = segments.get(p) ?? [];
+        const d = depths.get(p) ?? 1;
+        if (d < segs.length) {
+          depths.set(p, d + 1);
+          didExpand = true;
+        }
+      }
+    }
+    if (!didExpand) {
+      for (const [label, owners] of current) {
+        for (const p of owners) labels.set(p, label);
+      }
+      return labels;
+    }
+  }
+}
+
+/**
  * VS Code–style tab strip. Shows every open file; the active tab is
  * highlighted. Middle-click or the X closes a tab. Falls back to the
  * neighbor to the left when the active tab is closed.
@@ -114,6 +167,8 @@ export function TabBar() {
 
   if (openPaths.length === 0) return null;
 
+  const labels = disambiguateTabLabels(openPaths);
+
   return (
     <div
       role="tablist"
@@ -121,7 +176,8 @@ export function TabBar() {
       className="flex shrink-0 items-stretch overflow-x-auto border-b border-border bg-ironlore-slate"
     >
       {openPaths.map((path) => {
-        const name = path.split("/").pop() ?? path;
+        const label = labels.get(path) ?? path.split("/").pop() ?? path;
+        const closeLabel = path.split("/").pop() ?? path;
         const type = detectPageType(path);
         const active = path === activePath;
         return (
@@ -142,11 +198,11 @@ export function TabBar() {
             }`}
           >
             {tabIcon(type)}
-            <span className="max-w-40 truncate">{name}</span>
+            <span className="max-w-40 truncate">{label}</span>
             <button
               type="button"
               onClick={(e) => onClose(e, path)}
-              aria-label={`Close ${name}`}
+              aria-label={`Close ${closeLabel}`}
               className="ml-1 rounded p-0.5 opacity-0 hover:bg-ironlore-slate group-hover:opacity-100 aria-selected:opacity-100"
             >
               <X className="h-3 w-3" />
