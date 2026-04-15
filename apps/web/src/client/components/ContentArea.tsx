@@ -190,7 +190,7 @@ export function ContentArea() {
         ) : fileType === "transcript" ? (
           <TranscriptViewer content={markdown} path={filePath} />
         ) : fileType === "csv" ? (
-          <CsvViewer content={markdown} onChange={handleChange} />
+          <CsvViewer content={markdown} onChange={handleChange} path={filePath} />
         ) : fileType === "pdf" ? (
           <Suspense fallback={<ViewerLoading />}>
             <PdfViewer path={filePath} />

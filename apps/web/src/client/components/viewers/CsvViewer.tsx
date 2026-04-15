@@ -1,10 +1,13 @@
-import { Download } from "lucide-react";
+import { Check, Download, Loader2, Plus } from "lucide-react";
 import Papa from "papaparse";
 import { useCallback, useMemo, useState } from "react";
+import { useEditorStore } from "../../stores/editor.js";
 
 interface CsvViewerProps {
   content: string;
   onChange: (csv: string) => void;
+  /** Active file path — used for the download filename. */
+  path?: string;
 }
 
 /**
@@ -15,7 +18,7 @@ function focusRef(el: HTMLInputElement | null) {
   el?.focus();
 }
 
-export function CsvViewer({ content, onChange }: CsvViewerProps) {
+export function CsvViewer({ content, onChange, path }: CsvViewerProps) {
   const parsed = useMemo(() => {
     const result = Papa.parse<string[]>(content, { header: false, skipEmptyLines: true });
     return result.data;
@@ -26,6 +29,20 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
   const rows = parsed.slice(1);
 
   const [editingCell, setEditingCell] = useState<{ row: number; col: number } | null>(null);
+
+  // Subscribe to the editor's save status so the toolbar mirrors what
+  // the StatusBar shows. Without this the spreadsheet itself never
+  // confirms an autosave landed.
+  const status = useEditorStore((s) => s.status);
+
+  const seedFirstRow = useCallback(() => {
+    // Minimum viable spreadsheet: one header column + one empty row.
+    const seeded = Papa.unparse([["Column 1"], [""]]);
+    onChange(seeded);
+    // Drop the user straight into editing the new header so the next
+    // keypress lands somewhere useful.
+    setEditingCell({ row: -1, col: 0 });
+  }, [onChange]);
 
   const handleCellChange = useCallback(
     (rowIdx: number, colIdx: number, value: string) => {
@@ -58,15 +75,42 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
     [parsed, onChange],
   );
 
+  // Derive the download filename from the file path. Falls back to a
+  // generic name only when no path is available (e.g. during tests).
+  const downloadName = path?.split("/").pop() ?? "data.csv";
+
   const handleDownload = useCallback(() => {
     const blob = new Blob([content], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "data.csv";
+    a.download = downloadName;
     a.click();
     URL.revokeObjectURL(url);
-  }, [content]);
+  }, [content, downloadName]);
+
+  // ─── Empty state ─────────────────────────────────────────────────
+  // An empty CSV with no rows is a UX dead-end — there's nothing to
+  // double-click to start editing. Show a single-button surface that
+  // seeds a header + one editable cell. The autosave loop persists
+  // the seeded content via the standard CSV write path.
+  if (parsed.length === 0) {
+    return (
+      <div className="flex flex-1 items-center justify-center px-6">
+        <div className="text-center">
+          <p className="text-sm text-secondary">This spreadsheet is empty.</p>
+          <button
+            type="button"
+            onClick={seedFirstRow}
+            className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-ironlore-blue px-3 py-1.5 text-xs font-semibold text-white hover:bg-ironlore-blue-strong"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add first row
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -75,6 +119,7 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
         <span className="text-xs text-secondary">
           {rows.length} rows &times; {headers.length} columns
         </span>
+        <SaveStatusPill status={status} />
         <div className="flex-1" />
         <button
           type="button"
@@ -162,5 +207,38 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
         </table>
       </div>
     </div>
+  );
+}
+
+/**
+ * In-toolbar mirror of the global StatusBar pill so users get save
+ * confirmation without having to look at the bottom of the screen.
+ * Hidden when the editor is clean and there's nothing to confirm —
+ * we only want to surface it when state is interesting.
+ */
+function SaveStatusPill({ status }: { status: "clean" | "dirty" | "syncing" | "conflict" }) {
+  if (status === "clean") return null;
+  const cls = "ml-2 flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px]";
+  if (status === "syncing") {
+    return (
+      <span className={`${cls} text-secondary`} role="status" aria-live="polite">
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+        Saving…
+      </span>
+    );
+  }
+  if (status === "conflict") {
+    return (
+      <span className={`${cls} text-signal-amber`} role="status" aria-live="assertive">
+        Conflict
+      </span>
+    );
+  }
+  // dirty
+  return (
+    <span className={`${cls} text-secondary`} role="status" aria-live="polite">
+      <Check className="h-3 w-3" aria-hidden="true" />
+      Unsaved
+    </span>
   );
 }
