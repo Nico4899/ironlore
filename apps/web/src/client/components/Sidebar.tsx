@@ -445,14 +445,16 @@ export function Sidebar() {
                 >
                   {isDir ? (
                     isExpanded ? (
-                      <ChevronDown className="h-4 w-4 shrink-0 text-secondary" />
+                      <ChevronDown className="h-4 w-4 shrink-0 text-primary" />
                     ) : (
                       <ChevronRight className="h-4 w-4 shrink-0 text-secondary" />
                     )
                   ) : (
                     <FileIcon type={node.type} />
                   )}
-                  <span className="truncate">{node.name}</span>
+                  <span className={`truncate ${isDir ? "font-medium text-primary" : ""}`}>
+                    {node.name}
+                  </span>
                 </div>
               );
             })}
