@@ -6,6 +6,7 @@ import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
+import { HighlightToolbar } from "./editor/HighlightToolbar.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
@@ -164,6 +165,10 @@ export function ContentArea() {
 
       {/* Conflict banner (markdown + CSV) */}
       {conflict && <ConflictBanner conflict={conflict} onResolved={handleConflictResolved} />}
+
+      {/* Floating selection toolbar (rendered only when text is selected
+           inside the ProseMirror editor; a no-op for other viewers). */}
+      <HighlightToolbar />
 
       {/* Viewer dispatch */}
       <ViewerErrorBoundary path={filePath}>

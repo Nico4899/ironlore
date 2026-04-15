@@ -560,7 +560,11 @@ export function Sidebar() {
               );
             })}
             {edit && edit.kind !== "rename" && (
-              <div style={{ paddingLeft: `${8 + (edit.parentPath.split("/").filter(Boolean).length + (edit.parentPath ? 1 : 0)) * 14}px` }}>
+              <div
+                style={{
+                  paddingLeft: `${8 + (edit.parentPath.split("/").filter(Boolean).length + (edit.parentPath ? 1 : 0)) * 14}px`,
+                }}
+              >
                 <InlineEditRow
                   initial={edit.initial}
                   onCommit={commitEdit}

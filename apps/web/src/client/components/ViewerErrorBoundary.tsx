@@ -42,6 +42,7 @@ export class ViewerErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
+    // biome-ignore lint/suspicious/noConsole: error boundary fallback telemetry — must survive even when UI is broken
     console.error(`Viewer crashed while rendering ${this.lastPath}:`, error, info);
   }
 
@@ -55,10 +56,7 @@ export class ViewerErrorBoundary extends Component<Props, State> {
     return (
       <div className="flex flex-1 items-center justify-center px-6" role="alert">
         <div className="max-w-md text-center">
-          <AlertTriangle
-            className="mx-auto h-10 w-10 text-signal-amber"
-            aria-hidden="true"
-          />
+          <AlertTriangle className="mx-auto h-10 w-10 text-signal-amber" aria-hidden="true" />
           <h2 className="mt-3 text-base font-semibold text-primary">
             This file couldn't be rendered
           </h2>

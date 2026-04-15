@@ -146,7 +146,8 @@ function AIEmptyState() {
           title="Add Context"
           body={
             <>
-              Type <code className="font-mono text-[11px]">@</code> to reference agents or other files and expand the discussion.
+              Type <code className="font-mono text-[11px]">@</code> to reference agents or other
+              files and expand the discussion.
             </>
           }
         />

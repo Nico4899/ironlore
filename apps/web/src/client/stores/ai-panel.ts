@@ -71,7 +71,6 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
   setLastSeq: (seq) => set({ lastSeq: seq }),
   clearMessages: () => set({ messages: [], lastSeq: 0 }),
   addContext: (ctx) => set((s) => ({ contexts: [...s.contexts, ctx] })),
-  removeContext: (index) =>
-    set((s) => ({ contexts: s.contexts.filter((_, i) => i !== index) })),
+  removeContext: (index) => set((s) => ({ contexts: s.contexts.filter((_, i) => i !== index) })),
   clearContexts: () => set({ contexts: [] }),
 }));
