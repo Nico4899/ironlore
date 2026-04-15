@@ -17,6 +17,21 @@ export type ConversationMessage =
     }
   | { type: "error"; text: string };
 
+/**
+ * Context pill shown above the prompt field — e.g. the highlighted text
+ * the user chose to "Ask AI" about. The user can dismiss it with the X
+ * before sending.
+ */
+export interface ContextPill {
+  kind: "highlight" | "file" | "page";
+  /** Short label for the pill (e.g. truncated highlight text). */
+  label: string;
+  /** Full text handed to the agent when the prompt is submitted. */
+  body: string;
+  /** Optional source path for provenance (filename for "file", page path for "page"). */
+  path?: string;
+}
+
 interface AIPanelStore {
   jobId: string | null;
   messages: ConversationMessage[];
@@ -24,6 +39,8 @@ interface AIPanelStore {
   inputDraft: string;
   isStreaming: boolean;
   activeAgent: "general" | "editor" | string;
+  /** Pending contexts shown as pills above the prompt input. */
+  contexts: ContextPill[];
 
   setJobId: (jobId: string | null) => void;
   addMessage: (message: ConversationMessage) => void;
@@ -32,6 +49,9 @@ interface AIPanelStore {
   setActiveAgent: (agent: string) => void;
   setLastSeq: (seq: number) => void;
   clearMessages: () => void;
+  addContext: (ctx: ContextPill) => void;
+  removeContext: (index: number) => void;
+  clearContexts: () => void;
 }
 
 export const useAIPanelStore = create<AIPanelStore>((set) => ({
@@ -41,6 +61,7 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
   inputDraft: "",
   isStreaming: false,
   activeAgent: "general",
+  contexts: [],
 
   setJobId: (jobId) => set({ jobId }),
   addMessage: (message) => set((s) => ({ messages: [...s.messages, message] })),
@@ -49,4 +70,8 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
   setActiveAgent: (agent) => set({ activeAgent: agent }),
   setLastSeq: (seq) => set({ lastSeq: seq }),
   clearMessages: () => set({ messages: [], lastSeq: 0 }),
+  addContext: (ctx) => set((s) => ({ contexts: [...s.contexts, ctx] })),
+  removeContext: (index) =>
+    set((s) => ({ contexts: s.contexts.filter((_, i) => i !== index) })),
+  clearContexts: () => set({ contexts: [] }),
 }));
