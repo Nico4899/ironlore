@@ -41,18 +41,24 @@ interface ToolbarPos {
   text: string;
 }
 
+// Selectors of the surfaces where the highlight toolbar should activate.
+// ProseMirror is the markdown editor; `.ir-pdf-textLayer` is the
+// transparent overlay PDF.js paints on top of each page canvas (Phase
+// 2.5 §PDF text selection).
+const SELECTABLE_SELECTOR = ".ProseMirror, .ir-pdf-textLayer";
+
 function readSelection(): ToolbarPos | null {
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
   const range = sel.getRangeAt(0);
-  // Only show the toolbar inside ProseMirror — the source-mode editor
-  // uses CodeMirror which has its own selection UX.
+  // Only show the toolbar inside the editor or a PDF text layer; the
+  // source-mode editor uses CodeMirror which has its own selection UX.
   const anchor = range.commonAncestorContainer as HTMLElement;
-  const inEditor =
+  const inSelectableSurface =
     anchor.nodeType === 1
-      ? (anchor as Element).closest(".ProseMirror")
-      : anchor.parentElement?.closest(".ProseMirror");
-  if (!inEditor) return null;
+      ? (anchor as Element).closest(SELECTABLE_SELECTOR)
+      : anchor.parentElement?.closest(SELECTABLE_SELECTOR);
+  if (!inSelectableSurface) return null;
   const rect = range.getBoundingClientRect();
   if (rect.width === 0 && rect.height === 0) return null;
   return {
