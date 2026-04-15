@@ -25,14 +25,35 @@ import { Logo } from "./Logo.js";
 export function Header() {
   const activePath = useAppStore((s) => s.activePath);
   const theme = useAppStore((s) => s.theme);
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+  const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
+  const terminalOpen = useAppStore((s) => s.terminalOpen);
 
   const handleLogout = useCallback(async () => {
     await logout();
     useAuthStore.getState().clearSession();
   }, []);
 
+  const iconBtn =
+    "rounded p-1.5 text-secondary hover:bg-ironlore-slate-hover hover:text-primary aria-pressed:bg-ironlore-slate-hover aria-pressed:text-ironlore-blue";
+
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+      <button
+        type="button"
+        className={iconBtn}
+        onClick={() => useAppStore.getState().toggleSidebar()}
+        aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        aria-pressed={sidebarOpen}
+        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+      >
+        {sidebarOpen ? (
+          <PanelLeftClose className="h-4 w-4" />
+        ) : (
+          <PanelLeftOpen className="h-4 w-4" />
+        )}
+      </button>
+
       <a
         href="/"
         className="flex items-center gap-2 text-primary"
@@ -57,39 +78,52 @@ export function Header() {
       <nav aria-label="Application controls" className="flex items-center gap-1">
         <button
           type="button"
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+          className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
           onClick={() => useAppStore.getState().toggleSearchDialog()}
           aria-label="Search pages"
           title="Search (⌘K)"
         >
           <Search className="h-3.5 w-3.5" />
-          <kbd className="hidden text-xs md:inline">⌘K</kbd>
+          <kbd className="hidden font-mono text-[10px] text-secondary md:inline">⌘K</kbd>
         </button>
         <button
           type="button"
-          className="rounded p-1.5 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+          className={iconBtn}
+          onClick={() => useAppStore.getState().toggleTerminal()}
+          aria-label={terminalOpen ? "Close terminal" : "Open terminal"}
+          aria-pressed={terminalOpen}
+          title={terminalOpen ? "Close terminal (⌃`)" : "Open terminal (⌃`)"}
+        >
+          <TerminalSquare className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          className={iconBtn}
           onClick={() => useAppStore.getState().toggleTheme()}
           aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
           title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
         >
-          {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
         <button
           type="button"
-          className="rounded px-2 py-1 text-xs text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+          className={iconBtn}
           onClick={() => useAppStore.getState().toggleAIPanel()}
-          aria-label="Toggle AI panel"
-          title="AI panel (⌘⇧A)"
+          aria-label={aiPanelOpen ? "Hide AI panel" : "Show AI panel"}
+          aria-pressed={aiPanelOpen}
+          title={aiPanelOpen ? "Hide AI panel (⌘⇧A)" : "Show AI panel (⌘⇧A)"}
         >
-          AI
+          <Sparkles className="h-4 w-4" />
         </button>
+        <div className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
         <button
           type="button"
-          className="rounded p-1.5 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+          className={iconBtn}
           onClick={handleLogout}
           aria-label="Log out"
+          title="Log out"
         >
-          <LogOut className="h-3.5 w-3.5" />
+          <LogOut className="h-4 w-4" />
         </button>
       </nav>
     </header>
