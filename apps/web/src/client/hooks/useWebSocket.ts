@@ -8,10 +8,13 @@ import { useTreeStore } from "../stores/tree.js";
 /**
  * React hook that manages the WebSocket lifecycle.
  *
- * - Connects on mount, disconnects on unmount
- * - Updates `useAppStore.wsConnected` on open/close
- * - Dispatches `tree:*` events to `useTreeStore`
- * - On sequence gap: triggers full tree refresh
+ * - Connects on mount, disconnects on unmount.
+ * - Updates `useAppStore.wsConnected` on open/close.
+ * - Dispatches `tree:*` events to `useTreeStore`.
+ * - On resync (server buffer overflow / server restart / unexpected seq
+ *   gap): triggers a full tree refresh. Ordinary reconnects replay
+ *   buffered events instead, so no brute-force refetch is needed —
+ *   this path only runs when the server explicitly said state is lost.
  */
 export function useWebSocket(): void {
   useEffect(() => {
@@ -19,8 +22,9 @@ export function useWebSocket(): void {
       useAppStore.getState().setWsConnected(connected);
     });
 
-    wsClient.setGapHandler(() => {
-      // Sequence gap detected — refresh the full tree
+    wsClient.setResyncHandler(() => {
+      // Cold refresh — the replay buffer couldn't cover our gap, so
+      // the only safe move is to rehydrate tree state from the API.
       fetchTree()
         .then(({ pages }) => {
           useTreeStore.getState().setNodes(
@@ -33,7 +37,9 @@ export function useWebSocket(): void {
           );
         })
         .catch(() => {
-          // Network error — tree will be stale until next successful refresh
+          // Network error — tree stays stale until the next successful
+          // refresh. No user-visible action here; the offline banner
+          // will surface if the server is actually unreachable.
         });
     });
 
@@ -60,9 +66,7 @@ function handleWsEvent(event: WsEvent): void {
       break;
 
     case "tree:update":
-      // File content changed — no tree structure change needed,
-      // but if the currently active file was updated externally,
-      // the editor should know. For now, just update the node timestamp.
+      // File content changed — no tree structure change needed.
       break;
 
     case "tree:delete":
