@@ -7,7 +7,7 @@ export function StatusBar() {
   const editorStatus = useEditorStore((s) => s.status);
 
   return (
-    <footer className="flex h-6 items-center border-t border-border bg-ironlore-slate px-3 text-[11px] text-secondary">
+    <footer className="flex h-6 items-center border-t border-border bg-ironlore-slate px-3 text-xs text-secondary">
       {activePath && (
         <button
           type="button"

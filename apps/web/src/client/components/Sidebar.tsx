@@ -364,7 +364,7 @@ export function Sidebar() {
         >
           Search pages...
         </button>
-        <kbd className="text-[10px] text-secondary">&#8984;K</kbd>
+        <kbd className="text-xs text-secondary">&#8984;K</kbd>
       </div>
 
       {/* Tree */}
@@ -517,7 +517,7 @@ function ContextMenu({
       type="button"
       disabled={opts.disabled}
       className={`block w-full px-3 py-1.5 text-left text-xs outline-none hover:bg-ironlore-slate-hover disabled:opacity-40 disabled:hover:bg-transparent ${
-        opts.danger ? "text-red-400" : "text-primary"
+        opts.danger ? "text-signal-red" : "text-primary"
       }`}
       onClick={(e) => {
         e.stopPropagation();

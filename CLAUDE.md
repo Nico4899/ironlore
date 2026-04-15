@@ -108,7 +108,7 @@ Two Hono sub-apps handle file I/O:
 - **Client API** (`apps/web/src/client/lib/api.ts`):
   - `fetchPage()` / `savePage()` — markdown JSON API
   - `fetchRawUrl()` — returns URL string for `<img>`/`<video>`/`<audio>` src attributes
-  - `fetchRaw()` — returns `Response` for text viewers (source, CSV, mermaid, text, transcript, email)
+  - `fetchRaw()` — returns `Response` for text viewers (source, CSV, mermaid, text, transcript). `.docx` / `.xlsx` / `.eml` viewers fetch their own `ArrayBuffer` from `fetchRawUrl()` since the extractor needs raw bytes.
   - `saveCsv()` — PUT raw text to `/raw/*`
 
 - **Stores** — `useEditorStore` has `fileType: PageType | null` field. `setFile(path, content, etag, fileType)` sets all fields atomically.

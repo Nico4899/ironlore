@@ -9,6 +9,40 @@ function focusRef(el: HTMLInputElement | null) {
   el?.focus();
 }
 
+/**
+ * Render an FTS5 snippet safely: the server wraps matched terms in
+ * `<mark>…</mark>`, but the text between tags is raw file content and
+ * may contain user-authored HTML. Split on the literal marker tags and
+ * render each chunk as a text node so no HTML is interpreted.
+ */
+function renderSnippet(snippet: string): React.ReactNode {
+  const parts = snippet.split(/(<mark>|<\/mark>)/g);
+  const out: React.ReactNode[] = [];
+  let inMark = false;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (p === "<mark>") {
+      inMark = true;
+      continue;
+    }
+    if (p === "</mark>") {
+      inMark = false;
+      continue;
+    }
+    if (!p) continue;
+    out.push(
+      inMark ? (
+        <mark key={i} className="bg-signal-amber/30 text-primary">
+          {p}
+        </mark>
+      ) : (
+        <span key={i}>{p}</span>
+      ),
+    );
+  }
+  return out;
+}
+
 export function SearchDialog() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -148,7 +182,7 @@ export function SearchDialog() {
         {/* Results */}
         <div className="max-h-[60vh] overflow-y-auto">
           {showRecent && recentEdits.length > 0 && (
-            <div className="px-4 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-secondary">
+            <div className="px-4 pt-2 pb-1 text-xs font-medium uppercase tracking-wide text-secondary">
               Recent
             </div>
           )}
@@ -170,17 +204,16 @@ export function SearchDialog() {
               <span className="truncate text-sm text-primary">{item.title}</span>
               <span className="truncate text-xs text-secondary">{item.path}</span>
               {item.snippet && (
-                <span
-                  className="mt-0.5 line-clamp-2 text-xs text-secondary"
-                  dangerouslySetInnerHTML={{ __html: item.snippet }}
-                />
+                <span className="mt-0.5 line-clamp-2 text-xs text-secondary">
+                  {renderSnippet(item.snippet)}
+                </span>
               )}
             </button>
           ))}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-3 border-t border-border px-4 py-2 text-[10px] text-secondary">
+        <div className="flex items-center gap-3 border-t border-border px-4 py-2 text-xs text-secondary">
           <span>
             <kbd className="rounded bg-ironlore-slate-hover px-1 py-0.5">↑↓</kbd> navigate
           </span>
