@@ -84,7 +84,7 @@ function AppShell() {
           <span className="text-sm font-medium tracking-tight">ironlore</span>
         </div>
         <div className="flex-1" />
-        <nav className="flex items-center gap-2">
+        <nav aria-label="Application controls" className="flex items-center gap-2">
           <button
             type="button"
             className="rounded px-2 py-1 text-xs text-secondary hover:bg-ironlore-slate-hover"

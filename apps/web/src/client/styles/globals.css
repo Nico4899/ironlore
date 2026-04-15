@@ -75,15 +75,34 @@ kbd {
   top: 0;
 }
 
+/* ─── Focus rings (a11y) ─── */
+
+/*
+ * Many interactive elements use Tailwind's `outline-none` to kill the
+ * default browser ring. Restore a visible ring for keyboard-only focus so
+ * keyboard users always see where they are. Mouse clicks don't trigger
+ * :focus-visible in modern browsers, so pointer users aren't affected.
+ */
+:is(button, [role="button"], [role="treeitem"], [role="tab"], [role="option"], [role="menuitem"], a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-ironlore-blue);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.ProseMirror:focus-visible {
+  outline: none;
+}
+
 /* ─── Reduced motion ─── */
 
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
-    transition-duration: 0.01ms;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

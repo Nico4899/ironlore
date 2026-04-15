@@ -249,7 +249,7 @@ function MarkdownContent({
           </button>
         </div>
         <div className="flex-1" />
-        <span className="text-xs text-secondary">
+        <span className="text-xs text-secondary" role="status" aria-live="polite">
           {status === "dirty"
             ? "Unsaved"
             : status === "syncing"
