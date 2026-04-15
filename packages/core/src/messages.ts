@@ -33,6 +33,16 @@ export const messages = {
   editorMerge: "Merge",
   editorDiscard: "Discard my changes",
   editorKeepMine: "Keep my version",
+  editorMergeTitle: "Resolve {count} conflicting block(s)",
+  editorMergeChooseYours: "Use yours",
+  editorMergeChooseTheirs: "Use theirs",
+  editorMergeKeepBoth: "Keep both",
+  editorMergeEdit: "Edit",
+  editorMergeSave: "Save merged",
+  editorMergeYoursLabel: "Yours",
+  editorMergeTheirsLabel: "Theirs",
+  editorMergeBlockAdded: "Added on {side}",
+  editorMergeUnresolved: "Still {count} conflict(s) to resolve.",
 
   // Sidebar
   sidebarSearch: "Search",

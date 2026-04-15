@@ -18,7 +18,10 @@ export interface SaveResponse {
 export interface ConflictResponse {
   error: "Conflict";
   currentEtag: string;
+  /** Unified-diff patch of attempted save → server current; display-only. */
   diff: string;
+  /** Full server-current markdown — used by the block-level merge UI. */
+  currentContent: string;
 }
 
 export interface TreeEntry {

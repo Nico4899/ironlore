@@ -254,6 +254,7 @@ export function createPagesApi(
             error: "Conflict",
             currentEtag: err.currentEtag,
             diff,
+            currentContent: err.currentContent,
           },
           409,
         );
