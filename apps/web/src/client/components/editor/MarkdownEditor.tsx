@@ -169,6 +169,26 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
 
     const view = new EditorView(container, {
       state,
+      handleDOMEvents: {
+        // ProseMirror consumes clicks on marks by default so <a> anchors are
+        // inert. Intercept the click and open external links in a new tab;
+        // internal links (no scheme or same-origin) route through the app.
+        click: (_v, event) => {
+          const target = event.target as HTMLElement | null;
+          const anchor = target?.closest("a");
+          if (!anchor) return false;
+          const href = anchor.getAttribute("href");
+          if (!href) return false;
+          event.preventDefault();
+          if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
+            window.open(href, "_blank", "noopener,noreferrer");
+          } else {
+            const withExt = href.endsWith(".md") ? href : `${href}.md`;
+            useAppStore.getState().setActivePath(withExt);
+          }
+          return true;
+        },
+      },
       nodeViews: {
         wikilink: (node) => {
           const dom = document.createElement("span");
