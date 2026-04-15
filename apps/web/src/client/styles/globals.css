@@ -8,6 +8,9 @@
   --color-ironlore-blue: oklch(0.55 0.14 255);
   --color-ironlore-slate: oklch(0.25 0.01 260);
   --color-ironlore-slate-hover: oklch(0.30 0.01 260);
+  /* Editor / workspace canvas — one step darker than slate so active
+   * tabs and focused editor surfaces have a visible contrast step. */
+  --color-background: oklch(0.20 0.01 260);
 
   --color-signal-amber: oklch(0.78 0.16 80);
   --color-signal-red: oklch(0.55 0.20 25);
@@ -25,6 +28,7 @@
     --color-ironlore-blue: oklch(0.72 0.14 255);
     --color-ironlore-slate: oklch(0.92 0.01 260);
     --color-ironlore-slate-hover: oklch(0.88 0.01 260);
+    --color-background: oklch(0.98 0.005 260);
 
     --color-signal-amber: oklch(0.82 0.14 80);
     --color-signal-red: oklch(0.60 0.20 25);
@@ -68,7 +72,7 @@ kbd {
   z-index: 100;
   padding: 0.5rem 1rem;
   background: var(--color-ironlore-blue);
-  color: white;
+  color: oklch(1 0 0);
 }
 
 .skip-nav:focus {
