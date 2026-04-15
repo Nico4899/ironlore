@@ -121,7 +121,8 @@
 .ProseMirror code {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 13px;
-  background: oklch(0.30 0.01 260);
+  background: var(--color-ironlore-slate-hover);
+  color: var(--color-primary);
   padding: 0.15em 0.35em;
   border-radius: 3px;
 }
@@ -132,7 +133,9 @@
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 13px;
   line-height: 1.5;
-  background: oklch(0.20 0.01 260);
+  background: var(--color-ironlore-slate-hover);
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0.75em 1em;
   margin: 0.75em 0;
@@ -172,7 +175,7 @@
 
 .ProseMirror th {
   font-weight: 600;
-  background: oklch(0.28 0.01 260);
+  background: var(--color-ironlore-slate-hover);
 }
 
 /* ─── Images ─── */
