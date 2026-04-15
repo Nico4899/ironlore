@@ -100,6 +100,7 @@ export function SplitPane({
       <div className="overflow-hidden" style={{ flex: `0 0 ${leftPct}%` }}>
         {left}
       </div>
+      {/* biome-ignore lint/a11y/useSemanticElements: <hr> has no interactive affordance; this separator must accept pointer, focus, and key events */}
       <div
         role="separator"
         aria-orientation="vertical"
