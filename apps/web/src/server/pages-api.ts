@@ -98,6 +98,62 @@ export function createPagesApi(
   });
 
   // -----------------------------------------------------------------------
+  // Create an empty folder — registered before the generic /:path{.+}
+  // catch-all so Hono matches the more specific prefix first.
+  // -----------------------------------------------------------------------
+  api.post("/folders/:path{.+}", (c) => {
+    const dirPath = c.req.param("path") ?? "";
+    if (!dirPath) {
+      return c.json({ error: "Path required" }, 400);
+    }
+
+    try {
+      writer.mkdir(dirPath);
+      broadcast?.({
+        type: "tree:add",
+        path: dirPath,
+        name: basename(dirPath),
+        fileType: "directory",
+      });
+      return c.json({ ok: true });
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Delete a folder (recursive)
+  // -----------------------------------------------------------------------
+  api.delete("/folders/:path{.+}", (c) => {
+    const dirPath = c.req.param("path") ?? "";
+    if (!dirPath) {
+      return c.json({ error: "Path required" }, 400);
+    }
+
+    try {
+      writer.rmdir(dirPath);
+      for (const entry of searchIndex.getTree()) {
+        if (
+          (entry.path === dirPath || entry.path.startsWith(`${dirPath}/`)) &&
+          entry.type !== "directory"
+        ) {
+          searchIndex.removePage(entry.path);
+        }
+      }
+      broadcast?.({ type: "tree:delete", path: dirPath });
+      return c.body(null, 204);
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // Read a page
   // -----------------------------------------------------------------------
   api.get("/:path{.+}", (c) => {
@@ -207,14 +263,14 @@ export function createPagesApi(
       return c.json({ error: "Path required" }, 400);
     }
 
+    // If-Match is optional on DELETE: editor sessions with a cached ETag
+    // pass it for concurrency protection; sidebar deletes (non-markdown,
+    // never-opened) pass nothing and accept unconditional removal.
     const ifMatch = c.req.header("If-Match");
-    if (!ifMatch) {
-      return c.json({ error: "If-Match header required" }, 428);
-    }
 
     try {
-      const parsed = parseEtag(ifMatch);
-      await writer.delete(pagePath, `"${parsed}"`);
+      const ifMatchQuoted = ifMatch ? `"${parseEtag(ifMatch)}"` : null;
+      await writer.delete(pagePath, ifMatchQuoted);
 
       // Remove from search index
       searchIndex.removePage(pagePath);

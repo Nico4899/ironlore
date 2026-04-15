@@ -39,6 +39,11 @@ export const messages = {
   sidebarSearchPlaceholder: "Search pages...",
   sidebarNewPage: "New page",
   sidebarNewFolder: "New folder",
+  sidebarNewFile: "New file",
+  sidebarRename: "Rename",
+  sidebarDelete: "Delete",
+  sidebarDeleteFileConfirm: "Delete {name}? This cannot be undone.",
+  sidebarDeleteFolderConfirm: "Delete folder {name} and all its contents?",
 
   // AI panel
   aiPanelTitle: "AI",
