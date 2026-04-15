@@ -1,11 +1,20 @@
 import { create } from "zustand";
 
-type ConversationMessage =
+export type ConversationMessage =
   | { type: "user"; text: string; attachments: string[] }
   | { type: "assistant"; text: string }
   | { type: "tool_call"; tool: string; args: unknown; result?: unknown; collapsed: boolean }
   | { type: "journal"; text: string }
   | { type: "diff_preview"; pageId: string; diff: string; approved: boolean | null }
+  | {
+      type: "run_finalized";
+      runId: string;
+      agentSlug: string;
+      commitShaStart: string;
+      commitShaEnd: string;
+      filesChanged: string[];
+      revertedAt: number | null;
+    }
   | { type: "error"; text: string };
 
 interface AIPanelStore {

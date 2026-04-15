@@ -8,7 +8,8 @@ export function AIPanel() {
 
   return (
     <aside
-      className="flex w-95 flex-col border-l border-border bg-ironlore-slate"
+      className="flex shrink-0 flex-col border-l border-border bg-ironlore-slate"
+      style={{ width: "380px" }}
       aria-label="AI panel"
     >
       {/* Header */}
@@ -31,6 +32,21 @@ export function AIPanel() {
               {msg.type === "assistant" && <div className="px-1">{msg.text}</div>}
               {msg.type === "error" && (
                 <div className="rounded bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
+              )}
+              {msg.type === "run_finalized" && (
+                <div className="rounded border border-border bg-ironlore-slate-hover px-3 py-2 text-xs text-secondary">
+                  <div className="font-medium text-primary">
+                    Run finalized · {msg.agentSlug}
+                  </div>
+                  <div className="mt-0.5">
+                    {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
+                    {" · "}
+                    <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
+                    {"…"}
+                    <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
+                    {msg.revertedAt !== null && " · reverted"}
+                  </div>
+                </div>
               )}
             </div>
           ))
