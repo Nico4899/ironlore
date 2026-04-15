@@ -1,6 +1,7 @@
 import { LogOut } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect } from "react";
 import { AIPanel } from "./components/AIPanel.js";
+import { AIPanelRail } from "./components/AIPanelRail.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { DisconnectedBanner } from "./components/DisconnectedBanner.js";
@@ -67,6 +68,11 @@ function AppShell() {
         e.preventDefault();
         useAppStore.getState().toggleTerminal();
       }
+      // Cmd+Shift+A / Ctrl+Shift+A — toggle AI panel (per docs/09-ui-and-brand.md)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        useAppStore.getState().toggleAIPanel();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -112,7 +118,7 @@ function AppShell() {
       <div className="flex flex-1 overflow-hidden">
         {sidebarOpen && <Sidebar />}
         <ContentArea />
-        {aiPanelOpen && <AIPanel />}
+        {aiPanelOpen ? <AIPanel /> : <AIPanelRail />}
       </div>
 
       {/* Terminal panel (Ctrl+`) */}
