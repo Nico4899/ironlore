@@ -459,6 +459,7 @@ export function Sidebar() {
                 onCommit={commitEdit}
                 onCancel={() => setEdit(null)}
                 placeholder={edit.kind === "new-folder" ? "folder-name" : "page-name"}
+                typePicker={edit.kind === "new-file"}
               />
             )}
           </>
@@ -558,12 +559,54 @@ function ContextMenu({
 interface InlineEditRowProps {
   initial: string;
   placeholder?: string;
+  /** Show the file-type selector (new-file only). */
+  typePicker?: boolean;
   onCommit: (value: string) => void;
   onCancel: () => void;
 }
 
-function InlineEditRow({ initial, placeholder, onCommit, onCancel }: InlineEditRowProps) {
+/**
+ * Options for the new-file type picker. The extension is appended to the
+ * typed name only if the user didn't already include one, so power users
+ * can still type `foo.py` and get a Python file without reaching for the
+ * mouse.
+ */
+const FILE_TYPE_OPTIONS: Array<{ label: string; ext: string }> = [
+  { label: "Markdown", ext: ".md" },
+  { label: "Text", ext: ".txt" },
+  { label: "CSV", ext: ".csv" },
+  { label: "TypeScript", ext: ".ts" },
+  { label: "JavaScript", ext: ".js" },
+  { label: "Python", ext: ".py" },
+  { label: "Go", ext: ".go" },
+  { label: "Rust", ext: ".rs" },
+  { label: "JSON", ext: ".json" },
+  { label: "YAML", ext: ".yaml" },
+  { label: "Mermaid", ext: ".mermaid" },
+];
+
+function InlineEditRow({
+  initial,
+  placeholder,
+  typePicker,
+  onCommit,
+  onCancel,
+}: InlineEditRowProps) {
   const [value, setValue] = useState(initial);
+  const [ext, setExt] = useState(".md");
+
+  const commit = useCallback(() => {
+    const name = value.trim();
+    if (!name) {
+      onCommit("");
+      return;
+    }
+    if (typePicker && !name.includes(".")) {
+      onCommit(name + ext);
+    } else {
+      onCommit(name);
+    }
+  }, [value, ext, typePicker, onCommit]);
 
   return (
     <div className="flex items-center gap-1.5 px-2 py-1">
@@ -576,15 +619,30 @@ function InlineEditRow({ initial, placeholder, onCommit, onCancel }: InlineEditR
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            onCommit(value);
+            commit();
           } else if (e.key === "Escape") {
             e.preventDefault();
             onCancel();
           }
         }}
-        onBlur={() => onCommit(value)}
+        onBlur={commit}
         className="flex-1 rounded border border-ironlore-blue bg-transparent px-2 py-0.5 text-sm text-primary outline-none"
       />
+      {typePicker && !value.includes(".") && (
+        <select
+          value={ext}
+          onChange={(e) => setExt(e.target.value)}
+          onMouseDown={(e) => e.stopPropagation()}
+          aria-label="File type"
+          className="rounded border border-border bg-ironlore-slate px-1 py-0.5 text-xs text-secondary outline-none"
+        >
+          {FILE_TYPE_OPTIONS.map((o) => (
+            <option key={o.ext} value={o.ext}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }
@@ -592,6 +650,7 @@ function InlineEditRow({ initial, placeholder, onCommit, onCancel }: InlineEditR
 function NewPageFooter() {
   const [creating, setCreating] = useState(false);
   const [pageName, setPageName] = useState("");
+  const [ext, setExt] = useState(".md");
   const activePath = useAppStore((s) => s.activePath);
 
   const handleCreate = useCallback(async () => {
@@ -609,19 +668,23 @@ function NewPageFooter() {
             : "";
     }
 
-    const fileName = name.endsWith(".md") ? name : `${name}.md`;
+    const fileName = name.includes(".") ? name : `${name}${ext}`;
     const fullPath = parentDir ? `${parentDir}/${fileName}` : fileName;
-    const title = name.replace(/\.md$/, "");
 
     try {
-      await createPage(fullPath, `# ${title}\n`);
+      if (fileName.toLowerCase().endsWith(".md")) {
+        const title = fileName.replace(/\.md$/i, "");
+        await createPage(fullPath, `# ${title}\n`);
+      } else {
+        await createRawFile(fullPath, "");
+      }
       useAppStore.getState().setActivePath(fullPath);
       setCreating(false);
       setPageName("");
     } catch {
       // Error creating page — stay in create mode
     }
-  }, [pageName, activePath]);
+  }, [pageName, ext, activePath]);
 
   if (creating) {
     return (
@@ -644,9 +707,23 @@ function NewPageFooter() {
                 setPageName("");
               }
             }}
-            placeholder="Page name"
+            placeholder="Name"
             className="flex-1 rounded border border-border bg-transparent px-2 py-1 text-xs text-primary focus:border-ironlore-blue focus:outline-none"
           />
+          {!pageName.includes(".") && (
+            <select
+              value={ext}
+              onChange={(e) => setExt(e.target.value)}
+              aria-label="File type"
+              className="rounded border border-border bg-ironlore-slate px-1 py-1 text-xs text-secondary outline-none"
+            >
+              {FILE_TYPE_OPTIONS.map((o) => (
+                <option key={o.ext} value={o.ext}>
+                  {o.ext}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="submit"
             disabled={!pageName.trim()}

@@ -146,6 +146,8 @@ export function ContentArea() {
       className="flex flex-1 flex-col overflow-hidden"
       style={{ minWidth: "480px" }}
     >
+      <TabBar />
+
       {/* Conflict banner (markdown + CSV) */}
       {conflict && <ConflictBanner conflict={conflict} onResolved={handleConflictResolved} />}
 
