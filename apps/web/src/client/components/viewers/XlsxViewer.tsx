@@ -112,9 +112,11 @@ export function XlsxViewer({ path }: XlsxViewerProps) {
         <table className="border-collapse text-xs">
           <tbody>
             {visibleRows.map((row, r) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: read-only grid, rows never reordered
               <tr key={`r-${r}-${row.length}`}>
                 {row.map((cell, c) => (
                   <td
+                    // biome-ignore lint/suspicious/noArrayIndexKey: read-only grid, cells never reordered
                     key={`c-${r}-${c}`}
                     className="whitespace-nowrap border border-border px-2 py-1 text-primary"
                   >

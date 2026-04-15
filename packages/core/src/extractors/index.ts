@@ -1,12 +1,15 @@
 import type { ExtractableFormat, ExtractResult } from "./types.js";
 
-export type { ExtractResult, ExtractedSheet, EmailHeaders, ExtractableFormat } from "./types.js";
+export type { EmailHeaders, ExtractableFormat, ExtractedSheet, ExtractResult } from "./types.js";
 
 /**
  * Dispatch to the right extractor. Heavy libraries are imported inside each
  * extractor, so bundlers can code-split on format.
  */
-export async function extract(format: ExtractableFormat, buffer: ArrayBuffer): Promise<ExtractResult> {
+export async function extract(
+  format: ExtractableFormat,
+  buffer: ArrayBuffer,
+): Promise<ExtractResult> {
   switch (format) {
     case "word": {
       const { extractDocx } = await import("./docx.js");
@@ -24,5 +27,5 @@ export async function extract(format: ExtractableFormat, buffer: ArrayBuffer): P
 }
 
 export { extractDocx } from "./docx.js";
-export { extractXlsx } from "./xlsx.js";
 export { extractEml } from "./eml.js";
+export { extractXlsx } from "./xlsx.js";

@@ -44,6 +44,22 @@ describe("detectPageType", () => {
     expect(detectPageType("flow.mmd")).toBe("mermaid");
   });
 
+  it("detects plain text files", () => {
+    expect(detectPageType("notes.txt")).toBe("text");
+    expect(detectPageType("server.log")).toBe("text");
+  });
+
+  it("detects transcript files", () => {
+    expect(detectPageType("captions.vtt")).toBe("transcript");
+    expect(detectPageType("subs.srt")).toBe("transcript");
+  });
+
+  it("detects office and email containers", () => {
+    expect(detectPageType("spec.docx")).toBe("word");
+    expect(detectPageType("budget.xlsx")).toBe("excel");
+    expect(detectPageType("thread.eml")).toBe("email");
+  });
+
   it("defaults to markdown for unknown extensions", () => {
     expect(detectPageType("unknown.xyz")).toBe("markdown");
   });

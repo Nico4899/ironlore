@@ -18,14 +18,20 @@ function parseCues(raw: string): Cue[] {
   const blocks = raw.replace(/\r\n/g, "\n").split(/\n\s*\n/);
   const cues: Cue[] = [];
   for (const block of blocks) {
-    const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+    const lines = block
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
     const timingIdx = lines.findIndex((l) => TIMING_RE.test(l));
     if (timingIdx === -1) continue;
     const timingLine = lines[timingIdx] ?? "";
     const match = TIMING_RE.exec(timingLine);
     if (!match) continue;
     const time = (match[1] ?? "").replace(",", ".");
-    const text = lines.slice(timingIdx + 1).join(" ").trim();
+    const text = lines
+      .slice(timingIdx + 1)
+      .join(" ")
+      .trim();
     if (text) cues.push({ time, text });
   }
   return cues;
@@ -47,13 +53,9 @@ export function TranscriptViewer({ content }: { content: string }) {
       <table className="w-full border-collapse text-sm">
         <tbody>
           {cues.map((cue, i) => (
-            <tr
-              key={`${cue.time}-${i}`}
-              className="border-b border-border align-top"
-            >
-              <td className="w-32 py-1 pr-4 font-mono text-xs text-secondary">
-                {cue.time}
-              </td>
+            // biome-ignore lint/suspicious/noArrayIndexKey: cues render-only, never reordered
+            <tr key={`${cue.time}-${i}`} className="border-b border-border align-top">
+              <td className="w-32 py-1 pr-4 font-mono text-xs text-secondary">{cue.time}</td>
               <td className="py-1 text-primary">{cue.text}</td>
             </tr>
           ))}

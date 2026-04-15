@@ -43,14 +43,7 @@ const BINARY_TYPES = new Set(["pdf", "image", "video", "audio", "word", "excel"]
  * File types that use fetchRaw (text, but not markdown's JSON endpoint).
  * Plain text, transcripts, and .eml messages are parsed in the viewer.
  */
-const RAW_TEXT_TYPES = new Set([
-  "source-code",
-  "csv",
-  "mermaid",
-  "text",
-  "transcript",
-  "email",
-]);
+const RAW_TEXT_TYPES = new Set(["source-code", "csv", "mermaid", "text", "transcript", "email"]);
 
 export function ContentArea() {
   const activePath = useAppStore((s) => s.activePath);

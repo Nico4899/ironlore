@@ -1,4 +1,4 @@
-import type { ExtractResult, ExtractedSheet } from "./types.js";
+import type { ExtractedSheet, ExtractResult } from "./types.js";
 
 /** First-N-rows ingest cap — matches the agent source-ingestion spec. */
 const INGEST_ROW_CAP = 1000;

@@ -73,7 +73,6 @@ export function DocxViewer({ path }: DocxViewerProps) {
       )}
       <div
         className="ProseMirror flex-1 overflow-y-auto px-8 py-6"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitizeHtml strips scripts/events/unknown tags before injection
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>

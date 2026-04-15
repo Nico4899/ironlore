@@ -28,7 +28,9 @@ export async function extractEml(buffer: ArrayBuffer): Promise<ExtractResult> {
       | undefined;
 
     if (typeof (PostalMime as unknown as { parse?: unknown }).parse === "function") {
-      parsed = await (PostalMime as unknown as { parse: (b: ArrayBuffer) => Promise<typeof parsed> }).parse(buffer);
+      parsed = await (
+        PostalMime as unknown as { parse: (b: ArrayBuffer) => Promise<typeof parsed> }
+      ).parse(buffer);
     } else {
       const Ctor = PostalMime as unknown as new () => {
         parse: (b: ArrayBuffer) => Promise<typeof parsed>;
