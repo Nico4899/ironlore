@@ -1,6 +1,8 @@
 import type { ExtractedSheet } from "@ironlore/core/extractors";
 import { useEffect, useState } from "react";
-import { fetchRawUrl } from "../../lib/api.js";
+import { createRawFile, fetchRawUrl } from "../../lib/api.js";
+import { encodeCsv } from "../../lib/csv-encode.js";
+import { useAppStore } from "../../stores/app.js";
 
 /** Max rows rendered per sheet — keeps large workbooks responsive. */
 const RENDER_ROW_CAP = 500;
@@ -80,6 +82,22 @@ export function XlsxViewer({ path }: XlsxViewerProps) {
   const visibleRows = current.rows.slice(0, RENDER_ROW_CAP);
   const truncated = current.rows.length > RENDER_ROW_CAP;
 
+  const sheetCsvPath = (sheetName: string) => {
+    const slug = sheetName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "sheet";
+    return path.replace(/\.xlsx$/i, `-${slug}.csv`);
+  };
+
+  const handleConvert = async (sheet: ExtractedSheet) => {
+    const destination = sheetCsvPath(sheet.name);
+    if (!window.confirm(`Create ${destination} from sheet "${sheet.name}"?`)) return;
+    try {
+      await createRawFile(destination, encodeCsv(sheet.rows));
+      useAppStore.getState().setActivePath(destination);
+    } catch (err) {
+      window.alert(`Convert failed: ${(err as Error).message}`);
+    }
+  };
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* Sheet tabs */}
@@ -105,6 +123,14 @@ export function XlsxViewer({ path }: XlsxViewerProps) {
             {warnings.length} warning{warnings.length === 1 ? "" : "s"}
           </span>
         )}
+        <button
+          type="button"
+          onClick={() => handleConvert(current)}
+          className="rounded border border-border px-2 py-0.5 text-xs text-secondary hover:bg-ironlore-slate-hover"
+          title={`Export "${current.name}" as a sibling .csv`}
+        >
+          Convert to CSV
+        </button>
       </div>
 
       {/* Grid */}
