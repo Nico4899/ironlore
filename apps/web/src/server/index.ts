@@ -116,7 +116,7 @@ async function start() {
   const writer = new StorageWriter(projectDir, linksRegistry.validator());
 
   // Crash recovery — replay any uncommitted WAL entries
-  const { recovered, warnings } = writer.recover();
+  const { recovered, warnings, warningsStructured } = writer.recover();
   if (recovered > 0) {
     console.log(`WAL recovery: replayed ${recovered} entries`);
   }
@@ -170,6 +170,18 @@ async function start() {
 
   // Initialize WebSocket manager for real-time events
   wsManager = new WebSocketManager(sessionStore, validateCookie);
+
+  // Surface any recovery warnings as a persistent WS event. The event
+  // enters the replay buffer, so any client that connects afterward
+  // receives it via replay — matching
+  // docs/02-storage-and-sync.md §User-visible recovery surface.
+  if (warningsStructured.length > 0) {
+    wsManager.broadcast({
+      type: "recovery:pending",
+      paths: warningsStructured.map((w) => w.path),
+      messages: warningsStructured.map((w) => w.message),
+    });
+  }
 
   // Initialize terminal manager (single-session PTY over WS)
   terminalManager = new TerminalManager(

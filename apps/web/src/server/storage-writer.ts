@@ -365,11 +365,27 @@ export class StorageWriter {
   /**
    * Recover from incomplete writes on startup.
    * Checks uncommitted WAL entries and replays or marks them.
+   *
+   * Returns both:
+   *   - `warnings`: flat string messages for console logging + tests.
+   *   - `warningsStructured`: `{path, message}` pairs for
+   *     `recovery:pending` WS broadcasts and the UI banner.
+   * Keeping both shapes avoids a breaking change to the existing
+   * call sites that already destructure `{ recovered, warnings }`.
    */
-  recover(): { recovered: number; warnings: string[] } {
+  recover(): {
+    recovered: number;
+    warnings: string[];
+    warningsStructured: Array<{ path: string; message: string }>;
+  } {
     const uncommitted = this.wal.getUncommitted();
     let recovered = 0;
     const warnings: string[] = [];
+    const warningsStructured: Array<{ path: string; message: string }> = [];
+    const warn = (path: string, message: string): void => {
+      warnings.push(`WAL entry for ${path}: ${message}`);
+      warningsStructured.push({ path, message });
+    };
 
     for (const entry of uncommitted) {
       if (entry.op === "delete") {
@@ -408,13 +424,13 @@ export class StorageWriter {
             this.wal.markCommitted(entry.id);
             recovered++;
           } else {
-            warnings.push(`WAL entry ${entry.id}: no content to replay for ${entry.path}`);
+            warn(entry.path, `no content to replay (entry ${entry.id})`);
           }
         } else {
           // Neither matches — external edit happened during crash window
-          warnings.push(
-            `WAL entry ${entry.id}: ${entry.path} hash matches neither pre nor post. ` +
-              `Run 'ironlore repair' to resolve.`,
+          warn(
+            entry.path,
+            `hash matches neither pre nor post — run 'ironlore repair' to resolve (entry ${entry.id})`,
           );
         }
       } catch (err) {
@@ -426,12 +442,12 @@ export class StorageWriter {
           this.wal.markCommitted(entry.id);
           recovered++;
         } else {
-          warnings.push(`WAL entry ${entry.id}: cannot recover ${entry.path}: ${err}`);
+          warn(entry.path, `cannot recover: ${err} (entry ${entry.id})`);
         }
       }
     }
 
-    return { recovered, warnings };
+    return { recovered, warnings, warningsStructured };
   }
 
   close(): void {

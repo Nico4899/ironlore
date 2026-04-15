@@ -6,6 +6,7 @@ import { ContentArea } from "./components/ContentArea.js";
 import { Header } from "./components/Header.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OfflineBanner } from "./components/OfflineBanner.js";
+import { RecoveryBanner } from "./components/RecoveryBanner.js";
 import { SearchDialog } from "./components/SearchDialog.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { StatusBar } from "./components/StatusBar.js";
@@ -87,6 +88,9 @@ function AppShell() {
 
       {/* Offline banner (shown after grace period; auto-clears on reconnect) */}
       <OfflineBanner />
+
+      {/* Recovery banner (surfaces crash-recovery warnings from the server) */}
+      <RecoveryBanner />
 
       {/* Main three-panel layout */}
       <div className="flex flex-1 overflow-hidden">

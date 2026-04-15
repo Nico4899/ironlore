@@ -68,6 +68,28 @@ export interface ReplayCompleteEvent {
   seq: number;
 }
 
+/**
+ * Emitted on startup when `StorageWriter.recover()` returns warnings —
+ * i.e. a previous crash left WAL entries whose on-disk state matches
+ * neither the pre- nor post-hash. The user must run `ironlore repair`
+ * to reconcile.
+ *
+ * The event lives in the replay buffer, so any client connecting after
+ * startup also receives it until someone actually runs repair and the
+ * server emits a clearing event (future work — today the banner is
+ * dismissible per session).
+ *
+ * See [docs/02-storage-and-sync.md §User-visible recovery surface](../../../docs/02-storage-and-sync.md).
+ */
+export interface RecoveryPendingEvent {
+  type: "recovery:pending";
+  seq: number;
+  /** Relative paths (inside the project's data root) needing repair. */
+  paths: string[];
+  /** One-line human summary of what went wrong per path. */
+  messages: string[];
+}
+
 export type WsEvent =
   | TreeAddEvent
   | TreeUpdateEvent
@@ -76,7 +98,8 @@ export type WsEvent =
   | SearchReindexedEvent
   | ConnectedEvent
   | ResyncEvent
-  | ReplayCompleteEvent;
+  | ReplayCompleteEvent
+  | RecoveryPendingEvent;
 
 /** Distributive Omit — preserves union discrimination on `type`. */
 export type WsEventInput = WsEvent extends infer T
