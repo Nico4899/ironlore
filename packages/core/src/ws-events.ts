@@ -90,6 +90,36 @@ export interface RecoveryPendingEvent {
   messages: string[];
 }
 
+/**
+ * Emitted after a lint run (scheduled by the wiki-gardener or invoked
+ * manually) produces user-actionable findings. Surfaces orphan pages,
+ * stale-source warnings, contradictions, coverage gaps, and provenance
+ * gaps through the same dismissible-banner pattern `recovery:pending`
+ * uses — one notification, non-blocking, clicking opens the written
+ * lint report page.
+ *
+ * See [docs/02-storage-and-sync.md §User-visible recovery surface](../../../docs/02-storage-and-sync.md)
+ * and [docs/04-ai-and-agents.md §Wiki-gardener](../../../docs/04-ai-and-agents.md#wiki-gardener-agent).
+ */
+export interface LintFindingsEvent {
+  type: "lint:findings";
+  seq: number;
+  /** Path of the generated lint report page (relative to `data/`). */
+  reportPath: string;
+  /** Summary counts for the notification text ("3 stale, 1 contradiction…"). */
+  counts: {
+    orphans: number;
+    stale: number;
+    contradictions: number;
+    coverageGaps: number;
+    provenanceGaps: number;
+  };
+  /** Agent slug that produced the report. Stamped by the server. */
+  agent: string;
+  /** ULID of the lint job run — enables dedup across reconnect replay. */
+  runId: string;
+}
+
 export type WsEvent =
   | TreeAddEvent
   | TreeUpdateEvent
@@ -99,7 +129,8 @@ export type WsEvent =
   | ConnectedEvent
   | ResyncEvent
   | ReplayCompleteEvent
-  | RecoveryPendingEvent;
+  | RecoveryPendingEvent
+  | LintFindingsEvent;
 
 /** Distributive Omit — preserves union discrimination on `type`. */
 export type WsEventInput = WsEvent extends infer T
