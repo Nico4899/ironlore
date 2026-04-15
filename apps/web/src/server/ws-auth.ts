@@ -17,10 +17,7 @@ export const SESSION_COOKIE = "ironlore_session";
  * Handles the common cases (no whitespace, lots of whitespace, values
  * containing `=`). Returns null when the cookie is absent or malformed.
  */
-export function parseCookieValue(
-  cookieHeader: string | undefined,
-  name: string,
-): string | null {
+export function parseCookieValue(cookieHeader: string | undefined, name: string): string | null {
   if (!cookieHeader) return null;
   for (const part of cookieHeader.split(";")) {
     const [key, ...rest] = part.trim().split("=");
@@ -48,13 +45,22 @@ export function authenticateUpgrade(
   };
 
   const cookieValue = parseCookieValue(req.headers.cookie, SESSION_COOKIE);
-  if (!cookieValue) return reject();
+  if (!cookieValue) {
+    reject();
+    return;
+  }
 
   const sessionId = verifySessionCookie(cookieValue);
-  if (!sessionId) return reject();
+  if (!sessionId) {
+    reject();
+    return;
+  }
 
   const session = sessionStore.getSession(sessionId);
-  if (!session) return reject();
+  if (!session) {
+    reject();
+    return;
+  }
 
   onAuthorized();
 }

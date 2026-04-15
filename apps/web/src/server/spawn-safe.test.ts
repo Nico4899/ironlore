@@ -57,10 +57,7 @@ describe("buildSafeEnv", () => {
     const env = buildSafeEnv({ projectId: "main" });
     const allowed = new Set(["PATH", "HOME", "LANG", "TERM", "IRONLORE_PROJECT_ID"]);
     for (const key of Object.keys(env)) {
-      expect(
-        allowed.has(key),
-        `buildSafeEnv leaked an unexpected key: ${key}`,
-      ).toBe(true);
+      expect(allowed.has(key), `buildSafeEnv leaked an unexpected key: ${key}`).toBe(true);
     }
   });
 

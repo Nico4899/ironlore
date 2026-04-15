@@ -185,9 +185,7 @@ describe("StorageWriter", () => {
 
       const moved = new Set(movedFiles.map((m) => `${m.oldRel} → ${m.newRel}`));
       expect(moved).toContain("carousel/index.md → examples/carousel/index.md");
-      expect(moved).toContain(
-        "carousel/assets/photo.png → examples/carousel/assets/photo.png",
-      );
+      expect(moved).toContain("carousel/assets/photo.png → examples/carousel/assets/photo.png");
     });
 
     it("refuses a move onto an existing destination", async () => {
