@@ -172,7 +172,12 @@ async function start() {
   wsManager = new WebSocketManager(sessionStore, validateCookie);
 
   // Initialize terminal manager (single-session PTY over WS)
-  terminalManager = new TerminalManager(writer.getDataRoot(), sessionStore, validateCookie);
+  terminalManager = new TerminalManager(
+    writer.getDataRoot(),
+    sessionStore,
+    validateCookie,
+    DEFAULT_PROJECT_ID,
+  );
 
   ready = true;
   readyReason = "";

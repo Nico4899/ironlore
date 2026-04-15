@@ -3,6 +3,7 @@ import type { Duplex } from "node:stream";
 import * as pty from "node-pty";
 import { WebSocket, WebSocketServer } from "ws";
 import type { SessionStore } from "./auth.js";
+import { buildSafeEnv } from "./spawn-safe.js";
 
 // ---------------------------------------------------------------------------
 // Cookie parsing (shared with ws.ts — could be extracted)
@@ -28,16 +29,19 @@ export class TerminalManager {
   private sessionStore: SessionStore;
   private verifySessionCookie: (cookie: string) => string | null;
   private dataRoot: string;
+  private projectId: string;
   private activeSession: { ws: WebSocket; ptyProcess: pty.IPty } | null = null;
 
   constructor(
     dataRoot: string,
     sessionStore: SessionStore,
     verifySessionCookie: (cookie: string) => string | null,
+    projectId: string,
   ) {
     this.dataRoot = dataRoot;
     this.sessionStore = sessionStore;
     this.verifySessionCookie = verifySessionCookie;
+    this.projectId = projectId;
     this.wss = new WebSocketServer({ noServer: true });
   }
 
@@ -80,17 +84,22 @@ export class TerminalManager {
       this.activeSession = null;
     }
 
-    // Spawn shell
+    // Spawn shell. Env is scrubbed via `buildSafeEnv` — the parent
+    // process's ambient secrets (provider API keys, AWS tokens, DB URLs)
+    // must NOT leak to a user-driven shell. See
+    // docs/05-jobs-and-security.md §Subprocess environment scrubbing.
     const shell = process.env.SHELL ?? "/bin/sh";
+    const safeEnv = buildSafeEnv({ projectId: this.projectId });
+    // node-pty requires `TERM` to be set for ANSI rendering; buildSafeEnv
+    // already passes through the parent's TERM, but fall back to a sane
+    // default if the server is running without one.
+    safeEnv.TERM = safeEnv.TERM ?? "xterm-256color";
     const ptyProcess = pty.spawn(shell, [], {
       name: "xterm-256color",
       cols: 80,
       rows: 24,
       cwd: this.dataRoot,
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-      },
+      env: safeEnv,
     });
 
     this.activeSession = { ws, ptyProcess };

@@ -53,6 +53,42 @@ function buildSafePath(): string {
 }
 
 /**
+ * Build the same whitelisted environment that `spawnSafe` uses, as a
+ * plain object. Exposed so non-`child_process` spawn paths (node-pty
+ * for the embedded terminal, worker IPC, future MCP subprocess hosts)
+ * can share the exact env contract without duplicating the whitelist.
+ *
+ * Keep this the single source of truth for subprocess env scrubbing —
+ * every new call site should prefer this over ad-hoc `{...process.env}`
+ * spreads. See [docs/05-jobs-and-security.md](../../../../docs/05-jobs-and-security.md)
+ * §Subprocess environment scrubbing.
+ */
+export function buildSafeEnv(options: {
+  projectId: string;
+  extraEnv?: Record<string, string>;
+}): Record<string, string> {
+  const env: Record<string, string> = {};
+
+  for (const key of ALLOWED_ENV_KEYS) {
+    const val = process.env[key];
+    if (val !== undefined) {
+      env[key] = val;
+    }
+  }
+
+  env.PATH = buildSafePath();
+  env.IRONLORE_PROJECT_ID = options.projectId;
+
+  if (options.extraEnv) {
+    for (const [key, val] of Object.entries(options.extraEnv)) {
+      env[key] = val;
+    }
+  }
+
+  return env;
+}
+
+/**
  * Spawn a subprocess with a sanitized environment.
  *
  * - Only allowlisted env vars are passed through
@@ -82,32 +118,9 @@ export function spawnSafe(
   // Validate cwd is within data root
   resolveSafe(options.dataRoot, options.cwd);
 
-  // Build sanitized environment
-  const env: Record<string, string> = {};
-
-  for (const key of ALLOWED_ENV_KEYS) {
-    const val = process.env[key];
-    if (val !== undefined) {
-      env[key] = val;
-    }
-  }
-
-  // Override PATH with enriched version
-  env.PATH = buildSafePath();
-
-  // Add ironlore-specific env
-  env.IRONLORE_PROJECT_ID = options.projectId;
-
-  // Add any project-specific provider keys
-  if (options.extraEnv) {
-    for (const [key, val] of Object.entries(options.extraEnv)) {
-      env[key] = val;
-    }
-  }
-
   return spawn(command, args, {
     cwd: options.cwd,
-    env,
+    env: buildSafeEnv({ projectId: options.projectId, extraEnv: options.extraEnv }),
     stdio: "pipe",
     ...options.spawnOptions,
   });
