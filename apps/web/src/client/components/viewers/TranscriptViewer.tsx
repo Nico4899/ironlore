@@ -1,3 +1,4 @@
+import { Copy } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
 /**
@@ -110,7 +111,7 @@ export function TranscriptViewer({ content, path }: TranscriptViewerProps) {
             <tr
               key={`${cue.anchor}-${cue.text.slice(0, 16)}`}
               id={cue.anchor}
-              className="border-b border-border align-top transition-colors"
+              className="group border-b border-border align-top transition-colors hover:bg-ironlore-slate-hover"
             >
               <td className="w-32 py-1 pr-4 font-mono text-xs text-secondary">
                 <a
@@ -134,11 +135,11 @@ export function TranscriptViewer({ content, path }: TranscriptViewerProps) {
                 <button
                   type="button"
                   aria-label={`Copy citation for ${cue.time}`}
-                  className="rounded px-1 py-0.5 text-xs text-secondary opacity-0 hover:bg-ironlore-slate-hover group-hover:opacity-100 focus:opacity-100"
+                  className="flex items-center justify-center rounded p-1 text-secondary opacity-0 hover:bg-ironlore-slate hover:text-primary group-hover:opacity-100 focus-visible:opacity-100"
                   onClick={() => copyCitation(cue.anchor)}
-                  title="Copy [[path#anchor]] citation"
+                  title="Copy citation (paste as a wiki-link)"
                 >
-                  ⎘
+                  <Copy className="h-3.5 w-3.5" />
                 </button>
               </td>
             </tr>

@@ -1,4 +1,14 @@
-import { ChevronRight, LogOut, Moon, Search, Sun } from "lucide-react";
+import {
+  ChevronRight,
+  LogOut,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Search,
+  Sparkles,
+  Sun,
+  TerminalSquare,
+} from "lucide-react";
 import { useCallback } from "react";
 import { logout } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
