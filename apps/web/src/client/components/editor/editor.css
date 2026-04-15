@@ -74,11 +74,24 @@
 .ProseMirror ul,
 .ProseMirror ol {
   margin: 0.75em 0;
-  padding-left: 1.5em;
+  padding-left: 1.75em;
 }
+
+/* Tailwind's preflight zeroes list-style — restore it per-type so bullets
+ * and numbers actually appear in the WYSIWYG editor. */
+.ProseMirror ul { list-style-type: disc; }
+.ProseMirror ul ul { list-style-type: circle; }
+.ProseMirror ul ul ul { list-style-type: square; }
+.ProseMirror ol { list-style-type: decimal; }
+.ProseMirror ol ol { list-style-type: lower-alpha; }
+.ProseMirror ol ol ol { list-style-type: lower-roman; }
 
 .ProseMirror li {
   margin: 0.25em 0;
+}
+
+.ProseMirror li::marker {
+  color: var(--color-secondary);
 }
 
 .ProseMirror li > p {

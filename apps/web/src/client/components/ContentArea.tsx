@@ -166,53 +166,57 @@ export function ContentArea() {
       {conflict && <ConflictBanner conflict={conflict} onResolved={handleConflictResolved} />}
 
       {/* Viewer dispatch */}
-      {fileType === "markdown" ? (
-        <MarkdownContent
-          markdown={markdown}
-          mode={mode}
-          status={status}
-          onChange={handleChange}
-          onSelectionChange={handleSelectionChange}
-        />
-      ) : fileType === "image" ? (
-        <ImageViewer path={filePath} />
-      ) : fileType === "video" || fileType === "audio" ? (
-        <MediaViewer path={filePath} fileType={fileType} />
-      ) : fileType === "source-code" || fileType === "text" ? (
-        <SourceCodeViewer content={markdown} path={filePath} />
-      ) : fileType === "transcript" ? (
-        <TranscriptViewer content={markdown} path={filePath} />
-      ) : fileType === "csv" ? (
-        <CsvViewer content={markdown} onChange={handleChange} />
-      ) : fileType === "pdf" ? (
-        <Suspense fallback={<ViewerLoading />}>
-          <PdfViewer path={filePath} />
-        </Suspense>
-      ) : fileType === "mermaid" ? (
-        <Suspense fallback={<ViewerLoading />}>
-          <MermaidViewer content={markdown} />
-        </Suspense>
-      ) : fileType === "word" ? (
-        <Suspense fallback={<ViewerLoading />}>
-          <DocxViewer path={filePath} />
-        </Suspense>
-      ) : fileType === "excel" ? (
-        <Suspense fallback={<ViewerLoading />}>
-          <XlsxViewer path={filePath} />
-        </Suspense>
-      ) : fileType === "email" ? (
-        <Suspense fallback={<ViewerLoading />}>
-          <EmailViewer path={filePath} />
-        </Suspense>
-      ) : fileType === "notebook" ? (
-        <Suspense fallback={<ViewerLoading />}>
-          <NotebookViewer path={filePath} />
-        </Suspense>
-      ) : (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-secondary">Unsupported file type</p>
-        </div>
-      )}
+      <ViewerErrorBoundary path={filePath}>
+        {fileType === "markdown" ? (
+          <MarkdownContent
+            markdown={markdown}
+            mode={mode}
+            status={status}
+            onChange={handleChange}
+            onSelectionChange={handleSelectionChange}
+          />
+        ) : fileType === "image" ? (
+          <ImageViewer path={filePath} />
+        ) : fileType === "video" || fileType === "audio" ? (
+          <MediaViewer path={filePath} fileType={fileType} />
+        ) : fileType === "source-code" || fileType === "text" ? (
+          <SourceCodeViewer content={markdown} path={filePath} />
+        ) : fileType === "transcript" ? (
+          <TranscriptViewer content={markdown} path={filePath} />
+        ) : fileType === "csv" ? (
+          <CsvViewer content={markdown} onChange={handleChange} />
+        ) : fileType === "pdf" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <PdfViewer path={filePath} />
+          </Suspense>
+        ) : fileType === "mermaid" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <MermaidViewer content={markdown} />
+          </Suspense>
+        ) : fileType === "word" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <DocxViewer path={filePath} />
+          </Suspense>
+        ) : fileType === "excel" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <XlsxViewer path={filePath} />
+          </Suspense>
+        ) : fileType === "email" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <EmailViewer path={filePath} />
+          </Suspense>
+        ) : fileType === "notebook" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <NotebookViewer path={filePath} />
+          </Suspense>
+        ) : (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-secondary">
+              Unsupported file type{fileType ? `: ${fileType}` : ""}
+            </p>
+          </div>
+        )}
+      </ViewerErrorBoundary>
     </main>
   );
 }
