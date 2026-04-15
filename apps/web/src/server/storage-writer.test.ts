@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeEtag } from "@ironlore/core/server";
@@ -165,6 +165,80 @@ describe("StorageWriter", () => {
     it("rejects path traversal attempts", () => {
       const { writer } = createWriter();
       expect(() => writer.readRaw("../../etc/passwd")).toThrow();
+    });
+  });
+
+  describe("moveDir", () => {
+    it("moves a page directory and all its assets atomically", async () => {
+      const { writer, projectDir } = createWriter();
+      const dataRoot = join(projectDir, "data");
+      mkdirSync(join(dataRoot, "carousel", "assets"), { recursive: true });
+      writeFileSync(join(dataRoot, "carousel", "index.md"), "# Carousel\nbody\n");
+      writeFileSync(join(dataRoot, "carousel", "assets", "photo.png"), Buffer.from([0, 1, 2]));
+
+      const { etag, movedFiles } = await writer.moveDir("carousel", "examples/carousel");
+
+      expect(etag).toBe(computeEtag("# Carousel\nbody\n"));
+      expect(existsSync(join(dataRoot, "carousel"))).toBe(false);
+      expect(existsSync(join(dataRoot, "examples", "carousel", "index.md"))).toBe(true);
+      expect(existsSync(join(dataRoot, "examples", "carousel", "assets", "photo.png"))).toBe(true);
+
+      const moved = new Set(movedFiles.map((m) => `${m.oldRel} → ${m.newRel}`));
+      expect(moved).toContain("carousel/index.md → examples/carousel/index.md");
+      expect(moved).toContain(
+        "carousel/assets/photo.png → examples/carousel/assets/photo.png",
+      );
+    });
+
+    it("refuses a move onto an existing destination", async () => {
+      const { writer, projectDir } = createWriter();
+      const dataRoot = join(projectDir, "data");
+      mkdirSync(join(dataRoot, "src"), { recursive: true });
+      mkdirSync(join(dataRoot, "dst"), { recursive: true });
+      writeFileSync(join(dataRoot, "src", "index.md"), "src");
+      writeFileSync(join(dataRoot, "dst", "index.md"), "dst");
+
+      await expect(writer.moveDir("src", "dst")).rejects.toThrow(/already exists/);
+      // Source still intact.
+      expect(readFileSync(join(dataRoot, "src", "index.md"), "utf-8")).toBe("src");
+    });
+
+    it("refuses to move a single file (not a directory)", async () => {
+      const { writer, projectDir } = createWriter();
+      writeFileSync(join(projectDir, "data", "note.md"), "hi");
+
+      await expect(writer.moveDir("note.md", "other.md")).rejects.toThrow(/Not a directory/);
+    });
+
+    it("honours an If-Match etag on index.md", async () => {
+      const { writer, projectDir } = createWriter();
+      const dataRoot = join(projectDir, "data");
+      mkdirSync(join(dataRoot, "page"), { recursive: true });
+      writeFileSync(join(dataRoot, "page", "index.md"), "original");
+      const stale = computeEtag("something else");
+
+      await expect(writer.moveDir("page", "moved", stale)).rejects.toThrow(EtagMismatchError);
+      expect(existsSync(join(dataRoot, "page", "index.md"))).toBe(true);
+      expect(existsSync(join(dataRoot, "moved"))).toBe(false);
+    });
+
+    it("writes one WAL entry pair per moved file for git attribution", async () => {
+      const { writer, projectDir } = createWriter();
+      const dataRoot = join(projectDir, "data");
+      mkdirSync(join(dataRoot, "folder", "sub"), { recursive: true });
+      writeFileSync(join(dataRoot, "folder", "index.md"), "a");
+      writeFileSync(join(dataRoot, "folder", "sub", "nested.md"), "b");
+
+      await writer.moveDir("folder", "renamed");
+
+      // Each moved file produces a delete+write WAL pair. Both are
+      // already committed, so getCommittedPending includes them.
+      const pending = writer.getWal().getCommittedPending(100);
+      const paths = pending.map((e) => `${e.op}:${e.path}`);
+      expect(paths).toContain("delete:folder/index.md");
+      expect(paths).toContain("write:renamed/index.md");
+      expect(paths).toContain("delete:folder/sub/nested.md");
+      expect(paths).toContain("write:renamed/sub/nested.md");
     });
   });
 
