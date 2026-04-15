@@ -15,6 +15,10 @@
     "./messages": {
       "types": "./src/messages.ts",
       "import": "./src/messages.ts"
+    },
+    "./extractors": {
+      "types": "./src/extractors/index.ts",
+      "import": "./src/extractors/index.ts"
     }
   },
   "scripts": {
