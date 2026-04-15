@@ -15,6 +15,7 @@ export function MediaViewer({ path, fileType }: MediaViewerProps) {
 
   // Reset the failed flag when the active file changes — without it
   // the second video the user opens inherits the previous error state.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on path change is the whole point
   useEffect(() => {
     setFailed(false);
   }, [path]);

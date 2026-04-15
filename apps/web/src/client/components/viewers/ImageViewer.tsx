@@ -13,8 +13,9 @@ export function ImageViewer({ path }: ImageViewerProps) {
   const [rotation, setRotation] = useState(0);
   const [failed, setFailed] = useState(false);
 
-  // Reset the failed state when the user navigates to a different file
-  // (the `<img onError>` handler is sticky otherwise).
+  // Reset the failed state when the user navigates to a different
+  // file (the `<img onError>` handler is sticky otherwise).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on path change is the whole point
   useEffect(() => {
     setFailed(false);
   }, [path]);

@@ -15,7 +15,13 @@ import { describe, expect, it } from "vitest";
  * entry and CI catches any drift.
  */
 
-const FILE_PAGE_TYPES: PageType[] = [
+// Phase 2.5 ships viewers for the file-shaped page types only.
+// Linked-content rows from docs/01-content-model.md exist in the
+// `PageType` union but are tracked separately under Phase 5 (project
+// primitive) — narrow the test to the subset 2.5 is responsible for.
+type FilePageType = Exclude<PageType, "linked-repo" | "linked-dir">;
+
+const FILE_PAGE_TYPES: readonly FilePageType[] = [
   "markdown",
   "pdf",
   "csv",
@@ -30,13 +36,9 @@ const FILE_PAGE_TYPES: PageType[] = [
   "excel",
   "email",
   "notebook",
-  // Linked-content rows from docs/01-content-model.md exist as PageType
-  // values but Phase 2.5 doesn't ship a viewer for them — they're
-  // tracked separately under Phase 5 (project primitive). Excluded
-  // here so the test stays honest about what 2.5 covers.
-];
+] as const;
 
-const expectedViewer: Record<(typeof FILE_PAGE_TYPES)[number], string> = {
+const expectedViewer: Record<FilePageType, string> = {
   markdown: "MarkdownContent",
   pdf: "PdfViewer",
   csv: "CsvViewer",
