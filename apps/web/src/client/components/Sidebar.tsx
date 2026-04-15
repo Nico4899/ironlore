@@ -236,7 +236,9 @@ export function Sidebar() {
   const handleDelete = useCallback(
     async (path: string, type: PageType | "directory", name: string) => {
       const template =
-        type === "directory" ? messages.sidebarDeleteFolderConfirm : messages.sidebarDeleteFileConfirm;
+        type === "directory"
+          ? messages.sidebarDeleteFolderConfirm
+          : messages.sidebarDeleteFileConfirm;
       const confirmMsg = template.replace("{name}", name);
       if (!window.confirm(confirmMsg)) return;
 
@@ -521,6 +523,7 @@ function ContextMenu({
       className="fixed z-50 min-w-40 rounded border border-border bg-ironlore-slate py-1 shadow-lg"
       style={{ left: menu.x, top: menu.y }}
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
     >
       {item(messages.sidebarNewFile, onNewFile, { disabled: !isDir && !isRoot })}
       {item(messages.sidebarNewFolder, onNewFolder, { disabled: !isDir && !isRoot })}
