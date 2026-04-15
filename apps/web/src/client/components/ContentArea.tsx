@@ -171,6 +171,18 @@ export function ContentArea() {
            inside the ProseMirror editor; a no-op for other viewers). */}
       <HighlightToolbar />
 
+      {/*
+       * SR-only page heading. The markdown editor surfaces the title
+       * inside its own `<h1>` in the document body; every other viewer
+       * has no semantic page title, which made screen-reader navigation
+       * land on the toolbar with no context. Adding one here keeps the
+       * heading hierarchy clean (Phase 2.5 audit Step 6) without
+       * touching every viewer's render path.
+       */}
+      {fileType !== "markdown" && filePath && (
+        <h1 className="sr-only">{filePath.split("/").pop()}</h1>
+      )}
+
       {/* Viewer dispatch */}
       <ViewerErrorBoundary path={filePath}>
         {fileType === "markdown" ? (
