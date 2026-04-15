@@ -250,7 +250,7 @@ function ContextChip({ ctx, onRemove }: ContextChipProps) {
   return (
     <div className="group flex max-w-full items-center gap-1.5 rounded-full border border-border bg-background py-0.5 pl-2 pr-1 text-[11px] text-secondary">
       {icon}
-      <span className="max-w-[180px] truncate font-medium text-primary">{ctx.label}</span>
+      <span className="max-w-45 truncate font-medium text-primary">{ctx.label}</span>
       <button
         type="button"
         onClick={onRemove}

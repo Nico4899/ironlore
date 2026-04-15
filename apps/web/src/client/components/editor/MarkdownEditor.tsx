@@ -443,7 +443,7 @@ function EditorStartCard() {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-24 flex justify-center px-6">
       <form
-        className="pointer-events-auto flex w-1/2 min-w-[320px] max-w-[520px] items-center gap-2 rounded-2xl border border-border-strong bg-ironlore-slate/90 px-4 py-2.5 shadow-xl backdrop-blur"
+        className="pointer-events-auto flex w-1/2 min-w-130 items-center gap-2 rounded-2xl border border-border-strong bg-ironlore-slate/90 px-4 py-2.5 shadow-xl backdrop-blur"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
