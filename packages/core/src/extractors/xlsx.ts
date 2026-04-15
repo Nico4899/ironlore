@@ -11,10 +11,10 @@ const INGEST_ROW_CAP = 1000;
  * dropped from `text` but preserved in `sheets` for the viewer to scroll.
  */
 export async function extractXlsx(buffer: ArrayBuffer): Promise<ExtractResult> {
+  // SheetJS ships both as `module.exports = xlsx` (CJS) and as a
+  // namespace import; pick whichever shape the bundler hands us.
   const xlsxMod = (await import("xlsx")) as unknown as {
     default?: typeof import("xlsx");
-    read?: typeof import("xlsx").read;
-    utils?: typeof import("xlsx").utils;
   };
   const xlsx = (xlsxMod.default ?? xlsxMod) as typeof import("xlsx");
   const warnings: string[] = [];

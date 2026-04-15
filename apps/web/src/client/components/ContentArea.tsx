@@ -37,13 +37,15 @@ const EmailViewer = lazy(() =>
  * Word/Excel containers live here too — their viewers fetch the buffer
  * themselves and delegate to the shared extractor.
  */
-const BINARY_TYPES = new Set(["pdf", "image", "video", "audio", "word", "excel"]);
+const BINARY_TYPES = new Set(["pdf", "image", "video", "audio", "word", "excel", "email"]);
 
 /**
  * File types that use fetchRaw (text, but not markdown's JSON endpoint).
- * Plain text, transcripts, and .eml messages are parsed in the viewer.
+ * Plain text and transcripts are parsed in the viewer from the cached
+ * text buffer; .eml lives in BINARY_TYPES because the extractor needs
+ * the raw bytes (and the viewer would otherwise fetch twice).
  */
-const RAW_TEXT_TYPES = new Set(["source-code", "csv", "mermaid", "text", "transcript", "email"]);
+const RAW_TEXT_TYPES = new Set(["source-code", "csv", "mermaid", "text", "transcript"]);
 
 export function ContentArea() {
   const activePath = useAppStore((s) => s.activePath);
@@ -158,9 +160,7 @@ export function ContentArea() {
         <ImageViewer path={filePath} />
       ) : fileType === "video" || fileType === "audio" ? (
         <MediaViewer path={filePath} fileType={fileType} />
-      ) : fileType === "source-code" ? (
-        <SourceCodeViewer content={markdown} path={filePath} />
-      ) : fileType === "text" ? (
+      ) : fileType === "source-code" || fileType === "text" ? (
         <SourceCodeViewer content={markdown} path={filePath} />
       ) : fileType === "transcript" ? (
         <TranscriptViewer content={markdown} />
