@@ -79,8 +79,9 @@ describe("buildSafeEnv", () => {
 
   it("enriches PATH beyond the ambient value", () => {
     const env = buildSafeEnv({ projectId: "main" });
-    expect(env.PATH).toBeDefined();
+    const pathValue = env.PATH;
+    expect(pathValue).toBeDefined();
     // The enriched PATH always contains at least one absolute path.
-    expect(env.PATH.split(":").some((seg) => seg.startsWith("/"))).toBe(true);
+    expect((pathValue ?? "").split(":").some((seg) => seg.startsWith("/"))).toBe(true);
   });
 });

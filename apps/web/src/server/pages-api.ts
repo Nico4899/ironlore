@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { WsEventInput } from "@ironlore/core";
 import { detectPageType, isBinaryExtension } from "@ironlore/core";
@@ -315,6 +315,15 @@ export function createPagesApi(
 
   // -----------------------------------------------------------------------
   // Move a page
+  //
+  // Pages come in two shapes (see docs/01-content-model.md):
+  //   1. A single `.md` / `.csv` / etc. file.
+  //   2. A directory: `<page>/index.md + assets/ + …`.
+  //
+  // The single-file path reads → writes → deletes and renames the
+  // `.blocks.json` sidecar. The directory path delegates to
+  // `StorageWriter.moveDir` which performs an atomic `renameSync` on
+  // the whole subtree so assets travel with the page.
   // -----------------------------------------------------------------------
   api.post("/:path{.+}/move", async (c) => {
     const sourcePath = c.req.param("path") ?? "";
@@ -327,21 +336,76 @@ export function createPagesApi(
       return c.json({ error: "destination string required in body" }, 400);
     }
 
+    const ifMatch = c.req.header("If-Match");
+    const ifMatchQuoted = ifMatch ? `"${parseEtag(ifMatch)}"` : null;
+
+    const srcAbs = join(writer.getDataRoot(), sourcePath);
+    const isDirectory = existsSync(srcAbs) && statSync(srcAbs).isDirectory();
+
     try {
-      // Read source content
+      if (isDirectory) {
+        // ───── Directory move (page = folder with index.md + assets/) ─────
+        const { etag, movedFiles } = await writer.moveDir(
+          sourcePath,
+          body.destination,
+          ifMatchQuoted,
+        );
+
+        // Re-index: every moved file leaves its old FTS row behind and
+        // gets a fresh one at the new path. Only re-read content for
+        // files the index actually tokenizes (markdown today; extractable
+        // binaries are handled by the file-watcher on next scan).
+        for (const { oldRel, newRel } of movedFiles) {
+          searchIndex.removePage(oldRel);
+          if (newRel.endsWith(".md")) {
+            try {
+              const { content } = writer.read(newRel);
+              searchIndex.indexPage(newRel, content, "user");
+            } catch {
+              // File unreadable after move — skip; next reindex will pick it up.
+            }
+          } else {
+            searchIndex.upsertPage(newRel, detectPageType(newRel));
+          }
+        }
+
+        // Broadcast one event per affected file so `useTreeStore` can
+        // update its map without a full cold refresh.
+        if (broadcast) {
+          for (const { oldRel, newRel } of movedFiles) {
+            broadcast({
+              type: "tree:move",
+              oldPath: oldRel,
+              newPath: newRel,
+              name: basename(newRel),
+              fileType: detectPageType(newRel),
+            });
+          }
+          // Directory node itself — the folder row in the sidebar.
+          broadcast({
+            type: "tree:move",
+            oldPath: sourcePath,
+            newPath: body.destination,
+            name: basename(body.destination),
+            fileType: "directory",
+          });
+        }
+
+        return c.json({ etag });
+      }
+
+      // ───── Single-file move ─────
       const { content, etag: sourceEtag } = writer.read(sourcePath);
+      const effectiveIfMatch = ifMatchQuoted ?? sourceEtag;
 
-      // Write to destination (no If-Match — new file)
       const { etag } = await writer.write(body.destination, content, null);
+      await writer.delete(sourcePath, effectiveIfMatch);
 
-      // Delete source with ETag check
-      await writer.delete(sourcePath, sourceEtag);
-
-      // Update search index
       searchIndex.removePage(sourcePath);
       searchIndex.indexPage(body.destination, content, "user");
 
-      // Move .blocks.json sidecar if it exists
+      // Move the `.blocks.json` sidecar if it exists (single file only —
+      // directory moves already carry the sidecar in the renameSync).
       const srcSidecar = join(writer.getDataRoot(), `${sourcePath}.blocks.json`);
       const dstSidecar = join(writer.getDataRoot(), `${body.destination}.blocks.json`);
       if (existsSync(srcSidecar)) {
@@ -359,6 +423,12 @@ export function createPagesApi(
 
       return c.json({ etag });
     } catch (err) {
+      if (err instanceof EtagMismatchError) {
+        return c.json(
+          { error: "Conflict", currentEtag: err.currentEtag, currentContent: err.currentContent },
+          409,
+        );
+      }
       if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);
       }

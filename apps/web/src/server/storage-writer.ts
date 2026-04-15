@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -200,6 +202,122 @@ export class StorageWriter {
   mkdir(dirPath: string): void {
     const absPath = resolveSafe(this.dataRoot, dirPath, this.linkedPathValidator);
     mkdirSync(absPath, { recursive: true });
+  }
+
+  /**
+   * Move a directory (including all descendants) atomically.
+   *
+   * Pages in Ironlore can be either a single `.md` file or a directory
+   * (`<page>/index.md + assets/`). The flat-file move path in
+   * `pages-api` handles the file case; this method handles the
+   * directory case so `<page>/assets/photo.png` travels with the page.
+   *
+   * Semantics:
+   * - `srcRel` must resolve to a real directory (not a symlink, not a
+   *   file) inside the project's data root.
+   * - `dstRel` must not already exist — callers that want to merge
+   *   should walk the tree themselves.
+   * - If the directory contains an `index.md`, an optional `ifMatch`
+   *   ETag on that file is checked first (optimistic concurrency for
+   *   the user-visible page). The bodies of other files are not
+   *   ETag-checked — the whole subtree moves as one unit.
+   * - The rename itself is a single atomic `renameSync` on the same
+   *   filesystem. If it succeeds, the move is durable. WAL entries
+   *   are then appended for every file that moved so the git worker
+   *   attributes the rename to the calling author.
+   *
+   * Symlinks (linked repos / linked dirs) are refused — users who
+   * want to relocate a mounted link should edit the symlink itself
+   * rather than going through the move endpoint.
+   */
+  async moveDir(
+    srcRel: string,
+    dstRel: string,
+    ifMatch: string | null = null,
+    author = "user",
+  ): Promise<{ etag: string; movedFiles: Array<{ oldRel: string; newRel: string }> }> {
+    const srcAbs = resolveSafe(this.dataRoot, srcRel, this.linkedPathValidator);
+    const dstAbs = resolveSafe(this.dataRoot, dstRel, this.linkedPathValidator);
+
+    // lstatSync so we don't follow symlinks silently. A linked-repo /
+    // linked-dir page isn't ours to move through this path.
+    const srcStat = lstatSync(srcAbs);
+    if (srcStat.isSymbolicLink()) {
+      throw new Error(`Cannot move a linked directory: ${srcRel}`);
+    }
+    if (!srcStat.isDirectory()) {
+      throw new Error(`Not a directory: ${srcRel}`);
+    }
+    if (existsSync(dstAbs)) {
+      throw new Error(`Destination already exists: ${dstRel}`);
+    }
+
+    return this.mutex.withLock(srcRel, async () => {
+      // Optional ETag check on the page's index.md.
+      const indexAbs = join(srcAbs, "index.md");
+      let indexEtag = "";
+      if (existsSync(indexAbs)) {
+        const content = readFileSync(indexAbs, "utf-8");
+        indexEtag = computeEtag(content);
+        if (ifMatch && ifMatch !== indexEtag) {
+          throw new EtagMismatchError(indexEtag, ifMatch, content);
+        }
+      }
+
+      // Enumerate every file so we can log one WAL entry pair per
+      // rename after the atomic move succeeds.
+      const files: Array<{ oldRel: string; newRel: string }> = [];
+      const walk = (dirAbs: string, baseOld: string, baseNew: string): void => {
+        const entries = readdirSync(dirAbs, { withFileTypes: true });
+        for (const entry of entries) {
+          const childAbs = join(dirAbs, entry.name);
+          const oldRelChild = `${baseOld}/${entry.name}`;
+          const newRelChild = `${baseNew}/${entry.name}`;
+          if (entry.isDirectory()) {
+            walk(childAbs, oldRelChild, newRelChild);
+          } else {
+            files.push({ oldRel: oldRelChild, newRel: newRelChild });
+          }
+        }
+      };
+      walk(srcAbs, srcRel, dstRel);
+
+      // Ensure the destination's parent directory exists, then do the
+      // atomic rename. Same-filesystem renames are atomic on POSIX and
+      // on Windows for the mv-within-volume case.
+      mkdirSync(dirname(dstAbs), { recursive: true });
+      renameSync(srcAbs, dstAbs);
+
+      // Paper-trail in the WAL for git author attribution. Committed
+      // immediately — the filesystem change is already durable. A
+      // crash between renameSync and these appends just loses
+      // attribution for the move; the next git flush still records
+      // it as a rename via content similarity.
+      for (const { oldRel, newRel } of files) {
+        const deleteId = this.wal.append({
+          path: oldRel,
+          op: "delete",
+          preHash: null,
+          postHash: null,
+          content: null,
+          author,
+          message: `Move: ${oldRel} → ${newRel}`,
+        });
+        this.wal.markCommitted(deleteId);
+        const writeId = this.wal.append({
+          path: newRel,
+          op: "write",
+          preHash: null,
+          postHash: null,
+          content: null,
+          author,
+          message: `Move: ${oldRel} → ${newRel}`,
+        });
+        this.wal.markCommitted(writeId);
+      }
+
+      return { etag: indexEtag, movedFiles: files };
+    });
   }
 
   /**
