@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { fetchRawUrl } from "../../lib/api.js";
+import { createPage, fetchRawUrl } from "../../lib/api.js";
 import { sanitizeHtml } from "../../lib/sanitize-html.js";
+import { useAppStore } from "../../stores/app.js";
 
 interface DocxViewerProps {
   path: string;
@@ -16,8 +17,10 @@ interface DocxViewerProps {
  */
 export function DocxViewer({ path }: DocxViewerProps) {
   const [html, setHtml] = useState<string | null>(null);
+  const [text, setText] = useState<string>("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [converting, setConverting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
