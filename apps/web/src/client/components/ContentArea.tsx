@@ -6,6 +6,7 @@ import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
+import { TabBar } from "./TabBar.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
@@ -126,6 +127,7 @@ export function ContentArea() {
         className="flex flex-1 flex-col overflow-hidden"
         style={{ minWidth: "480px" }}
       >
+        <TabBar />
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
             <h1 className="text-2xl font-semibold">Welcome to Ironlore</h1>
