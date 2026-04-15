@@ -2,9 +2,9 @@ import MarkdownIt from "markdown-it";
 import type StateInline from "markdown-it/lib/rules_inline/state_inline.mjs";
 import {
   defaultMarkdownParser,
+  defaultMarkdownSerializer,
   MarkdownParser,
   MarkdownSerializer,
-  defaultMarkdownSerializer,
 } from "prosemirror-markdown";
 import { Schema } from "prosemirror-model";
 
@@ -19,7 +19,7 @@ import { Schema } from "prosemirror-model";
  */
 const baseSchema = defaultMarkdownParser.schema;
 
-export const wikiSchema = new Schema({
+export const wikiSchema: Schema = new Schema({
   nodes: baseSchema.spec.nodes.addToEnd("wikilink", {
     inline: true,
     atom: true,

@@ -9,11 +9,11 @@ import {
 } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
 import type { Schema } from "prosemirror-model";
-import { useAppStore } from "../../stores/app.js";
-import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef } from "react";
+import { useAppStore } from "../../stores/app.js";
+import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
 import "./editor.css";
 
 // ---------------------------------------------------------------------------
