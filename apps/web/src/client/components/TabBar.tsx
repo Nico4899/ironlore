@@ -147,7 +147,7 @@ export function TabBar() {
               type="button"
               onClick={(e) => onClose(e, path)}
               aria-label={`Close ${name}`}
-              className="ml-1 rounded p-0.5 opacity-0 hover:bg-ironlore-slate group-hover:opacity-100 aria-[selected=true]:opacity-100"
+              className="ml-1 rounded p-0.5 opacity-0 hover:bg-ironlore-slate group-hover:opacity-100 aria-selected:opacity-100"
             >
               <X className="h-3 w-3" />
             </button>
