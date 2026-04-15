@@ -11,8 +11,14 @@ import { keymap } from "prosemirror-keymap";
 import type { Schema } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../stores/app.js";
+import {
+  buildSlashItems,
+  filterSlashItems,
+  getSlashContext,
+  type SlashItem,
+} from "./slash-menu.js";
 import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
 import "./editor.css";
 
@@ -120,6 +126,18 @@ interface MarkdownEditorProps {
   onSelectionChange?: (selection: { from: number; to: number } | null) => void;
 }
 
+/** UI state for the slash-command popup. */
+interface SlashMenuState {
+  items: SlashItem[];
+  index: number;
+  query: string;
+  /** Viewport-relative coords, used for fixed positioning. */
+  coords: { left: number; top: number };
+  /** Positions in the doc that cover the `/query` trigger text. */
+  from: number;
+  to: number;
+}
+
 export function MarkdownEditor({ markdown, onChange, onSelectionChange }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -130,9 +148,29 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
   // Track whether we're programmatically updating (external markdown change)
   const suppressRef = useRef(false);
 
+  const [slashMenu, setSlashMenu] = useState<SlashMenuState | null>(null);
+  // Ref mirror so the EditorView `handleKeyDown` prop (bound once at mount)
+  // can see the latest menu state without reinstalling the prop.
+  const slashMenuRef = useRef<SlashMenuState | null>(null);
+  slashMenuRef.current = slashMenu;
+
   // Keep callback refs current without recreating the editor
   onChangeRef.current = onChange;
   onSelectionChangeRef.current = onSelectionChange;
+
+  /**
+   * Run a slash-menu item: delete the `/query` trigger text, then execute
+   * the item's command against the resulting clean state. The view's
+   * dispatch is idempotent so synchronous chaining is safe.
+   */
+  const runSlashItem = useCallback((item: SlashItem, from: number, to: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch(view.state.tr.delete(from, to));
+    item.run(view.state, view.dispatch);
+    view.focus();
+    setSlashMenu(null);
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only callback; external markdown sync handled by separate useEffect
   const createView = useCallback((container: HTMLDivElement) => {
@@ -167,8 +205,38 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
       ],
     });
 
+    const allItems = buildSlashItems(schema);
+
     const view = new EditorView(container, {
       state,
+      handleKeyDown(_v, event) {
+        const menu = slashMenuRef.current;
+        if (!menu || menu.items.length === 0) return false;
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setSlashMenu((m) => (m ? { ...m, index: (m.index + 1) % m.items.length } : m));
+          return true;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setSlashMenu((m) =>
+            m ? { ...m, index: (m.index - 1 + m.items.length) % m.items.length } : m,
+          );
+          return true;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          event.preventDefault();
+          const item = menu.items[menu.index];
+          if (item) runSlashItem(item, menu.from, menu.to);
+          return true;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setSlashMenu(null);
+          return true;
+        }
+        return false;
+      },
       handleDOMEvents: {
         // ProseMirror consumes clicks on marks by default so <a> anchors are
         // inert. Intercept the click and open external links in a new tab;
@@ -225,6 +293,29 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           const { from, to } = newState.selection;
           onSelectionChangeRef.current(from === to ? null : { from, to });
         }
+
+        // Recompute slash-menu state after every transaction so the popup
+        // tracks the cursor and filters as the user types.
+        const ctx = getSlashContext(newState);
+        if (!ctx) {
+          if (slashMenuRef.current) setSlashMenu(null);
+          return;
+        }
+        const filtered = filterSlashItems(allItems, ctx.query);
+        if (filtered.length === 0) {
+          if (slashMenuRef.current) setSlashMenu(null);
+          return;
+        }
+        const coords = view.coordsAtPos(newState.selection.head);
+        setSlashMenu((prev) => ({
+          items: filtered,
+          // Clamp carry-over selection when the list shrinks from filtering.
+          index: prev ? Math.min(prev.index, filtered.length - 1) : 0,
+          query: ctx.query,
+          coords: { left: coords.left, top: coords.bottom },
+          from: ctx.from,
+          to: ctx.to,
+        }));
       },
     });
 
@@ -268,5 +359,45 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     suppressRef.current = false;
   }, [markdown]);
 
-  return <div ref={containerRef} className="flex-1 overflow-y-auto px-8 py-6" />;
+  return (
+    <div className="relative flex flex-1 flex-col overflow-hidden">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-8 py-6" />
+      {slashMenu && (
+        <div
+          role="listbox"
+          aria-label="Slash commands"
+          className="fixed z-50 min-w-56 rounded border border-border bg-ironlore-slate py-1 shadow-lg"
+          style={{ left: slashMenu.coords.left, top: slashMenu.coords.top + 4 }}
+        >
+          {slashMenu.items.map((item, i) => (
+            <div key={item.title}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={i === slashMenu.index}
+                onMouseDown={(e) => {
+                  // Run on mousedown so the editor doesn't lose its selection
+                  // to the button focus before the command reads state.
+                  e.preventDefault();
+                  runSlashItem(item, slashMenu.from, slashMenu.to);
+                }}
+                onMouseEnter={() => setSlashMenu((m) => (m ? { ...m, index: i } : m))}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${
+                  i === slashMenu.index
+                    ? "bg-ironlore-slate-hover text-primary"
+                    : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+                }`}
+              >
+                <span className="text-secondary">{item.icon}</span>
+                <span className="flex flex-col">
+                  <span className="font-medium text-primary">{item.title}</span>
+                  <span className="text-[11px] text-secondary">{item.description}</span>
+                </span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
