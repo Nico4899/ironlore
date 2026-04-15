@@ -11,6 +11,7 @@ import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
 import { SplitPane } from "./SplitPane.js";
 import { TabBar } from "./TabBar.js";
+import { ViewerErrorBoundary } from "./ViewerErrorBoundary.js";
 import { CsvViewer } from "./viewers/CsvViewer.js";
 import { ImageViewer } from "./viewers/ImageViewer.js";
 import { MediaViewer } from "./viewers/MediaViewer.js";
