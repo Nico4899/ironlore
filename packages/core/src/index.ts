@@ -1,5 +1,6 @@
 export * from "./block-parser.js";
 export * from "./constants.js";
+export * from "./contrast.js";
 export * from "./egress.js";
 export * from "./messages.js";
 export * from "./page-type.js";
