@@ -10,8 +10,17 @@ export function MermaidViewer({ content }: MermaidViewerProps) {
   const diagramRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const isEmpty = content.trim().length === 0;
+
   useEffect(() => {
     if (mode !== "diagram" || !diagramRef.current) return;
+    // mermaid.render throws on empty source. Short-circuit so the
+    // empty-state surface below renders cleanly instead of a stack
+    // trace tail (Phase 2.5 audit Step 5).
+    if (isEmpty) {
+      setError(null);
+      return;
+    }
 
     let cancelled = false;
     const container = diagramRef.current;
@@ -85,7 +94,9 @@ export function MermaidViewer({ content }: MermaidViewerProps) {
       {/* Content */}
       {mode === "diagram" ? (
         <div className="flex flex-1 items-center justify-center overflow-auto p-8">
-          {error ? (
+          {isEmpty ? (
+            <p className="text-sm text-secondary">Diagram is empty</p>
+          ) : error ? (
             <div className="rounded border border-signal-red bg-ironlore-slate p-4 text-sm text-signal-red">
               {error}
             </div>
