@@ -9,6 +9,7 @@ import { ConflictBanner } from "./editor/ConflictBanner.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
+import { SplitPane } from "./SplitPane.js";
 import { TabBar } from "./TabBar.js";
 import { CsvViewer } from "./viewers/CsvViewer.js";
 import { ImageViewer } from "./viewers/ImageViewer.js";
@@ -284,12 +285,12 @@ function MarkdownContent({
           onSelectionChange={onSelectionChange}
         />
       ) : (
-        <div className="flex flex-1 overflow-hidden">
-          <SourceEditor markdown={markdown} onChange={onChange} />
-          <div className="border-l border-border" style={{ flex: "0 0 50%" }}>
-            <MarkdownPreview markdown={markdown} />
-          </div>
-        </div>
+        <SplitPane
+          storageKey="ironlore.sourcePreviewRatio"
+          handleLabel="Resize source and preview"
+          left={<SourceEditor markdown={markdown} onChange={onChange} />}
+          right={<MarkdownPreview markdown={markdown} />}
+        />
       )}
     </>
   );

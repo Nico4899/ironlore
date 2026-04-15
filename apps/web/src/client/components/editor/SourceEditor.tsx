@@ -190,5 +190,5 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
     });
   }, [markdown]);
 
-  return <div ref={containerRef} className="overflow-hidden" style={{ flex: "1 1 50%" }} />;
+  return <div ref={containerRef} className="h-full overflow-hidden" />;
 }
