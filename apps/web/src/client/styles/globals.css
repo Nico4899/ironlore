@@ -38,7 +38,7 @@
   --color-primary: oklch(0.96 0.005 260);
   --color-secondary: oklch(0.68 0.015 260);
   --color-border: oklch(0.32 0.01 260);
-  --color-border-strong: oklch(0.42 0.015 260);
+  --color-border-strong: oklch(0.52 0.020 260);
 }
 
 /* ─── Light mode overrides ─── */
