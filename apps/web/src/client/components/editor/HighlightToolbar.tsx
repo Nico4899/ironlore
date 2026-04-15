@@ -226,7 +226,7 @@ export function HighlightToolbar() {
       {commentOpen && (
         <div className="absolute left-0 top-full mt-1 w-64 rounded-lg border border-border-strong bg-ironlore-slate p-2 shadow-xl">
           <textarea
-            autoFocus
+            ref={(el) => el?.focus()}
             value={commentDraft}
             onChange={(e) => setCommentDraft(e.target.value)}
             placeholder="Add a comment…"
@@ -290,10 +290,7 @@ function ToolBtn({ onClick, icon, active, ...rest }: ToolBtnProps) {
 }
 
 function Sep() {
-  // biome-ignore lint/a11y/useSemanticElements: the divider is purely decorative chrome inside a toolbar
-  return (
-    <span role="separator" aria-orientation="vertical" className="mx-0.5 h-4 w-px bg-border" />
-  );
+  return <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />;
 }
 
 // Highlighter icon import exposed for any later consumer that wants to
