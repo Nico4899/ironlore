@@ -1,6 +1,7 @@
 import { messages } from "@ironlore/core";
 import { Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusTrap } from "../hooks/useFocusTrap.js";
 import { fetchRecentEdits, type RecentEdit, type SearchResult, searchPages } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 
@@ -51,6 +52,8 @@ export function SearchDialog() {
   const [loading, setLoading] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, true);
 
   // Load recent edits on mount
   useEffect(() => {
@@ -164,7 +167,10 @@ export function SearchDialog() {
       aria-modal="true"
       aria-label={messages.sidebarSearch}
     >
-      <div className="flex w-full max-w-lg flex-col rounded-lg border border-border bg-ironlore-slate shadow-lg">
+      <div
+        ref={dialogRef}
+        className="flex w-full max-w-lg flex-col rounded-lg border border-border bg-ironlore-slate shadow-lg"
+      >
         {/* Search input */}
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <Search className="h-4 w-4 shrink-0 text-secondary" />
