@@ -60,6 +60,11 @@ const editorTheme = EditorView.theme({
   ".cm-block-id": {
     opacity: "0.35",
   },
+  ".cm-frontmatter": {
+    opacity: "0.28",
+    fontSize: "11px",
+    lineHeight: "1.35",
+  },
 });
 
 // ---------------------------------------------------------------------------
@@ -75,11 +80,35 @@ const editorTheme = EditorView.theme({
 const BLOCK_ID_COMMENT_RE = /<!-- #blk_[A-Z0-9]{26} -->/g;
 
 const blockIdMark = Decoration.mark({ class: "cm-block-id" });
+const frontmatterLineDec = Decoration.line({ attributes: { class: "cm-frontmatter" } });
 
 function blockIdDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
+  const doc = view.state.doc;
+
+  // ─── Frontmatter: the leading `---`/`---` YAML block is metadata, not
+  // prose. We paint it at very low opacity so it recedes but stays
+  // editable (users occasionally need to touch `tags` or `title`). The
+  // content is the source of truth, so we never strip it — just dim.
+  const firstLine = doc.line(1).text;
+  if (firstLine === "---") {
+    let endLine = -1;
+    for (let i = 2; i <= Math.min(doc.lines, 50); i++) {
+      if (doc.line(i).text === "---") {
+        endLine = i;
+        break;
+      }
+    }
+    if (endLine > 0) {
+      for (let i = 1; i <= endLine; i++) {
+        builder.add(doc.line(i).from, doc.line(i).from, frontmatterLineDec);
+      }
+    }
+  }
+
+  // ─── Block-ID comments appended to the last line of any block.
   for (const { from, to } of view.visibleRanges) {
-    const text = view.state.doc.sliceString(from, to);
+    const text = doc.sliceString(from, to);
     BLOCK_ID_COMMENT_RE.lastIndex = 0;
     let match: RegExpExecArray | null;
     // biome-ignore lint/suspicious/noAssignInExpressions: standard regex iteration pattern
