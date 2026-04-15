@@ -2,7 +2,11 @@
 
 /* ─── OKLCh Color System ─── */
 
-@custom-variant dark (&:is(.dark *));
+/* Dark mode is the default (spec §Dark / light toggle). The `light`
+ * custom variant activates when `.light` is on an ancestor of the
+ * element; `useThemeClass` toggles it on <html> when the user picks
+ * light mode. */
+@custom-variant light (&:is(.light *));
 
 @theme inline {
   --color-ironlore-blue: oklch(0.55 0.14 255);
@@ -23,7 +27,7 @@
 
 /* ─── Light mode overrides ─── */
 
-@variant dark {
+@variant light {
   @theme inline {
     --color-ironlore-blue: oklch(0.72 0.14 255);
     --color-ironlore-slate: oklch(0.92 0.01 260);
@@ -42,8 +46,14 @@
 
 /* ─── Base ─── */
 
+/* Dark is the default. `useThemeClass` overrides `color-scheme` at
+ * runtime when the user picks light mode. */
 html {
   color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
 }
 
 body {
