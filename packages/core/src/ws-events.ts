@@ -45,13 +45,38 @@ export interface ConnectedEvent {
   seq: number;
 }
 
+/**
+ * Sent by the server when a reconnecting client's `?since=N` is below the
+ * oldest event still in the replay buffer (or after a server restart
+ * where the buffer is empty). The client must perform a full cold refresh
+ * of any state it cares about (tree, inbox, search index); individual
+ * event deltas are no longer recoverable.
+ */
+export interface ResyncEvent {
+  type: "resync";
+  seq: number;
+  reason: "buffer_overflow" | "server_restart";
+}
+
+/**
+ * Emitted once the server has finished draining the replay buffer for a
+ * reconnecting client. Anything received after `replay_complete` is live.
+ * Clients use this to know when it's safe to re-enable optimistic UI.
+ */
+export interface ReplayCompleteEvent {
+  type: "replay_complete";
+  seq: number;
+}
+
 export type WsEvent =
   | TreeAddEvent
   | TreeUpdateEvent
   | TreeDeleteEvent
   | TreeMoveEvent
   | SearchReindexedEvent
-  | ConnectedEvent;
+  | ConnectedEvent
+  | ResyncEvent
+  | ReplayCompleteEvent;
 
 /** Distributive Omit — preserves union discrimination on `type`. */
 export type WsEventInput = WsEvent extends infer T
