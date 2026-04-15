@@ -1,6 +1,8 @@
-import type { PageType } from "@ironlore/core";
+import type { PageType, TreeNode } from "@ironlore/core";
 import { messages } from "@ironlore/core";
 import {
+  BookOpen,
+  Captions,
   ChevronDown,
   ChevronRight,
   FileCode,
@@ -9,14 +11,23 @@ import {
   FileType,
   FolderClosed,
   Image,
+  Mail,
   Music,
   Video,
   Workflow,
 } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createPage, fetchTree, movePage } from "../lib/api.js";
-import { useAppStore } from "../stores/app.js";
+import {
+  createFolder,
+  createPage,
+  createRawFile,
+  deleteFolder,
+  deletePage,
+  fetchTree,
+  movePage,
+} from "../lib/api.js";
+import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app.js";
 import { useTreeStore } from "../stores/tree.js";
 
 /** Map PageType → Lucide icon component. */
@@ -41,9 +52,91 @@ function FileIcon({ type }: { type: PageType | "directory" }) {
       return <FileCode className={cls} />;
     case "mermaid":
       return <Workflow className={cls} />;
+    case "text":
+      return <FileText className={cls} />;
+    case "transcript":
+      return <Captions className={cls} />;
+    case "word":
+      return <FileType className={cls} />;
+    case "excel":
+      return <FileSpreadsheet className={cls} />;
+    case "email":
+      return <Mail className={cls} />;
+    case "notebook":
+      return <BookOpen className={cls} />;
     default:
       return <FileText className={cls} />;
   }
+}
+
+interface MenuState {
+  path: string;
+  type: PageType | "directory";
+  name: string;
+  x: number;
+  y: number;
+}
+
+interface VisibleRow {
+  node: TreeNode;
+  depth: number;
+}
+
+/**
+ * Walk the flat node list into the rows that should be visible given
+ * the current `expandedPaths`. Only children of expanded directories
+ * render, and each row carries its depth so the view can indent.
+ *
+ * Input nodes come from the server in path order (lexicographic), which
+ * already places `parent` before its children, so a single pass over
+ * the sorted list produces correct depth and hide/show decisions.
+ */
+function buildVisibleRows(nodes: readonly TreeNode[], expanded: ReadonlySet<string>): VisibleRow[] {
+  // Bucket children by parent path. Root parent is the empty string.
+  const byParent = new Map<string, TreeNode[]>();
+  for (const node of nodes) {
+    const slash = node.path.lastIndexOf("/");
+    const parent = slash === -1 ? "" : node.path.slice(0, slash);
+    let bucket = byParent.get(parent);
+    if (!bucket) {
+      bucket = [];
+      byParent.set(parent, bucket);
+    }
+    bucket.push(node);
+  }
+
+  // Folders first, then files; alphabetical within each group. This matches
+  // how humans scan a tree far better than pure lex order.
+  for (const bucket of byParent.values()) {
+    bucket.sort((a, b) => {
+      const aDir = a.type === "directory" ? 0 : 1;
+      const bDir = b.type === "directory" ? 0 : 1;
+      if (aDir !== bDir) return aDir - bDir;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  const rows: VisibleRow[] = [];
+  const walk = (parent: string, depth: number) => {
+    const children = byParent.get(parent);
+    if (!children) return;
+    for (const node of children) {
+      rows.push({ node, depth });
+      if (node.type === "directory" && expanded.has(node.path)) {
+        walk(node.path, depth + 1);
+      }
+    }
+  };
+  walk("", 0);
+  return rows;
+}
+
+/** Pending inline-edit for a tree row (rename or new-in-folder). */
+interface PendingEdit {
+  kind: "rename" | "new-file" | "new-folder";
+  parentPath: string; // directory containing the row
+  targetPath?: string; // rename target (existing path)
+  initial: string;
 }
 
 export function Sidebar() {
@@ -54,6 +147,8 @@ export function Sidebar() {
   const loading = useTreeStore((s) => s.loading);
   const treeRef = useRef<HTMLDivElement>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [menu, setMenu] = useState<MenuState | null>(null);
+  const [edit, setEdit] = useState<PendingEdit | null>(null);
 
   // Load tree on mount
   useEffect(() => {
@@ -76,6 +171,21 @@ export function Sidebar() {
         useTreeStore.getState().setLoading(false);
       });
   }, []);
+
+  // Close the context menu on outside click or Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
 
   const handleSelect = useCallback((path: string, type: string) => {
     if (type === "directory") {
@@ -107,7 +217,6 @@ export function Sidebar() {
     const sourcePath = e.dataTransfer.getData("text/plain");
     if (!sourcePath) return;
 
-    // Build destination: targetDir/filename
     const fileName = sourcePath.includes("/")
       ? sourcePath.slice(sourcePath.lastIndexOf("/") + 1)
       : sourcePath;
@@ -117,15 +226,112 @@ export function Sidebar() {
 
     try {
       await movePage(sourcePath, destination);
-      // Tree updates via WebSocket — no manual update needed
     } catch {
       // Move failed — tree state is unchanged
     }
   }, []);
 
-  // -------------------------------------------------------------------------
-  // Keyboard navigation (WCAG: role="tree" + arrow keys)
-  // -------------------------------------------------------------------------
+  const openMenu = useCallback(
+    (e: React.MouseEvent, path: string, type: PageType | "directory", name: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setMenu({ path, type, name, x: e.clientX, y: e.clientY });
+    },
+    [],
+  );
+
+  const parentOf = useCallback((path: string): string => {
+    const idx = path.lastIndexOf("/");
+    return idx === -1 ? "" : path.slice(0, idx);
+  }, []);
+
+  const startRename = useCallback((path: string, name: string) => {
+    setEdit({
+      kind: "rename",
+      parentPath: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "",
+      targetPath: path,
+      initial: name,
+    });
+  }, []);
+
+  const startNewFile = useCallback((parentPath: string) => {
+    setEdit({ kind: "new-file", parentPath, initial: "" });
+    useTreeStore.getState().expandedPaths.add(parentPath);
+  }, []);
+
+  const startNewFolder = useCallback((parentPath: string) => {
+    setEdit({ kind: "new-folder", parentPath, initial: "" });
+    useTreeStore.getState().expandedPaths.add(parentPath);
+  }, []);
+
+  const commitEdit = useCallback(
+    async (value: string) => {
+      if (!edit) return;
+      const trimmed = value.trim();
+      if (!trimmed) {
+        setEdit(null);
+        return;
+      }
+
+      try {
+        if (edit.kind === "rename" && edit.targetPath) {
+          const dest = edit.parentPath ? `${edit.parentPath}/${trimmed}` : trimmed;
+          if (dest === edit.targetPath) {
+            setEdit(null);
+            return;
+          }
+          await movePage(edit.targetPath, dest);
+          if (useAppStore.getState().activePath === edit.targetPath) {
+            useAppStore.getState().setActivePath(dest);
+          }
+        } else if (edit.kind === "new-file") {
+          const fileName = trimmed.includes(".") ? trimmed : `${trimmed}.md`;
+          const fullPath = edit.parentPath ? `${edit.parentPath}/${fileName}` : fileName;
+          if (fileName.toLowerCase().endsWith(".md")) {
+            const title = fileName.replace(/\.md$/i, "");
+            await createPage(fullPath, `# ${title}\n`);
+          } else {
+            await createRawFile(fullPath, "");
+          }
+          useAppStore.getState().setActivePath(fullPath);
+        } else if (edit.kind === "new-folder") {
+          const fullPath = edit.parentPath ? `${edit.parentPath}/${trimmed}` : trimmed;
+          await createFolder(fullPath);
+        }
+      } catch {
+        // Failed — leave tree alone, close editor
+      } finally {
+        setEdit(null);
+      }
+    },
+    [edit],
+  );
+
+  const handleDelete = useCallback(
+    async (path: string, type: PageType | "directory", name: string) => {
+      const template =
+        type === "directory"
+          ? messages.sidebarDeleteFolderConfirm
+          : messages.sidebarDeleteFileConfirm;
+      const confirmMsg = template.replace("{name}", name);
+      if (!window.confirm(confirmMsg)) return;
+
+      try {
+        if (type === "directory") {
+          await deleteFolder(path);
+        } else {
+          await deletePage(path);
+        }
+        if (useAppStore.getState().activePath === path) {
+          useAppStore.getState().setActivePath(null);
+        }
+      } catch {
+        // Delete failed — tree unchanged
+      }
+    },
+    [],
+  );
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
       const items = treeRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]');
@@ -159,6 +365,22 @@ export function Sidebar() {
           e.preventDefault();
           focused.click();
           break;
+        case "F2": {
+          e.preventDefault();
+          const path = focused.dataset.path ?? "";
+          const node = nodes.find((n) => n.path === path);
+          if (node) startRename(node.path, node.name);
+          break;
+        }
+        case "Delete":
+        case "Backspace": {
+          if (e.key === "Backspace" && !(e.metaKey || e.ctrlKey)) break;
+          e.preventDefault();
+          const path = focused.dataset.path ?? "";
+          const node = nodes.find((n) => n.path === path);
+          if (node) void handleDelete(node.path, node.type, node.name);
+          break;
+        }
         case "ArrowRight": {
           e.preventDefault();
           const path = focused.dataset.path ?? "";
@@ -185,13 +407,52 @@ export function Sidebar() {
 
       next?.focus();
     },
-    [nodes, expandedPaths],
+    [nodes, expandedPaths, startRename, handleDelete],
   );
+
+  const onResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startWidth = useAppStore.getState().sidebarWidth;
+    const onMove = (ev: PointerEvent) => {
+      useAppStore.getState().setSidebarWidth(startWidth + (ev.clientX - startX));
+    };
+    const onUp = (ev: PointerEvent) => {
+      (e.target as Element).releasePointerCapture?.(ev.pointerId);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, []);
+
+  const onResizeKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? 20 : 4;
+    const cur = useAppStore.getState().sidebarWidth;
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      useAppStore.getState().setSidebarWidth(cur + step);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      useAppStore.getState().setSidebarWidth(cur - step);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      useAppStore.getState().setSidebarWidth(SIDEBAR_MIN_WIDTH);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      useAppStore.getState().setSidebarWidth(SIDEBAR_MAX_WIDTH);
+    }
+  }, []);
 
   return (
     <nav
-      className="flex flex-col border-r border-border bg-ironlore-slate"
-      style={{ width: `${width}px`, minWidth: "220px", maxWidth: "420px" }}
+      className="relative flex flex-col border-r border-border bg-ironlore-slate"
+      style={{
+        width: `${width}px`,
+        minWidth: `${SIDEBAR_MIN_WIDTH}px`,
+        maxWidth: `${SIDEBAR_MAX_WIDTH}px`,
+      }}
       aria-label="Page tree"
     >
       {/* Search trigger */}
@@ -204,7 +465,7 @@ export function Sidebar() {
         >
           Search pages...
         </button>
-        <kbd className="text-[10px] text-secondary">&#8984;K</kbd>
+        <kbd className="text-xs text-secondary">&#8984;K</kbd>
       </div>
 
       {/* Tree */}
@@ -213,79 +474,317 @@ export function Sidebar() {
         className="flex-1 overflow-y-auto px-2 py-1"
         role="tree"
         onKeyDown={handleKeyDown}
+        onContextMenu={(e) => {
+          // Right-click on empty tree area → "new" menu anchored to root
+          if (e.target === e.currentTarget) {
+            e.preventDefault();
+            setMenu({ path: "", type: "directory", name: "/", x: e.clientX, y: e.clientY });
+          }
+        }}
       >
         {loading ? (
           <p className="px-2 py-4 text-xs text-secondary">Loading...</p>
-        ) : nodes.length === 0 ? (
+        ) : nodes.length === 0 && !edit ? (
           <p className="px-2 py-4 text-xs text-secondary">No pages yet</p>
         ) : (
-          nodes.map((node) => {
-            const isDir = node.type === "directory";
-            const isExpanded = expandedPaths.has(node.path);
-            const isActive = activePath === node.path;
+          <>
+            {buildVisibleRows(nodes, expandedPaths).map(({ node, depth }) => {
+              const isDir = node.type === "directory";
+              const isExpanded = expandedPaths.has(node.path);
+              const isActive = activePath === node.path;
+              const isRenaming = edit?.kind === "rename" && edit.targetPath === node.path;
+              // Tailwind can't generate arbitrary padding from a runtime
+              // value, so apply the indent inline (8px per depth level).
+              const indent: React.CSSProperties = { paddingLeft: `${8 + depth * 14}px` };
 
-            return (
+              if (isRenaming) {
+                return (
+                  <div key={node.id} style={indent}>
+                    <InlineEditRow
+                      initial={edit.initial}
+                      onCommit={commitEdit}
+                      onCancel={() => setEdit(null)}
+                    />
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={node.id}
+                  role="treeitem"
+                  tabIndex={isActive ? 0 : -1}
+                  data-path={node.path}
+                  aria-expanded={isDir ? isExpanded : undefined}
+                  aria-selected={isActive}
+                  aria-level={depth + 1}
+                  draggable={!isDir}
+                  style={indent}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded py-1 pr-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue ${
+                    isActive
+                      ? "bg-ironlore-blue/15 font-semibold text-primary"
+                      : dropTarget === node.path
+                        ? "border border-ironlore-blue bg-ironlore-slate-hover"
+                        : "hover:bg-ironlore-slate-hover"
+                  }`}
+                  onClick={() => handleSelect(node.path, node.type)}
+                  onContextMenu={(e) => openMenu(e, node.path, node.type, node.name)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleSelect(node.path, node.type);
+                    }
+                  }}
+                  onDragStart={(e) => handleDragStart(e, node.path)}
+                  onDragOver={(e) => handleDragOver(e, node.path, isDir)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => {
+                    if (isDir) handleDrop(e, node.path);
+                  }}
+                >
+                  {isDir ? (
+                    isExpanded ? (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-primary" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-secondary" />
+                    )
+                  ) : (
+                    <FileIcon type={node.type} />
+                  )}
+                  <span
+                    className={`truncate ${isDir ? "font-semibold text-primary" : isActive ? "text-primary" : "text-secondary"}`}
+                  >
+                    {node.name}
+                  </span>
+                </div>
+              );
+            })}
+            {edit && edit.kind !== "rename" && (
               <div
-                key={node.id}
-                role="treeitem"
-                tabIndex={isActive ? 0 : -1}
-                data-path={node.path}
-                aria-expanded={isDir ? isExpanded : undefined}
-                aria-selected={isActive}
-                draggable={!isDir}
-                className={`flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue ${
-                  isActive
-                    ? "bg-ironlore-slate-hover font-medium"
-                    : dropTarget === node.path
-                      ? "border border-ironlore-blue bg-ironlore-slate-hover"
-                      : "hover:bg-ironlore-slate-hover"
-                }`}
-                onClick={() => handleSelect(node.path, node.type)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    handleSelect(node.path, node.type);
-                  }
-                }}
-                onDragStart={(e) => handleDragStart(e, node.path)}
-                onDragOver={(e) => handleDragOver(e, node.path, isDir)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => {
-                  if (isDir) handleDrop(e, node.path);
+                style={{
+                  paddingLeft: `${8 + (edit.parentPath.split("/").filter(Boolean).length + (edit.parentPath ? 1 : 0)) * 14}px`,
                 }}
               >
-                {isDir ? (
-                  isExpanded ? (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-secondary" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 shrink-0 text-secondary" />
-                  )
-                ) : (
-                  <FileIcon type={node.type} />
-                )}
-                <span className="truncate">{node.name}</span>
+                <InlineEditRow
+                  initial={edit.initial}
+                  onCommit={commitEdit}
+                  onCancel={() => setEdit(null)}
+                  placeholder={edit.kind === "new-folder" ? "folder-name" : "page-name"}
+                  typePicker={edit.kind === "new-file"}
+                />
               </div>
-            );
-          })
+            )}
+          </>
         )}
       </div>
 
-      {/* New page */}
+      {/* Context menu */}
+      {menu && (
+        <ContextMenu
+          menu={menu}
+          onClose={() => setMenu(null)}
+          onRename={() => {
+            if (menu.path) startRename(menu.path, menu.name);
+          }}
+          onDelete={() => {
+            if (menu.path) void handleDelete(menu.path, menu.type, menu.name);
+          }}
+          onNewFile={() => {
+            const parent = menu.type === "directory" ? menu.path : parentOf(menu.path);
+            startNewFile(parent);
+          }}
+          onNewFolder={() => {
+            const parent = menu.type === "directory" ? menu.path : parentOf(menu.path);
+            startNewFolder(parent);
+          }}
+        />
+      )}
+
+      {/* New page button */}
       <NewPageFooter />
+
+      {/* Resize handle — drag or keyboard (Arrow / Home / End) */}
+      {/* biome-ignore lint/a11y/useSemanticElements: <hr> has no interactive affordance; this separator owns pointer and key events */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        aria-valuemin={SIDEBAR_MIN_WIDTH}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        aria-valuenow={width}
+        tabIndex={0}
+        onPointerDown={onResizePointerDown}
+        onKeyDown={onResizeKeyDown}
+        className="absolute inset-y-0 -right-0.5 w-1 cursor-col-resize outline-none hover:bg-ironlore-blue/60 focus-visible:bg-ironlore-blue"
+      />
     </nav>
+  );
+}
+
+interface ContextMenuProps {
+  menu: MenuState;
+  onClose: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+  onNewFile: () => void;
+  onNewFolder: () => void;
+}
+
+function ContextMenu({
+  menu,
+  onClose,
+  onRename,
+  onDelete,
+  onNewFile,
+  onNewFolder,
+}: ContextMenuProps) {
+  const isDir = menu.type === "directory";
+  const isRoot = menu.path === "";
+
+  const item = (
+    label: string,
+    onClick: () => void,
+    opts: { danger?: boolean; disabled?: boolean } = {},
+  ) => (
+    <button
+      type="button"
+      disabled={opts.disabled}
+      className={`block w-full px-3 py-1.5 text-left text-xs outline-none hover:bg-ironlore-slate-hover disabled:opacity-40 disabled:hover:bg-transparent ${
+        opts.danger ? "text-signal-red" : "text-primary"
+      }`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+        onClick();
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div
+      role="menu"
+      className="fixed z-50 min-w-40 rounded border border-border bg-ironlore-slate py-1 shadow-lg"
+      style={{ left: menu.x, top: menu.y }}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      {item(messages.sidebarNewFile, onNewFile, { disabled: !isDir && !isRoot })}
+      {item(messages.sidebarNewFolder, onNewFolder, { disabled: !isDir && !isRoot })}
+      {!isRoot && (
+        <>
+          <div className="my-1 border-t border-border" />
+          {item(messages.sidebarRename, onRename)}
+          {item(messages.sidebarDelete, onDelete, { danger: true })}
+        </>
+      )}
+    </div>
+  );
+}
+
+interface InlineEditRowProps {
+  initial: string;
+  placeholder?: string;
+  /** Show the file-type selector (new-file only). */
+  typePicker?: boolean;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}
+
+/**
+ * Options for the new-file type picker. The extension is appended to the
+ * typed name only if the user didn't already include one, so power users
+ * can still type `foo.py` and get a Python file without reaching for the
+ * mouse.
+ */
+const FILE_TYPE_OPTIONS: Array<{ label: string; ext: string }> = [
+  { label: "Markdown", ext: ".md" },
+  { label: "Text", ext: ".txt" },
+  { label: "CSV", ext: ".csv" },
+  { label: "TypeScript", ext: ".ts" },
+  { label: "JavaScript", ext: ".js" },
+  { label: "Python", ext: ".py" },
+  { label: "Go", ext: ".go" },
+  { label: "Rust", ext: ".rs" },
+  { label: "JSON", ext: ".json" },
+  { label: "YAML", ext: ".yaml" },
+  { label: "Mermaid", ext: ".mermaid" },
+  { label: "Jupyter", ext: ".ipynb" },
+];
+
+function InlineEditRow({
+  initial,
+  placeholder,
+  typePicker,
+  onCommit,
+  onCancel,
+}: InlineEditRowProps) {
+  const [value, setValue] = useState(initial);
+  const [ext, setExt] = useState(".md");
+
+  const commit = useCallback(() => {
+    const name = value.trim();
+    if (!name) {
+      onCommit("");
+      return;
+    }
+    if (typePicker && !name.includes(".")) {
+      onCommit(name + ext);
+    } else {
+      onCommit(name);
+    }
+  }, [value, ext, typePicker, onCommit]);
+
+  return (
+    <div className="flex items-center gap-1.5 px-2 py-1">
+      <input
+        ref={(el) => el?.focus()}
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          }
+        }}
+        onBlur={commit}
+        className="flex-1 rounded border border-ironlore-blue bg-transparent px-2 py-0.5 text-sm text-primary outline-none"
+      />
+      {typePicker && !value.includes(".") && (
+        <select
+          value={ext}
+          onChange={(e) => setExt(e.target.value)}
+          onMouseDown={(e) => e.stopPropagation()}
+          aria-label="File type"
+          className="rounded border border-border bg-ironlore-slate px-1 py-0.5 text-xs text-secondary outline-none"
+        >
+          {FILE_TYPE_OPTIONS.map((o) => (
+            <option key={o.ext} value={o.ext}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
   );
 }
 
 function NewPageFooter() {
   const [creating, setCreating] = useState(false);
   const [pageName, setPageName] = useState("");
+  const [ext, setExt] = useState(".md");
   const activePath = useAppStore((s) => s.activePath);
 
   const handleCreate = useCallback(async () => {
     const name = pageName.trim();
     if (!name) return;
 
-    // Determine parent directory from active path
     const activeNode = useTreeStore.getState().nodes.find((n) => n.path === activePath);
     let parentDir = "";
     if (activeNode) {
@@ -297,19 +796,23 @@ function NewPageFooter() {
             : "";
     }
 
-    const fileName = name.endsWith(".md") ? name : `${name}.md`;
+    const fileName = name.includes(".") ? name : `${name}${ext}`;
     const fullPath = parentDir ? `${parentDir}/${fileName}` : fileName;
-    const title = name.replace(/\.md$/, "");
 
     try {
-      await createPage(fullPath, `# ${title}\n`);
+      if (fileName.toLowerCase().endsWith(".md")) {
+        const title = fileName.replace(/\.md$/i, "");
+        await createPage(fullPath, `# ${title}\n`);
+      } else {
+        await createRawFile(fullPath, "");
+      }
       useAppStore.getState().setActivePath(fullPath);
       setCreating(false);
       setPageName("");
     } catch {
       // Error creating page — stay in create mode
     }
-  }, [pageName, activePath]);
+  }, [pageName, ext, activePath]);
 
   if (creating) {
     return (
@@ -332,9 +835,23 @@ function NewPageFooter() {
                 setPageName("");
               }
             }}
-            placeholder="Page name"
+            placeholder="Name"
             className="flex-1 rounded border border-border bg-transparent px-2 py-1 text-xs text-primary focus:border-ironlore-blue focus:outline-none"
           />
+          {!pageName.includes(".") && (
+            <select
+              value={ext}
+              onChange={(e) => setExt(e.target.value)}
+              aria-label="File type"
+              className="rounded border border-border bg-ironlore-slate px-1 py-1 text-xs text-secondary outline-none"
+            >
+              {FILE_TYPE_OPTIONS.map((o) => (
+                <option key={o.ext} value={o.ext}>
+                  {o.ext}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="submit"
             disabled={!pageName.trim()}

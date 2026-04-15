@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { deflateRawSync } from "node:zlib";
 import { AGENTS_DIR, AGENTS_LIBRARY_DIR, AGENTS_SHARED_DIR, ulid } from "@ironlore/core";
 
 /**
@@ -15,13 +16,16 @@ function seedFile(filePath: string, content: string): void {
 /**
  * Seed the data directory on first run.
  *
- * Creates getting-started content, CLAUDE.md, agent library personas,
- * and the Carousel Factory example workspace. Skips any file that
- * already exists.
+ * Creates a `getting-started/` folder of onboarding pages, a `carousel/`
+ * folder showcasing every core viewer type, and the `.agents/` tree
+ * (default General + Editor, specialist library, shared skills). Skips
+ * any file that already exists.
  */
 export async function seed(dataDir: string): Promise<void> {
+  const now = new Date().toISOString();
+
   // -------------------------------------------------------------------------
-  // Getting Started
+  // Getting Started — how to use Ironlore
   // -------------------------------------------------------------------------
   seedFile(
     join(dataDir, "getting-started", "index.md"),
@@ -30,154 +34,503 @@ schema: 1
 id: ${ulid()}
 title: Getting Started
 kind: page
-created: ${new Date().toISOString()}
-modified: ${new Date().toISOString()}
+created: ${now}
+modified: ${now}
 tags: [onboarding]
 icon: lucide:rocket
 ---
 
 # Getting Started with Ironlore
 
-Welcome to your knowledge base. Ironlore is a self-hosted, AI-native system
-where you and your AI agents share the same markdown files.
+Welcome. Ironlore is a self-hosted knowledge base where plain markdown on
+disk is the contract. The editor, search index, and AI agents are all caches
+or views over files you own. If the app stops running tomorrow, your data is
+still a git repository you can \`cd\` into.
 
-## Core concepts
+AI agents are first-class teammates here, not a chat overlay. They read and
+write the same files you do through structured tools, so every edit leaves a
+trail you can diff, revert, or hand to another agent.
 
-- **Pages** are markdown files on disk. Everything you see is a file you own.
-- **Agents** are AI assistants that can read and edit your knowledge base
-  through structured tools — never raw file writes.
-- **The filesystem is the product.** If Ironlore stops running, your data is
-  still plain markdown in a git repo.
+## Read next
 
-## Quick start
+- [Pages and markdown](pages-and-markdown) — how pages, frontmatter, and block IDs work
+- [AI agents](agents) — the AI panel, default agents, and activating specialists
+- [Search and navigation](search-and-navigation) — \`Cmd+K\`, wiki-links, backlinks
+- [Keyboard shortcuts](keyboard-shortcuts) — the full reference
 
-1. Create a new page using the sidebar
-2. Write some notes in markdown
-3. Open the AI panel (\`Cmd+Shift+A\`) to ask questions about your content
-4. Your content auto-saves with conflict detection
-
-## Next steps
-
-- Explore the example content in the Carousel Factory workspace
-- Set up your first AI agent from the agent library
-- Read the [documentation](https://github.com/ironlore/ironlore) for more details
+Then open the [Carousel](/carousel) folder to see every supported file type
+render in-place.
 `,
   );
 
-  // -------------------------------------------------------------------------
-  // Root index page
-  // -------------------------------------------------------------------------
   seedFile(
-    join(dataDir, "index.md"),
+    join(dataDir, "getting-started", "pages-and-markdown.md"),
     `---
 schema: 1
 id: ${ulid()}
-title: Home
+title: Pages and Markdown
 kind: page
-created: ${new Date().toISOString()}
-modified: ${new Date().toISOString()}
-icon: lucide:home
+created: ${now}
+modified: ${now}
+tags: [onboarding]
+icon: lucide:file-text
 ---
 
-# Welcome to Ironlore
+# Pages and Markdown
 
-Your self-hosted knowledge base with AI agents that remember everything.
+Every page is a single markdown file on disk. The file path is the URL; the
+folder structure is the tree you see in the sidebar. No database stores the
+hierarchy — \`ls\` and \`git log\` are authoritative.
 
-Start by exploring the [Getting Started](getting-started) guide.
+## Frontmatter
+
+Each page opens with a YAML block:
+
+\`\`\`yaml
+---
+schema: 1
+id: 01JABCDEF...       # ULID — survives renames and moves
+title: My Page
+kind: page             # page | source | wiki
+created: 2026-01-01T00:00:00.000Z
+modified: 2026-01-01T00:00:00.000Z
+tags: [optional, list]
+icon: lucide:file-text # any Lucide icon name
+---
+\`\`\`
+
+The \`id\` is permanent. Move or rename the file and every backlink still
+resolves.
+
+## Page kinds
+
+- **page** — the default. Human-authored, agent-editable.
+- **source** — raw inputs (meeting notes, interview transcripts, dumps).
+  Agent-immutable. Use when you want a canonical record that no agent can
+  rewrite.
+- **wiki** — agent-maintained synthesis pages. Agents aggregate from
+  \`source\` pages and update these as knowledge evolves.
+
+## Block IDs
+
+Agents edit at block granularity, not by overwriting the file. Each
+paragraph, heading, or list block can carry a stable ID in an HTML comment:
+
+\`\`\`markdown
+## Launch checklist <!-- #blk_01JABC... -->
+
+- [ ] Copy review
+- [ ] Asset handoff
+\`\`\`
+
+You never need to type these. They appear when an agent first edits a
+block. Once assigned, they stay — so when an agent says "I updated
+\`#blk_01JABC\`" you can scroll to the exact spot.
+
+## Auto-save and conflicts
+
+The editor auto-saves 500 ms after you stop typing. Every write carries
+the ETag from the last read, so if an agent (or another tab, or \`vim\`)
+changes the same file first, you see a conflict banner instead of a silent
+overwrite.
 `,
   );
 
-  // -------------------------------------------------------------------------
-  // CLAUDE.md — project context for AI agents
-  // -------------------------------------------------------------------------
   seedFile(
-    join(dataDir, "CLAUDE.md"),
-    `# Ironlore Knowledge Base
-
-This is an Ironlore knowledge base. The data directory contains markdown
-files organized in a flat-to-nested hierarchy.
-
-## Conventions
-
-- Pages use YAML frontmatter with \`schema: 1\`
-- Every page has a ULID \`id\` that survives renames and moves
-- Page kinds: \`page\` (default), \`source\` (immutable raw), \`wiki\` (agent-maintained)
-- Block IDs in HTML comments (\`<!-- #blk_... -->\`) are stable edit targets
-- Assets live in \`<page>/assets/\`, scoped to their parent page
-
-## Agent rules
-
-- Never write files directly — use \`kb.*\` structured tools
-- Every mutation must carry an ETag from the last read
-- \`kind: source\` pages are read-only to agents
-- Respect the scope defined in your persona.md
-`,
-  );
-
-  // -------------------------------------------------------------------------
-  // Carousel Factory example workspace
-  // -------------------------------------------------------------------------
-  seedFile(
-    join(dataDir, "carousel-factory", "index.md"),
+    join(dataDir, "getting-started", "agents.md"),
     `---
 schema: 1
 id: ${ulid()}
-title: Carousel Factory
+title: AI Agents
 kind: page
-created: ${new Date().toISOString()}
-modified: ${new Date().toISOString()}
-tags: [example, marketing]
-icon: lucide:image
+created: ${now}
+modified: ${now}
+tags: [onboarding, agents]
+icon: lucide:bot
 ---
 
-# Carousel Factory
+# AI Agents
 
-An example workspace demonstrating how Ironlore organizes content for a
-marketing team producing social media carousels.
+Open the AI panel with \`Cmd+Shift+A\` (or the sparkle icon in the top bar).
+Every agent in your project lives in \`.agents/\` as a plain markdown file
+with a persona definition — you can read them, edit them, or commit them.
 
-## Structure
+## Two default agents
 
-- **brand-voice/** — tone, vocabulary, and style guidelines
-- **templates/** — reusable carousel templates
-- **drafts/** — work in progress
-- **published/** — final versions with performance data
+- **General** — read-only assistant. Searches your pages, cites
+  block-level sources, and never mutates anything. Good for "what did we
+  decide about X?" questions.
+- **Editor** — handles explicit edit requests. Shows a dry-run diff before
+  writing. Respects \`kind: source\` pages (never touches them).
 
-This workspace shows how agents and humans collaborate on content production.
+## The agent library
+
+Dozens of specialist personas live in \`.agents/.library/\` as inactive
+templates — Product Manager, Technical Writer, SEO Specialist, Wiki
+Gardener, and more. Activate one by flipping \`active: true\` in its
+frontmatter. Each specialist has a scheduled heartbeat (cron) and a scope
+that limits which folders it can read or write.
+
+## Providers
+
+Ironlore has no mandatory cloud dependency. Pick one:
+
+- **No AI** — the editor, search, and terminal all work without a key.
+  The AI panel shows a hint until you connect a provider.
+- **Ollama** — if \`http://127.0.0.1:11434\` answers, Ironlore auto-detects
+  your local models on first launch. One click to set a default.
+- **Bring your own key** — Anthropic or OpenAI, entered in Settings and
+  encrypted into the per-project vault.
+
+No model weights ship with Ironlore. You supply the brain.
 `,
   );
 
   seedFile(
-    join(dataDir, "carousel-factory", "brand-voice", "index.md"),
+    join(dataDir, "getting-started", "search-and-navigation.md"),
     `---
 schema: 1
 id: ${ulid()}
-title: Brand Voice
-kind: source
-created: ${new Date().toISOString()}
-modified: ${new Date().toISOString()}
-tags: [brand, guidelines]
-icon: lucide:megaphone
+title: Search and Navigation
+kind: page
+created: ${now}
+modified: ${now}
+tags: [onboarding]
+icon: lucide:search
 ---
 
-# Brand Voice Guidelines
+# Search and Navigation
 
-## Tone
+## Command palette
 
-- Confident but not arrogant
-- Technical but accessible
-- Concise — every word earns its place
+Hit \`Cmd+K\` to open the search dialog. It queries SQLite FTS5 against
+every page body and filename — results come back in milliseconds on
+thousands of pages. Arrow keys navigate, \`Enter\` opens.
 
-## Vocabulary
+With no query, the palette shows your ten most recently edited pages, so
+jumping back to what you were working on never requires typing.
 
-- Use "knowledge base" not "wiki" or "database"
-- Use "agent" not "bot" or "assistant"
-- Use "page" not "document" or "file" (in user-facing copy)
+## Wiki-links
 
-## Formatting
+Link between pages with double brackets:
 
-- Headlines: sentence case, no periods
-- Paragraphs: 2-3 sentences max
-- Lists: parallel construction, no trailing punctuation
+\`\`\`markdown
+See [[Getting Started]] for the overview.
+Reference a specific block: [[Pages and Markdown#blk_01JABC]].
+\`\`\`
+
+Links resolve by page title and track through renames (the ULID \`id\` is
+the real target). Broken links render dimmed.
+
+## Backlinks
+
+Any page that links to the current page shows in the backlinks pane.
+Click a backlink to jump. Backlinks are computed incrementally — opening
+a 5 000-page KB doesn't block the UI.
+
+## Tree navigation
+
+The sidebar renders the filesystem. Arrow keys walk siblings and
+parent/child. \`Enter\` opens, \`Cmd+N\` creates a sibling, \`Cmd+Shift+N\`
+creates a child.
+`,
+  );
+
+  seedFile(
+    join(dataDir, "getting-started", "keyboard-shortcuts.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Keyboard Shortcuts
+kind: page
+created: ${now}
+modified: ${now}
+tags: [onboarding, reference]
+icon: lucide:keyboard
+---
+
+# Keyboard Shortcuts
+
+Every shortcut in Ironlore. Mac modifiers shown; on Linux/Windows
+substitute \`Ctrl\` for \`Cmd\`.
+
+## Navigation
+
+| Shortcut | Action |
+|---|---|
+| \`Cmd+K\` | Open command palette / search |
+| \`Cmd+P\` | Jump to recent page |
+| \`Cmd+B\` | Toggle sidebar |
+| \`Cmd+Shift+A\` | Toggle AI panel |
+| \`Cmd+\`\` | Toggle terminal |
+
+## Editing
+
+| Shortcut | Action |
+|---|---|
+| \`Cmd+S\` | Force save (auto-save also runs on idle) |
+| \`Cmd+Z\` / \`Cmd+Shift+Z\` | Undo / redo |
+| \`Cmd+/\` | Toggle source-mode (CodeMirror) vs WYSIWYG (ProseMirror) |
+
+## Pages and tree
+
+| Shortcut | Action |
+|---|---|
+| \`Cmd+N\` | New sibling page |
+| \`Cmd+Shift+N\` | New child page |
+| \`F2\` | Rename selected page |
+| \`↑\` / \`↓\` | Move between siblings in the tree |
+| \`→\` / \`←\` | Expand / collapse folder |
+
+## Agents
+
+| Shortcut | Action |
+|---|---|
+| \`Cmd+Enter\` (in AI panel) | Send message |
+| \`Cmd+.\` | Stop streaming response |
+`,
+  );
+
+  // -------------------------------------------------------------------------
+  // Carousel — showcase of supported file types
+  // -------------------------------------------------------------------------
+  seedFile(
+    join(dataDir, "carousel", "index.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Carousel
+kind: page
+created: ${now}
+modified: ${now}
+tags: [examples]
+icon: lucide:layout-grid
+---
+
+# Carousel
+
+Ironlore renders each of these without leaving the keyboard. Click a file
+in the sidebar to see it.
+
+- [[document]] — rich markdown (headings, lists, code, tables)
+- \`spreadsheet.csv\` — editable spreadsheet grid
+- \`diagram.mermaid\` — rendered flowchart with a source toggle
+- \`code.ts\` — TypeScript with syntax highlighting
+- \`slide.pdf\` — paginated PDF with page nav, zoom, rotate, download
+- \`photo.png\` — zoomable image viewer with rotate and download
+- \`drawing.svg\` — vector image rendered inline
+- \`notes.txt\` / \`server.log\` — plain-text viewers (CodeMirror, no highlighting)
+- \`transcript.vtt\` — timestamped caption table
+- \`message.eml\` — email with parsed headers and text body
+
+The other supported types — \`.docx\`, \`.xlsx\`, \`.mp3\`, \`.mp4\` — open in
+dedicated viewers when you drop a real file in. They're not seeded because a
+meaningful sample would be too large for a first-run bootstrap.
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "document.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Document
+kind: page
+created: ${now}
+modified: ${now}
+tags: [examples]
+icon: lucide:file-text
+---
+
+# A Markdown Showcase
+
+This page exercises the renderer end-to-end so you can see how Ironlore
+treats common structures.
+
+## Lists
+
+- Bullet lists support **bold**, *italics*, and \`inline code\`
+- Nested items indent cleanly
+  - Two levels deep is fine
+  - Three is where you ask whether this wants to be a separate page
+
+1. Ordered lists renumber on move
+2. Mix them with tasks:
+   - [x] Write the overview
+   - [ ] Ship the feature
+
+## Code
+
+\`\`\`ts
+interface Page {
+  id: string;
+  title: string;
+  kind: "page" | "source" | "wiki";
+}
+
+function isEditable(page: Page): boolean {
+  return page.kind !== "source";
+}
+\`\`\`
+
+## Tables
+
+| File type | Editable | Viewer |
+|---|---|---|
+| Markdown | Yes | ProseMirror + CodeMirror |
+| CSV | Yes | Spreadsheet grid |
+| PDF | No | PDF.js canvas |
+| Image | No | Zoom + pan |
+
+## Quotes
+
+> The filesystem is the product. If Ironlore stops running tomorrow, your
+> data is still plain markdown you can grep, diff, and version.
+
+## Links
+
+Internal: [[Getting Started]]. External:
+[the repo](https://github.com/ironlore/ironlore).
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "spreadsheet.csv"),
+    `Name,Role,Department,Start Date,Email
+Alice Johnson,Engineer,Engineering,2024-01-15,alice@example.com
+Bob Smith,Designer,Product,2023-06-01,bob@example.com
+Carol Lee,PM,Product,2024-03-20,carol@example.com
+Dan Brown,Engineer,Engineering,2023-11-10,dan@example.com
+Eve Davis,Analyst,Data,2024-07-01,eve@example.com`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "diagram.mermaid"),
+    `graph TD
+    A[User opens file] --> B{File type?}
+    B -->|Markdown| C[ProseMirror Editor]
+    B -->|PDF| D[PDF.js Viewer]
+    B -->|CSV| E[Spreadsheet Viewer]
+    B -->|Image| F[Image Viewer]
+    B -->|Code| G[CodeMirror Viewer]
+    B -->|Mermaid| H[Diagram Renderer]
+    C --> I[Auto-save]
+    E --> I`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "code.ts"),
+    `/**
+ * Sample TypeScript file for testing the source code viewer.
+ */
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "editor" | "viewer";
+}
+
+function greet(user: User): string {
+  return \`Hello, \${user.name}! You are logged in as \${user.role}.\`;
+}
+
+const users: User[] = [
+  { id: "1", name: "Alice", email: "alice@example.com", role: "admin" },
+  { id: "2", name: "Bob", email: "bob@example.com", role: "editor" },
+];
+
+for (const user of users) {
+  console.log(greet(user));
+}
+
+export { type User, greet };
+`,
+  );
+
+  seedBinaryFile(join(dataDir, "carousel", "slide.pdf"), createMinimalPdf());
+  seedBinaryFile(join(dataDir, "carousel", "photo.png"), createDemoPng());
+
+  seedFile(
+    join(dataDir, "carousel", "drawing.svg"),
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 160" width="320" height="160">
+  <rect width="320" height="160" fill="#1b2330"/>
+  <circle cx="80" cy="80" r="48" fill="#3b82f6" opacity="0.85"/>
+  <circle cx="160" cy="80" r="48" fill="#10b981" opacity="0.85"/>
+  <circle cx="240" cy="80" r="48" fill="#f59e0b" opacity="0.85"/>
+  <text x="160" y="148" fill="#e5e7eb" font-family="Inter, sans-serif" font-size="12" text-anchor="middle">SVG renders with the image viewer</text>
+</svg>
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "notes.txt"),
+    `Plain-text notes live alongside markdown.
+
+The text viewer is read-only CodeMirror with no language highlighting. Good
+for quick captures you don't want to dress up as a full markdown page — log
+snippets, throwaway scratchpads, clipboard dumps.
+
+Move it to a .md file the moment it deserves structure. Until then, keep
+the noise out of the editor.
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "server.log"),
+    `[2026-04-15T09:00:01.412Z] info  server listening on 127.0.0.1:3000
+[2026-04-15T09:00:01.419Z] info  search-index: opened index.sqlite (wal mode)
+[2026-04-15T09:00:01.423Z] info  file-watcher: chokidar backend ready
+[2026-04-15T09:00:07.881Z] info  auth: login ok user=admin
+[2026-04-15T09:00:08.112Z] debug pages: GET / -> 200 (12ms)
+[2026-04-15T09:00:09.004Z] debug pages: GET /carousel/index.md -> 200 (3ms)
+[2026-04-15T09:00:09.118Z] warn  search-index: query parsed 0 results for "carou"
+[2026-04-15T09:00:12.560Z] info  editor: autosave carousel/document.md etag="abc123"
+[2026-04-15T09:00:19.204Z] error ai: provider not configured — skipping agent run
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "transcript.vtt"),
+    `WEBVTT
+
+00:00:00.000 --> 00:00:03.500
+Welcome back to the Ironlore product walkthrough.
+
+00:00:03.500 --> 00:00:08.000
+Today we're opening every supported file type side-by-side.
+
+00:00:08.000 --> 00:00:13.250
+Transcripts render as a two-column table — timestamp on the left, caption
+on the right.
+
+00:00:13.250 --> 00:00:17.900
+The same parser handles .vtt and .srt files.
+
+00:00:17.900 --> 00:00:22.400
+Drop one in any folder to try it.
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "message.eml"),
+    `From: Ironlore Team <hello@ironlore.app>
+To: You <you@example.com>
+Subject: Your first email in Ironlore
+Date: Wed, 15 Apr 2026 09:00:00 +0000
+Content-Type: text/plain; charset=utf-8
+
+Hi there,
+
+This is a plain-text .eml file, rendered by the email viewer. It parses the
+envelope (From / To / Subject / Date) into a compact header block and shows
+the body below in a monospaced pane.
+
+HTML-only messages are down-converted to text by the extractor, so the
+viewer never injects untrusted HTML — the same plumbing is used for the
+FTS5 search index.
+
+— The Ironlore Team
 `,
   );
 
@@ -496,95 +849,6 @@ If no brand voice page exists, use a professional, concise tone:
 - Technical accuracy without jargon overload
 `,
   );
-
-  // -------------------------------------------------------------------------
-  // Example files for file viewers (Phase 2.5)
-  // -------------------------------------------------------------------------
-
-  seedFile(
-    join(dataDir, "examples", "sample.csv"),
-    `Name,Role,Department,Start Date,Email
-Alice Johnson,Engineer,Engineering,2024-01-15,alice@example.com
-Bob Smith,Designer,Product,2023-06-01,bob@example.com
-Carol Lee,PM,Product,2024-03-20,carol@example.com
-Dan Brown,Engineer,Engineering,2023-11-10,dan@example.com
-Eve Davis,Analyst,Data,2024-07-01,eve@example.com`,
-  );
-
-  seedFile(
-    join(dataDir, "examples", "sample.mermaid"),
-    `graph TD
-    A[User opens file] --> B{File type?}
-    B -->|Markdown| C[ProseMirror Editor]
-    B -->|PDF| D[PDF.js Viewer]
-    B -->|CSV| E[Spreadsheet Viewer]
-    B -->|Image| F[Image Viewer]
-    B -->|Code| G[CodeMirror Viewer]
-    B -->|Mermaid| H[Diagram Renderer]
-    C --> I[Auto-save]
-    E --> I`,
-  );
-
-  seedFile(
-    join(dataDir, "examples", "sample.ts"),
-    `/**
- * Sample TypeScript file for testing the source code viewer.
- */
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: "admin" | "editor" | "viewer";
-}
-
-function greet(user: User): string {
-  return \`Hello, \${user.name}! You are logged in as \${user.role}.\`;
-}
-
-const users: User[] = [
-  { id: "1", name: "Alice", email: "alice@example.com", role: "admin" },
-  { id: "2", name: "Bob", email: "bob@example.com", role: "editor" },
-];
-
-for (const user of users) {
-  console.log(greet(user));
-}
-
-export { type User, greet };
-`,
-  );
-
-  // Minimal valid PDF (displays "Hello" on one page)
-  seedBinaryFile(join(dataDir, "examples", "sample.pdf"), createMinimalPdf());
-
-  // Minimal 1x1 red PNG (67 bytes)
-  seedBinaryFile(join(dataDir, "examples", "sample.png"), createMinimalPng());
-
-  seedFile(
-    join(dataDir, "examples", "media-note.md"),
-    `---
-schema: 1
-id: ${ulid()}
-title: Media Files
-kind: page
-created: ${new Date().toISOString()}
-modified: ${new Date().toISOString()}
-tags: [examples]
----
-
-# Adding Media Files
-
-Ironlore supports video and audio playback. To test the media viewers,
-drop your own files into the \`examples/\` directory:
-
-- **Video:** \`.mp4\`, \`.webm\`, \`.mov\`
-- **Audio:** \`.mp3\`, \`.wav\`, \`.m4a\`, \`.ogg\`
-
-The files will appear in the sidebar with the appropriate icon and open
-in the native HTML5 media player.
-`,
-  );
 }
 
 /**
@@ -627,79 +891,92 @@ startxref
 }
 
 /**
- * Create a minimal 1x1 red PNG image.
+ * Create a 320×160 PNG with diagonal color bands — a visible placeholder
+ * for the image viewer. Built from scratch via the PNG spec (IHDR + IDAT
+ * + IEND) so we don't pull in an image library just for the seed.
  */
-function createMinimalPng(): Uint8Array {
-  // Pre-computed minimal PNG: 1x1 pixel, red (#FF0000)
-  return new Uint8Array([
-    0x89,
-    0x50,
-    0x4e,
-    0x47,
-    0x0d,
-    0x0a,
-    0x1a,
-    0x0a, // PNG signature
-    0x00,
-    0x00,
-    0x00,
-    0x0d,
-    0x49,
-    0x48,
-    0x44,
-    0x52, // IHDR chunk
-    0x00,
-    0x00,
-    0x00,
-    0x01,
-    0x00,
-    0x00,
-    0x00,
-    0x01,
-    0x08,
-    0x02,
-    0x00,
-    0x00,
-    0x00,
-    0x90,
-    0x77,
-    0x53,
-    0xde,
-    0x00,
-    0x00,
-    0x00,
-    0x0c,
-    0x49,
-    0x44,
-    0x41,
-    0x54, // IDAT chunk
-    0x08,
-    0xd7,
-    0x63,
-    0xf8,
-    0xcf,
-    0xc0,
-    0x00,
-    0x00,
-    0x00,
-    0x02,
-    0x00,
-    0x01,
-    0xe2,
-    0x21,
-    0xbc,
-    0x33,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x49,
-    0x45,
-    0x4e,
-    0x44, // IEND chunk
-    0xae,
-    0x42,
-    0x60,
-    0x82,
+function createDemoPng(): Uint8Array {
+  const width = 320;
+  const height = 160;
+
+  // Raw pixel data: each row is `\0` filter byte + RGBA bytes.
+  const row = width * 4 + 1;
+  const raw = Buffer.alloc(row * height);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * row;
+    raw[rowStart] = 0; // filter type: none
+    for (let x = 0; x < width; x++) {
+      const i = rowStart + 1 + x * 4;
+      const t = (x + y) / (width + height);
+      raw[i] = Math.round(59 + (239 - 59) * t); // R
+      raw[i + 1] = Math.round(130 + (68 - 130) * t); // G
+      raw[i + 2] = Math.round(246 + (68 - 246) * t); // B
+      raw[i + 3] = 255; // A
+    }
+  }
+
+  const compressed = deflateRawSync(raw);
+  // PNG IDAT wants zlib-framed data; `deflateRawSync` returns raw DEFLATE.
+  // We prepend a 2-byte zlib header and append the Adler-32 checksum.
+  const zlibHeader = Buffer.from([0x78, 0x9c]);
+  const adler = adler32(raw);
+  const adlerBytes = Buffer.from([
+    (adler >>> 24) & 0xff,
+    (adler >>> 16) & 0xff,
+    (adler >>> 8) & 0xff,
+    adler & 0xff,
   ]);
+  const idatData = Buffer.concat([zlibHeader, compressed, adlerBytes]);
+
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = pngChunk(
+    "IHDR",
+    (() => {
+      const b = Buffer.alloc(13);
+      b.writeUInt32BE(width, 0);
+      b.writeUInt32BE(height, 4);
+      b[8] = 8; // bit depth
+      b[9] = 6; // color type: RGBA
+      b[10] = 0; // compression
+      b[11] = 0; // filter
+      b[12] = 0; // interlace
+      return b;
+    })(),
+  );
+  const idat = pngChunk("IDAT", idatData);
+  const iend = pngChunk("IEND", Buffer.alloc(0));
+
+  return new Uint8Array(Buffer.concat([sig, ihdr, idat, iend]));
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const typeBuf = Buffer.from(type, "ascii");
+  const crcInput = Buffer.concat([typeBuf, data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(crcInput), 0);
+  return Buffer.concat([len, typeBuf, data, crc]);
+}
+
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c ^= buf[i] ?? 0;
+    for (let k = 0; k < 8; k++) {
+      c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function adler32(buf: Buffer): number {
+  let a = 1;
+  let b = 0;
+  const MOD = 65521;
+  for (let i = 0; i < buf.length; i++) {
+    a = (a + (buf[i] ?? 0)) % MOD;
+    b = (b + a) % MOD;
+  }
+  return ((b << 16) | a) >>> 0;
 }

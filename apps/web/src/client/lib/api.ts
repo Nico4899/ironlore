@@ -18,7 +18,10 @@ export interface SaveResponse {
 export interface ConflictResponse {
   error: "Conflict";
   currentEtag: string;
+  /** Unified-diff patch of attempted save → server current; display-only. */
   diff: string;
+  /** Full server-current markdown — used by the block-level merge UI. */
+  currentContent: string;
 }
 
 export interface TreeEntry {
@@ -110,6 +113,19 @@ export async function fetchRaw(pagePath: string): Promise<Response> {
     throw new ApiError(res.status, await res.text());
   }
   return res;
+}
+
+/**
+ * Create a new text-based file through the raw API. Used for non-markdown
+ * file creation from the sidebar (e.g. `.py`, `.csv`, `.mermaid`).
+ */
+export async function createRawFile(pagePath: string, content: string): Promise<void> {
+  const res = await apiFetch(`${RAW_BASE}/${pagePath}`, {
+    method: "PUT",
+    headers: { "Content-Type": "text/plain" },
+    body: content,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
 }
 
 /** Save CSV content via the raw API. */
@@ -213,6 +229,41 @@ export async function movePage(sourcePath: string, destination: string): Promise
   });
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json() as Promise<SaveResponse>;
+}
+
+/**
+ * Delete a page. Pass an ETag via `etag` for editor-session deletes
+ * (server enforces If-Match); omit it for sidebar deletes of files
+ * the user hasn't opened.
+ */
+export async function deletePage(pagePath: string, etag?: string | null): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (etag) headers["If-Match"] = etag;
+  const res = await apiFetch(`${PAGES_BASE}/${pagePath}`, {
+    method: "DELETE",
+    headers,
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new ApiError(res.status, await res.text());
+  }
+}
+
+/** Create an empty folder. */
+export async function createFolder(dirPath: string): Promise<void> {
+  const res = await apiFetch(`${PAGES_BASE}/folders/${dirPath}`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+}
+
+/** Recursively delete a folder and its contents. */
+export async function deleteFolder(dirPath: string): Promise<void> {
+  const res = await apiFetch(`${PAGES_BASE}/folders/${dirPath}`, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 204) {
+    throw new ApiError(res.status, await res.text());
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -33,12 +33,27 @@ export const messages = {
   editorMerge: "Merge",
   editorDiscard: "Discard my changes",
   editorKeepMine: "Keep my version",
+  editorMergeTitle: "Resolve {count} conflicting block(s)",
+  editorMergeChooseYours: "Use yours",
+  editorMergeChooseTheirs: "Use theirs",
+  editorMergeKeepBoth: "Keep both",
+  editorMergeEdit: "Edit",
+  editorMergeSave: "Save merged",
+  editorMergeYoursLabel: "Yours",
+  editorMergeTheirsLabel: "Theirs",
+  editorMergeBlockAdded: "Added on {side}",
+  editorMergeUnresolved: "Still {count} conflict(s) to resolve.",
 
   // Sidebar
   sidebarSearch: "Search",
   sidebarSearchPlaceholder: "Search pages...",
   sidebarNewPage: "New page",
   sidebarNewFolder: "New folder",
+  sidebarNewFile: "New file",
+  sidebarRename: "Rename",
+  sidebarDelete: "Delete",
+  sidebarDeleteFileConfirm: "Delete {name}? This cannot be undone.",
+  sidebarDeleteFolderConfirm: "Delete folder {name} and all its contents?",
 
   // AI panel
   aiPanelTitle: "AI",

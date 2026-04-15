@@ -74,11 +74,24 @@
 .ProseMirror ul,
 .ProseMirror ol {
   margin: 0.75em 0;
-  padding-left: 1.5em;
+  padding-left: 1.75em;
 }
+
+/* Tailwind's preflight zeroes list-style — restore it per-type so bullets
+ * and numbers actually appear in the WYSIWYG editor. */
+.ProseMirror ul { list-style-type: disc; }
+.ProseMirror ul ul { list-style-type: circle; }
+.ProseMirror ul ul ul { list-style-type: square; }
+.ProseMirror ol { list-style-type: decimal; }
+.ProseMirror ol ol { list-style-type: lower-alpha; }
+.ProseMirror ol ol ol { list-style-type: lower-roman; }
 
 .ProseMirror li {
   margin: 0.25em 0;
+}
+
+.ProseMirror li::marker {
+  color: var(--color-secondary);
 }
 
 .ProseMirror li > p {
@@ -121,7 +134,8 @@
 .ProseMirror code {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 13px;
-  background: oklch(0.30 0.01 260);
+  background: var(--color-ironlore-slate-hover);
+  color: var(--color-primary);
   padding: 0.15em 0.35em;
   border-radius: 3px;
 }
@@ -132,7 +146,9 @@
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 13px;
   line-height: 1.5;
-  background: oklch(0.20 0.01 260);
+  background: var(--color-ironlore-slate-hover);
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 0.75em 1em;
   margin: 0.75em 0;
@@ -172,7 +188,7 @@
 
 .ProseMirror th {
   font-weight: 600;
-  background: oklch(0.28 0.01 260);
+  background: var(--color-ironlore-slate-hover);
 }
 
 /* ─── Images ─── */
@@ -207,6 +223,14 @@
 }
 
 /* ─── Selection & cursor ─── */
+
+/* Use the brand blue at ~35% alpha for selection so highlighted text
+ * reads as "same text, lifted surface" instead of the default OS blue
+ * which fights the Ironlore palette. */
+.ProseMirror ::selection {
+  background-color: oklch(from var(--color-ironlore-blue) l c h / 0.35);
+  color: var(--color-primary);
+}
 
 .ProseMirror .ProseMirror-gapcursor {
   display: none;
@@ -244,4 +268,18 @@
   .ProseMirror .ProseMirror-gapcursor::after {
     animation: none;
   }
+}
+
+/* ─── Wiki-links ─── */
+
+.ProseMirror .ir-wikilink {
+  color: var(--color-ironlore-blue);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--color-ironlore-blue);
+  cursor: pointer;
+  padding: 0 1px;
+}
+
+.ProseMirror .ir-wikilink:hover {
+  background-color: oklch(0.35 0.05 255 / 0.2);
 }

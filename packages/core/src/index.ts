@@ -1,3 +1,4 @@
+export * from "./block-parser.js";
 export * from "./constants.js";
 export * from "./egress.js";
 export * from "./messages.js";

@@ -128,7 +128,7 @@ async function start() {
   const searchIndex = new SearchIndex(projectDir);
 
   // Reindex on startup to ensure the pages table is populated
-  const { indexed } = searchIndex.reindexAll(writer.getDataRoot());
+  const { indexed } = await searchIndex.reindexAll(writer.getDataRoot());
   console.log(`Search index: ${indexed} pages indexed`);
 
   // Create broadcast callback that forwards to the WebSocket manager

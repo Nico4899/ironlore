@@ -6,13 +6,18 @@ import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
+import { HighlightToolbar } from "./editor/HighlightToolbar.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
+import { SplitPane } from "./SplitPane.js";
+import { TabBar } from "./TabBar.js";
+import { ViewerErrorBoundary } from "./ViewerErrorBoundary.js";
 import { CsvViewer } from "./viewers/CsvViewer.js";
 import { ImageViewer } from "./viewers/ImageViewer.js";
 import { MediaViewer } from "./viewers/MediaViewer.js";
 import { SourceCodeViewer } from "./viewers/SourceCodeViewer.js";
+import { TranscriptViewer } from "./viewers/TranscriptViewer.js";
 
 // Lazy-load heavy viewers
 const PdfViewer = lazy(() =>
@@ -21,12 +26,42 @@ const PdfViewer = lazy(() =>
 const MermaidViewer = lazy(() =>
   import("./viewers/MermaidViewer.js").then((m) => ({ default: m.MermaidViewer })),
 );
+const DocxViewer = lazy(() =>
+  import("./viewers/DocxViewer.js").then((m) => ({ default: m.DocxViewer })),
+);
+const XlsxViewer = lazy(() =>
+  import("./viewers/XlsxViewer.js").then((m) => ({ default: m.XlsxViewer })),
+);
+const EmailViewer = lazy(() =>
+  import("./viewers/EmailViewer.js").then((m) => ({ default: m.EmailViewer })),
+);
+const NotebookViewer = lazy(() =>
+  import("./viewers/NotebookViewer.js").then((m) => ({ default: m.NotebookViewer })),
+);
 
-/** File types that are loaded as binary via URL, not as text content. */
-const BINARY_TYPES = new Set(["pdf", "image", "video", "audio"]);
+/**
+ * File types that are loaded as binary via URL, not as text content.
+ * Word/Excel containers live here too — their viewers fetch the buffer
+ * themselves and delegate to the shared extractor.
+ */
+const BINARY_TYPES = new Set([
+  "pdf",
+  "image",
+  "video",
+  "audio",
+  "word",
+  "excel",
+  "email",
+  "notebook",
+]);
 
-/** File types that use fetchRaw (text, but not markdown's JSON endpoint). */
-const RAW_TEXT_TYPES = new Set(["source-code", "csv", "mermaid"]);
+/**
+ * File types that use fetchRaw (text, but not markdown's JSON endpoint).
+ * Plain text and transcripts are parsed in the viewer from the cached
+ * text buffer; .eml lives in BINARY_TYPES because the extractor needs
+ * the raw bytes (and the viewer would otherwise fetch twice).
+ */
+const RAW_TEXT_TYPES = new Set(["source-code", "csv", "mermaid", "text", "transcript"]);
 
 export function ContentArea() {
   const activePath = useAppStore((s) => s.activePath);
@@ -107,6 +142,7 @@ export function ContentArea() {
         className="flex flex-1 flex-col overflow-hidden"
         style={{ minWidth: "480px" }}
       >
+        <TabBar />
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center">
             <h1 className="text-2xl font-semibold">Welcome to Ironlore</h1>
@@ -125,39 +161,67 @@ export function ContentArea() {
       className="flex flex-1 flex-col overflow-hidden"
       style={{ minWidth: "480px" }}
     >
+      <TabBar />
+
       {/* Conflict banner (markdown + CSV) */}
       {conflict && <ConflictBanner conflict={conflict} onResolved={handleConflictResolved} />}
 
+      {/* Floating selection toolbar (rendered only when text is selected
+           inside the ProseMirror editor; a no-op for other viewers). */}
+      <HighlightToolbar />
+
       {/* Viewer dispatch */}
-      {fileType === "markdown" ? (
-        <MarkdownContent
-          markdown={markdown}
-          mode={mode}
-          status={status}
-          onChange={handleChange}
-          onSelectionChange={handleSelectionChange}
-        />
-      ) : fileType === "image" ? (
-        <ImageViewer path={filePath} />
-      ) : fileType === "video" || fileType === "audio" ? (
-        <MediaViewer path={filePath} fileType={fileType} />
-      ) : fileType === "source-code" ? (
-        <SourceCodeViewer content={markdown} path={filePath} />
-      ) : fileType === "csv" ? (
-        <CsvViewer content={markdown} onChange={handleChange} />
-      ) : fileType === "pdf" ? (
-        <Suspense fallback={<ViewerLoading />}>
-          <PdfViewer path={filePath} />
-        </Suspense>
-      ) : fileType === "mermaid" ? (
-        <Suspense fallback={<ViewerLoading />}>
-          <MermaidViewer content={markdown} />
-        </Suspense>
-      ) : (
-        <div className="flex flex-1 items-center justify-center">
-          <p className="text-sm text-secondary">Unsupported file type</p>
-        </div>
-      )}
+      <ViewerErrorBoundary path={filePath}>
+        {fileType === "markdown" ? (
+          <MarkdownContent
+            markdown={markdown}
+            mode={mode}
+            status={status}
+            onChange={handleChange}
+            onSelectionChange={handleSelectionChange}
+          />
+        ) : fileType === "image" ? (
+          <ImageViewer path={filePath} />
+        ) : fileType === "video" || fileType === "audio" ? (
+          <MediaViewer path={filePath} fileType={fileType} />
+        ) : fileType === "source-code" || fileType === "text" ? (
+          <SourceCodeViewer content={markdown} path={filePath} />
+        ) : fileType === "transcript" ? (
+          <TranscriptViewer content={markdown} path={filePath} />
+        ) : fileType === "csv" ? (
+          <CsvViewer content={markdown} onChange={handleChange} />
+        ) : fileType === "pdf" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <PdfViewer path={filePath} />
+          </Suspense>
+        ) : fileType === "mermaid" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <MermaidViewer content={markdown} />
+          </Suspense>
+        ) : fileType === "word" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <DocxViewer path={filePath} />
+          </Suspense>
+        ) : fileType === "excel" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <XlsxViewer path={filePath} />
+          </Suspense>
+        ) : fileType === "email" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <EmailViewer path={filePath} />
+          </Suspense>
+        ) : fileType === "notebook" ? (
+          <Suspense fallback={<ViewerLoading />}>
+            <NotebookViewer path={filePath} />
+          </Suspense>
+        ) : (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-sm text-secondary">
+              Unsupported file type{fileType ? `: ${fileType}` : ""}
+            </p>
+          </div>
+        )}
+      </ViewerErrorBoundary>
     </main>
   );
 }
@@ -212,7 +276,7 @@ function MarkdownContent({
           </button>
         </div>
         <div className="flex-1" />
-        <span className="text-xs text-secondary">
+        <span className="text-xs text-secondary" role="status" aria-live="polite">
           {status === "dirty"
             ? "Unsaved"
             : status === "syncing"
@@ -231,12 +295,12 @@ function MarkdownContent({
           onSelectionChange={onSelectionChange}
         />
       ) : (
-        <div className="flex flex-1 overflow-hidden">
-          <SourceEditor markdown={markdown} onChange={onChange} />
-          <div className="border-l border-border" style={{ flex: "0 0 50%" }}>
-            <MarkdownPreview markdown={markdown} />
-          </div>
-        </div>
+        <SplitPane
+          storageKey="ironlore.sourcePreviewRatio"
+          handleLabel="Resize source and preview"
+          left={<SourceEditor markdown={markdown} onChange={onChange} />}
+          right={<MarkdownPreview markdown={markdown} />}
+        />
       )}
     </>
   );

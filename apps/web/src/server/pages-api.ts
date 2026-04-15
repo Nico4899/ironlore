@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { WsEventInput } from "@ironlore/core";
-import { detectPageType } from "@ironlore/core";
+import { detectPageType, isBinaryExtension } from "@ironlore/core";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
@@ -33,6 +33,14 @@ const MIME_MAP: Record<string, string> = {
   // Documents
   ".pdf": "application/pdf",
   ".csv": "text/csv",
+  ".txt": "text/plain",
+  ".log": "text/plain",
+  ".vtt": "text/vtt",
+  ".srt": "text/plain",
+  ".eml": "message/rfc822",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".ipynb": "application/x-ipynb+json",
   // Code / text
   ".md": "text/markdown",
   ".mermaid": "text/plain",
@@ -98,6 +106,62 @@ export function createPagesApi(
   });
 
   // -----------------------------------------------------------------------
+  // Create an empty folder — registered before the generic /:path{.+}
+  // catch-all so Hono matches the more specific prefix first.
+  // -----------------------------------------------------------------------
+  api.post("/folders/:path{.+}", (c) => {
+    const dirPath = c.req.param("path") ?? "";
+    if (!dirPath) {
+      return c.json({ error: "Path required" }, 400);
+    }
+
+    try {
+      writer.mkdir(dirPath);
+      broadcast?.({
+        type: "tree:add",
+        path: dirPath,
+        name: basename(dirPath),
+        fileType: "directory",
+      });
+      return c.json({ ok: true });
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Delete a folder (recursive)
+  // -----------------------------------------------------------------------
+  api.delete("/folders/:path{.+}", (c) => {
+    const dirPath = c.req.param("path") ?? "";
+    if (!dirPath) {
+      return c.json({ error: "Path required" }, 400);
+    }
+
+    try {
+      writer.rmdir(dirPath);
+      for (const entry of searchIndex.getTree()) {
+        if (
+          (entry.path === dirPath || entry.path.startsWith(`${dirPath}/`)) &&
+          entry.type !== "directory"
+        ) {
+          searchIndex.removePage(entry.path);
+        }
+      }
+      broadcast?.({ type: "tree:delete", path: dirPath });
+      return c.body(null, 204);
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // Read a page
   // -----------------------------------------------------------------------
   api.get("/:path{.+}", (c) => {
@@ -135,6 +199,10 @@ export function createPagesApi(
     const pagePath = c.req.param("path") ?? "";
     if (!pagePath) {
       return c.json({ error: "Path required" }, 400);
+    }
+
+    if (extname(pagePath).toLowerCase() !== ".md") {
+      return c.json({ error: "This endpoint only accepts markdown files" }, 400);
     }
 
     const ifMatch = c.req.header("If-Match");
@@ -187,6 +255,7 @@ export function createPagesApi(
             error: "Conflict",
             currentEtag: err.currentEtag,
             diff,
+            currentContent: err.currentContent,
           },
           409,
         );
@@ -207,14 +276,14 @@ export function createPagesApi(
       return c.json({ error: "Path required" }, 400);
     }
 
+    // If-Match is optional on DELETE: editor sessions with a cached ETag
+    // pass it for concurrency protection; sidebar deletes (non-markdown,
+    // never-opened) pass nothing and accept unconditional removal.
     const ifMatch = c.req.header("If-Match");
-    if (!ifMatch) {
-      return c.json({ error: "If-Match header required" }, 428);
-    }
 
     try {
-      const parsed = parseEtag(ifMatch);
-      await writer.delete(pagePath, `"${parsed}"`);
+      const ifMatchQuoted = ifMatch ? `"${parseEtag(ifMatch)}"` : null;
+      await writer.delete(pagePath, ifMatchQuoted);
 
       // Remove from search index
       searchIndex.removePage(pagePath);
@@ -354,8 +423,11 @@ export function createRawApi(writer: StorageWriter): Hono {
     }
 
     const ext = extname(filePath).toLowerCase();
-    if (ext !== ".csv") {
-      return c.json({ error: "Only CSV files can be written via /raw" }, 400);
+    // Binary file types must be uploaded through their dedicated routes.
+    // Everything else (csv, source code, text, transcript, mermaid) is text-
+    // writable through /raw.
+    if (isBinaryExtension(filePath) || ext === ".md") {
+      return c.json({ error: "This file type cannot be written via /raw" }, 400);
     }
 
     const ifMatch = c.req.header("If-Match");

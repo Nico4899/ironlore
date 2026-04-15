@@ -2,8 +2,16 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown as markdownLang } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { search, searchKeymap } from "@codemirror/search";
-import { EditorState } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers } from "@codemirror/view";
+import { EditorState, type Extension, RangeSetBuilder } from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  keymap,
+  lineNumbers,
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
 
@@ -27,11 +35,11 @@ const editorTheme = EditorView.theme({
   ".cm-cursor": {
     borderLeftColor: "var(--color-ironlore-blue)",
   },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-    backgroundColor: "oklch(0.35 0.05 255 / 0.5)",
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": {
+    backgroundColor: "oklch(from var(--color-ironlore-blue) l c h / 0.35)",
   },
   ".cm-activeLine": {
-    backgroundColor: "oklch(0.28 0.01 260)",
+    backgroundColor: "oklch(from var(--color-ironlore-slate-hover) l c h / 0.5)",
   },
   ".cm-gutters": {
     backgroundColor: "transparent",
@@ -49,7 +57,83 @@ const editorTheme = EditorView.theme({
   ".cm-scroller": {
     overflow: "auto",
   },
+  ".cm-block-id": {
+    opacity: "0.35",
+  },
+  ".cm-frontmatter": {
+    opacity: "0.28",
+    fontSize: "11px",
+    lineHeight: "1.35",
+  },
 });
+
+// ---------------------------------------------------------------------------
+// Block-ID comment dimming
+//
+// Markdown blocks that have been written through the StorageWriter carry
+// an HTML comment (`<!-- #blk_<ULID> -->`) anchored to the last line of
+// the block. They are load-bearing metadata but they break reading flow
+// at this density, so source mode keeps them visible (you may want to
+// copy a citation) while painting them at low opacity.
+// ---------------------------------------------------------------------------
+
+const BLOCK_ID_COMMENT_RE = /<!-- #blk_[A-Z0-9]{26} -->/g;
+
+const blockIdMark = Decoration.mark({ class: "cm-block-id" });
+const frontmatterLineDec = Decoration.line({ attributes: { class: "cm-frontmatter" } });
+
+function blockIdDecorations(view: EditorView): DecorationSet {
+  const builder = new RangeSetBuilder<Decoration>();
+  const doc = view.state.doc;
+
+  // ─── Frontmatter: the leading `---`/`---` YAML block is metadata, not
+  // prose. We paint it at very low opacity so it recedes but stays
+  // editable (users occasionally need to touch `tags` or `title`). The
+  // content is the source of truth, so we never strip it — just dim.
+  const firstLine = doc.line(1).text;
+  if (firstLine === "---") {
+    let endLine = -1;
+    for (let i = 2; i <= Math.min(doc.lines, 50); i++) {
+      if (doc.line(i).text === "---") {
+        endLine = i;
+        break;
+      }
+    }
+    if (endLine > 0) {
+      for (let i = 1; i <= endLine; i++) {
+        builder.add(doc.line(i).from, doc.line(i).from, frontmatterLineDec);
+      }
+    }
+  }
+
+  // ─── Block-ID comments appended to the last line of any block.
+  for (const { from, to } of view.visibleRanges) {
+    const text = doc.sliceString(from, to);
+    BLOCK_ID_COMMENT_RE.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    // biome-ignore lint/suspicious/noAssignInExpressions: standard regex iteration pattern
+    while ((match = BLOCK_ID_COMMENT_RE.exec(text)) !== null) {
+      const start = from + match.index;
+      builder.add(start, start + match[0].length, blockIdMark);
+    }
+  }
+  return builder.finish();
+}
+
+const dimBlockIds: Extension = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+    constructor(view: EditorView) {
+      this.decorations = blockIdDecorations(view);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.viewportChanged) {
+        this.decorations = blockIdDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (v) => v.decorations },
+);
 
 const highlightStyle = syntaxHighlighting(
   HighlightStyle.define([
@@ -102,6 +186,7 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
         markdownLang(),
         editorTheme,
         highlightStyle,
+        dimBlockIds,
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
         updateListener,
         EditorView.lineWrapping,
@@ -134,5 +219,5 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
     });
   }, [markdown]);
 
-  return <div ref={containerRef} className="overflow-hidden" style={{ flex: "1 1 50%" }} />;
+  return <div ref={containerRef} className="h-full overflow-hidden" />;
 }

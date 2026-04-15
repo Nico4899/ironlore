@@ -19,7 +19,7 @@ export function MermaidViewer({ content }: MermaidViewerProps) {
     (async () => {
       try {
         const mermaid = (await import("mermaid")).default;
-        mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "dark" });
+        mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "neutral" });
 
         const id = `mermaid-${Date.now()}`;
         const { svg } = await mermaid.render(id, content);
@@ -90,7 +90,12 @@ export function MermaidViewer({ content }: MermaidViewerProps) {
               {error}
             </div>
           ) : (
-            <div ref={diagramRef} className="max-w-full" />
+            <div
+              ref={diagramRef}
+              className="max-w-full rounded border border-border bg-white p-6"
+              role="img"
+              aria-label="Mermaid diagram"
+            />
           )}
         </div>
       ) : (

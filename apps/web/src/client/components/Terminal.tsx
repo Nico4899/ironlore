@@ -16,13 +16,16 @@ export default function Terminal() {
     const container = containerRef.current;
     if (!container) return;
 
+    const styles = getComputedStyle(document.documentElement);
+    const bg = styles.getPropertyValue("--color-ironlore-slate").trim();
+    const fg = styles.getPropertyValue("--color-primary").trim();
     const term = new XTerm({
       cursorBlink: true,
       fontFamily: '"JetBrains Mono", ui-monospace, monospace',
       fontSize: 13,
       theme: {
-        background: "#111418",
-        foreground: "#e6e6e6",
+        background: bg,
+        foreground: fg,
       },
     });
     const fit = new FitAddon();

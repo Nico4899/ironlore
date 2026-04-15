@@ -1,5 +1,14 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative } from "node:path";
 import {
   computeEtag,
@@ -152,18 +161,21 @@ export class StorageWriter {
   }
 
   /**
-   * Delete a page with ETag check.
+   * Delete a page with ETag check. Works for text and binary files.
+   * Pass ifMatch=null to skip the check (used by callers that have no
+   * cached ETag, e.g. sidebar delete of non-markdown files).
    */
-  async delete(pagePath: string, ifMatch: string, author = "user"): Promise<void> {
+  async delete(pagePath: string, ifMatch: string | null, author = "user"): Promise<void> {
     const absPath = resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator);
     const relPath = relative(this.dataRoot, absPath);
 
     return this.mutex.withLock(relPath, async () => {
-      const current = readFileSync(absPath, "utf-8");
-      const currentEtag = computeEtag(current);
+      const currentBuf = readFileSync(absPath);
+      const currentEtag = computeEtag(currentBuf);
+      const currentText = currentBuf.toString("utf-8");
 
-      if (ifMatch !== currentEtag) {
-        throw new EtagMismatchError(currentEtag, ifMatch, current);
+      if (ifMatch !== null && ifMatch !== currentEtag) {
+        throw new EtagMismatchError(currentEtag, ifMatch, currentText);
       }
 
       const walId = this.wal.append({
@@ -179,6 +191,30 @@ export class StorageWriter {
       unlinkSync(absPath);
       this.wal.markCommitted(walId);
     });
+  }
+
+  /**
+   * Create an empty directory under the data root.
+   * Idempotent — succeeds if the directory already exists.
+   */
+  mkdir(dirPath: string): void {
+    const absPath = resolveSafe(this.dataRoot, dirPath, this.linkedPathValidator);
+    mkdirSync(absPath, { recursive: true });
+  }
+
+  /**
+   * Recursively delete a directory and all its contents.
+   * No ETag check — the caller is responsible for confirmation.
+   * No-op if the path doesn't exist.
+   */
+  rmdir(dirPath: string): void {
+    const absPath = resolveSafe(this.dataRoot, dirPath, this.linkedPathValidator);
+    if (!existsSync(absPath)) return;
+    const st = statSync(absPath);
+    if (!st.isDirectory()) {
+      throw new Error(`Not a directory: ${dirPath}`);
+    }
+    rmSync(absPath, { recursive: true, force: true });
   }
 
   /**

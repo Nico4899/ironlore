@@ -15,6 +15,14 @@
     "./messages": {
       "types": "./src/messages.ts",
       "import": "./src/messages.ts"
+    },
+    "./extractors": {
+      "types": "./src/extractors/index.ts",
+      "import": "./src/extractors/index.ts"
+    },
+    "./fixtures/generate-large-kb": {
+      "types": "./src/fixtures/generate-large-kb.ts",
+      "import": "./src/fixtures/generate-large-kb.ts"
     }
   },
   "scripts": {
@@ -22,6 +30,9 @@
     "dev": "tsc -b --watch"
   },
   "dependencies": {
+    "mammoth": "^1.12.0",
+    "postal-mime": "^2.7.4",
+    "xlsx": "^0.18.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {

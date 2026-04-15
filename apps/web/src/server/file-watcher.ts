@@ -1,7 +1,13 @@
 import { existsSync, watch as fsWatch, readFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import type { WsEventInput } from "@ironlore/core";
-import { detectPageType, isBinaryExtension, isSupportedExtension } from "@ironlore/core";
+import {
+  detectPageType,
+  extractableFormat,
+  isBinaryExtension,
+  isSupportedExtension,
+} from "@ironlore/core";
+import { extract } from "@ironlore/core/extractors";
 import { computeEtag } from "@ironlore/core/server";
 import { type FSWatcher as ChokidarWatcher, watch as chokidarWatch } from "chokidar";
 import type { SearchIndex } from "./search-index.js";
@@ -58,6 +64,7 @@ export class FileWatcher {
       // Skip unsupported, hidden files, sidecars, and temp files
       if (!isSupportedExtension(filename)) return;
       if (/(^|[/\\])\./.test(filename)) return;
+      if (filename.endsWith(".blocks.json")) return;
 
       const absPath = join(this.dataRoot, filename);
 
@@ -166,12 +173,27 @@ export class FileWatcher {
         this.wal.markCommitted(entry.id);
       }
 
-      // Update search index (text files only)
+      // Update search index (text files get markdown-style indexing;
+      // extractable containers get extractor output fed into FTS5;
+      // opaque binaries like PDF/images only land in the pages table).
       if (!binary) {
         this.searchIndex?.indexPage(relPath, content ?? "", "external");
       } else {
-        // Binary files aren't in FTS5, but still register in pages table
         this.searchIndex?.upsertPage(relPath, detectPageType(relPath));
+        const format = extractableFormat(basename(filePath));
+        if (format) {
+          const arrayBuffer = buffer.buffer.slice(
+            buffer.byteOffset,
+            buffer.byteOffset + buffer.byteLength,
+          );
+          void extract(format, arrayBuffer)
+            .then((result) => {
+              this.searchIndex?.indexPage(relPath, result.text, "external");
+            })
+            .catch((err) => {
+              console.warn(`FTS extractor failed for ${relPath}:`, err);
+            });
+        }
       }
 
       // Broadcast WS event (tree:add or tree:update)

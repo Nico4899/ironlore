@@ -2,44 +2,82 @@
 
 /* ─── OKLCh Color System ─── */
 
-@custom-variant dark (&:is(.dark *));
+/* Dark mode is the default (spec §Dark / light toggle). The `light`
+ * custom variant activates when `.light` is on an ancestor of the
+ * element; `useThemeClass` toggles it on <html> when the user picks
+ * light mode. */
+@custom-variant light (&:is(.light *));
 
 @theme inline {
-  --color-ironlore-blue: oklch(0.55 0.14 255);
-  --color-ironlore-slate: oklch(0.25 0.01 260);
-  --color-ironlore-slate-hover: oklch(0.30 0.01 260);
+  /* Ironlore palette — bolder, more committed. The previous tokens sat
+   * mid-lightness and read timid; these punch harder while staying in
+   * OKLCh so contrast stays verifiable. */
+  --color-ironlore-blue: oklch(0.65 0.18 258);
+  --color-ironlore-blue-strong: oklch(0.72 0.20 258);
+  --color-ironlore-slate: oklch(0.22 0.015 260);
+  --color-ironlore-slate-hover: oklch(0.28 0.015 260);
+  /* Editor / workspace canvas — deeper than slate so panels read as
+   * "stage" against the chrome "apron". */
+  --color-background: oklch(0.16 0.01 260);
 
-  --color-signal-amber: oklch(0.78 0.16 80);
-  --color-signal-red: oklch(0.55 0.20 25);
-  --color-signal-green: oklch(0.65 0.15 145);
+  --color-signal-amber: oklch(0.82 0.17 80);
+  --color-signal-red: oklch(0.62 0.22 25);
+  --color-signal-green: oklch(0.72 0.17 148);
 
-  --color-primary: oklch(0.93 0.01 260);
-  --color-secondary: oklch(0.65 0.01 260);
-  --color-border: oklch(0.35 0.01 260);
+  /* Accent — a deliberate warm contrast to the blue, used only for AI
+   * surfaces (sparkles, Ask AI, example-prompt card). Stays muted so
+   * it doesn't fight the blue. */
+  --color-accent-violet: oklch(0.68 0.17 300);
+  /* Highlight tones for the Highlight & Ask pop-up. Four deliberate
+   * marker colors that read at 0.4 alpha on both light and dark. */
+  --color-highlight-yellow: oklch(0.90 0.17 95);
+  --color-highlight-green: oklch(0.78 0.17 150);
+  --color-highlight-blue: oklch(0.78 0.14 230);
+  --color-highlight-pink: oklch(0.75 0.17 0);
+
+  --color-primary: oklch(0.96 0.005 260);
+  --color-secondary: oklch(0.68 0.015 260);
+  --color-border: oklch(0.32 0.01 260);
+  --color-border-strong: oklch(0.42 0.015 260);
 }
 
 /* ─── Light mode overrides ─── */
 
-@variant dark {
+@variant light {
   @theme inline {
-    --color-ironlore-blue: oklch(0.72 0.14 255);
-    --color-ironlore-slate: oklch(0.92 0.01 260);
-    --color-ironlore-slate-hover: oklch(0.88 0.01 260);
+    --color-ironlore-blue: oklch(0.55 0.20 258);
+    --color-ironlore-blue-strong: oklch(0.48 0.22 258);
+    --color-ironlore-slate: oklch(0.95 0.008 260);
+    --color-ironlore-slate-hover: oklch(0.90 0.010 260);
+    --color-background: oklch(0.99 0.003 260);
 
-    --color-signal-amber: oklch(0.82 0.14 80);
-    --color-signal-red: oklch(0.60 0.20 25);
-    --color-signal-green: oklch(0.70 0.15 145);
+    --color-signal-amber: oklch(0.68 0.17 75);
+    --color-signal-red: oklch(0.55 0.22 25);
+    --color-signal-green: oklch(0.56 0.17 148);
 
-    --color-primary: oklch(0.20 0.01 260);
-    --color-secondary: oklch(0.50 0.01 260);
-    --color-border: oklch(0.85 0.01 260);
+    --color-accent-violet: oklch(0.55 0.20 300);
+    --color-highlight-yellow: oklch(0.90 0.17 95);
+    --color-highlight-green: oklch(0.82 0.15 150);
+    --color-highlight-blue: oklch(0.82 0.12 230);
+    --color-highlight-pink: oklch(0.80 0.15 0);
+
+    --color-primary: oklch(0.18 0.01 260);
+    --color-secondary: oklch(0.42 0.012 260);
+    --color-border: oklch(0.82 0.010 260);
+    --color-border-strong: oklch(0.72 0.015 260);
   }
 }
 
 /* ─── Base ─── */
 
+/* Dark is the default. `useThemeClass` overrides `color-scheme` at
+ * runtime when the user picks light mode. */
 html {
   color-scheme: dark;
+}
+
+html.light {
+  color-scheme: light;
 }
 
 body {
@@ -47,16 +85,27 @@ body {
   font-size: 14px;
   line-height: 1.5;
   margin: 0;
-  background-color: var(--color-ironlore-slate);
+  background-color: var(--color-background);
   color: var(--color-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.005em;
 }
 
 code,
 pre,
 kbd {
   font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Text selection — primary tint, slightly darker than the background so
+ * the selected span reads as an elevated surface rather than a bright
+ * blue rectangle. Applies everywhere outside CodeMirror/ProseMirror
+ * (those have their own selection rules). */
+::selection {
+  background-color: oklch(from var(--color-ironlore-blue) l c h / 0.35);
+  color: var(--color-primary);
 }
 
 /* ─── Skip navigation (a11y) ─── */
@@ -68,11 +117,29 @@ kbd {
   z-index: 100;
   padding: 0.5rem 1rem;
   background: var(--color-ironlore-blue);
-  color: white;
+  color: oklch(1 0 0);
 }
 
 .skip-nav:focus {
   top: 0;
+}
+
+/* ─── Focus rings (a11y) ─── */
+
+/*
+ * Many interactive elements use Tailwind's `outline-none` to kill the
+ * default browser ring. Restore a visible ring for keyboard-only focus so
+ * keyboard users always see where they are. Mouse clicks don't trigger
+ * :focus-visible in modern browsers, so pointer users aren't affected.
+ */
+:is(button, [role="button"], [role="treeitem"], [role="tab"], [role="option"], [role="menuitem"], a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-ironlore-blue);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.ProseMirror:focus-visible {
+  outline: none;
 }
 
 /* ─── Reduced motion ─── */
@@ -81,8 +148,82 @@ kbd {
   *,
   *::before,
   *::after {
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
-    transition-duration: 0.01ms;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
+}
+
+/* ─── .docx-body (mammoth-rendered Word output) ─── */
+
+.docx-body {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-primary);
+}
+
+.docx-body h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 1.4em 0 0.6em;
+}
+
+.docx-body h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 1.2em 0 0.5em;
+}
+
+.docx-body h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 1em 0 0.4em;
+}
+
+.docx-body p {
+  margin: 0.6em 0;
+}
+
+.docx-body ul,
+.docx-body ol {
+  padding-left: 1.5em;
+  margin: 0.6em 0;
+}
+
+.docx-body li {
+  margin: 0.2em 0;
+}
+
+.docx-body blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 1em;
+  color: var(--color-secondary);
+  margin: 0.8em 0;
+}
+
+.docx-body code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  background: var(--color-ironlore-slate-hover);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+.docx-body table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+}
+
+.docx-body th,
+.docx-body td {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+
+.docx-body a {
+  color: var(--color-ironlore-blue);
+  text-decoration: underline;
 }

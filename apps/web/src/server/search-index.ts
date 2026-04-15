@@ -1,6 +1,12 @@
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
-import { detectPageType, isSupportedExtension, type PageType } from "@ironlore/core";
+import {
+  detectPageType,
+  extractableFormat,
+  isSupportedExtension,
+  type PageType,
+} from "@ironlore/core";
+import { extract } from "@ironlore/core/extractors";
 import Database from "better-sqlite3";
 
 /**
@@ -231,8 +237,18 @@ export class SearchIndex {
 
   /**
    * Full-text search via FTS5. Returns results ranked by relevance.
+   *
+   * Each bare token is wrapped in double-quotes (to escape FTS operators)
+   * and suffixed with `*` for prefix matching — so typing "carou" matches
+   * "carousel". Empty queries short-circuit to an empty result.
    */
   search(query: string, limit = 20): SearchResult[] {
+    const tokens = query
+      .split(/\s+/)
+      .map((t) => t.replace(/"/g, ""))
+      .filter((t) => t.length > 0);
+    if (tokens.length === 0) return [];
+    const ftsQuery = tokens.map((t) => `"${t}"*`).join(" ");
     return this.db
       .prepare(
         `SELECT path, title, snippet(pages_fts, 2, '<mark>', '</mark>', '…', 32) AS snippet,
@@ -242,7 +258,7 @@ export class SearchIndex {
          ORDER BY rank
          LIMIT ?`,
       )
-      .all(query, limit) as SearchResult[];
+      .all(ftsQuery, limit) as SearchResult[];
   }
 
   /**
@@ -291,8 +307,12 @@ export class SearchIndex {
   /**
    * Full reindex from filesystem. Nukes all existing data and rebuilds.
    * Called by `ironlore reindex`.
+   *
+   * Markdown files are indexed inline. Extractable binaries (.docx /
+   * .xlsx / .eml) are queued and processed asynchronously after the walk
+   * so a slow extractor doesn't hold up tree population.
    */
-  reindexAll(dataRoot: string): { indexed: number } {
+  async reindexAll(dataRoot: string): Promise<{ indexed: number }> {
     // Clear all tables
     const clear = this.db.transaction(() => {
       this.db.prepare("DELETE FROM pages_fts").run();
@@ -305,6 +325,7 @@ export class SearchIndex {
 
     // Walk data directory and index all supported files
     let indexed = 0;
+    const extractableQueue: Array<{ relPath: string; fullPath: string }> = [];
     const walk = (dir: string) => {
       let items: import("node:fs").Dirent[];
       try {
@@ -317,6 +338,8 @@ export class SearchIndex {
       }
       for (const item of items) {
         if (item.name.startsWith(".") && item.name !== ".agents") continue;
+        // Skip block-id sidecars (`foo.md.blocks.json`) — internal metadata.
+        if (item.name.endsWith(".blocks.json")) continue;
         const fullPath = join(dir, item.name);
         const relPath = relative(dataRoot, fullPath);
 
@@ -327,7 +350,6 @@ export class SearchIndex {
           const fileType = detectPageType(item.name);
           this.upsertPage(relPath, fileType);
 
-          // Only index text content for markdown files (FTS + backlinks + tags)
           if (item.name.endsWith(".md")) {
             try {
               const content = readFileSync(fullPath, "utf-8");
@@ -335,6 +357,8 @@ export class SearchIndex {
             } catch {
               // Skip unreadable files
             }
+          } else if (extractableFormat(item.name)) {
+            extractableQueue.push({ relPath, fullPath });
           }
           indexed++;
         }
@@ -342,6 +366,23 @@ export class SearchIndex {
     };
 
     walk(dataRoot);
+
+    for (const { relPath, fullPath } of extractableQueue) {
+      const format = extractableFormat(fullPath);
+      if (!format) continue;
+      try {
+        const buffer = readFileSync(fullPath);
+        const arrayBuffer = buffer.buffer.slice(
+          buffer.byteOffset,
+          buffer.byteOffset + buffer.byteLength,
+        );
+        const result = await extract(format, arrayBuffer);
+        this.indexPage(relPath, result.text, "reindex");
+      } catch (err) {
+        console.warn(`FTS extractor failed during reindex for ${relPath}:`, err);
+      }
+    }
+
     return { indexed };
   }
 

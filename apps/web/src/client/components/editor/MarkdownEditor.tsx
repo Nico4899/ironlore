@@ -1,3 +1,4 @@
+import { Sparkles } from "lucide-react";
 import { baseKeymap, toggleMark } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
 import {
@@ -8,11 +9,18 @@ import {
   wrappingInputRule,
 } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
-import { defaultMarkdownParser, defaultMarkdownSerializer } from "prosemirror-markdown";
 import type { Schema } from "prosemirror-model";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAppStore } from "../../stores/app.js";
+import {
+  buildSlashItems,
+  filterSlashItems,
+  getSlashContext,
+  type SlashItem,
+} from "./slash-menu.js";
+import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
 import "./editor.css";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +33,19 @@ import "./editor.css";
  * roundtrips through the editor without loss.
  */
 const BLOCK_ID_RE = /<!-- #blk_[A-Z0-9]{26} -->/g;
+
+/**
+ * YAML frontmatter at the top of a markdown file. ProseMirror has no schema
+ * for it, so leaving it in would render as prose. We peel it off before
+ * parsing and restore it verbatim on serialize.
+ */
+const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+
+function splitFrontmatter(markdown: string): { frontmatter: string; body: string } {
+  const match = markdown.match(FRONTMATTER_RE);
+  if (!match) return { frontmatter: "", body: markdown };
+  return { frontmatter: match[0], body: markdown.slice(match[0].length) };
+}
 
 /**
  * Strip block-ID comments before feeding markdown into ProseMirror.
@@ -106,26 +127,61 @@ interface MarkdownEditorProps {
   onSelectionChange?: (selection: { from: number; to: number } | null) => void;
 }
 
+/** UI state for the slash-command popup. */
+interface SlashMenuState {
+  items: SlashItem[];
+  index: number;
+  query: string;
+  /** Viewport-relative coords, used for fixed positioning. */
+  coords: { left: number; top: number };
+  /** Positions in the doc that cover the `/query` trigger text. */
+  from: number;
+  to: number;
+}
+
 export function MarkdownEditor({ markdown, onChange, onSelectionChange }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const blockIdsRef = useRef<Map<number, string>>(new Map());
+  const frontmatterRef = useRef<string>("");
   const onChangeRef = useRef(onChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
   // Track whether we're programmatically updating (external markdown change)
   const suppressRef = useRef(false);
 
+  const [slashMenu, setSlashMenu] = useState<SlashMenuState | null>(null);
+  // Ref mirror so the EditorView `handleKeyDown` prop (bound once at mount)
+  // can see the latest menu state without reinstalling the prop.
+  const slashMenuRef = useRef<SlashMenuState | null>(null);
+  slashMenuRef.current = slashMenu;
+
   // Keep callback refs current without recreating the editor
   onChangeRef.current = onChange;
   onSelectionChangeRef.current = onSelectionChange;
 
+  /**
+   * Run a slash-menu item: delete the `/query` trigger text, then execute
+   * the item's command against the resulting clean state. The view's
+   * dispatch is idempotent so synchronous chaining is safe.
+   */
+  const runSlashItem = useCallback((item: SlashItem, from: number, to: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch(view.state.tr.delete(from, to));
+    item.run(view.state, view.dispatch);
+    view.focus();
+    setSlashMenu(null);
+  }, []);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only callback; external markdown sync handled by separate useEffect
   const createView = useCallback((container: HTMLDivElement) => {
-    const { cleaned, blockIds } = stripBlockIds(markdown);
+    const { frontmatter, body } = splitFrontmatter(markdown);
+    frontmatterRef.current = frontmatter;
+    const { cleaned, blockIds } = stripBlockIds(body);
     blockIdsRef.current = blockIds;
 
-    const schema = defaultMarkdownParser.schema;
-    const doc = defaultMarkdownParser.parse(cleaned);
+    const schema = wikiMarkdownParser.schema;
+    const doc = wikiMarkdownParser.parse(cleaned);
     if (!doc) return null;
 
     // The default markdown schema always has these marks
@@ -150,22 +206,119 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
       ],
     });
 
+    const allItems = buildSlashItems(schema);
+
     const view = new EditorView(container, {
       state,
+      handleKeyDown(_v, event) {
+        const menu = slashMenuRef.current;
+        if (!menu || menu.items.length === 0) return false;
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setSlashMenu((m) => (m ? { ...m, index: (m.index + 1) % m.items.length } : m));
+          return true;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setSlashMenu((m) =>
+            m ? { ...m, index: (m.index - 1 + m.items.length) % m.items.length } : m,
+          );
+          return true;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          event.preventDefault();
+          const item = menu.items[menu.index];
+          if (item) runSlashItem(item, menu.from, menu.to);
+          return true;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setSlashMenu(null);
+          return true;
+        }
+        return false;
+      },
+      handleDOMEvents: {
+        // ProseMirror consumes clicks on marks by default so <a> anchors are
+        // inert. Intercept the click and open external links in a new tab;
+        // internal links (no scheme or same-origin) route through the app.
+        click: (_v, event) => {
+          const target = event.target as HTMLElement | null;
+          const anchor = target?.closest("a");
+          if (!anchor) return false;
+          const href = anchor.getAttribute("href");
+          if (!href) return false;
+          event.preventDefault();
+          if (/^https?:\/\//i.test(href) || /^mailto:/i.test(href)) {
+            window.open(href, "_blank", "noopener,noreferrer");
+          } else {
+            const withExt = href.endsWith(".md") ? href : `${href}.md`;
+            useAppStore.getState().setActivePath(withExt);
+          }
+          return true;
+        },
+      },
+      nodeViews: {
+        wikilink: (node) => {
+          const dom = document.createElement("span");
+          const { target, display } = node.attrs as { target: string; display: string | null };
+          dom.className = "ir-wikilink";
+          dom.dataset.wikilink = target;
+          dom.textContent = display ?? target;
+          dom.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // Strip any `#blk_…` anchor for navigation; anchor handling is
+            // polish (scroll-to-block) and not required for Phase 2.
+            const hashIdx = target.indexOf("#");
+            const pagePath = hashIdx === -1 ? target : target.slice(0, hashIdx);
+            if (pagePath) {
+              const withExt = pagePath.endsWith(".md") ? pagePath : `${pagePath}.md`;
+              useAppStore.getState().setActivePath(withExt);
+            }
+          });
+          return { dom };
+        },
+      },
       dispatchTransaction(tr) {
         const newState = view.state.apply(tr);
         view.updateState(newState);
 
         if (tr.docChanged && !suppressRef.current) {
-          const serialized = defaultMarkdownSerializer.serialize(newState.doc);
+          const serialized = wikiMarkdownSerializer.serialize(newState.doc);
           const withIds = reinsertBlockIds(serialized, blockIdsRef.current);
-          onChangeRef.current(withIds);
+          onChangeRef.current(frontmatterRef.current + withIds);
         }
 
         if (tr.selectionSet && onSelectionChangeRef.current) {
           const { from, to } = newState.selection;
           onSelectionChangeRef.current(from === to ? null : { from, to });
         }
+
+        // Recompute slash-menu state after every transaction so the popup
+        // tracks the cursor and filters as the user types.
+        const ctx = getSlashContext(newState);
+        if (!ctx) {
+          if (slashMenuRef.current) setSlashMenu(null);
+          return;
+        }
+        const filtered = filterSlashItems(allItems, ctx.query);
+        if (filtered.length === 0) {
+          if (slashMenuRef.current) setSlashMenu(null);
+          return;
+        }
+        const coords = view.coordsAtPos(newState.selection.head);
+        setSlashMenu((prev) => ({
+          items: filtered,
+          // Clamp carry-over selection when the list shrinks from filtering.
+          index: prev ? Math.min(prev.index, filtered.length - 1) : 0,
+          query: ctx.query,
+          // `top` anchors the bottom of the menu above the current line so
+          // the popup never covers what the user is typing.
+          coords: { left: coords.left, top: coords.top },
+          from: ctx.from,
+          to: ctx.to,
+        }));
       },
     });
 
@@ -191,14 +344,16 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     const view = viewRef.current;
     if (!view) return;
 
-    const { cleaned, blockIds } = stripBlockIds(markdown);
-    const currentSerialized = defaultMarkdownSerializer.serialize(view.state.doc);
+    const { frontmatter, body } = splitFrontmatter(markdown);
+    frontmatterRef.current = frontmatter;
+    const { cleaned, blockIds } = stripBlockIds(body);
+    const currentSerialized = wikiMarkdownSerializer.serialize(view.state.doc);
 
     // Don't replace if content matches — avoids cursor jumps
     if (currentSerialized === cleaned) return;
 
     blockIdsRef.current = blockIds;
-    const doc = defaultMarkdownParser.parse(cleaned);
+    const doc = wikiMarkdownParser.parse(cleaned);
     if (!doc) return;
 
     suppressRef.current = true;
@@ -207,5 +362,104 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     suppressRef.current = false;
   }, [markdown]);
 
-  return <div ref={containerRef} className="flex-1 overflow-y-auto px-8 py-6" />;
+  const bodyText = markdown.replace(/^---[\s\S]*?^---[\r\n]*/m, "").trim();
+  const headingOnly = /^#{1,6}\s+\S+\s*$/.test(bodyText);
+  const showStartCard = bodyText.length === 0 || headingOnly;
+
+  return (
+    <div className="relative flex flex-1 flex-col overflow-hidden">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-8 py-6" />
+      {showStartCard && <EditorStartCard />}
+      {slashMenu && (
+        <div
+          role="listbox"
+          aria-label="Slash commands"
+          className="fixed z-50 min-w-56 rounded-md border border-border bg-ironlore-slate py-1 shadow-xl"
+          style={{
+            left: slashMenu.coords.left,
+            // Anchor the menu's bottom 6px above the current caret line so
+            // it sits above what the user is typing (was below, which hid
+            // the trigger line as the list grew).
+            bottom: `${Math.max(window.innerHeight - slashMenu.coords.top + 6, 8)}px`,
+          }}
+        >
+          {slashMenu.items.map((item, i) => (
+            <div key={item.title}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={i === slashMenu.index}
+                onMouseDown={(e) => {
+                  // Run on mousedown so the editor doesn't lose its selection
+                  // to the button focus before the command reads state.
+                  e.preventDefault();
+                  runSlashItem(item, slashMenu.from, slashMenu.to);
+                }}
+                onMouseEnter={() => setSlashMenu((m) => (m ? { ...m, index: i } : m))}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs ${
+                  i === slashMenu.index
+                    ? "bg-ironlore-slate-hover text-primary"
+                    : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+                }`}
+              >
+                <span className="text-secondary">{item.icon}</span>
+                <span className="flex flex-col">
+                  <span className="font-medium text-primary">{item.title}</span>
+                  <span className="text-[11px] text-secondary">{item.description}</span>
+                </span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Empty-state card shown over the editor when the body is blank (or only
+ * carries the title heading). Pointer events pass through the wrapper so
+ * the user can click anywhere to land the caret in the editor, but the
+ * card itself accepts the prompt input.
+ *
+ * The placeholder wires into the AI panel: typing here and pressing
+ * Enter seeds the AI panel's prompt and opens it — no hunting for the
+ * sparkle icon on first file open.
+ */
+function EditorStartCard() {
+  const [draft, setDraft] = useState("");
+
+  const submit = useCallback(() => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    // Lazy require to avoid a circular import between editor and stores.
+    import("../../stores/ai-panel.js").then(({ useAIPanelStore }) => {
+      useAIPanelStore.getState().setInputDraft(trimmed);
+      useAppStore.getState().toggleAIPanel();
+    });
+    setDraft("");
+  }, [draft]);
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-24 flex justify-center px-6">
+      <form
+        className="pointer-events-auto flex w-1/2 min-w-[320px] max-w-[520px] items-center gap-2 rounded-2xl border border-border-strong bg-ironlore-slate/90 px-4 py-2.5 shadow-xl backdrop-blur"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <Sparkles className="h-4 w-4 shrink-0 text-ironlore-blue" />
+        <input
+          className="flex-1 bg-transparent text-sm text-primary placeholder:text-secondary focus:outline-none"
+          placeholder="Ask AI to draft something, or start writing below…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        <kbd className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-secondary">
+          ↵
+        </kbd>
+      </form>
+    </div>
+  );
 }

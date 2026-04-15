@@ -11,8 +11,12 @@ export type PageType =
   | "audio"
   | "source-code"
   | "mermaid"
-  | "app-fullscreen"
-  | "app-embedded"
+  | "text"
+  | "transcript"
+  | "word"
+  | "excel"
+  | "email"
+  | "notebook"
   | "linked-repo"
   | "linked-dir";
 

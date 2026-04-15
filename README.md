@@ -72,6 +72,11 @@ Ironlore is not markdown-only. Every file type in the content model has a dedica
 | Audio | `.mp3` `.wav` `.m4a` `.ogg` | HTML5 audio player | Read-only |
 | Source code | `.ts` `.js` `.py` `.go` `.rs` + 20 more | Read-only CodeMirror with syntax highlighting | Read-only |
 | Mermaid | `.mermaid` `.mmd` | Mermaid diagram renderer (lazy-loaded) | Read-only |
+| Plain text | `.txt` `.log` | Read-only CodeMirror | Read-only |
+| Transcript | `.vtt` `.srt` | Timestamp + caption table | Read-only |
+| Word | `.docx` | Sanitized HTML (mammoth, lazy-loaded) | Read-only |
+| Excel | `.xlsx` | Tabbed spreadsheet (SheetJS, lazy-loaded, 500-row render cap) | Read-only |
+| Email | `.eml` | Header block + body (postal-mime, lazy-loaded) | Read-only |
 
 The sidebar shows file-type-specific Lucide icons. `ContentArea` dispatches to the correct viewer based on the `PageType` detected from the file extension.
 
