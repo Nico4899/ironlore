@@ -28,6 +28,19 @@ import "./editor.css";
 const BLOCK_ID_RE = /<!-- #blk_[A-Z0-9]{26} -->/g;
 
 /**
+ * YAML frontmatter at the top of a markdown file. ProseMirror has no schema
+ * for it, so leaving it in would render as prose. We peel it off before
+ * parsing and restore it verbatim on serialize.
+ */
+const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+
+function splitFrontmatter(markdown: string): { frontmatter: string; body: string } {
+  const match = markdown.match(FRONTMATTER_RE);
+  if (!match) return { frontmatter: "", body: markdown };
+  return { frontmatter: match[0], body: markdown.slice(match[0].length) };
+}
+
+/**
  * Strip block-ID comments before feeding markdown into ProseMirror.
  * Block IDs are structural metadata managed by the server — the editor
  * doesn't need to display or edit them.
@@ -111,6 +124,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const blockIdsRef = useRef<Map<number, string>>(new Map());
+  const frontmatterRef = useRef<string>("");
   const onChangeRef = useRef(onChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
   // Track whether we're programmatically updating (external markdown change)
@@ -122,7 +136,9 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only callback; external markdown sync handled by separate useEffect
   const createView = useCallback((container: HTMLDivElement) => {
-    const { cleaned, blockIds } = stripBlockIds(markdown);
+    const { frontmatter, body } = splitFrontmatter(markdown);
+    frontmatterRef.current = frontmatter;
+    const { cleaned, blockIds } = stripBlockIds(body);
     blockIdsRef.current = blockIds;
 
     const schema = wikiMarkdownParser.schema;
@@ -182,7 +198,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
         if (tr.docChanged && !suppressRef.current) {
           const serialized = wikiMarkdownSerializer.serialize(newState.doc);
           const withIds = reinsertBlockIds(serialized, blockIdsRef.current);
-          onChangeRef.current(withIds);
+          onChangeRef.current(frontmatterRef.current + withIds);
         }
 
         if (tr.selectionSet && onSelectionChangeRef.current) {
@@ -214,7 +230,9 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     const view = viewRef.current;
     if (!view) return;
 
-    const { cleaned, blockIds } = stripBlockIds(markdown);
+    const { frontmatter, body } = splitFrontmatter(markdown);
+    frontmatterRef.current = frontmatter;
+    const { cleaned, blockIds } = stripBlockIds(body);
     const currentSerialized = wikiMarkdownSerializer.serialize(view.state.doc);
 
     // Don't replace if content matches — avoids cursor jumps

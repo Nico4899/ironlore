@@ -76,6 +76,21 @@ export async function bootstrap(installRoot: string): Promise<void> {
   registry.ensureProject(DEFAULT_PROJECT_ID, "Main", "main");
   registry.close();
 
+  // One-shot cleanup of retired seed paths from pre-v2 layouts.
+  // Gated by a marker so an operator's own files are never touched twice.
+  const seedV2Marker = join(projectDir, DERIVED_DIR, "seed-v2.done");
+  if (!existsSync(seedV2Marker)) {
+    for (const p of [
+      join(dataDir, "carousel-factory"),
+      join(dataDir, "examples"),
+      join(dataDir, "index.md"),
+      join(dataDir, "CLAUDE.md"),
+    ]) {
+      rmSync(p, { recursive: true, force: true });
+    }
+    writeFileSync(seedV2Marker, new Date().toISOString());
+  }
+
   // Seed content (non-destructive: skips existing files)
   await seed(dataDir);
 }
