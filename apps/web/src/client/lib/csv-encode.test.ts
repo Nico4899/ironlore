@@ -19,7 +19,12 @@ describe("encodeCsv", () => {
   });
 
   it("joins rows with newlines", () => {
-    expect(encodeCsv([["a", "b"], ["c", "d"]])).toBe("a,b\nc,d");
+    expect(
+      encodeCsv([
+        ["a", "b"],
+        ["c", "d"],
+      ]),
+    ).toBe("a,b\nc,d");
   });
 
   it("preserves empty cells", () => {

@@ -83,7 +83,11 @@ export function XlsxViewer({ path }: XlsxViewerProps) {
   const truncated = current.rows.length > RENDER_ROW_CAP;
 
   const sheetCsvPath = (sheetName: string) => {
-    const slug = sheetName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "sheet";
+    const slug =
+      sheetName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "sheet";
     return path.replace(/\.xlsx$/i, `-${slug}.csv`);
   };
 
