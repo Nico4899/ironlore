@@ -90,12 +90,7 @@ export function MermaidViewer({ content }: MermaidViewerProps) {
               {error}
             </div>
           ) : (
-            <div
-              ref={diagramRef}
-              className="max-w-full"
-              role="img"
-              aria-label="Mermaid diagram"
-            />
+            <div ref={diagramRef} className="max-w-full" role="img" aria-label="Mermaid diagram" />
           )}
         </div>
       ) : (

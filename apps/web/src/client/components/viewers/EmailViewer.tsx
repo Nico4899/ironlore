@@ -88,10 +88,7 @@ export function EmailViewer({ path }: EmailViewerProps) {
               .filter(([, v]) => v)
               .map(([k, v]) => (
                 <tr key={k}>
-                  <th
-                    scope="row"
-                    className="pr-4 align-top text-xs font-normal text-secondary"
-                  >
+                  <th scope="row" className="pr-4 align-top text-xs font-normal text-secondary">
                     {k}
                   </th>
                   <td className="text-primary">{v}</td>

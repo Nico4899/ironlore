@@ -761,7 +761,6 @@ If no brand voice page exists, use a professional, concise tone:
 - Technical accuracy without jargon overload
 `,
   );
-
 }
 
 /**
