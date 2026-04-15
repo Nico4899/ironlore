@@ -8,8 +8,9 @@ import {
   wrappingInputRule,
 } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
-import { defaultMarkdownParser, defaultMarkdownSerializer } from "prosemirror-markdown";
 import type { Schema } from "prosemirror-model";
+import { useAppStore } from "../../stores/app.js";
+import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef } from "react";
@@ -124,8 +125,8 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     const { cleaned, blockIds } = stripBlockIds(markdown);
     blockIdsRef.current = blockIds;
 
-    const schema = defaultMarkdownParser.schema;
-    const doc = defaultMarkdownParser.parse(cleaned);
+    const schema = wikiMarkdownParser.schema;
+    const doc = wikiMarkdownParser.parse(cleaned);
     if (!doc) return null;
 
     // The default markdown schema always has these marks
@@ -152,12 +153,34 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
 
     const view = new EditorView(container, {
       state,
+      nodeViews: {
+        wikilink: (node) => {
+          const dom = document.createElement("span");
+          const { target, display } = node.attrs as { target: string; display: string | null };
+          dom.className = "ir-wikilink";
+          dom.dataset.wikilink = target;
+          dom.textContent = display ?? target;
+          dom.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // Strip any `#blk_…` anchor for navigation; anchor handling is
+            // polish (scroll-to-block) and not required for Phase 2.
+            const hashIdx = target.indexOf("#");
+            const pagePath = hashIdx === -1 ? target : target.slice(0, hashIdx);
+            if (pagePath) {
+              const withExt = pagePath.endsWith(".md") ? pagePath : `${pagePath}.md`;
+              useAppStore.getState().setActivePath(withExt);
+            }
+          });
+          return { dom };
+        },
+      },
       dispatchTransaction(tr) {
         const newState = view.state.apply(tr);
         view.updateState(newState);
 
         if (tr.docChanged && !suppressRef.current) {
-          const serialized = defaultMarkdownSerializer.serialize(newState.doc);
+          const serialized = wikiMarkdownSerializer.serialize(newState.doc);
           const withIds = reinsertBlockIds(serialized, blockIdsRef.current);
           onChangeRef.current(withIds);
         }
@@ -192,13 +215,13 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     if (!view) return;
 
     const { cleaned, blockIds } = stripBlockIds(markdown);
-    const currentSerialized = defaultMarkdownSerializer.serialize(view.state.doc);
+    const currentSerialized = wikiMarkdownSerializer.serialize(view.state.doc);
 
     // Don't replace if content matches — avoids cursor jumps
     if (currentSerialized === cleaned) return;
 
     blockIdsRef.current = blockIds;
-    const doc = defaultMarkdownParser.parse(cleaned);
+    const doc = wikiMarkdownParser.parse(cleaned);
     if (!doc) return;
 
     suppressRef.current = true;

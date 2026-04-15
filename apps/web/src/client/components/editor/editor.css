@@ -245,3 +245,17 @@
     animation: none;
   }
 }
+
+/* ─── Wiki-links ─── */
+
+.ProseMirror .ir-wikilink {
+  color: var(--color-ironlore-blue);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--color-ironlore-blue);
+  cursor: pointer;
+  padding: 0 1px;
+}
+
+.ProseMirror .ir-wikilink:hover {
+  background-color: oklch(0.35 0.05 255 / 0.2);
+}
