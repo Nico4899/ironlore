@@ -27,7 +27,7 @@ import {
   fetchTree,
   movePage,
 } from "../lib/api.js";
-import { useAppStore } from "../stores/app.js";
+import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app.js";
 import { useTreeStore } from "../stores/tree.js";
 
 /** Map PageType → Lucide icon component. */
@@ -356,10 +356,49 @@ export function Sidebar() {
     [nodes, expandedPaths, startRename, handleDelete],
   );
 
+  const onResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startWidth = useAppStore.getState().sidebarWidth;
+    const onMove = (ev: PointerEvent) => {
+      useAppStore.getState().setSidebarWidth(startWidth + (ev.clientX - startX));
+    };
+    const onUp = (ev: PointerEvent) => {
+      (e.target as Element).releasePointerCapture?.(ev.pointerId);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, []);
+
+  const onResizeKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.shiftKey ? 20 : 4;
+    const cur = useAppStore.getState().sidebarWidth;
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      useAppStore.getState().setSidebarWidth(cur + step);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      useAppStore.getState().setSidebarWidth(cur - step);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      useAppStore.getState().setSidebarWidth(SIDEBAR_MIN_WIDTH);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      useAppStore.getState().setSidebarWidth(SIDEBAR_MAX_WIDTH);
+    }
+  }, []);
+
   return (
     <nav
-      className="flex flex-col border-r border-border bg-ironlore-slate"
-      style={{ width: `${width}px`, minWidth: "220px", maxWidth: "420px" }}
+      className="relative flex flex-col border-r border-border bg-ironlore-slate"
+      style={{
+        width: `${width}px`,
+        minWidth: `${SIDEBAR_MIN_WIDTH}px`,
+        maxWidth: `${SIDEBAR_MAX_WIDTH}px`,
+      }}
       aria-label="Page tree"
     >
       {/* Search trigger */}
@@ -495,6 +534,21 @@ export function Sidebar() {
 
       {/* New page button */}
       <NewPageFooter />
+
+      {/* Resize handle — drag or keyboard (Arrow / Home / End) */}
+      {/* biome-ignore lint/a11y/useSemanticElements: <hr> has no interactive affordance; this separator owns pointer and key events */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        aria-valuemin={SIDEBAR_MIN_WIDTH}
+        aria-valuemax={SIDEBAR_MAX_WIDTH}
+        aria-valuenow={width}
+        tabIndex={0}
+        onPointerDown={onResizePointerDown}
+        onKeyDown={onResizeKeyDown}
+        className="absolute inset-y-0 -right-0.5 w-1 cursor-col-resize outline-none hover:bg-ironlore-blue/60 focus-visible:bg-ironlore-blue"
+      />
     </nav>
   );
 }
