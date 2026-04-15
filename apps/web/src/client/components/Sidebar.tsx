@@ -1,4 +1,4 @@
-import type { PageType } from "@ironlore/core";
+import type { PageType, TreeNode } from "@ironlore/core";
 import { messages } from "@ironlore/core";
 import {
   BookOpen,
@@ -75,6 +75,60 @@ interface MenuState {
   name: string;
   x: number;
   y: number;
+}
+
+interface VisibleRow {
+  node: TreeNode;
+  depth: number;
+}
+
+/**
+ * Walk the flat node list into the rows that should be visible given
+ * the current `expandedPaths`. Only children of expanded directories
+ * render, and each row carries its depth so the view can indent.
+ *
+ * Input nodes come from the server in path order (lexicographic), which
+ * already places `parent` before its children, so a single pass over
+ * the sorted list produces correct depth and hide/show decisions.
+ */
+function buildVisibleRows(nodes: readonly TreeNode[], expanded: ReadonlySet<string>): VisibleRow[] {
+  // Bucket children by parent path. Root parent is the empty string.
+  const byParent = new Map<string, TreeNode[]>();
+  for (const node of nodes) {
+    const slash = node.path.lastIndexOf("/");
+    const parent = slash === -1 ? "" : node.path.slice(0, slash);
+    let bucket = byParent.get(parent);
+    if (!bucket) {
+      bucket = [];
+      byParent.set(parent, bucket);
+    }
+    bucket.push(node);
+  }
+
+  // Folders first, then files; alphabetical within each group. This matches
+  // how humans scan a tree far better than pure lex order.
+  for (const bucket of byParent.values()) {
+    bucket.sort((a, b) => {
+      const aDir = a.type === "directory" ? 0 : 1;
+      const bDir = b.type === "directory" ? 0 : 1;
+      if (aDir !== bDir) return aDir - bDir;
+      return a.name.localeCompare(b.name);
+    });
+  }
+
+  const rows: VisibleRow[] = [];
+  const walk = (parent: string, depth: number) => {
+    const children = byParent.get(parent);
+    if (!children) return;
+    for (const node of children) {
+      rows.push({ node, depth });
+      if (node.type === "directory" && expanded.has(node.path)) {
+        walk(node.path, depth + 1);
+      }
+    }
+  };
+  walk("", 0);
+  return rows;
 }
 
 /** Pending inline-edit for a tree row (rename or new-in-folder). */
@@ -434,20 +488,24 @@ export function Sidebar() {
           <p className="px-2 py-4 text-xs text-secondary">No pages yet</p>
         ) : (
           <>
-            {nodes.map((node) => {
+            {buildVisibleRows(nodes, expandedPaths).map(({ node, depth }) => {
               const isDir = node.type === "directory";
               const isExpanded = expandedPaths.has(node.path);
               const isActive = activePath === node.path;
               const isRenaming = edit?.kind === "rename" && edit.targetPath === node.path;
+              // Tailwind can't generate arbitrary padding from a runtime
+              // value, so apply the indent inline (8px per depth level).
+              const indent: React.CSSProperties = { paddingLeft: `${8 + depth * 14}px` };
 
               if (isRenaming) {
                 return (
-                  <InlineEditRow
-                    key={node.id}
-                    initial={edit.initial}
-                    onCommit={commitEdit}
-                    onCancel={() => setEdit(null)}
-                  />
+                  <div key={node.id} style={indent}>
+                    <InlineEditRow
+                      initial={edit.initial}
+                      onCommit={commitEdit}
+                      onCancel={() => setEdit(null)}
+                    />
+                  </div>
                 );
               }
 
@@ -459,10 +517,12 @@ export function Sidebar() {
                   data-path={node.path}
                   aria-expanded={isDir ? isExpanded : undefined}
                   aria-selected={isActive}
+                  aria-level={depth + 1}
                   draggable={!isDir}
-                  className={`flex cursor-pointer items-center gap-1.5 rounded px-2 py-1 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue ${
+                  style={indent}
+                  className={`flex cursor-pointer items-center gap-1.5 rounded py-1 pr-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue ${
                     isActive
-                      ? "bg-ironlore-slate-hover font-medium"
+                      ? "bg-ironlore-blue/15 font-semibold text-primary"
                       : dropTarget === node.path
                         ? "border border-ironlore-blue bg-ironlore-slate-hover"
                         : "hover:bg-ironlore-slate-hover"
@@ -491,20 +551,24 @@ export function Sidebar() {
                   ) : (
                     <FileIcon type={node.type} />
                   )}
-                  <span className={`truncate ${isDir ? "font-medium text-primary" : ""}`}>
+                  <span
+                    className={`truncate ${isDir ? "font-semibold text-primary" : isActive ? "text-primary" : "text-secondary"}`}
+                  >
                     {node.name}
                   </span>
                 </div>
               );
             })}
             {edit && edit.kind !== "rename" && (
-              <InlineEditRow
-                initial={edit.initial}
-                onCommit={commitEdit}
-                onCancel={() => setEdit(null)}
-                placeholder={edit.kind === "new-folder" ? "folder-name" : "page-name"}
-                typePicker={edit.kind === "new-file"}
-              />
+              <div style={{ paddingLeft: `${8 + (edit.parentPath.split("/").filter(Boolean).length + (edit.parentPath ? 1 : 0)) * 14}px` }}>
+                <InlineEditRow
+                  initial={edit.initial}
+                  onCommit={commitEdit}
+                  onCancel={() => setEdit(null)}
+                  placeholder={edit.kind === "new-folder" ? "folder-name" : "page-name"}
+                  typePicker={edit.kind === "new-file"}
+                />
+              </div>
             )}
           </>
         )}
