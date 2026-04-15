@@ -35,9 +35,7 @@ export function AIPanel() {
               )}
               {msg.type === "run_finalized" && (
                 <div className="rounded border border-border bg-ironlore-slate-hover px-3 py-2 text-xs text-secondary">
-                  <div className="font-medium text-primary">
-                    Run finalized · {msg.agentSlug}
-                  </div>
+                  <div className="font-medium text-primary">Run finalized · {msg.agentSlug}</div>
                   <div className="mt-0.5">
                     {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
                     {" · "}

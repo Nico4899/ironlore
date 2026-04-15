@@ -41,7 +41,8 @@ export function OfflineBanner() {
     >
       <WifiOff className="h-3.5 w-3.5 shrink-0" />
       <span className="flex-1">
-        Offline — tree updates and agent events are paused. Edits will sync when the connection returns.
+        Offline — tree updates and agent events are paused. Edits will sync when the connection
+        returns.
       </span>
       <button
         type="button"

@@ -35,10 +35,7 @@ export function Header() {
         }}
       >
         <Logo size={20} />
-        <span
-          className="text-sm lowercase"
-          style={{ fontWeight: 500, letterSpacing: "-0.02em" }}
-        >
+        <span className="text-sm lowercase" style={{ fontWeight: 500, letterSpacing: "-0.02em" }}>
           ironlore
         </span>
       </a>
@@ -99,7 +96,9 @@ function Breadcrumb({ path }: { path: string }) {
           // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional by nature
           <span key={i} className="flex items-center gap-1 truncate">
             {i > 0 && <ChevronRight className="h-3 w-3 shrink-0 text-secondary" />}
-            <span className={isLast ? "truncate font-medium text-primary" : "truncate text-secondary"}>
+            <span
+              className={isLast ? "truncate font-medium text-primary" : "truncate text-secondary"}
+            >
               {seg}
             </span>
           </span>
