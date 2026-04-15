@@ -80,12 +80,37 @@ export function TabBar() {
     }
   }, []);
 
-  const onKey = useCallback((e: KeyboardEvent, path: string) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      useAppStore.getState().setActivePath(path);
-    }
-  }, []);
+  const onKey = useCallback(
+    (e: KeyboardEvent, path: string) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        useAppStore.getState().setActivePath(path);
+        return;
+      }
+      // Tab-pattern keyboard nav — WAI-ARIA authoring practices.
+      const i = openPaths.indexOf(path);
+      let target: string | undefined;
+      if (e.key === "ArrowRight") target = openPaths[i + 1];
+      else if (e.key === "ArrowLeft") target = openPaths[i - 1];
+      else if (e.key === "Home") target = openPaths[0];
+      else if (e.key === "End") target = openPaths[openPaths.length - 1];
+      else if (e.key === "Delete" || (e.key === "Backspace" && (e.metaKey || e.ctrlKey))) {
+        e.preventDefault();
+        useAppStore.getState().closeTab(path);
+        return;
+      }
+      if (target) {
+        e.preventDefault();
+        useAppStore.getState().setActivePath(target);
+        // Move focus to the newly activated tab so arrow-nav continues.
+        requestAnimationFrame(() => {
+          const el = document.querySelector<HTMLElement>(`[data-tab-path="${target}"]`);
+          el?.focus();
+        });
+      }
+    },
+    [openPaths],
+  );
 
   if (openPaths.length === 0) return null;
 
@@ -104,7 +129,8 @@ export function TabBar() {
             key={path}
             role="tab"
             aria-selected={active}
-            tabIndex={0}
+            tabIndex={active ? 0 : -1}
+            data-tab-path={path}
             onClick={() => onClick(path)}
             onAuxClick={(e) => onAuxClick(e, path)}
             onKeyDown={(e) => onKey(e, path)}
