@@ -1,4 +1,4 @@
-import { EditorState, type Extension } from "@codemirror/state";
+import { EditorState, type Extension, StateEffect } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { Copy } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -69,7 +69,10 @@ const LANGUAGE_LOADERS: Record<string, LangLoader> = {
   h: () => legacyMode(() => import("@codemirror/legacy-modes/mode/clike"), "c"),
   hpp: () => legacyMode(() => import("@codemirror/legacy-modes/mode/clike"), "cpp"),
   cs: () => legacyMode(() => import("@codemirror/legacy-modes/mode/clike"), "csharp"),
-  php: () => legacyMode(() => import("@codemirror/legacy-modes/mode/php"), "php"),
+  // PHP isn't packaged in `@codemirror/legacy-modes`. Pulling
+  // `@codemirror/lang-php` is the right fix when a user actually
+  // needs it; for now `.php` falls back to plain text and the toolbar
+  // honestly says "Plain text".
   sh: () => legacyMode(() => import("@codemirror/legacy-modes/mode/shell"), "shell"),
   bash: () => legacyMode(() => import("@codemirror/legacy-modes/mode/shell"), "shell"),
   zsh: () => legacyMode(() => import("@codemirror/legacy-modes/mode/shell"), "shell"),
@@ -160,29 +163,38 @@ export function SourceCodeViewer({ content, path }: SourceCodeViewerProps) {
     setTimeout(() => setCopied(false), 2000);
   }, [content]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only; content changes handled by separate effect
+  // Mount the editor, then asynchronously load the language grammar
+  // and reconfigure if one exists. Without this two-step the mount
+  // would block on the dynamic import of every legacy-mode entry.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only; content changes handled by separate effect; path swap is handled by the parent remount per `key`
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const extensions = [
+    const baseExtensions: Extension[] = [
       EditorView.editable.of(false),
       EditorState.readOnly.of(true),
       EditorView.lineWrapping,
     ];
 
-    const lang = getLanguageExtension(path);
-    if (lang) extensions.push(lang);
-
     const state = EditorState.create({
       doc: content,
-      extensions,
+      extensions: baseExtensions,
     });
 
     const view = new EditorView({ state, parent: container });
     viewRef.current = view;
 
+    let cancelled = false;
+    void loadLanguage(path).then((langExt) => {
+      if (cancelled || !langExt || viewRef.current !== view) return;
+      view.dispatch({
+        effects: StateEffect.appendConfig.of(langExt),
+      });
+    });
+
     return () => {
+      cancelled = true;
       view.destroy();
       viewRef.current = null;
     };
