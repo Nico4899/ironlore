@@ -86,3 +86,76 @@ kbd {
     transition-duration: 0.01ms;
   }
 }
+
+/* ─── .docx-body (mammoth-rendered Word output) ─── */
+
+.docx-body {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-primary);
+}
+
+.docx-body h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 1.4em 0 0.6em;
+}
+
+.docx-body h2 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 1.2em 0 0.5em;
+}
+
+.docx-body h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 1em 0 0.4em;
+}
+
+.docx-body p {
+  margin: 0.6em 0;
+}
+
+.docx-body ul,
+.docx-body ol {
+  padding-left: 1.5em;
+  margin: 0.6em 0;
+}
+
+.docx-body li {
+  margin: 0.2em 0;
+}
+
+.docx-body blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 1em;
+  color: var(--color-secondary);
+  margin: 0.8em 0;
+}
+
+.docx-body code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 13px;
+  background: var(--color-ironlore-slate-hover);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+.docx-body table {
+  border-collapse: collapse;
+  margin: 0.8em 0;
+}
+
+.docx-body th,
+.docx-body td {
+  border: 1px solid var(--color-border);
+  padding: 0.4em 0.7em;
+  text-align: left;
+}
+
+.docx-body a {
+  color: var(--color-ironlore-blue);
+  text-decoration: underline;
+}

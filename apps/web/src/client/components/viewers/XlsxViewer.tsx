@@ -88,7 +88,7 @@ export function XlsxViewer({ path }: XlsxViewerProps) {
           <button
             key={s.name}
             type="button"
-            className={`rounded px-2 py-0.5 text-xs ${
+            className={`rounded px-2 py-1 text-xs ${
               i === active
                 ? "bg-ironlore-slate-hover font-medium"
                 : "text-secondary hover:bg-ironlore-slate-hover"

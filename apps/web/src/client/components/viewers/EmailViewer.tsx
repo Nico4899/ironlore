@@ -39,7 +39,8 @@ export function EmailViewer({ path }: EmailViewerProps) {
         // viewer doesn't double-render the headers.
         const sep = "\n\n";
         const bodyStart = result.text.indexOf(sep);
-        setBody(bodyStart === -1 ? result.text : result.text.slice(bodyStart + sep.length));
+        const raw = bodyStart === -1 ? result.text : result.text.slice(bodyStart + sep.length);
+        setBody(raw.replace(/^\s+/, ""));
       } catch (err) {
         if (cancelled) return;
         setError((err as Error).message);
@@ -81,20 +82,25 @@ export function EmailViewer({ path }: EmailViewerProps) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="border-b border-border px-6 py-3">
-        <table className="text-sm">
+        <table className="text-sm" role="presentation">
           <tbody>
             {rows
               .filter(([, v]) => v)
               .map(([k, v]) => (
                 <tr key={k}>
-                  <td className="pr-4 align-top text-xs text-secondary">{k}</td>
+                  <th
+                    scope="row"
+                    className="pr-4 align-top text-xs font-normal text-secondary"
+                  >
+                    {k}
+                  </th>
                   <td className="text-primary">{v}</td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
-      <pre className="flex-1 overflow-auto whitespace-pre-wrap break-words px-6 py-4 font-mono text-sm text-primary">
+      <pre className="flex-1 overflow-auto whitespace-pre-wrap wrap-break-word px-6 py-4 font-mono text-sm text-primary">
         {body}
       </pre>
     </div>

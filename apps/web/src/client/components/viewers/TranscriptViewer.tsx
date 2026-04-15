@@ -51,6 +51,7 @@ export function TranscriptViewer({ content }: { content: string }) {
   return (
     <div className="flex-1 overflow-y-auto px-6 py-4">
       <table className="w-full border-collapse text-sm">
+        <caption className="sr-only">Transcript ({cues.length} cues)</caption>
         <tbody>
           {cues.map((cue, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: cues render-only, never reordered

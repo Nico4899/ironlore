@@ -102,7 +102,7 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
                   {editingCell?.row === -1 && editingCell.col === colIdx ? (
                     <input
                       ref={focusRef}
-                      className="w-full bg-transparent outline-none"
+                      className="w-full bg-transparent font-mono text-xs text-primary outline-none"
                       defaultValue={header}
                       onBlur={(e) => {
                         handleHeaderChange(colIdx, e.currentTarget.value);
@@ -137,7 +137,7 @@ export function CsvViewer({ content, onChange }: CsvViewerProps) {
                     {editingCell?.row === rowIdx && editingCell.col === colIdx ? (
                       <input
                         ref={focusRef}
-                        className="w-full bg-transparent outline-none"
+                        className="w-full bg-transparent font-mono text-xs text-primary outline-none"
                         defaultValue={cell}
                         onBlur={(e) => {
                           handleCellChange(rowIdx, colIdx, e.currentTarget.value);

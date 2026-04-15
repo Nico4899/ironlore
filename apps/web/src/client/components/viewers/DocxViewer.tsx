@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchRawUrl } from "../../lib/api.js";
 import { sanitizeHtml } from "../../lib/sanitize-html.js";
-import "../editor/editor.css";
 
 interface DocxViewerProps {
   path: string;
@@ -72,7 +71,7 @@ export function DocxViewer({ path }: DocxViewerProps) {
         </div>
       )}
       <div
-        className="ProseMirror flex-1 overflow-y-auto px-8 py-6"
+        className="docx-body flex-1 overflow-y-auto px-8 py-6"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
