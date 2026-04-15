@@ -33,6 +33,13 @@ const MIME_MAP: Record<string, string> = {
   // Documents
   ".pdf": "application/pdf",
   ".csv": "text/csv",
+  ".txt": "text/plain",
+  ".log": "text/plain",
+  ".vtt": "text/vtt",
+  ".srt": "text/plain",
+  ".eml": "message/rfc822",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   // Code / text
   ".md": "text/markdown",
   ".mermaid": "text/plain",
