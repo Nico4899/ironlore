@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { deflateRawSync } from "node:zlib";
 import { AGENTS_DIR, AGENTS_LIBRARY_DIR, AGENTS_SHARED_DIR, ulid } from "@ironlore/core";
 
 /**
@@ -315,12 +316,16 @@ in the sidebar to see it.
 - \`spreadsheet.csv\` — editable spreadsheet grid
 - \`diagram.mermaid\` — rendered flowchart with a source toggle
 - \`code.ts\` — TypeScript with syntax highlighting
-- \`slide.pdf\` — paginated PDF with zoom
-- \`photo.png\` — zoomable image viewer
+- \`slide.pdf\` — paginated PDF with page nav, zoom, rotate, download
+- \`photo.png\` — zoomable image viewer with rotate and download
+- \`drawing.svg\` — vector image rendered inline
+- \`notes.txt\` / \`server.log\` — plain-text viewers (CodeMirror, no highlighting)
+- \`transcript.vtt\` — timestamped caption table
+- \`message.eml\` — email with parsed headers and text body
 
-Every other file type in the content model works the same way — drop a
-\`.docx\`, \`.xlsx\`, \`.mp4\`, \`.vtt\`, or \`.eml\` into any folder and it
-opens in a dedicated viewer.
+The other supported types — \`.docx\`, \`.xlsx\`, \`.mp3\`, \`.mp4\` — open in
+dedicated viewers when you drop a real file in. They're not seeded because a
+meaningful sample would be too large for a first-run bootstrap.
 `,
   );
 
@@ -444,7 +449,90 @@ export { type User, greet };
   );
 
   seedBinaryFile(join(dataDir, "carousel", "slide.pdf"), createMinimalPdf());
-  seedBinaryFile(join(dataDir, "carousel", "photo.png"), createMinimalPng());
+  seedBinaryFile(join(dataDir, "carousel", "photo.png"), createDemoPng());
+
+  seedFile(
+    join(dataDir, "carousel", "drawing.svg"),
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 160" width="320" height="160">
+  <rect width="320" height="160" fill="#1b2330"/>
+  <circle cx="80" cy="80" r="48" fill="#3b82f6" opacity="0.85"/>
+  <circle cx="160" cy="80" r="48" fill="#10b981" opacity="0.85"/>
+  <circle cx="240" cy="80" r="48" fill="#f59e0b" opacity="0.85"/>
+  <text x="160" y="148" fill="#e5e7eb" font-family="Inter, sans-serif" font-size="12" text-anchor="middle">SVG renders with the image viewer</text>
+</svg>
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "notes.txt"),
+    `Plain-text notes live alongside markdown.
+
+The text viewer is read-only CodeMirror with no language highlighting. Good
+for quick captures you don't want to dress up as a full markdown page — log
+snippets, throwaway scratchpads, clipboard dumps.
+
+Move it to a .md file the moment it deserves structure. Until then, keep
+the noise out of the editor.
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "server.log"),
+    `[2026-04-15T09:00:01.412Z] info  server listening on 127.0.0.1:3000
+[2026-04-15T09:00:01.419Z] info  search-index: opened index.sqlite (wal mode)
+[2026-04-15T09:00:01.423Z] info  file-watcher: chokidar backend ready
+[2026-04-15T09:00:07.881Z] info  auth: login ok user=admin
+[2026-04-15T09:00:08.112Z] debug pages: GET / -> 200 (12ms)
+[2026-04-15T09:00:09.004Z] debug pages: GET /carousel/index.md -> 200 (3ms)
+[2026-04-15T09:00:09.118Z] warn  search-index: query parsed 0 results for "carou"
+[2026-04-15T09:00:12.560Z] info  editor: autosave carousel/document.md etag="abc123"
+[2026-04-15T09:00:19.204Z] error ai: provider not configured — skipping agent run
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "transcript.vtt"),
+    `WEBVTT
+
+00:00:00.000 --> 00:00:03.500
+Welcome back to the Ironlore product walkthrough.
+
+00:00:03.500 --> 00:00:08.000
+Today we're opening every supported file type side-by-side.
+
+00:00:08.000 --> 00:00:13.250
+Transcripts render as a two-column table — timestamp on the left, caption
+on the right.
+
+00:00:13.250 --> 00:00:17.900
+The same parser handles .vtt and .srt files.
+
+00:00:17.900 --> 00:00:22.400
+Drop one in any folder to try it.
+`,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "message.eml"),
+    `From: Ironlore Team <hello@ironlore.app>
+To: You <you@example.com>
+Subject: Your first email in Ironlore
+Date: Wed, 15 Apr 2026 09:00:00 +0000
+Content-Type: text/plain; charset=utf-8
+
+Hi there,
+
+This is a plain-text .eml file, rendered by the email viewer. It parses the
+envelope (From / To / Subject / Date) into a compact header block and shows
+the body below in a monospaced pane.
+
+HTML-only messages are down-converted to text by the extractor, so the
+viewer never injects untrusted HTML — the same plumbing is used for the
+FTS5 search index.
+
+— The Ironlore Team
+`,
+  );
 
   // -------------------------------------------------------------------------
   // Agent library personas
@@ -803,79 +891,92 @@ startxref
 }
 
 /**
- * Create a minimal 1x1 red PNG image.
+ * Create a 320×160 PNG with diagonal color bands — a visible placeholder
+ * for the image viewer. Built from scratch via the PNG spec (IHDR + IDAT
+ * + IEND) so we don't pull in an image library just for the seed.
  */
-function createMinimalPng(): Uint8Array {
-  // Pre-computed minimal PNG: 1x1 pixel, red (#FF0000)
-  return new Uint8Array([
-    0x89,
-    0x50,
-    0x4e,
-    0x47,
-    0x0d,
-    0x0a,
-    0x1a,
-    0x0a, // PNG signature
-    0x00,
-    0x00,
-    0x00,
-    0x0d,
-    0x49,
-    0x48,
-    0x44,
-    0x52, // IHDR chunk
-    0x00,
-    0x00,
-    0x00,
-    0x01,
-    0x00,
-    0x00,
-    0x00,
-    0x01,
-    0x08,
-    0x02,
-    0x00,
-    0x00,
-    0x00,
-    0x90,
-    0x77,
-    0x53,
-    0xde,
-    0x00,
-    0x00,
-    0x00,
-    0x0c,
-    0x49,
-    0x44,
-    0x41,
-    0x54, // IDAT chunk
-    0x08,
-    0xd7,
-    0x63,
-    0xf8,
-    0xcf,
-    0xc0,
-    0x00,
-    0x00,
-    0x00,
-    0x02,
-    0x00,
-    0x01,
-    0xe2,
-    0x21,
-    0xbc,
-    0x33,
-    0x00,
-    0x00,
-    0x00,
-    0x00,
-    0x49,
-    0x45,
-    0x4e,
-    0x44, // IEND chunk
-    0xae,
-    0x42,
-    0x60,
-    0x82,
+function createDemoPng(): Uint8Array {
+  const width = 320;
+  const height = 160;
+
+  // Raw pixel data: each row is `\0` filter byte + RGBA bytes.
+  const row = width * 4 + 1;
+  const raw = Buffer.alloc(row * height);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * row;
+    raw[rowStart] = 0; // filter type: none
+    for (let x = 0; x < width; x++) {
+      const i = rowStart + 1 + x * 4;
+      const t = (x + y) / (width + height);
+      raw[i] = Math.round(59 + (239 - 59) * t); // R
+      raw[i + 1] = Math.round(130 + (68 - 130) * t); // G
+      raw[i + 2] = Math.round(246 + (68 - 246) * t); // B
+      raw[i + 3] = 255; // A
+    }
+  }
+
+  const compressed = deflateRawSync(raw);
+  // PNG IDAT wants zlib-framed data; `deflateRawSync` returns raw DEFLATE.
+  // We prepend a 2-byte zlib header and append the Adler-32 checksum.
+  const zlibHeader = Buffer.from([0x78, 0x9c]);
+  const adler = adler32(raw);
+  const adlerBytes = Buffer.from([
+    (adler >>> 24) & 0xff,
+    (adler >>> 16) & 0xff,
+    (adler >>> 8) & 0xff,
+    adler & 0xff,
   ]);
+  const idatData = Buffer.concat([zlibHeader, compressed, adlerBytes]);
+
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const ihdr = pngChunk(
+    "IHDR",
+    (() => {
+      const b = Buffer.alloc(13);
+      b.writeUInt32BE(width, 0);
+      b.writeUInt32BE(height, 4);
+      b[8] = 8; // bit depth
+      b[9] = 6; // color type: RGBA
+      b[10] = 0; // compression
+      b[11] = 0; // filter
+      b[12] = 0; // interlace
+      return b;
+    })(),
+  );
+  const idat = pngChunk("IDAT", idatData);
+  const iend = pngChunk("IEND", Buffer.alloc(0));
+
+  return new Uint8Array(Buffer.concat([sig, ihdr, idat, iend]));
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const typeBuf = Buffer.from(type, "ascii");
+  const crcInput = Buffer.concat([typeBuf, data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(crcInput), 0);
+  return Buffer.concat([len, typeBuf, data, crc]);
+}
+
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c ^= buf[i] ?? 0;
+    for (let k = 0; k < 8; k++) {
+      c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function adler32(buf: Buffer): number {
+  let a = 1;
+  let b = 0;
+  const MOD = 65521;
+  for (let i = 0; i < buf.length; i++) {
+    a = (a + (buf[i] ?? 0)) % MOD;
+    b = (b + a) % MOD;
+  }
+  return ((b << 16) | a) >>> 0;
 }
