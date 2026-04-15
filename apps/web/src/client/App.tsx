@@ -1,17 +1,17 @@
-import { LogOut } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { AIPanel } from "./components/AIPanel.js";
 import { AIPanelRail } from "./components/AIPanelRail.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { DisconnectedBanner } from "./components/DisconnectedBanner.js";
+import { Header } from "./components/Header.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { SearchDialog } from "./components/SearchDialog.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { StatusBar } from "./components/StatusBar.js";
 import { useResponsiveLayout } from "./hooks/useResponsiveLayout.js";
+import { useThemeClass } from "./hooks/useThemeClass.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
-import { logout } from "./lib/api.js";
 import { useAppStore } from "./stores/app.js";
 import { useAuthStore } from "./stores/auth.js";
 
@@ -46,16 +46,12 @@ export function App() {
 function AppShell() {
   useWebSocket();
   useResponsiveLayout();
+  useThemeClass();
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
   const searchDialogOpen = useAppStore((s) => s.searchDialogOpen);
   const terminalOpen = useAppStore((s) => s.terminalOpen);
-
-  const handleLogout = useCallback(async () => {
-    await logout();
-    useAuthStore.getState().clearSession();
-  }, []);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -87,31 +83,7 @@ function AppShell() {
         Skip to content
       </a>
 
-      {/* Header */}
-      <header className="flex h-12 items-center border-b border-border px-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium tracking-tight">ironlore</span>
-        </div>
-        <div className="flex-1" />
-        <nav aria-label="Application controls" className="flex items-center gap-2">
-          <button
-            type="button"
-            className="rounded px-2 py-1 text-xs text-secondary hover:bg-ironlore-slate-hover"
-            onClick={() => useAppStore.getState().toggleAIPanel()}
-            aria-label="Toggle AI panel"
-          >
-            AI
-          </button>
-          <button
-            type="button"
-            className="rounded p-1 text-secondary hover:bg-ironlore-slate-hover"
-            onClick={handleLogout}
-            aria-label="Log out"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-          </button>
-        </nav>
-      </header>
+      <Header />
 
       {/* WebSocket disconnected banner (shown after grace period) */}
       <DisconnectedBanner />
