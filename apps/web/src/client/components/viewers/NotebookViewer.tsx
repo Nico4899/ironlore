@@ -109,10 +109,7 @@ function CellRow({ cell }: { cell: NotebookCell }) {
   if (cell.kind === "code") {
     return (
       <div className="mb-4 flex gap-3">
-        <span
-          className="select-none pt-1 font-mono text-xs text-secondary"
-          aria-label="Execution count"
-        >
+        <span className="select-none pt-1 font-mono text-xs text-secondary">
           In [{cell.executionCount ?? " "}]:
         </span>
         <div className="flex-1 overflow-x-auto">
