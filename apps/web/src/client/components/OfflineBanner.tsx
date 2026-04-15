@@ -4,20 +4,21 @@ import { wsClient } from "../lib/ws.js";
 import { useAppStore } from "../stores/app.js";
 
 /**
- * Amber banner shown across the top of the app when the WebSocket drops.
+ * Offline banner — rendered when the WebSocket drops and the client
+ * stays disconnected past a short grace window. Matches the "Offline
+ * banner" spec in docs/09-ui-and-brand.md §System banners: Signal-Amber
+ * background, non-dismissible (no `×` button), auto-clears on reconnect.
  *
- * The status-bar indicator is still there for steady-state signal, but a
- * disconnected client silently misses tree updates and (once Phase 4 lands)
- * agent events — a 9px word in the corner is too quiet. This banner
- * surfaces the state at a glance and offers a one-click reconnect so users
- * don't have to reload the page.
+ * The grace window (1.5s) avoids flicker during normal reconnect cycles
+ * — the banner only surfaces if the socket stays down.
  *
- * A short grace period (1.5s) avoids flicker on normal reconnect cycles;
- * the banner only shows if the socket stays down past the grace.
+ * Editing is not force-disabled from here. The editor keeps dirty
+ * buffers in memory and auto-save retries on reconnect; the block-level
+ * merge UI handles any conflict that lands after a long offline window.
  */
 const GRACE_MS = 1500;
 
-export function DisconnectedBanner() {
+export function OfflineBanner() {
   const connected = useAppStore((s) => s.wsConnected);
   const [visible, setVisible] = useState(false);
 
@@ -34,13 +35,13 @@ export function DisconnectedBanner() {
 
   return (
     <div
-      role="alert"
-      aria-live="assertive"
+      role="status"
+      aria-live="polite"
       className="flex items-center gap-2 border-b border-signal-amber bg-signal-amber/10 px-4 py-1.5 text-xs text-signal-amber"
     >
       <WifiOff className="h-3.5 w-3.5 shrink-0" />
       <span className="flex-1">
-        Disconnected from server. Tree updates and agent events are paused.
+        Offline — tree updates and agent events are paused. Edits will sync when the connection returns.
       </span>
       <button
         type="button"

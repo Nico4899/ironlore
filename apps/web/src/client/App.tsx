@@ -3,7 +3,7 @@ import { AIPanel } from "./components/AIPanel.js";
 import { AIPanelRail } from "./components/AIPanelRail.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
-import { DisconnectedBanner } from "./components/DisconnectedBanner.js";
+import { OfflineBanner } from "./components/OfflineBanner.js";
 import { Header } from "./components/Header.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { SearchDialog } from "./components/SearchDialog.js";
@@ -85,8 +85,8 @@ function AppShell() {
 
       <Header />
 
-      {/* WebSocket disconnected banner (shown after grace period) */}
-      <DisconnectedBanner />
+      {/* Offline banner (shown after grace period; auto-clears on reconnect) */}
+      <OfflineBanner />
 
       {/* Main three-panel layout */}
       <div className="flex flex-1 overflow-hidden">
