@@ -191,19 +191,27 @@ export function TabBar() {
             onAuxClick={(e) => onAuxClick(e, path)}
             onKeyDown={(e) => onKey(e, path)}
             title={path}
-            className={`group flex cursor-pointer items-center gap-1.5 border-r border-border px-3 py-1.5 text-xs ${
+            className={`group relative flex cursor-pointer items-center gap-1.5 border-r border-border px-3 py-1.5 text-xs ${
               active
-                ? "bg-ironlore-slate-hover text-primary"
+                ? "bg-background font-medium text-primary"
                 : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
             }`}
           >
+            {active && (
+              <span
+                aria-hidden="true"
+                className="absolute inset-x-0 bottom-0 h-0.5 bg-ironlore-blue"
+              />
+            )}
             {tabIcon(type)}
             <span className="max-w-40 truncate">{label}</span>
             <button
               type="button"
               onClick={(e) => onClose(e, path)}
               aria-label={`Close ${closeLabel}`}
-              className="ml-1 rounded p-0.5 opacity-0 hover:bg-ironlore-slate group-hover:opacity-100 aria-selected:opacity-100"
+              className={`ml-1 rounded p-0.5 hover:bg-ironlore-slate-hover ${
+                active ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+              }`}
             >
               <X className="h-3 w-3" />
             </button>
