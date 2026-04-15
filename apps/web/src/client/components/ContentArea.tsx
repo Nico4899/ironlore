@@ -13,6 +13,7 @@ import { CsvViewer } from "./viewers/CsvViewer.js";
 import { ImageViewer } from "./viewers/ImageViewer.js";
 import { MediaViewer } from "./viewers/MediaViewer.js";
 import { SourceCodeViewer } from "./viewers/SourceCodeViewer.js";
+import { TranscriptViewer } from "./viewers/TranscriptViewer.js";
 
 // Lazy-load heavy viewers
 const PdfViewer = lazy(() =>
@@ -21,12 +22,35 @@ const PdfViewer = lazy(() =>
 const MermaidViewer = lazy(() =>
   import("./viewers/MermaidViewer.js").then((m) => ({ default: m.MermaidViewer })),
 );
+const DocxViewer = lazy(() =>
+  import("./viewers/DocxViewer.js").then((m) => ({ default: m.DocxViewer })),
+);
+const XlsxViewer = lazy(() =>
+  import("./viewers/XlsxViewer.js").then((m) => ({ default: m.XlsxViewer })),
+);
+const EmailViewer = lazy(() =>
+  import("./viewers/EmailViewer.js").then((m) => ({ default: m.EmailViewer })),
+);
 
-/** File types that are loaded as binary via URL, not as text content. */
-const BINARY_TYPES = new Set(["pdf", "image", "video", "audio"]);
+/**
+ * File types that are loaded as binary via URL, not as text content.
+ * Word/Excel containers live here too — their viewers fetch the buffer
+ * themselves and delegate to the shared extractor.
+ */
+const BINARY_TYPES = new Set(["pdf", "image", "video", "audio", "word", "excel"]);
 
-/** File types that use fetchRaw (text, but not markdown's JSON endpoint). */
-const RAW_TEXT_TYPES = new Set(["source-code", "csv", "mermaid"]);
+/**
+ * File types that use fetchRaw (text, but not markdown's JSON endpoint).
+ * Plain text, transcripts, and .eml messages are parsed in the viewer.
+ */
+const RAW_TEXT_TYPES = new Set([
+  "source-code",
+  "csv",
+  "mermaid",
+  "text",
+  "transcript",
+  "email",
+]);
 
 export function ContentArea() {
   const activePath = useAppStore((s) => s.activePath);
@@ -143,6 +167,10 @@ export function ContentArea() {
         <MediaViewer path={filePath} fileType={fileType} />
       ) : fileType === "source-code" ? (
         <SourceCodeViewer content={markdown} path={filePath} />
+      ) : fileType === "text" ? (
+        <SourceCodeViewer content={markdown} path={filePath} />
+      ) : fileType === "transcript" ? (
+        <TranscriptViewer content={markdown} />
       ) : fileType === "csv" ? (
         <CsvViewer content={markdown} onChange={handleChange} />
       ) : fileType === "pdf" ? (
@@ -152,6 +180,18 @@ export function ContentArea() {
       ) : fileType === "mermaid" ? (
         <Suspense fallback={<ViewerLoading />}>
           <MermaidViewer content={markdown} />
+        </Suspense>
+      ) : fileType === "word" ? (
+        <Suspense fallback={<ViewerLoading />}>
+          <DocxViewer path={filePath} />
+        </Suspense>
+      ) : fileType === "excel" ? (
+        <Suspense fallback={<ViewerLoading />}>
+          <XlsxViewer path={filePath} />
+        </Suspense>
+      ) : fileType === "email" ? (
+        <Suspense fallback={<ViewerLoading />}>
+          <EmailViewer path={filePath} />
         </Suspense>
       ) : (
         <div className="flex flex-1 items-center justify-center">

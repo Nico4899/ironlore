@@ -8,8 +8,8 @@ import type { ExtractResult } from "./types.js";
  * so the indexed content stays searchable even for HTML-only mail.
  */
 export async function extractEml(buffer: ArrayBuffer): Promise<ExtractResult> {
-  const mod = await import("postal-mime");
-  const PostalMime = (mod as { default?: typeof mod }).default ?? mod;
+  const mod = (await import("postal-mime")) as unknown as { default?: unknown };
+  const PostalMime = (mod.default ?? mod) as unknown;
   const warnings: string[] = [];
 
   try {

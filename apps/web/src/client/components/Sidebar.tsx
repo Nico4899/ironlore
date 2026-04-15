@@ -1,6 +1,7 @@
 import type { PageType } from "@ironlore/core";
 import { messages } from "@ironlore/core";
 import {
+  Captions,
   ChevronDown,
   ChevronRight,
   FileCode,
@@ -9,6 +10,7 @@ import {
   FileType,
   FolderClosed,
   Image,
+  Mail,
   Music,
   Video,
   Workflow,
@@ -48,6 +50,16 @@ function FileIcon({ type }: { type: PageType | "directory" }) {
       return <FileCode className={cls} />;
     case "mermaid":
       return <Workflow className={cls} />;
+    case "text":
+      return <FileText className={cls} />;
+    case "transcript":
+      return <Captions className={cls} />;
+    case "word":
+      return <FileType className={cls} />;
+    case "excel":
+      return <FileSpreadsheet className={cls} />;
+    case "email":
+      return <Mail className={cls} />;
     default:
       return <FileText className={cls} />;
   }
