@@ -317,6 +317,8 @@ export class SearchIndex {
       }
       for (const item of items) {
         if (item.name.startsWith(".") && item.name !== ".agents") continue;
+        // Skip block-id sidecars (`foo.md.blocks.json`) — internal metadata.
+        if (item.name.endsWith(".blocks.json")) continue;
         const fullPath = join(dir, item.name);
         const relPath = relative(dataRoot, fullPath);
 

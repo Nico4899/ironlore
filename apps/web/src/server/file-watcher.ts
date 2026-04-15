@@ -58,6 +58,7 @@ export class FileWatcher {
       // Skip unsupported, hidden files, sidecars, and temp files
       if (!isSupportedExtension(filename)) return;
       if (/(^|[/\\])\./.test(filename)) return;
+      if (filename.endsWith(".blocks.json")) return;
 
       const absPath = join(this.dataRoot, filename);
 
