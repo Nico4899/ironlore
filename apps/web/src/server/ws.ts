@@ -3,21 +3,7 @@ import type { Duplex } from "node:stream";
 import type { WsEvent, WsEventInput } from "@ironlore/core";
 import { WebSocket, WebSocketServer } from "ws";
 import type { SessionStore } from "./auth.js";
-
-// ---------------------------------------------------------------------------
-// Cookie parsing (minimal — only need the session cookie value)
-// ---------------------------------------------------------------------------
-
-const SESSION_COOKIE = "ironlore_session";
-
-function parseCookieValue(cookieHeader: string | undefined, name: string): string | null {
-  if (!cookieHeader) return null;
-  for (const part of cookieHeader.split(";")) {
-    const [key, ...rest] = part.trim().split("=");
-    if (key === name) return rest.join("=");
-  }
-  return null;
-}
+import { authenticateUpgrade } from "./ws-auth.js";
 
 /**
  * Parse the optional `?since=<seq>` query parameter on the upgrade URL.
@@ -81,31 +67,11 @@ export class WebSocketManager {
    * then upgrade to WebSocket.
    */
   handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
-    // Authenticate
-    const cookieValue = parseCookieValue(req.headers.cookie, SESSION_COOKIE);
-    if (!cookieValue) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-
-    const sessionId = this.verifySessionCookie(cookieValue);
-    if (!sessionId) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-
-    const session = this.sessionStore.getSession(sessionId);
-    if (!session) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-      socket.destroy();
-      return;
-    }
-
-    const since = parseSinceParam(req.url);
-    this.wss.handleUpgrade(req, socket, head, (ws) => {
-      this.onConnection(ws, since);
+    authenticateUpgrade(req, socket, this.sessionStore, this.verifySessionCookie, () => {
+      const since = parseSinceParam(req.url);
+      this.wss.handleUpgrade(req, socket, head, (ws) => {
+        this.onConnection(ws, since);
+      });
     });
   }
 
