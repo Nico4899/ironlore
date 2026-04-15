@@ -32,13 +32,25 @@ const XlsxViewer = lazy(() =>
 const EmailViewer = lazy(() =>
   import("./viewers/EmailViewer.js").then((m) => ({ default: m.EmailViewer })),
 );
+const NotebookViewer = lazy(() =>
+  import("./viewers/NotebookViewer.js").then((m) => ({ default: m.NotebookViewer })),
+);
 
 /**
  * File types that are loaded as binary via URL, not as text content.
  * Word/Excel containers live here too — their viewers fetch the buffer
  * themselves and delegate to the shared extractor.
  */
-const BINARY_TYPES = new Set(["pdf", "image", "video", "audio", "word", "excel", "email"]);
+const BINARY_TYPES = new Set([
+  "pdf",
+  "image",
+  "video",
+  "audio",
+  "word",
+  "excel",
+  "email",
+  "notebook",
+]);
 
 /**
  * File types that use fetchRaw (text, but not markdown's JSON endpoint).
@@ -189,6 +201,10 @@ export function ContentArea() {
       ) : fileType === "email" ? (
         <Suspense fallback={<ViewerLoading />}>
           <EmailViewer path={filePath} />
+        </Suspense>
+      ) : fileType === "notebook" ? (
+        <Suspense fallback={<ViewerLoading />}>
+          <NotebookViewer path={filePath} />
         </Suspense>
       ) : (
         <div className="flex flex-1 items-center justify-center">

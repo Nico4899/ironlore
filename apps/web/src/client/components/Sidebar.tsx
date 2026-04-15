@@ -1,6 +1,7 @@
 import type { PageType } from "@ironlore/core";
 import { messages } from "@ironlore/core";
 import {
+  BookOpen,
   Captions,
   ChevronDown,
   ChevronRight,
@@ -61,6 +62,8 @@ function FileIcon({ type }: { type: PageType | "directory" }) {
       return <FileSpreadsheet className={cls} />;
     case "email":
       return <Mail className={cls} />;
+    case "notebook":
+      return <BookOpen className={cls} />;
     default:
       return <FileText className={cls} />;
   }
@@ -583,6 +586,7 @@ const FILE_TYPE_OPTIONS: Array<{ label: string; ext: string }> = [
   { label: "JSON", ext: ".json" },
   { label: "YAML", ext: ".yaml" },
   { label: "Mermaid", ext: ".mermaid" },
+  { label: "Jupyter", ext: ".ipynb" },
 ];
 
 function InlineEditRow({
