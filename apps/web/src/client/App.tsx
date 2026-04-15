@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect } from "react";
 import { AIPanel } from "./components/AIPanel.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
+import { DisconnectedBanner } from "./components/DisconnectedBanner.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { SearchDialog } from "./components/SearchDialog.js";
 import { Sidebar } from "./components/Sidebar.js";
@@ -103,6 +104,9 @@ function AppShell() {
           </button>
         </nav>
       </header>
+
+      {/* WebSocket disconnected banner (shown after grace period) */}
+      <DisconnectedBanner />
 
       {/* Main three-panel layout */}
       <div className="flex flex-1 overflow-hidden">
