@@ -2,11 +2,12 @@ import { Upload } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useAutoSave } from "../hooks/useAutoSave.js";
 import type { ConflictResponse } from "../lib/api.js";
-import { fetchPage, fetchRaw, uploadFile } from "../lib/api.js";
+import { fetchPage, fetchRaw, submitOnboarding, uploadFile } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
+import { OnboardingWizard } from "./OnboardingWizard.js";
 import { HighlightToolbar } from "./editor/HighlightToolbar.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
@@ -204,6 +205,41 @@ export function ContentArea() {
     onDrop: handleDrop,
   };
 
+  // Onboarding state — show wizard on first visit
+  const [onboarded, setOnboarded] = useState(() => {
+    try {
+      return localStorage.getItem("ironlore.onboarded") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  const handleOnboardingComplete = useCallback(
+    async (answers: { role: string; company: string; goals: string }) => {
+      try {
+        await submitOnboarding({
+          company_name: answers.company,
+          company_description: answers.company,
+          goals: answers.goals,
+        });
+      } catch {
+        // Non-fatal — substitution is best-effort
+      }
+      try {
+        localStorage.setItem("ironlore.onboarded", "1");
+      } catch { /* storage denied */ }
+      setOnboarded(true);
+    },
+    [],
+  );
+
+  const handleOnboardingSkip = useCallback(() => {
+    try {
+      localStorage.setItem("ironlore.onboarded", "1");
+    } catch { /* storage denied */ }
+    setOnboarded(true);
+  }, []);
+
   // No active file — welcome screen
   if (!activePath || !filePath) {
     return (
@@ -215,17 +251,24 @@ export function ContentArea() {
         {...dropZoneProps}
       >
         <TabBar />
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-center">
-            <h1 className="text-2xl font-semibold">Welcome to Ironlore</h1>
-            <p className="mt-2 text-sm text-secondary">
-              Select a page from the sidebar or create a new one.
-            </p>
-            <p className="mt-1 text-xs text-secondary">
-              Drop files here to upload them.
-            </p>
+        {!onboarded ? (
+          <OnboardingWizard
+            onComplete={handleOnboardingComplete}
+            onSkip={handleOnboardingSkip}
+          />
+        ) : (
+          <div className="flex flex-1 items-center justify-center">
+            <div className="text-center">
+              <h1 className="text-2xl font-semibold">Welcome to Ironlore</h1>
+              <p className="mt-2 text-sm text-secondary">
+                Select a page from the sidebar or create a new one.
+              </p>
+              <p className="mt-1 text-xs text-secondary">
+                Drop files here to upload them.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
         {dragOver && <DropOverlay />}
       </main>
     );

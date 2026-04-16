@@ -19,7 +19,12 @@ import { revertAgentRun } from "./revert-run.js";
  * (`/api/projects/:id/agents`). The `projectId` comes from the URL,
  * not from a header — consistent with the pages API.
  */
-export function createAgentApi(pool: WorkerPool, rails: AgentRails, projectId: string): Hono {
+export function createAgentApi(
+  pool: WorkerPool,
+  rails: AgentRails,
+  projectId: string,
+  projectDir?: string,
+): Hono {
   const api = new Hono();
 
   // -----------------------------------------------------------------------
@@ -94,6 +99,51 @@ export function createAgentApi(pool: WorkerPool, rails: AgentRails, projectId: s
     rails.setPauseState(projectId, slug, body.paused);
 
     return c.json({ ok: true, paused: body.paused });
+  });
+
+  // -----------------------------------------------------------------------
+  // Onboarding: apply template variables to library personas
+  // -----------------------------------------------------------------------
+  api.post("/onboarding", async (c) => {
+    const body = await c.req.json<{
+      company_name?: string;
+      company_description?: string;
+      goals?: string;
+    }>();
+
+    // Read all library personas and replace {{...}} template variables.
+    const { existsSync, readFileSync, writeFileSync, readdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+
+    if (!projectDir) return c.json({ ok: false, error: "No project dir" }, 500);
+    const libDir = join(projectDir, "data", ".agents", ".library");
+    if (!existsSync(libDir)) {
+      return c.json({ ok: true, updated: 0 });
+    }
+
+    let updated = 0;
+    for (const file of readdirSync(libDir)) {
+      if (!file.endsWith(".md")) continue;
+      const filePath = join(libDir, file);
+      let content = readFileSync(filePath, "utf-8");
+      let changed = false;
+
+      for (const [key, value] of Object.entries(body)) {
+        if (!value) continue;
+        const placeholder = `{{${key}}}`;
+        if (content.includes(placeholder)) {
+          content = content.replaceAll(placeholder, value);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        writeFileSync(filePath, content, "utf-8");
+        updated++;
+      }
+    }
+
+    return c.json({ ok: true, updated });
   });
 
   // -----------------------------------------------------------------------

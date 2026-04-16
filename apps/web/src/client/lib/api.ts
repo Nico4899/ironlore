@@ -320,6 +320,21 @@ export async function rejectInboxEntry(
   return res.json();
 }
 
+/** Submit onboarding wizard answers — applies template substitution to library personas. */
+export async function submitOnboarding(answers: {
+  company_name: string;
+  company_description: string;
+  goals: string;
+}): Promise<{ ok: boolean; updated: number }> {
+  const res = await apiFetch(`${BASE}/agents/onboarding`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(answers),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
 /** Revert a completed agent run via git revert. */
 export async function revertJob(
   jobId: string,
