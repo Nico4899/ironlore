@@ -52,7 +52,7 @@ pnpm typecheck
 
 ## First run
 
-On first start, Ironlore seeds the `projects/main/data/` directory with getting-started content, example files (CSV, PDF, PNG, Mermaid, TypeScript), and agent personas.
+On first start, Ironlore seeds the `projects/main/data/` directory with getting-started content (5 onboarding pages), a carousel folder showcasing 10+ file types (CSV, PDF, PNG, SVG, Mermaid, TypeScript, plain text, log, VTT transcript, EML email), two default agent personas (General read-only assistant + Editor with mutations), and a library of 20 specialist agent templates (CEO, Product Manager, Technical Writer, Wiki Gardener, etc.) in `.agents/.library/`.
 
 It also generates a random admin password, prints it to stdout, and writes the bootstrap record to `.ironlore-install.json` (mode 0600). Save the password — it will not be shown again.
 
@@ -77,6 +77,7 @@ Ironlore is not markdown-only. Every file type in the content model has a dedica
 | Word | `.docx` | Sanitized HTML (mammoth, lazy-loaded) | Read-only |
 | Excel | `.xlsx` | Tabbed spreadsheet (SheetJS, lazy-loaded, 500-row render cap) | Read-only |
 | Email | `.eml` | Header block + body (postal-mime, lazy-loaded) | Read-only |
+| Notebook | `.ipynb` | Jupyter cells: markdown + code + outputs (lazy-loaded) | Read-only |
 
 The sidebar shows file-type-specific Lucide icons. `ContentArea` dispatches to the correct viewer based on the `PageType` detected from the file extension.
 
@@ -101,28 +102,46 @@ ironlore/
 │   │   └── src/
 │   │       ├── client/           React 19 SPA
 │   │       │   ├── components/
-│   │       │   │   ├── editor/   ProseMirror + CodeMirror editors
-│   │       │   │   ├── viewers/  File type viewers (6 components)
+│   │       │   │   ├── editor/   ProseMirror + CodeMirror editors, HighlightToolbar
+│   │       │   │   ├── viewers/  File type viewers (11 components)
+│   │       │   │   ├── AIPanel.tsx       AI agent chat interface
 │   │       │   │   ├── ContentArea.tsx   Viewer dispatch hub
-│   │       │   │   └── Sidebar.tsx       Tree nav with type icons
-│   │       │   ├── hooks/        useAutoSave, etc.
-│   │       │   ├── lib/          API client, markdown rendering
-│   │       │   └── stores/       Zustand (app, editor, tree, aiPanel)
+│   │       │   │   ├── Header.tsx        Top nav: logo, search, theme, AI panel
+│   │       │   │   ├── Sidebar.tsx       Hierarchical tree nav with type icons
+│   │       │   │   ├── TabBar.tsx        Tab switcher with disambiguated labels
+│   │       │   │   └── StatusBar.tsx     Last-saved, connection status
+│   │       │   ├── hooks/        useAutoSave, useAgentSession, useWebSocket, useFocusTrap, useResponsiveLayout, useThemeClass
+│   │       │   ├── lib/          API client, markdown rendering, block merge, WebSocket
+│   │       │   └── stores/       Zustand (app, editor, tree, aiPanel, auth)
 │   │       └── server/           Hono API server
-│   │           ├── pages-api.ts  /pages/* and /raw/* endpoints
-│   │           ├── storage-writer.ts   File I/O + WAL + ETag
+│   │           ├── pages-api.ts        /pages/* and /raw/* endpoints
+│   │           ├── search-api.ts       /search endpoint (FTS5 + chunk-level)
+│   │           ├── storage-writer.ts   File I/O + WAL + ETag + moveDir
+│   │           ├── search-index.ts     FTS5 + chunk FTS5 + backlinks + typed wiki-links
 │   │           ├── file-watcher.ts     External edit detection
-│   │           ├── search-index.ts     FTS5 + backlinks
-│   │           └── seed.ts             First-run content seeding
-│   ├── worker/           Jobs daemon (stub — ships in Phase 4)
-│   └── electron/         Desktop shell (placeholder — ships in Phase 5)
+│   │           ├── seed.ts             First-run content seeding
+│   │           ├── ws.ts               WebSocket (ring buffer, replay, resync)
+│   │           ├── terminal.ts         Embedded terminal (buildSafeEnv)
+│   │           ├── jobs/               Durable job queue, worker pool, backpressure
+│   │           ├── providers/          AI providers (Anthropic, Ollama, registry)
+│   │           ├── tools/              Agent tools (kb.*, agent.journal, dispatcher)
+│   │           ├── agents/             Agent executor, rails, session bridge, API
+│   │           └── search/             Query expansion, LLM reranking
+│   ├── worker/           Background job daemon (placeholder)
+│   └── electron/         Desktop shell (placeholder)
 ├── packages/
 │   ├── core/             Shared types, schemas, constants, utilities
 │   │   └── src/
 │   │       ├── page-type.ts     PageType detection + extension helpers
-│   │       ├── types.ts         Shared type definitions
-│   │       └── messages.ts      UI string constants
-│   ├── cli/              `ironlore` CLI (reindex, flush, migrate, repair, backup, restore)
+│   │       ├── types.ts         Shared type definitions (PageType, JobStatus, AgentStatus, ProviderId)
+│   │       ├── messages.ts      UI string constants (i18n-ready)
+│   │       ├── block-parser.ts  Block-level markdown parsing (shared client + server)
+│   │       ├── contrast.ts      OKLCh → WCAG contrast ratio computation
+│   │       ├── ws-events.ts     WebSocket event types (tree, search, resync, recovery, lint)
+│   │       ├── extractors/      Content extractors (word, excel, email, notebook)
+│   │       ├── index.ts         Browser-safe exports
+│   │       └── server.ts        Node-only exports (etag, resolve-safe)
+│   ├── cli/              `ironlore` CLI (reindex, flush, migrate, repair, backup, restore, eval)
 │   └── create-ironlore/  `npx create-ironlore` project scaffolder
 ├── projects/
 │   └── main/                 Default project
