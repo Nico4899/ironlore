@@ -16,6 +16,7 @@ import { createCorsConfig } from "./cors.js";
 import { FileWatcher } from "./file-watcher.js";
 import { GitWorker } from "./git-worker.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
+import { BackpressureController } from "./jobs/backpressure.js";
 import { openJobsDb } from "./jobs/schema.js";
 import { WorkerPool } from "./jobs/worker.js";
 import { LinksRegistry } from "./links-registry.js";
@@ -223,7 +224,9 @@ async function start() {
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/raw`, rawApi);
 
   // Mount search API (FTS5, backlinks, recent edits)
-  const searchApi = createSearchApi(searchIndex);
+  const searchApi = createSearchApi(searchIndex, {
+    provider: providerRegistry.resolve(),
+  });
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/search`, searchApi);
 
   // Mount agent API (run, state, pause/resume)
