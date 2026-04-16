@@ -1,5 +1,5 @@
-import type { WebSocket } from "ws";
 import type Database from "better-sqlite3";
+import type { WebSocket } from "ws";
 
 /**
  * WebSocket bridge for job events.

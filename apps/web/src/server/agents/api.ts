@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
-import { AgentRails } from "./rails.js";
+import type { AgentRails } from "./rails.js";
 
 /**
  * Agent API routes.
@@ -16,11 +16,7 @@ import { AgentRails } from "./rails.js";
  * (`/api/projects/:id/agents`). The `projectId` comes from the URL,
  * not from a header — consistent with the pages API.
  */
-export function createAgentApi(
-  pool: WorkerPool,
-  rails: AgentRails,
-  projectId: string,
-): Hono {
+export function createAgentApi(pool: WorkerPool, rails: AgentRails, projectId: string): Hono {
   const api = new Hono();
 
   // -----------------------------------------------------------------------

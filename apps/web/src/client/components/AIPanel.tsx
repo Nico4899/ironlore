@@ -51,9 +51,10 @@ export function AIPanel() {
     const draft = inputDraft.trim();
     if (!draft && contexts.length === 0) return;
     // Build the full prompt including any context pills.
-    const contextBlock = contexts.length > 0
-      ? contexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n") + "\n\n"
-      : "";
+    const contextBlock =
+      contexts.length > 0
+        ? contexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n") + "\n\n"
+        : "";
     const fullPrompt = contextBlock + draft;
     sendMessage(fullPrompt);
     setInputDraft("");
@@ -81,7 +82,9 @@ export function AIPanel() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <Sparkles className={`h-4 w-4 ${isStreaming ? "animate-pulse text-ironlore-blue-strong" : "text-ironlore-blue"}`} />
+          <Sparkles
+            className={`h-4 w-4 ${isStreaming ? "animate-pulse text-ironlore-blue-strong" : "text-ironlore-blue"}`}
+          />
           <span className="text-sm font-semibold tracking-tight">AI</span>
           {isStreaming && (
             <span className="text-[10px] font-medium text-ironlore-blue">thinking…</span>
@@ -285,9 +288,7 @@ function ToolCallCard({
         )}
         <Wrench className="h-3.5 w-3.5 shrink-0 text-accent-violet" />
         <span className="font-semibold text-primary">{msg.tool}</span>
-        {hasResult && (
-          <span className="ml-auto text-[10px] text-signal-green">done</span>
-        )}
+        {hasResult && <span className="ml-auto text-[10px] text-signal-green">done</span>}
       </button>
       {expanded && (
         <div className="border-t border-border px-3 py-2">
