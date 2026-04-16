@@ -2,7 +2,6 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { fetchPage } from "../lib/api.js";
 import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
-import { useAppStore } from "../stores/app.js";
 
 /**
  * Provenance pane — opened by clicking a `[[Page#blk_…]]` citation
@@ -82,7 +81,6 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
     return (
       <aside
         className="flex w-[40%] shrink-0 flex-col border-l border-border bg-ironlore-slate"
-        role="complementary"
         aria-label="Source of citation"
       >
         <PaneHeader pagePath={pagePath} blockId={blockId} onClose={onClose} />
@@ -96,9 +94,11 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
   return (
     <aside
       className="flex w-[40%] shrink-0 flex-col border-l border-border bg-ironlore-slate"
-      role="complementary"
       aria-label="Source of citation"
       onClick={handleClickOutside}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
     >
       <PaneHeader pagePath={pagePath} blockId={blockId} onClose={onClose} />
       <div className="flex-1 overflow-y-auto px-6 py-4">
@@ -124,9 +124,7 @@ function PaneHeader({
   return (
     <div className="flex items-center gap-2 border-b border-border px-4 py-2">
       <div className="flex-1 min-w-0">
-        <div className="truncate text-xs font-medium text-primary">
-          {pagePath.split("/").pop()}
-        </div>
+        <div className="truncate text-xs font-medium text-primary">{pagePath.split("/").pop()}</div>
         <div className="truncate font-mono text-[10px] text-secondary">{blockId}</div>
       </div>
       <button
@@ -141,13 +139,7 @@ function PaneHeader({
   );
 }
 
-function ProvenanceContent({
-  content,
-  blockId,
-}: {
-  content: string;
-  blockId: string;
-}) {
+function ProvenanceContent({ content, blockId }: { content: string; blockId: string }) {
   // Render the full page but wrap each block-ID match in a target span.
   // The block we're looking for gets an ID for scrolling + the flash.
   const html = renderMarkdownSafe(content);

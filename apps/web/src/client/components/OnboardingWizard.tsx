@@ -107,8 +107,14 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
           />
         </div>
 
-        <label className="mb-2 block text-sm font-medium text-primary">{current.label}</label>
+        <label
+          htmlFor={`wizard-${current.key}`}
+          className="mb-2 block text-sm font-medium text-primary"
+        >
+          {current.label}
+        </label>
         <textarea
+          id={`wizard-${current.key}`}
           className="h-20 w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-primary placeholder:text-secondary focus:border-ironlore-blue focus:outline-none"
           placeholder={current.placeholder}
           value={answers[current.key]}

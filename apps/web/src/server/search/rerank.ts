@@ -1,4 +1,4 @@
-import type { Provider, ProjectContext } from "../providers/types.js";
+import type { ProjectContext, Provider } from "../providers/types.js";
 import type { SearchResult } from "../search-index.js";
 
 /**
@@ -69,7 +69,8 @@ export async function rerankResults(
     for await (const event of provider.chat(
       {
         model,
-        systemPrompt: "You are a search result re-ranker. Output only a JSON array of relevance scores.",
+        systemPrompt:
+          "You are a search result re-ranker. Output only a JSON array of relevance scores.",
         messages: [{ role: "user", content: prompt }],
         maxTokens: 128,
         temperature: 0,
@@ -94,14 +95,9 @@ export async function rerankResults(
       const retrievalScore = 1 - i / candidates.length; // Linear decay.
 
       const w =
-        retrievalRank <= 3
-          ? weights.tier1
-          : retrievalRank <= 10
-            ? weights.tier2
-            : weights.tier3;
+        retrievalRank <= 3 ? weights.tier1 : retrievalRank <= 10 ? weights.tier2 : weights.tier3;
 
-      const blendedScore =
-        w.retrieval * retrievalScore + w.rerank * rerankScore;
+      const blendedScore = w.retrieval * retrievalScore + w.rerank * rerankScore;
 
       return { result: r, score: blendedScore };
     });

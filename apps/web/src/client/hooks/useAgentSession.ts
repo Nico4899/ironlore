@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useAIPanelStore } from "../stores/ai-panel.js";
-import { useAppStore } from "../stores/app.js";
 
 const BASE = "/api/projects/main";
 
@@ -21,43 +20,6 @@ const BASE = "/api/projects/main";
 export function useAgentSession() {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeJobIdRef = useRef<string | null>(null);
-
-  const sendMessage = useCallback(async (text: string) => {
-    const store = useAIPanelStore.getState();
-    const slug = store.activeAgent;
-
-    // Add user message immediately.
-    store.addMessage({ type: "user", text, attachments: [] });
-    store.setIsStreaming(true);
-
-    try {
-      const res = await fetch(`${BASE}/agents/${slug}/run`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text, mode: "interactive" }),
-      });
-
-      if (!res.ok) {
-        const body = await res.text();
-        store.addMessage({ type: "error", text: `Failed to start run: ${body}` });
-        store.setIsStreaming(false);
-        return;
-      }
-
-      const { jobId } = (await res.json()) as { jobId: string };
-      store.setJobId(jobId);
-      activeJobIdRef.current = jobId;
-
-      // Start polling for events.
-      startPolling(jobId);
-    } catch (err) {
-      store.addMessage({
-        type: "error",
-        text: `Connection error: ${err instanceof Error ? err.message : String(err)}`,
-      });
-      store.setIsStreaming(false);
-    }
-  }, []);
 
   const startPolling = useCallback((jobId: string) => {
     if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -94,6 +56,43 @@ export function useAgentSession() {
       }
     }, 500);
   }, []);
+
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const store = useAIPanelStore.getState();
+      const slug = store.activeAgent;
+
+      store.addMessage({ type: "user", text, attachments: [] });
+      store.setIsStreaming(true);
+
+      try {
+        const res = await fetch(`${BASE}/agents/${slug}/run`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: text, mode: "interactive" }),
+        });
+
+        if (!res.ok) {
+          const body = await res.text();
+          store.addMessage({ type: "error", text: `Failed to start run: ${body}` });
+          store.setIsStreaming(false);
+          return;
+        }
+
+        const { jobId } = (await res.json()) as { jobId: string };
+        store.setJobId(jobId);
+        activeJobIdRef.current = jobId;
+        startPolling(jobId);
+      } catch (err) {
+        store.addMessage({
+          type: "error",
+          text: `Connection error: ${err instanceof Error ? err.message : String(err)}`,
+        });
+        store.setIsStreaming(false);
+      }
+    },
+    [startPolling],
+  );
 
   // Cleanup on unmount.
   useEffect(() => {

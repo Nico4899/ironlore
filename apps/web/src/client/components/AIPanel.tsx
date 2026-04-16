@@ -53,7 +53,7 @@ export function AIPanel() {
     // Build the full prompt including any context pills.
     const contextBlock =
       contexts.length > 0
-        ? contexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n") + "\n\n"
+        ? `${contexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n")}\n\n`
         : "";
     const fullPrompt = contextBlock + draft;
     sendMessage(fullPrompt);

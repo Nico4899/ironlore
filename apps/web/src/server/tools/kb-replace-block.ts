@@ -45,13 +45,21 @@ export function createKbReplaceBlock(
       },
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
-      const { path, blockId, markdown, etag, derived_from } = args as {
+      const {
+        path,
+        blockId,
+        markdown,
+        etag,
+        derived_from: _derivedFrom,
+      } = args as {
         path: string;
         blockId: string;
         markdown: string;
         etag: string;
         derived_from?: string[];
       };
+      // TODO: write _derivedFrom into .blocks.json provenance when
+      // the sidecar write path is wired (Track C).
 
       // Read current content.
       let currentContent: string;

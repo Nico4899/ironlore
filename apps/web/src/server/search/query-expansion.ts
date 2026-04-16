@@ -1,4 +1,4 @@
-import type { Provider, ProjectContext } from "../providers/types.js";
+import type { ProjectContext, Provider } from "../providers/types.js";
 import type { SearchIndex, SearchResult } from "../search-index.js";
 
 /**

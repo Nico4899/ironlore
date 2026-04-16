@@ -30,19 +30,14 @@ export function AgentToastContainer() {
   // Auto-dismiss after TOAST_DURATION_MS.
   useEffect(() => {
     if (toasts.length === 0) return;
-    const timers = toasts.map((t) =>
-      setTimeout(() => dismiss(t.id), TOAST_DURATION_MS),
-    );
+    const timers = toasts.map((t) => setTimeout(() => dismiss(t.id), TOAST_DURATION_MS));
     return () => {
       for (const timer of timers) clearTimeout(timer);
     };
   }, [toasts, dismiss]);
 
   return (
-    <div
-      aria-live="polite"
-      className="fixed bottom-16 right-4 z-50 flex flex-col gap-2"
-    >
+    <div aria-live="polite" className="fixed bottom-16 right-4 z-50 flex flex-col gap-2">
       {toasts.map((t) => (
         <div
           key={t.id}
