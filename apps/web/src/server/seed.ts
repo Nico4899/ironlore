@@ -322,6 +322,7 @@ in the sidebar to see it.
 - \`notes.txt\` / \`server.log\` — plain-text viewers (CodeMirror, no highlighting)
 - \`transcript.vtt\` — timestamped caption table
 - \`message.eml\` — email with parsed headers and text body
+- \`notebook.ipynb\` — Jupyter notebook with markdown, code, and output cells
 
 The other supported types — \`.docx\`, \`.xlsx\`, \`.mp3\`, \`.mp4\` — open in
 dedicated viewers when you drop a real file in. They're not seeded because a
@@ -532,6 +533,85 @@ FTS5 search index.
 
 — The Ironlore Team
 `,
+  );
+
+  seedFile(
+    join(dataDir, "carousel", "notebook.ipynb"),
+    JSON.stringify(
+      {
+        nbformat: 4,
+        nbformat_minor: 5,
+        metadata: {
+          kernelspec: {
+            display_name: "Python 3",
+            language: "python",
+            name: "python3",
+          },
+          language_info: { name: "python", version: "3.12.0" },
+        },
+        cells: [
+          {
+            cell_type: "markdown",
+            metadata: {},
+            source: [
+              "# Sample Notebook\n",
+              "\n",
+              "This `.ipynb` file renders in the Notebook viewer.\n",
+              "Markdown cells display formatted text, code cells show syntax-highlighted source,\n",
+              "and output cells display results.\n",
+            ],
+          },
+          {
+            cell_type: "code",
+            metadata: {},
+            source: [
+              "import math\n",
+              "\n",
+              "# Calculate the golden ratio\n",
+              "phi = (1 + math.sqrt(5)) / 2\n",
+              'print(f"Golden ratio: {phi:.10f}")\n',
+            ],
+            outputs: [
+              {
+                output_type: "stream",
+                name: "stdout",
+                text: ["Golden ratio: 1.6180339887\n"],
+              },
+            ],
+            execution_count: 1,
+          },
+          {
+            cell_type: "code",
+            metadata: {},
+            source: [
+              "# A simple list comprehension\n",
+              "squares = [x**2 for x in range(1, 11)]\n",
+              "print(squares)\n",
+            ],
+            outputs: [
+              {
+                output_type: "stream",
+                name: "stdout",
+                text: ["[1, 4, 9, 16, 25, 36, 49, 64, 81, 100]\n"],
+              },
+            ],
+            execution_count: 2,
+          },
+          {
+            cell_type: "markdown",
+            metadata: {},
+            source: [
+              "## Notes\n",
+              "\n",
+              "Ironlore extracts notebook content for full-text search.\n",
+              "Both markdown prose and code cells are indexed.\n",
+            ],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
   );
 
   // -------------------------------------------------------------------------
