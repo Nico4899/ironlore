@@ -18,12 +18,15 @@ export default function Terminal() {
   const startH = useRef(0);
 
   // ─── Resize handle ─────────────────────────────────────────────
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    dragging.current = true;
-    startY.current = e.clientY;
-    startH.current = height;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-  }, [height]);
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      dragging.current = true;
+      startY.current = e.clientY;
+      startH.current = height;
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [height],
+  );
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!dragging.current) return;

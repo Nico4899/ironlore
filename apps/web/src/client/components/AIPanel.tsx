@@ -13,8 +13,8 @@ import {
 import { useCallback, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { revertJob } from "../lib/api.js";
-import { useAppStore } from "../stores/app.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
+import { useAppStore } from "../stores/app.js";
 import { DiffPreview } from "./DiffPreview.js";
 
 export function AIPanel() {
@@ -257,9 +257,7 @@ function MessageList() {
           {msg.type === "error" && (
             <div className="rounded-lg bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
           )}
-          {msg.type === "run_finalized" && (
-            <RunFinalizedCard msg={msg} />
-          )}
+          {msg.type === "run_finalized" && <RunFinalizedCard msg={msg} />}
         </div>
       ))}
     </>
@@ -363,9 +361,7 @@ function RunFinalizedCard({
   return (
     <div className="rounded-lg border border-border bg-ironlore-slate-hover px-3 py-2 text-xs">
       <div className="flex items-center justify-between">
-        <div className="font-semibold text-primary">
-          Run finalized · {msg.agentSlug}
-        </div>
+        <div className="font-semibold text-primary">Run finalized · {msg.agentSlug}</div>
         {!reverted && msg.commitShaStart && msg.commitShaEnd && (
           <button
             type="button"
@@ -385,9 +381,7 @@ function RunFinalizedCard({
         <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
         {reverted && " \u00B7 reverted"}
       </div>
-      {revertError && (
-        <div className="mt-1 text-signal-red">{revertError}</div>
-      )}
+      {revertError && <div className="mt-1 text-signal-red">{revertError}</div>}
     </div>
   );
 }
@@ -399,7 +393,9 @@ function RunFinalizedCard({
 function CitationText({ text }: { text: string }) {
   const CITATION_RE = /\[\[([^\]#]+)(?:#(blk_[A-Za-z0-9]+))?\]\]/g;
 
-  const parts: Array<{ kind: "text"; value: string } | { kind: "citation"; page: string; blockId: string }> = [];
+  const parts: Array<
+    { kind: "text"; value: string } | { kind: "citation"; page: string; blockId: string }
+  > = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 

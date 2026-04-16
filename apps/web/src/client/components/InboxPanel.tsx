@@ -71,15 +71,13 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
-        {loading && (
-          <div className="py-8 text-center text-xs text-secondary">Loading...</div>
-        )}
+        {loading && <div className="py-8 text-center text-xs text-secondary">Loading...</div>}
 
         {!loading && entries.length === 0 && (
           <div className="py-8 text-center text-xs text-secondary">
             No pending reviews. Runs with{" "}
-            <code className="rounded bg-ironlore-slate-hover px-1">review_mode: inbox</code>{" "}
-            will appear here.
+            <code className="rounded bg-ironlore-slate-hover px-1">review_mode: inbox</code> will
+            appear here.
           </div>
         )}
 

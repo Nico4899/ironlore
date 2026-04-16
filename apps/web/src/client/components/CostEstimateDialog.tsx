@@ -1,6 +1,6 @@
+import { DEFAULT_PROJECT_ID } from "@ironlore/core";
 import { DollarSign, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { DEFAULT_PROJECT_ID } from "@ironlore/core";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
 
 interface CostEstimate {
@@ -100,9 +100,8 @@ export function CostEstimateDialog({ agentSlug, onConfirm, onCancel }: CostEstim
                 </div>
               </div>
               <div className="text-[10px] text-secondary">
-                Prices: ${estimate.pricePerMillionInput}/M input, $
-                {estimate.pricePerMillionOutput}/M output. Actual cost depends on
-                conversation length and tool calls.
+                Prices: ${estimate.pricePerMillionInput}/M input, ${estimate.pricePerMillionOutput}
+                /M output. Actual cost depends on conversation length and tool calls.
               </div>
             </div>
           )}

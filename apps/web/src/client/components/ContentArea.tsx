@@ -7,11 +7,11 @@ import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
-import { OnboardingWizard } from "./OnboardingWizard.js";
 import { HighlightToolbar } from "./editor/HighlightToolbar.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
+import { OnboardingWizard } from "./OnboardingWizard.js";
 import { SplitPane } from "./SplitPane.js";
 import { TabBar } from "./TabBar.js";
 import { ViewerErrorBoundary } from "./ViewerErrorBoundary.js";
@@ -227,7 +227,9 @@ export function ContentArea() {
       }
       try {
         localStorage.setItem("ironlore.onboarded", "1");
-      } catch { /* storage denied */ }
+      } catch {
+        /* storage denied */
+      }
       setOnboarded(true);
     },
     [],
@@ -236,7 +238,9 @@ export function ContentArea() {
   const handleOnboardingSkip = useCallback(() => {
     try {
       localStorage.setItem("ironlore.onboarded", "1");
-    } catch { /* storage denied */ }
+    } catch {
+      /* storage denied */
+    }
     setOnboarded(true);
   }, []);
 
@@ -252,10 +256,7 @@ export function ContentArea() {
       >
         <TabBar />
         {!onboarded ? (
-          <OnboardingWizard
-            onComplete={handleOnboardingComplete}
-            onSkip={handleOnboardingSkip}
-          />
+          <OnboardingWizard onComplete={handleOnboardingComplete} onSkip={handleOnboardingSkip} />
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <div className="text-center">
@@ -263,9 +264,7 @@ export function ContentArea() {
               <p className="mt-2 text-sm text-secondary">
                 Select a page from the sidebar or create a new one.
               </p>
-              <p className="mt-1 text-xs text-secondary">
-                Drop files here to upload them.
-              </p>
+              <p className="mt-1 text-xs text-secondary">Drop files here to upload them.</p>
             </div>
           </div>
         )}

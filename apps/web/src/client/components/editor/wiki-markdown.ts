@@ -20,39 +20,94 @@ import { Schema } from "prosemirror-model";
 const baseSchema = defaultMarkdownParser.schema;
 
 export const wikiSchema: Schema = new Schema({
-  nodes: baseSchema.spec.nodes.addToEnd("wikilink", {
-    inline: true,
-    atom: true,
-    group: "inline",
-    attrs: {
-      target: { default: "" },
-      display: { default: null },
-    },
-    parseDOM: [
-      {
-        tag: "span[data-wikilink]",
-        getAttrs: (el) => {
-          const element = el as HTMLElement;
-          return {
-            target: element.getAttribute("data-wikilink") ?? "",
-            display: element.getAttribute("data-display"),
-          };
-        },
+  nodes: baseSchema.spec.nodes
+    .addToEnd("table", {
+      content: "table_row+",
+      group: "block",
+      tableRole: "table",
+      isolating: true,
+      parseDOM: [{ tag: "table" }],
+      toDOM() {
+        return ["table", ["tbody", 0]];
       },
-    ],
-    toDOM(node) {
-      const { target, display } = node.attrs as { target: string; display: string | null };
-      return [
-        "span",
+    })
+    .addToEnd("table_row", {
+      content: "(table_cell | table_header)+",
+      tableRole: "row",
+      parseDOM: [{ tag: "tr" }],
+      toDOM() {
+        return ["tr", 0];
+      },
+    })
+    .addToEnd("table_header", {
+      content: "inline*",
+      attrs: { alignment: { default: null } },
+      tableRole: "header_cell",
+      isolating: true,
+      parseDOM: [
         {
-          "data-wikilink": target,
-          "data-display": display ?? "",
-          class: "ir-wikilink",
+          tag: "th",
+          getAttrs: (el) => ({
+            alignment: (el as HTMLElement).style.textAlign || null,
+          }),
         },
-        display ?? target,
-      ];
-    },
-  }),
+      ],
+      toDOM(node) {
+        const align = node.attrs.alignment as string | null;
+        return align ? ["th", { style: `text-align: ${align}` }, 0] : ["th", 0];
+      },
+    })
+    .addToEnd("table_cell", {
+      content: "inline*",
+      attrs: { alignment: { default: null } },
+      tableRole: "cell",
+      isolating: true,
+      parseDOM: [
+        {
+          tag: "td",
+          getAttrs: (el) => ({
+            alignment: (el as HTMLElement).style.textAlign || null,
+          }),
+        },
+      ],
+      toDOM(node) {
+        const align = node.attrs.alignment as string | null;
+        return align ? ["td", { style: `text-align: ${align}` }, 0] : ["td", 0];
+      },
+    })
+    .addToEnd("wikilink", {
+      inline: true,
+      atom: true,
+      group: "inline",
+      attrs: {
+        target: { default: "" },
+        display: { default: null },
+      },
+      parseDOM: [
+        {
+          tag: "span[data-wikilink]",
+          getAttrs: (el) => {
+            const element = el as HTMLElement;
+            return {
+              target: element.getAttribute("data-wikilink") ?? "",
+              display: element.getAttribute("data-display"),
+            };
+          },
+        },
+      ],
+      toDOM(node) {
+        const { target, display } = node.attrs as { target: string; display: string | null };
+        return [
+          "span",
+          {
+            "data-wikilink": target,
+            "data-display": display ?? "",
+            class: "ir-wikilink",
+          },
+          display ?? target,
+        ];
+      },
+    }),
   marks: baseSchema.spec.marks,
 });
 
@@ -121,6 +176,22 @@ const md = MarkdownIt("commonmark", { html: false })
 
 export const wikiMarkdownParser = new MarkdownParser(wikiSchema, md, {
   ...defaultMarkdownParser.tokens,
+  table: { block: "table" },
+  thead: { ignore: true },
+  tbody: { ignore: true },
+  tr: { block: "table_row" },
+  th: {
+    block: "table_header",
+    getAttrs: (tok) => ({
+      alignment: (tok.attrGet?.("style")?.match(/text-align:\s*(\w+)/) ?? [])[1] ?? null,
+    }),
+  },
+  td: {
+    block: "table_cell",
+    getAttrs: (tok) => ({
+      alignment: (tok.attrGet?.("style")?.match(/text-align:\s*(\w+)/) ?? [])[1] ?? null,
+    }),
+  },
   wikilink: {
     node: "wikilink",
     getAttrs: (tok) => ({
@@ -137,6 +208,44 @@ export const wikiMarkdownParser = new MarkdownParser(wikiSchema, md, {
 export const wikiMarkdownSerializer = new MarkdownSerializer(
   {
     ...defaultMarkdownSerializer.nodes,
+    table(state, node) {
+      // Collect column alignments from the first row's header cells
+      const firstRow = node.firstChild;
+      const alignments: (string | null)[] = [];
+      if (firstRow) {
+        firstRow.forEach((cell) => {
+          alignments.push((cell.attrs.alignment as string | null) ?? null);
+        });
+      }
+
+      // Render each row
+      node.forEach((row, _, rowIdx) => {
+        row.forEach((cell, _, cellIdx) => {
+          if (cellIdx > 0) state.write(" | ");
+          else state.write("| ");
+          state.write(cell.textContent);
+        });
+        state.write(" |\n");
+
+        // After the first (header) row, emit the separator line
+        if (rowIdx === 0) {
+          for (let i = 0; i < alignments.length; i++) {
+            if (i > 0) state.write(" | ");
+            else state.write("| ");
+            const a = alignments[i];
+            if (a === "center") state.write(":---:");
+            else if (a === "right") state.write("---:");
+            else state.write("---");
+          }
+          state.write(" |\n");
+        }
+      });
+      state.write("\n");
+      state.closeBlock(node);
+    },
+    table_row(_state, _node) {},
+    table_header(_state, _node) {},
+    table_cell(_state, _node) {},
     wikilink(state, node) {
       const { target, display } = node.attrs as { target: string; display: string | null };
       state.write(display ? `[[${target}|${display}]]` : `[[${target}]]`);

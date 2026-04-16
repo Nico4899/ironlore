@@ -115,11 +115,7 @@ function ConnectionPill({
   connected: boolean;
   reconnecting: boolean;
 }) {
-  const label = connected
-    ? "Live"
-    : reconnecting
-      ? "Reconnecting\u2026"
-      : "Offline";
+  const label = connected ? "Live" : reconnecting ? "Reconnecting\u2026" : "Offline";
 
   const color = connected
     ? "text-signal-green"

@@ -6,8 +6,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { createAgentApi, createInboxApi, createJobApi } from "./agents/api.js";
-import { AgentInbox } from "./agents/inbox.js";
 import { executeAgentRun } from "./agents/executor.js";
+import { AgentInbox } from "./agents/inbox.js";
 import { AgentRails } from "./agents/rails.js";
 import { seedAgents } from "./agents/seed-agents.js";
 import { createAuthApi, SessionStore } from "./auth.js";
@@ -192,7 +192,10 @@ async function start() {
       projectContext,
       dispatcher,
       dataRoot: writer.getDataRoot(),
-      model: provider.name === "ollama" ? (providerRegistry.getOllamaModels()[0] ?? "llama3") : "claude-sonnet-4-20250514",
+      model:
+        provider.name === "ollama"
+          ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
+          : "claude-sonnet-4-20250514",
       agentSlug,
       prompt: payload.prompt,
     });

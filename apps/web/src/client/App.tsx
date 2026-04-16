@@ -101,9 +101,7 @@ function AppShell() {
       <div className="flex flex-1 overflow-hidden">
         {sidebarOpen && <Sidebar />}
         <ContentArea />
-        {inboxOpen && (
-          <InboxPanel onClose={() => useAppStore.getState().toggleInbox()} />
-        )}
+        {inboxOpen && <InboxPanel onClose={() => useAppStore.getState().toggleInbox()} />}
         {aiPanelOpen ? <AIPanel /> : <AIPanelRail />}
         {provenance && (
           <ProvenancePane

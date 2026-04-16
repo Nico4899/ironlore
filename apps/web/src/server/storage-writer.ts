@@ -206,7 +206,11 @@ export class StorageWriter {
         writeFileSync(tmpPath, data);
         renameSync(tmpPath, absPath);
       } catch (err) {
-        try { unlinkSync(tmpPath); } catch { /* ignore */ }
+        try {
+          unlinkSync(tmpPath);
+        } catch {
+          /* ignore */
+        }
         throw err;
       }
 
