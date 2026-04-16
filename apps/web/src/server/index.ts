@@ -192,6 +192,7 @@ async function start() {
       projectContext,
       dispatcher,
       dataRoot: writer.getDataRoot(),
+      projectDir,
       model:
         provider.name === "ollama"
           ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
@@ -202,6 +203,25 @@ async function start() {
 
     // Record outcome for auto-pause rails.
     rails.recordOutcome(jobCtx.projectId, agentSlug, result.status === "done");
+
+    // Write commit SHA range back to the job row for revert support.
+    if (result.result) {
+      try {
+        const parsed = JSON.parse(result.result) as {
+          commitShaStart?: string;
+          commitShaEnd?: string;
+        };
+        if (parsed.commitShaStart || parsed.commitShaEnd) {
+          jobsDb
+            .prepare(
+              "UPDATE jobs SET commit_sha_start = ?, commit_sha_end = ? WHERE id = ?",
+            )
+            .run(parsed.commitShaStart ?? null, parsed.commitShaEnd ?? null, job.id);
+        }
+      } catch {
+        // Non-JSON result — skip.
+      }
+    }
 
     return result;
   });

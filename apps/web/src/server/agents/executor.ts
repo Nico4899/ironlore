@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { JobContext, JobResult, JobRow } from "../jobs/types.js";
@@ -29,6 +30,7 @@ export interface ExecutorOptions {
   projectContext: ProjectContext;
   dispatcher: ToolDispatcher;
   dataRoot: string;
+  projectDir: string;
   model: string;
   agentSlug: string;
   /** Initial user prompt (for interactive mode). */
@@ -54,7 +56,19 @@ export async function executeAgentRun(
   jobCtx: JobContext,
   opts: ExecutorOptions,
 ): Promise<JobResult> {
-  const { provider, projectContext, dispatcher, dataRoot, model, agentSlug } = opts;
+  const { provider, projectContext, dispatcher, dataRoot, projectDir, model, agentSlug } = opts;
+
+  // Capture git HEAD before the run for commit-range tracking.
+  let commitShaStart: string | null = null;
+  try {
+    commitShaStart = execSync("git rev-parse HEAD", {
+      cwd: projectDir,
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
+  } catch {
+    // No git repo or no commits — skip.
+  }
 
   const budget: RunBudget = {
     maxTokens: opts.budget?.maxTokens ?? 100_000,
@@ -208,7 +222,26 @@ export async function executeAgentRun(
     break;
   }
 
-  return { status: "done", result: journalEmitted ? "finalized" : "completed" };
+  // Capture git HEAD after the run for commit-range tracking.
+  let commitShaEnd: string | null = null;
+  try {
+    commitShaEnd = execSync("git rev-parse HEAD", {
+      cwd: projectDir,
+      encoding: "utf-8",
+      stdio: "pipe",
+    }).trim();
+  } catch {
+    // No commits produced — skip.
+  }
+
+  return {
+    status: "done",
+    result: JSON.stringify({
+      outcome: journalEmitted ? "finalized" : "completed",
+      commitShaStart,
+      commitShaEnd,
+    }),
+  };
 }
 
 /**

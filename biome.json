@@ -96,7 +96,8 @@
         "apps/web/src/server/spawn-safe.ts",
         "apps/web/src/server/fetch-for-project.ts",
         "apps/web/src/server/agents/revert-run.ts",
-        "apps/web/src/server/agents/inbox.ts"
+        "apps/web/src/server/agents/inbox.ts",
+        "apps/web/src/server/agents/executor.ts"
       ],
       "linter": {
         "rules": {
