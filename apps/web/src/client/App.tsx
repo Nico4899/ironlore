@@ -4,15 +4,13 @@ import { AIPanel } from "./components/AIPanel.js";
 import { AIPanelRail } from "./components/AIPanelRail.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
-import { Header } from "./components/Header.js";
 import { InboxPanel } from "./components/InboxPanel.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OfflineBanner } from "./components/OfflineBanner.js";
 import { ProvenancePane } from "./components/ProvenancePane.js";
 import { RecoveryBanner } from "./components/RecoveryBanner.js";
 import { SearchDialog } from "./components/SearchDialog.js";
-import { Sidebar } from "./components/Sidebar.js";
-import { StatusBar } from "./components/StatusBar.js";
+import { SidebarNew } from "./components/SidebarNew.js";
 import { useResponsiveLayout } from "./hooks/useResponsiveLayout.js";
 import { useThemeClass } from "./hooks/useThemeClass.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
@@ -52,7 +50,6 @@ function AppShell() {
   useResponsiveLayout();
   useThemeClass();
 
-  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
   const provenance = useAppStore((s) => s.provenance);
   const inboxOpen = useAppStore((s) => s.inboxOpen);
@@ -72,10 +69,15 @@ function AppShell() {
         e.preventDefault();
         useAppStore.getState().toggleTerminal();
       }
-      // Cmd+Shift+A / Ctrl+Shift+A — toggle AI panel (per docs/09-ui-and-brand.md)
+      // Cmd+Shift+A / Ctrl+Shift+A — toggle AI panel
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "a" || e.key === "A")) {
         e.preventDefault();
         useAppStore.getState().toggleAIPanel();
+      }
+      // Cmd+B / Ctrl+B — toggle sidebar
+      if ((e.metaKey || e.ctrlKey) && e.key === "b") {
+        e.preventDefault();
+        useAppStore.getState().toggleSidebar();
       }
     };
     window.addEventListener("keydown", handler);
@@ -83,44 +85,44 @@ function AppShell() {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col bg-ironlore-slate text-primary">
+    <div className="flex h-screen bg-ironlore-slate text-primary">
       {/* Skip navigation (a11y) */}
       <a href="#main-content" className="skip-nav">
         Skip to content
       </a>
 
-      <Header />
+      {/* Sidebar (always rendered — collapsed state handled internally) */}
+      <SidebarNew />
 
-      {/* Offline banner (shown after grace period; auto-clears on reconnect) */}
-      <OfflineBanner />
+      {/* Main content area */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {/* Banners */}
+        <OfflineBanner />
+        <RecoveryBanner />
 
-      {/* Recovery banner (surfaces crash-recovery warnings from the server) */}
-      <RecoveryBanner />
+        {/* Content + panels */}
+        <div className="flex flex-1 overflow-hidden">
+          <ContentArea />
+          {inboxOpen && (
+            <InboxPanel onClose={() => useAppStore.getState().toggleInbox()} />
+          )}
+          {aiPanelOpen ? <AIPanel /> : <AIPanelRail />}
+          {provenance && (
+            <ProvenancePane
+              pagePath={provenance.pagePath}
+              blockId={provenance.blockId}
+              onClose={() => useAppStore.getState().closeProvenance()}
+            />
+          )}
+        </div>
 
-      {/* Main three-panel layout */}
-      <div className="flex flex-1 overflow-hidden">
-        {sidebarOpen && <Sidebar />}
-        <ContentArea />
-        {inboxOpen && <InboxPanel onClose={() => useAppStore.getState().toggleInbox()} />}
-        {aiPanelOpen ? <AIPanel /> : <AIPanelRail />}
-        {provenance && (
-          <ProvenancePane
-            pagePath={provenance.pagePath}
-            blockId={provenance.blockId}
-            onClose={() => useAppStore.getState().closeProvenance()}
-          />
+        {/* Terminal panel (Ctrl+`) */}
+        {terminalOpen && (
+          <Suspense fallback={<div className="h-64 border-t border-border" />}>
+            <Terminal />
+          </Suspense>
         )}
       </div>
-
-      {/* Terminal panel (Ctrl+`) */}
-      {terminalOpen && (
-        <Suspense fallback={<div className="h-64 border-t border-border" />}>
-          <Terminal />
-        </Suspense>
-      )}
-
-      {/* Status bar */}
-      <StatusBar />
 
       {/* Search dialog (Cmd+K) */}
       {searchDialogOpen && <SearchDialog />}

@@ -282,6 +282,31 @@ export function ContentArea() {
     >
       <TabBar />
 
+      {/* Breadcrumb path */}
+      {filePath && (
+        <div className="flex items-center gap-1 border-b border-border px-4 py-1 text-xs text-secondary">
+          {filePath.split("/").map((seg, i, arr) => (
+            <span key={`${seg}-${i}`} className="flex items-center gap-1">
+              {i > 0 && <span className="text-border">/</span>}
+              {i < arr.length - 1 ? (
+                <button
+                  type="button"
+                  className="hover:text-primary"
+                  onClick={() => {
+                    const folderPath = arr.slice(0, i + 1).join("/");
+                    useAppStore.getState().setSidebarFolder(folderPath);
+                  }}
+                >
+                  {seg}
+                </button>
+              ) : (
+                <span className="font-medium text-primary">{seg}</span>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Conflict banner (markdown + CSV) */}
       {conflict && <ConflictBanner conflict={conflict} onResolved={handleConflictResolved} />}
 
