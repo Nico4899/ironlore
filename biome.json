@@ -92,7 +92,12 @@
       }
     },
     {
-      "includes": ["apps/web/src/server/spawn-safe.ts", "apps/web/src/server/fetch-for-project.ts"],
+      "includes": [
+        "apps/web/src/server/spawn-safe.ts",
+        "apps/web/src/server/fetch-for-project.ts",
+        "apps/web/src/server/agents/revert-run.ts",
+        "apps/web/src/server/agents/inbox.ts"
+      ],
       "linter": {
         "rules": {
           "style": {

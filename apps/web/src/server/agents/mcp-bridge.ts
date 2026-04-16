@@ -1,6 +1,5 @@
 import type { ToolDefinition } from "../providers/types.js";
 import type { ToolCallContext } from "../tools/types.js";
-import { buildSafeEnv } from "../spawn-safe.js";
 
 /**
  * MCP compatibility bridge.
@@ -61,7 +60,6 @@ export class McpBridge {
         const tools = await this.listTools(config, projectId);
         this.discoveredTools.set(name, tools);
       } catch (err) {
-        // biome-ignore lint/suspicious/noConsole: MCP discovery failure is diagnostic
         console.warn(`MCP server ${name}: tool discovery failed:`, err);
         this.discoveredTools.set(name, []);
       }
@@ -89,11 +87,7 @@ export class McpBridge {
   /**
    * Forward a tool call to the appropriate MCP server.
    */
-  async callTool(
-    fullName: string,
-    args: unknown,
-    _ctx: ToolCallContext,
-  ): Promise<string> {
+  async callTool(fullName: string, args: unknown, _ctx: ToolCallContext): Promise<string> {
     // Parse `mcp.<server>.<tool>` name.
     const parts = fullName.split(".");
     if (parts.length < 3 || parts[0] !== "mcp") {
@@ -127,10 +121,7 @@ export class McpBridge {
 
   // ─── Internal ────────────────────────────────────────────────────
 
-  private async listTools(
-    config: McpServerConfig,
-    _projectId: string,
-  ): Promise<McpTool[]> {
+  private async listTools(config: McpServerConfig, _projectId: string): Promise<McpTool[]> {
     if (config.transport === "stdio") {
       // Stdio: would spawn the server, send tools/list, parse response.
       // Scaffold: return empty until @modelcontextprotocol/sdk is wired.

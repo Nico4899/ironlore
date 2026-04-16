@@ -85,7 +85,9 @@ export class AgentInbox {
    */
   getPending(projectId: string): InboxEntry[] {
     const rows = this.db
-      .prepare("SELECT * FROM inbox_entries WHERE project_id = ? AND status = 'pending' ORDER BY finalized_at DESC")
+      .prepare(
+        "SELECT * FROM inbox_entries WHERE project_id = ? AND status = 'pending' ORDER BY finalized_at DESC",
+      )
       .all(projectId) as Array<Record<string, unknown>>;
 
     return rows.map((r) => ({
@@ -116,19 +118,19 @@ export class AgentInbox {
         { encoding: "utf-8", stdio: "pipe" },
       );
       // Delete the staging branch.
-      execSync(
-        `git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -d ${entry.branch}`,
-        { encoding: "utf-8", stdio: "pipe" },
-      );
+      execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -d ${entry.branch}`, {
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
       this.setStatus(entryId, "approved");
       return { success: true };
-    } catch (err) {
+    } catch (_err) {
       // Fast-forward failed — try rebase.
       try {
-        execSync(
-          `git --git-dir="${gitDir}" --work-tree="${projectDir}" rebase ${entry.branch}`,
-          { encoding: "utf-8", stdio: "pipe" },
-        );
+        execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" rebase ${entry.branch}`, {
+          encoding: "utf-8",
+          stdio: "pipe",
+        });
         execSync(
           `git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -d ${entry.branch}`,
           { encoding: "utf-8", stdio: "pipe" },
@@ -138,11 +140,13 @@ export class AgentInbox {
       } catch (rebaseErr) {
         // Abort failed rebase.
         try {
-          execSync(
-            `git --git-dir="${gitDir}" --work-tree="${projectDir}" rebase --abort`,
-            { encoding: "utf-8", stdio: "pipe" },
-          );
-        } catch { /* already clean */ }
+          execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" rebase --abort`, {
+            encoding: "utf-8",
+            stdio: "pipe",
+          });
+        } catch {
+          /* already clean */
+        }
         return {
           success: false,
           error: rebaseErr instanceof Error ? rebaseErr.message : String(rebaseErr),
@@ -160,10 +164,10 @@ export class AgentInbox {
 
     const gitDir = join(projectDir, ".git");
     try {
-      execSync(
-        `git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -D ${entry.branch}`,
-        { encoding: "utf-8", stdio: "pipe" },
-      );
+      execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -D ${entry.branch}`, {
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
       this.setStatus(entryId, "rejected");
       return { success: true };
     } catch (err) {
@@ -175,7 +179,9 @@ export class AgentInbox {
   }
 
   private getEntry(id: string): InboxEntry | null {
-    const row = this.db.prepare("SELECT * FROM inbox_entries WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    const row = this.db.prepare("SELECT * FROM inbox_entries WHERE id = ?").get(id) as
+      | Record<string, unknown>
+      | undefined;
     if (!row) return null;
     return {
       id: row.id as string,

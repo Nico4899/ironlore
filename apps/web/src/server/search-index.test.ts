@@ -13,28 +13,47 @@ function makeTmpProject(): string {
 }
 
 describe("extractWikiLinks", () => {
+  const targets = (links: Array<{ target: string; rel: string | null }>) =>
+    links.map((l) => l.target);
+
   it("extracts basic wiki links", () => {
-    expect(extractWikiLinks("See [[Page One]] and [[Page Two]]")).toEqual(["Page One", "Page Two"]);
+    expect(targets(extractWikiLinks("See [[Page One]] and [[Page Two]]"))).toEqual([
+      "Page One",
+      "Page Two",
+    ]);
   });
 
   it("extracts embed links (![[...]])", () => {
-    expect(extractWikiLinks("![[Embedded Page]]")).toEqual(["Embedded Page"]);
+    expect(targets(extractWikiLinks("![[Embedded Page]]"))).toEqual(["Embedded Page"]);
   });
 
   it("extracts mention links (@[[...]])", () => {
-    expect(extractWikiLinks("@[[User Page]]")).toEqual(["User Page"]);
+    expect(targets(extractWikiLinks("@[[User Page]]"))).toEqual(["User Page"]);
   });
 
   it("extracts block references without anchor", () => {
-    expect(extractWikiLinks("[[Page#blk_01HY]]")).toEqual(["Page"]);
+    expect(targets(extractWikiLinks("[[Page#blk_01HY]]"))).toEqual(["Page"]);
   });
 
   it("deduplicates links", () => {
-    expect(extractWikiLinks("[[A]] then [[A]] again")).toEqual(["A"]);
+    expect(targets(extractWikiLinks("[[A]] then [[A]] again"))).toEqual(["A"]);
   });
 
   it("returns empty for no links", () => {
     expect(extractWikiLinks("No links here")).toEqual([]);
+  });
+
+  it("extracts typed relations from pipe syntax", () => {
+    const links = extractWikiLinks("See [[Algorithm | implements]] and [[Paper | contradicts]]");
+    expect(links).toEqual([
+      { target: "Algorithm", rel: "implements" },
+      { target: "Paper", rel: "contradicts" },
+    ]);
+  });
+
+  it("prefers typed over untyped for the same target", () => {
+    const links = extractWikiLinks("[[Foo]] and [[Foo | supports]]");
+    expect(links).toEqual([{ target: "Foo", rel: "supports" }]);
   });
 });
 

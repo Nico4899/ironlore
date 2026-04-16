@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 
@@ -30,7 +30,9 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
   const indexPath = join(projectDir, ".ironlore", "index.sqlite");
 
   if (!existsSync(indexPath)) {
-    console.error(`No index found at ${indexPath}. Run 'ironlore lint --fix --check index-consistency' first.`);
+    console.error(
+      `No index found at ${indexPath}. Run 'ironlore lint --fix --check index-consistency' first.`,
+    );
     process.exit(1);
   }
 
@@ -44,19 +46,30 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
   };
 
   // ─── Dataset stats ─────────────────────────────────────────────
-  const ftsCount = (db.prepare("SELECT COUNT(*) AS cnt FROM pages_fts").get() as { cnt: number }).cnt;
+  const ftsCount = (db.prepare("SELECT COUNT(*) AS cnt FROM pages_fts").get() as { cnt: number })
+    .cnt;
   const pagesCount = (db.prepare("SELECT COUNT(*) AS cnt FROM pages").get() as { cnt: number }).cnt;
-  const backlinksCount = (db.prepare("SELECT COUNT(*) AS cnt FROM backlinks").get() as { cnt: number }).cnt;
+  const backlinksCount = (
+    db.prepare("SELECT COUNT(*) AS cnt FROM backlinks").get() as { cnt: number }
+  ).cnt;
   const tagsCount = (db.prepare("SELECT COUNT(*) AS cnt FROM tags").get() as { cnt: number }).cnt;
 
   let chunksCount = 0;
   try {
-    chunksCount = (db.prepare("SELECT COUNT(*) AS cnt FROM pages_chunks_fts").get() as { cnt: number }).cnt;
+    chunksCount = (
+      db.prepare("SELECT COUNT(*) AS cnt FROM pages_chunks_fts").get() as { cnt: number }
+    ).cnt;
   } catch {
     // Chunk table may not exist yet.
   }
 
-  report.dataset = { ftsEntries: ftsCount, pages: pagesCount, backlinks: backlinksCount, tags: tagsCount, chunks: chunksCount };
+  report.dataset = {
+    ftsEntries: ftsCount,
+    pages: pagesCount,
+    backlinks: backlinksCount,
+    tags: tagsCount,
+    chunks: chunksCount,
+  };
 
   // ─── Performance ───────────────────────────────────────────────
   if (!opts.qualityOnly) {
@@ -86,7 +99,9 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
     const quality: Record<string, unknown> = {};
 
     // Wiki-link integrity: what fraction of backlink targets exist as pages?
-    const allTargets = db.prepare("SELECT DISTINCT target_path FROM backlinks").all() as Array<{ target_path: string }>;
+    const allTargets = db.prepare("SELECT DISTINCT target_path FROM backlinks").all() as Array<{
+      target_path: string;
+    }>;
     const allPaths = new Set(
       (db.prepare("SELECT path FROM pages").all() as Array<{ path: string }>).map((r) => r.path),
     );
@@ -94,14 +109,20 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
     for (const t of allTargets) {
       // Fuzzy match: target_path is a page title, not a file path.
       // For now, count it as broken if no page path contains the target.
-      const found = [...allPaths].some((p) => p.includes(t.target_path.toLowerCase().replace(/ /g, "-")));
+      const found = [...allPaths].some((p) =>
+        p.includes(t.target_path.toLowerCase().replace(/ /g, "-")),
+      );
       if (!found) brokenLinks++;
     }
     quality.wikilink_integrity = allTargets.length > 0 ? 1 - brokenLinks / allTargets.length : 1;
 
     // Orphan pages: pages with zero inbound links.
     const linkedPaths = new Set(
-      (db.prepare("SELECT DISTINCT source_path FROM backlinks").all() as Array<{ source_path: string }>).map((r) => r.source_path),
+      (
+        db.prepare("SELECT DISTINCT source_path FROM backlinks").all() as Array<{
+          source_path: string;
+        }>
+      ).map((r) => r.source_path),
     );
     let orphanCount = 0;
     for (const p of allPaths) {
@@ -131,7 +152,7 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
       (quality.wikilink_integrity as number) * 30,
       (1 - (quality.orphan_rate as number)) * 25,
       (quality.block_id_coverage as number) * 25,
-      Math.min(1, (quality.chunk_coverage as number)) * 20,
+      Math.min(1, quality.chunk_coverage as number) * 20,
     ];
     quality.overall_score = Math.round(scores.reduce((a, b) => a + b, 0));
 
@@ -150,7 +171,9 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
     console.log(`  Path:    ${projectDir}`);
 
     const ds = report.dataset as Record<string, number>;
-    console.log(`  Pages:   ${ds.pages}  |  FTS entries: ${ds.ftsEntries}  |  Chunks: ${ds.chunks}  |  Backlinks: ${ds.backlinks}`);
+    console.log(
+      `  Pages:   ${ds.pages}  |  FTS entries: ${ds.ftsEntries}  |  Chunks: ${ds.chunks}  |  Backlinks: ${ds.backlinks}`,
+    );
 
     if (report.performance) {
       const p = report.performance as Record<string, number>;
@@ -163,11 +186,13 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
     if (report.quality) {
       const q = report.quality as Record<string, number>;
       console.log("\n  Quality:");
-      console.log(`    Wiki-link integrity: ${(q.wikilink_integrity * 100).toFixed(1)}%`);
-      console.log(`    Orphan pages:        ${q.orphan_pages} (${(q.orphan_rate * 100).toFixed(1)}%)`);
-      console.log(`    Block-ID coverage:   ${(q.block_id_coverage * 100).toFixed(1)}%`);
-      console.log(`    Chunk coverage:      ${(q.chunk_coverage * 100).toFixed(1)}%`);
-      console.log(`    OVERALL SCORE:       ${q.overall_score}/100`);
+      console.log(`    Wiki-link integrity: ${((q.wikilink_integrity ?? 0) * 100).toFixed(1)}%`);
+      console.log(
+        `    Orphan pages:        ${q.orphan_pages ?? 0} (${((q.orphan_rate ?? 0) * 100).toFixed(1)}%)`,
+      );
+      console.log(`    Block-ID coverage:   ${((q.block_id_coverage ?? 0) * 100).toFixed(1)}%`);
+      console.log(`    Chunk coverage:      ${((q.chunk_coverage ?? 0) * 100).toFixed(1)}%`);
+      console.log(`    OVERALL SCORE:       ${q.overall_score ?? 0}/100`);
     }
 
     console.log("─".repeat(60));
@@ -176,7 +201,7 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
   // Exit 1 if quality issues found.
   if (report.quality) {
     const q = report.quality as Record<string, number>;
-    if (q.overall_score < 50) process.exit(1);
+    if ((q.overall_score ?? 0) < 50) process.exit(1);
   }
 }
 

@@ -62,20 +62,20 @@ export function revertAgentRun(job: JobRow, projectDir: string): RevertResult {
     // Revert in reverse order (newest first) to minimize conflicts.
     for (const sha of commitShas.reverse()) {
       try {
-        execSync(
-          `git --git-dir="${gitDir}" --work-tree="${projectDir}" revert --no-edit ${sha}`,
-          { encoding: "utf-8", stdio: "pipe" },
-        );
+        execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" revert --no-edit ${sha}`, {
+          encoding: "utf-8",
+          stdio: "pipe",
+        });
         revertedCommits.push(sha);
-      } catch (err) {
+      } catch (_err) {
         // Revert conflict — record and continue.
         conflicts.push(sha);
         // Abort the conflicting revert so git is clean for the next one.
         try {
-          execSync(
-            `git --git-dir="${gitDir}" --work-tree="${projectDir}" revert --abort`,
-            { encoding: "utf-8", stdio: "pipe" },
-          );
+          execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" revert --abort`, {
+            encoding: "utf-8",
+            stdio: "pipe",
+          });
         } catch {
           // Already clean.
         }
