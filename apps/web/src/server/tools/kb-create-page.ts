@@ -1,6 +1,6 @@
 import { ulid } from "@ironlore/core";
-import type { StorageWriter } from "../storage-writer.js";
 import type { SearchIndex } from "../search-index.js";
+import type { StorageWriter } from "../storage-writer.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 
 /**
@@ -19,7 +19,10 @@ export function createKbCreatePage(
       inputSchema: {
         type: "object",
         properties: {
-          parent: { type: "string", description: "Parent directory relative to data/ (e.g., 'wiki')" },
+          parent: {
+            type: "string",
+            description: "Parent directory relative to data/ (e.g., 'wiki')",
+          },
           title: { type: "string", description: "Page title" },
           markdown: { type: "string", description: "Initial page body (markdown)" },
           kind: {

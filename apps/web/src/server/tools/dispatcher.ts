@@ -1,4 +1,4 @@
-import type { ToolImplementation, ToolCallContext, RunBudget } from "./types.js";
+import type { RunBudget, ToolCallContext, ToolImplementation } from "./types.js";
 
 /**
  * Tool dispatcher.
@@ -17,7 +17,11 @@ export class ToolDispatcher {
     this.tools.set(tool.definition.name, tool);
   }
 
-  getDefinitions(): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> {
+  getDefinitions(): Array<{
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+  }> {
     return [...this.tools.values()].map((t) => t.definition);
   }
 

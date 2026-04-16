@@ -65,7 +65,10 @@ export function createAgentJournal(dataRoot: string): ToolImplementation {
       if (matches.length > MAX_JOURNAL_ENTRIES) {
         const keepFrom = matches[matches.length - MAX_JOURNAL_ENTRIES];
         if (keepFrom?.index !== undefined) {
-          const beforeJournal = content.slice(0, content.indexOf(journalHeader) + journalHeader.length);
+          const beforeJournal = content.slice(
+            0,
+            content.indexOf(journalHeader) + journalHeader.length,
+          );
           const kept = content.slice(keepFrom.index);
           content = beforeJournal + kept;
         }

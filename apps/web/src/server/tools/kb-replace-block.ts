@@ -1,6 +1,6 @@
 import { parseBlocks } from "@ironlore/core";
-import type { StorageWriter } from "../storage-writer.js";
 import type { SearchIndex } from "../search-index.js";
+import type { StorageWriter } from "../storage-writer.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 
 /**
@@ -37,7 +37,8 @@ export function createKbReplaceBlock(
           derived_from: {
             type: "array",
             items: { type: "string" },
-            description: "Optional: source block references (pageId#blockId) this content was derived from",
+            description:
+              "Optional: source block references (pageId#blockId) this content was derived from",
           },
         },
         required: ["path", "blockId", "markdown", "etag"],
@@ -61,7 +62,8 @@ export function createKbReplaceBlock(
         // ETag check.
         if (read.etag !== etag) {
           return JSON.stringify({
-            error: "ETag mismatch — page was modified since your last read. Re-read with kb.read_page.",
+            error:
+              "ETag mismatch — page was modified since your last read. Re-read with kb.read_page.",
             currentEtag: read.etag,
           });
         }
