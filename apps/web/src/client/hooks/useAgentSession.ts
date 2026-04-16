@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { pushAgentToast } from "../components/AgentToast.js";
 import { useAIPanelStore } from "../stores/ai-panel.js";
 
 const BASE = "/api/projects/main";
@@ -50,6 +51,10 @@ export function useAgentSession() {
         if (jobStatus === "done" || jobStatus === "failed" || jobStatus === "cancelled") {
           store.setIsStreaming(false);
           if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          // Fire notification toast.
+          if (jobStatus === "done" || jobStatus === "failed") {
+            pushAgentToast(store.activeAgent, jobStatus as "done" | "failed");
+          }
         }
       } catch {
         // Network error — keep polling, it'll recover.

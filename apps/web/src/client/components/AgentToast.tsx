@@ -12,6 +12,17 @@ interface Toast {
 const TOAST_DURATION_MS = 8_000;
 
 /**
+ * Module-level push function. The container registers a callback
+ * on mount; callers use `pushAgentToast()` from anywhere.
+ */
+let pushFn: ((agentSlug: string, status: "done" | "failed") => void) | null = null;
+
+/** Push a notification toast for an agent job completion/failure. */
+export function pushAgentToast(agentSlug: string, status: "done" | "failed"): void {
+  pushFn?.(agentSlug, status);
+}
+
+/**
  * Agent notification toasts.
  *
  * Fires on `job.done` / `job.failed` events for agent-owned jobs.
@@ -25,6 +36,18 @@ export function AgentToastContainer() {
 
   const dismiss = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // Register the module-level push function so external callers can fire toasts.
+  useEffect(() => {
+    pushFn = (agentSlug: string, status: "done" | "failed") => {
+      const id = `${Date.now()}-${Math.random()}`;
+      setToasts((prev) => [...prev, { id, agentSlug, status, timestamp: Date.now() }]);
+      playNotificationSound(status === "done");
+    };
+    return () => {
+      pushFn = null;
+    };
   }, []);
 
   // Auto-dismiss after TOAST_DURATION_MS.
