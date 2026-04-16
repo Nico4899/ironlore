@@ -112,10 +112,17 @@ export const useAppStore = create<AppStore>((set) => ({
   toggleSearchDialog: () => set((s) => ({ searchDialogOpen: !s.searchDialogOpen })),
   toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
   setActivePath: (path) =>
-    set((s) => ({
-      activePath: path,
-      openPaths: path && !s.openPaths.includes(path) ? [...s.openPaths, path] : s.openPaths,
-    })),
+    set((s) => {
+      let openPaths = s.openPaths;
+      if (path && !openPaths.includes(path)) {
+        openPaths = [...openPaths, path];
+        // Enforce 10-tab limit — close oldest when exceeded
+        if (openPaths.length > 10) {
+          openPaths = openPaths.slice(openPaths.length - 10);
+        }
+      }
+      return { activePath: path, openPaths };
+    }),
   closeTab: (path) =>
     set((s) => {
       const openPaths = s.openPaths.filter((p) => p !== path);

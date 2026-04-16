@@ -121,9 +121,9 @@ export function SidebarNew() {
   useEffect(() => {
     fetchTree()
       .then(({ pages }) => {
-        useTreeStore.getState().setNodes(
-          pages.map((p) => ({ id: p.path, name: p.name, path: p.path, type: p.type })),
-        );
+        useTreeStore
+          .getState()
+          .setNodes(pages.map((p) => ({ id: p.path, name: p.name, path: p.path, type: p.type })));
       })
       .catch(() => {});
   }, []);
@@ -236,8 +236,7 @@ export function SidebarNew() {
       itemName?: string,
     ) => {
       e.preventDefault();
-      const targetFolder =
-        itemType === "directory" && itemPath ? itemPath : sidebarFolder;
+      const targetFolder = itemType === "directory" && itemPath ? itemPath : sidebarFolder;
       setContextMenu({ x: e.clientX, y: e.clientY, targetFolder, itemPath, itemType, itemName });
     },
     [sidebarFolder],
@@ -258,8 +257,7 @@ export function SidebarNew() {
     setContextMenu(null);
     try {
       await createPage(path, `# ${name}\n`);
-      if (folder && folder !== sidebarFolder)
-        useAppStore.getState().setSidebarFolder(folder);
+      if (folder && folder !== sidebarFolder) useAppStore.getState().setSidebarFolder(folder);
       useAppStore.getState().setActivePath(path);
       setEditingPath(path);
       setEditingValue(name);
@@ -276,8 +274,7 @@ export function SidebarNew() {
     setContextMenu(null);
     try {
       await createFolder(path);
-      if (folder && folder !== sidebarFolder)
-        useAppStore.getState().setSidebarFolder(folder);
+      if (folder && folder !== sidebarFolder) useAppStore.getState().setSidebarFolder(folder);
       setEditingPath(path);
       setEditingValue(name);
     } catch {
@@ -363,7 +360,9 @@ export function SidebarNew() {
       </div>
 
       {/* ─── Vertical tabs: Home / Search / Explore ─── */}
-      <div className={`flex flex-col gap-0.5 border-b border-border px-1 py-1.5 ${collapsed ? "items-center" : ""}`}>
+      <div
+        className={`flex flex-col gap-0.5 border-b border-border px-1 py-1.5 ${collapsed ? "items-center" : ""}`}
+      >
         <SidebarNavTab
           icon={Home}
           label="Home"

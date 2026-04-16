@@ -244,7 +244,9 @@ export function ContentArea() {
     setOnboarded(true);
   }, []);
 
-  // No active file — welcome screen
+  const sidebarTab = useAppStore((s) => s.sidebarTab);
+
+  // No active file — show Home/Explore view or welcome screen
   if (!activePath || !filePath) {
     return (
       <main
@@ -257,6 +259,15 @@ export function ContentArea() {
         <TabBar />
         {!onboarded ? (
           <OnboardingWizard onComplete={handleOnboardingComplete} onSkip={handleOnboardingSkip} />
+        ) : sidebarTab === "explore" ? (
+          <div className="flex flex-1 items-center justify-center px-8">
+            <div className="max-w-md text-center">
+              <h1 className="text-xl font-semibold text-primary">Explore</h1>
+              <p className="mt-2 text-sm text-secondary">
+                Visualize connections between your pages. Coming soon.
+              </p>
+            </div>
+          </div>
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <div className="text-center">
