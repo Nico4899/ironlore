@@ -829,6 +829,55 @@ ${p.role}.
     );
   }
 
+  // Shared skill: file-answer (single + multi-extraction modes)
+  seedFile(
+    join(sharedSkillsDir, "file-answer.md"),
+    `---
+name: File Answer
+description: Save AI answers as wiki pages — single or multi-extraction from session transcripts
+---
+
+# File Answer Skill
+
+Two modes for capturing knowledge from AI conversations:
+
+## Single-answer mode
+
+When the user clicks "Save this answer", create a \`kind: wiki\` page:
+1. Set \`source_ids\` to the pages you cited in the answer.
+2. Each block carries \`derived_from\` pointing at the cited block-refs.
+3. Add a backlink entry in \`_index.md\` (if it exists).
+
+## Multi-extraction mode
+
+When processing a session transcript (e.g., from \`ironlore scribe\`):
+1. Read the full transcript.
+2. Identify distinct knowledge items: decisions, discoveries, corrections, summaries.
+3. For each item, propose a wiki page with:
+   - \`kind\`: decision | discovery | correction | summary
+   - \`title\`: descriptive slug
+   - \`path\`: suggested location under \`wiki/\` or the relevant folder
+   - \`markdown\`: the drafted page body
+   - \`derived_from\`: cite the session-log block
+4. Present ALL proposals for user approval before writing ANY of them.
+5. Nothing writes to disk without a user keystroke.
+
+## Credibility rubric (for ingest mode)
+
+Before creating a \`kind: source\` page, score the material:
+
+| Signal | +1 | 0 | -1 |
+|---|---|---|---|
+| Peer review | Published in peer-reviewed venue | Unknown | Self-published |
+| Recency | Within 2 years | 2-5 years | >5 years (fast-moving field) |
+| Authority | Named expert, institutional | Unknown | Anonymous |
+| Primary vs secondary | Primary research | Secondary synthesis | Aggregator / SEO |
+| Corroboration | Corroborated by existing KB source | No overlap | Contradicts high-confidence source |
+
+Score → confidence: high (3-5), medium (1-2), low (0), reject (<0).
+`,
+  );
+
   // Shared skill: brand voice
   seedFile(
     join(sharedSkillsDir, "brand-voice.md"),
