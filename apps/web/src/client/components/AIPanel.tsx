@@ -258,6 +258,13 @@ function MessageList() {
             <div className="rounded-lg bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
           )}
           {msg.type === "run_finalized" && <RunFinalizedCard msg={msg} />}
+          {msg.type === "resume_divider" && (
+            <div className="flex items-center gap-2 py-1 text-[10px] text-secondary">
+              <div className="h-px flex-1 bg-border" />
+              Resuming conversation
+              <div className="h-px flex-1 bg-border" />
+            </div>
+          )}
         </div>
       ))}
     </>

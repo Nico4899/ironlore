@@ -15,7 +15,8 @@ export type ConversationMessage =
       filesChanged: string[];
       revertedAt: number | null;
     }
-  | { type: "error"; text: string };
+  | { type: "error"; text: string }
+  | { type: "resume_divider" };
 
 /**
  * Context pill shown above the prompt field — e.g. the highlighted text

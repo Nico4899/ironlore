@@ -105,6 +105,10 @@ export function useAgentSession() {
   useEffect(() => {
     const store = useAIPanelStore.getState();
     if (store.jobId && store.isStreaming) {
+      // Insert a visual divider so the user knows older messages are replayed.
+      if (store.messages.length > 0 && store.lastSeq > 0) {
+        store.addMessage({ type: "resume_divider" });
+      }
       activeJobIdRef.current = store.jobId;
       startPolling(store.jobId);
     }
