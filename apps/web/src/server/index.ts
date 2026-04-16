@@ -45,6 +45,7 @@ const app = new Hono();
 let ready = false;
 let readyReason = "Server starting up";
 let wal: Wal | null = null;
+let workerPool: WorkerPool | null = null;
 let wsManager: WebSocketManager | null = null;
 let terminalManager: TerminalManager | null = null;
 
@@ -69,7 +70,7 @@ if (corsConfig) {
 app.get("/health", (c) => {
   const body: HealthResponse = {
     status: "ok",
-    activeJobs: 0,
+    activeJobs: workerPool?.activeCount ?? 0,
     walDepth: wal?.getDepth() ?? 0,
     wsSubscribers: wsManager?.getSubscriberCount() ?? 0,
     projects: 1, // single-project until Phase 5
@@ -202,6 +203,7 @@ async function start() {
 
   // Start the worker pool.
   pool.start();
+  workerPool = pool;
   console.log("Worker pool started");
 
   // Create broadcast callback that forwards to the WebSocket manager

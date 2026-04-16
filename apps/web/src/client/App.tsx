@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
+import { AgentToastContainer } from "./components/AgentToast.js";
 import { AIPanel } from "./components/AIPanel.js";
 import { AIPanelRail } from "./components/AIPanelRail.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
