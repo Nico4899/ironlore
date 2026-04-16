@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import type Database from "better-sqlite3";
 import { ulid } from "@ironlore/core";
+import type Database from "better-sqlite3";
 import type { JobContext, JobHandler, JobResult, JobRow } from "./types.js";
 
 /**
@@ -26,7 +26,10 @@ export class WorkerPool {
   private workerId: string;
   private handlers = new Map<string, JobHandler>();
   private maxParallel: number;
-  private activeJobs = new Map<string, { controller: AbortController; renewTimer: ReturnType<typeof setInterval> }>();
+  private activeJobs = new Map<
+    string,
+    { controller: AbortController; renewTimer: ReturnType<typeof setInterval> }
+  >();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private seqCounters = new Map<string, number>();
@@ -183,7 +186,9 @@ export class WorkerPool {
   private completeJob(jobId: string, result: JobResult): void {
     const now = Date.now();
     this.db
-      .prepare("UPDATE jobs SET status = ?, result = ?, finished_at = ?, lease_until = NULL WHERE id = ?")
+      .prepare(
+        "UPDATE jobs SET status = ?, result = ?, finished_at = ?, lease_until = NULL WHERE id = ?",
+      )
       .run(result.status, result.result ?? null, now, jobId);
 
     const active = this.activeJobs.get(jobId);

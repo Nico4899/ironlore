@@ -70,9 +70,7 @@ export interface AgentRunRow {
  * picking up a job. The handler receives the parsed payload and
  * a context bag with the project-scoped infrastructure.
  */
-export interface JobHandler {
-  (job: JobRow, ctx: JobContext): Promise<JobResult>;
-}
+export type JobHandler = (job: JobRow, ctx: JobContext) => Promise<JobResult>;
 
 export interface JobContext {
   projectId: string;
