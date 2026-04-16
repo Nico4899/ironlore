@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { backup } from "./commands/backup.js";
 import { evalCommand } from "./commands/eval.js";
 import { flush } from "./commands/flush.js";
+import { lint } from "./commands/lint.js";
 import { migrate } from "./commands/migrate.js";
 import { reindex } from "./commands/reindex.js";
 import { repair } from "./commands/repair.js";
@@ -15,6 +16,15 @@ program
   .name("ironlore")
   .description("Ironlore — self-hosted knowledge base with AI agents")
   .version("0.0.1");
+
+program
+  .command("lint")
+  .description("Check and fix data integrity, index consistency, and schema migrations")
+  .option("--project <id>", "Project ID to lint", "main")
+  .option("--fix", "Auto-repair issues (default: report only)")
+  .option("--check <category>", "Run a single check category (index-consistency, schema-migration, data-integrity)")
+  .option("--all", "Lint all projects (for index-consistency)")
+  .action(lint);
 
 program
   .command("reindex")

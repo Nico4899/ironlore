@@ -18,7 +18,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev",
+    command: "npx tsx src/server/index.ts",
     url: "http://127.0.0.1:3000/health",
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
