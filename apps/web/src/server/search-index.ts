@@ -322,7 +322,9 @@ export class SearchIndex {
       .filter((t) => t.length > 0);
     if (tokens.length === 0) return [];
     const ftsQuery = tokens.map((t) => `"${t}"*`).join(" ");
-    return this.db
+
+    // Stage 1: page-level FTS5
+    const pageResults = this.db
       .prepare(
         `SELECT path, title, snippet(pages_fts, 2, '<mark>', '</mark>', '…', 32) AS snippet,
                 rank
@@ -331,7 +333,67 @@ export class SearchIndex {
          ORDER BY rank
          LIMIT ?`,
       )
-      .all(ftsQuery, limit) as SearchResult[];
+      .all(ftsQuery, limit * 2) as SearchResult[];
+
+    // Stage 2: chunk-level FTS5 — block-ID citations
+    const chunkResults = this.db
+      .prepare(
+        `SELECT path,
+                snippet(pages_chunks_fts, 4, '<mark>', '</mark>', '…', 32) AS snippet,
+                block_id_start AS blockIdStart,
+                block_id_end AS blockIdEnd,
+                rank
+         FROM pages_chunks_fts
+         WHERE pages_chunks_fts MATCH ?
+         ORDER BY rank
+         LIMIT ?`,
+      )
+      .all(ftsQuery, limit * 2) as Array<
+      SearchResult & { blockIdStart?: string; blockIdEnd?: string }
+    >;
+
+    // RRF merge: combine page-level and chunk-level results.
+    // Chunk results carry block-ID citations; page results have titles.
+    const K = 60; // RRF constant
+    const scoreMap = new Map<string, { score: number; result: SearchResult }>();
+
+    for (let i = 0; i < pageResults.length; i++) {
+      const r = pageResults[i];
+      if (!r) continue;
+      const key = r.path;
+      const existing = scoreMap.get(key);
+      const rrfScore = 1 / (K + i + 1);
+      if (existing) {
+        existing.score += rrfScore;
+      } else {
+        scoreMap.set(key, { score: rrfScore, result: r });
+      }
+    }
+
+    for (let i = 0; i < chunkResults.length; i++) {
+      const r = chunkResults[i];
+      if (!r) continue;
+      const key = r.path;
+      const existing = scoreMap.get(key);
+      const rrfScore = 1 / (K + i + 1);
+      if (existing) {
+        existing.score += rrfScore;
+        // Prefer chunk snippet (more precise) over page snippet.
+        if (r.snippet) existing.result.snippet = r.snippet;
+        if (r.blockIdStart) (existing.result as unknown as Record<string, unknown>).blockIdStart = r.blockIdStart;
+        if (r.blockIdEnd) (existing.result as unknown as Record<string, unknown>).blockIdEnd = r.blockIdEnd;
+      } else {
+        scoreMap.set(key, {
+          score: rrfScore,
+          result: { path: r.path, title: r.title ?? r.path, snippet: r.snippet, rank: r.rank },
+        });
+      }
+    }
+
+    return [...scoreMap.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((e) => e.result);
   }
 
   /**
