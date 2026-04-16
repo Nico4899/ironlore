@@ -1,8 +1,8 @@
-import type { Provider, ProjectContext } from "./types.js";
 import { AnthropicProvider } from "./anthropic.js";
 import { OllamaProvider } from "./ollama.js";
+import type { ProjectContext, Provider } from "./types.js";
 
-export type { Provider, ProjectContext };
+export type { ProjectContext, Provider };
 
 /**
  * Provider registry — resolves the right provider for a given

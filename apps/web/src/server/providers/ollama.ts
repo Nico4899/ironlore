@@ -48,12 +48,15 @@ export class OllamaProvider implements Provider {
     const messages = [
       { role: "system", content: opts.systemPrompt },
       ...opts.messages.map((m) => {
-        if (m.role === "tool_use" || m.role === "tool_result") {
-          // Ollama doesn't support tool messages natively; send as user/assistant.
+        if (m.role === "tool_use") {
+          // Ollama doesn't support tool-use natively; flatten to assistant text.
           return {
-            role: m.role === "tool_use" ? "assistant" : "user",
-            content: typeof m.content === "string" ? m.content : JSON.stringify(m),
+            role: "assistant" as const,
+            content: JSON.stringify({ tool: m.name, input: m.input }),
           };
+        }
+        if (m.role === "tool_result") {
+          return { role: "user" as const, content: m.content };
         }
         return { role: m.role, content: m.content };
       }),

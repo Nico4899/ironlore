@@ -4,8 +4,8 @@ import type {
   ChatOptions,
   ProjectContext,
   Provider,
-  ToolDefinition,
   TokenUsage,
+  ToolDefinition,
 } from "./types.js";
 
 /**
@@ -94,9 +94,7 @@ function buildSystemBlock(opts: ChatOptions): unknown[] {
   return [block];
 }
 
-function convertMessages(
-  messages: ChatMessage[],
-): Array<{ role: string; content: unknown }> {
+function convertMessages(messages: ChatMessage[]): Array<{ role: string; content: unknown }> {
   return messages.map((msg) => {
     if (msg.role === "tool_use") {
       return {
