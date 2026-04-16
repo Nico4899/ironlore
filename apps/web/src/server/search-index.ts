@@ -12,12 +12,17 @@ import Database from "better-sqlite3";
 
 /**
  * Wiki-link patterns in markdown:
- *   [[Page Name]]          — wikilink
- *   [[Page Name#blk_...]]  — block reference
- *   ![[Page Name]]         — embed
- *   @[[Page Name]]         — mention
+ *   [[Page Name]]              — wikilink
+ *   [[Page Name#blk_...]]      — block reference
+ *   [[Page Name | relation]]   — typed relation (optional pipe form)
+ *   ![[Page Name]]             — embed
+ *   @[[Page Name]]             — mention
+ *
+ * The typed relation form `[[target | rel]]` stores the optional
+ * `rel` column in the backlinks table. See
+ * docs/01-content-model.md §Wiki-link relations.
  */
-const WIKILINK_RE = /(?:!|@)?\[\[([^\]|#]+)(?:#[^\]|]*)?\]\]/g;
+const WIKILINK_RE = /(?:!|@)?\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\s*\|\s*([a-z][a-z0-9_]*))?\]\]/g;
 
 /**
  * Extract title from the first H1 heading in markdown, falling back to path.
@@ -64,17 +69,29 @@ function extractTags(markdown: string): string[] {
   return tags;
 }
 
+export interface WikiLink {
+  target: string;
+  /** Optional relation type from the `[[target | rel]]` pipe form. */
+  rel: string | null;
+}
+
 /**
  * Extract wiki-link targets from markdown content.
- * Returns deduplicated target page names (without anchors or prefixes).
+ * Returns deduplicated target page names with optional relation types.
  */
-export function extractWikiLinks(markdown: string): string[] {
-  const links = new Set<string>();
+export function extractWikiLinks(markdown: string): WikiLink[] {
+  const seen = new Map<string, WikiLink>();
   for (const match of markdown.matchAll(WIKILINK_RE)) {
     const target = match[1]?.trim();
-    if (target) links.add(target);
+    if (!target) continue;
+    const rel = match[2]?.trim() ?? null;
+    // If we've already seen this target, prefer the version with a rel.
+    const existing = seen.get(target);
+    if (!existing || (rel && !existing.rel)) {
+      seen.set(target, { target, rel });
+    }
   }
-  return [...links];
+  return [...seen.values()];
 }
 
 export interface SearchResult {
@@ -128,6 +145,7 @@ export class SearchIndex {
         source_path TEXT NOT NULL,
         target_path TEXT NOT NULL,
         link_text   TEXT NOT NULL,
+        rel         TEXT,
         PRIMARY KEY (source_path, target_path, link_text)
       )
     `);
@@ -235,13 +253,13 @@ export class SearchIndex {
         }
       }
 
-      // Backlinks: delete old outgoing links, insert new
+      // Backlinks: delete old outgoing links, insert new (with optional rel).
       this.db.prepare("DELETE FROM backlinks WHERE source_path = ?").run(pagePath);
       const insertLink = this.db.prepare(
-        "INSERT OR IGNORE INTO backlinks (source_path, target_path, link_text) VALUES (?, ?, ?)",
+        "INSERT OR IGNORE INTO backlinks (source_path, target_path, link_text, rel) VALUES (?, ?, ?, ?)",
       );
-      for (const target of links) {
-        insertLink.run(pagePath, target, target);
+      for (const link of links) {
+        insertLink.run(pagePath, link.target, link.target, link.rel);
       }
 
       // Tags: delete old, insert new
