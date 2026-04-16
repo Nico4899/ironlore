@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import { backup } from "./commands/backup.js";
+import { evalCommand } from "./commands/eval.js";
 import { flush } from "./commands/flush.js";
 import { migrate } from "./commands/migrate.js";
 import { reindex } from "./commands/reindex.js";
@@ -50,5 +51,21 @@ program
   .argument("<archive>", "Path to the backup archive")
   .option("--project <id>", "Project ID to restore into", "main")
   .action(restore);
+
+program
+  .command("eval")
+  .description("Read-only perf + quality scorecard for a project (exit 0/1 for CI)")
+  .option("--project <id>", "Project ID to evaluate", "main")
+  .option("--json", "Machine-readable JSON output")
+  .option("--perf-only", "Run performance benchmarks only")
+  .option("--quality-only", "Run quality checks only")
+  .action((opts) =>
+    evalCommand({
+      project: opts.project,
+      json: opts.json ?? false,
+      perfOnly: opts.perfOnly ?? false,
+      qualityOnly: opts.qualityOnly ?? false,
+    }),
+  );
 
 program.parse();
