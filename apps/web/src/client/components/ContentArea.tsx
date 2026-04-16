@@ -311,6 +311,7 @@ export function ContentArea() {
           </div>
         )}
       </ViewerErrorBoundary>
+      {dragOver && <DropOverlay />}
     </main>
   );
 }
@@ -318,6 +319,20 @@ export function ContentArea() {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+function DropOverlay() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-ironlore-slate/80 backdrop-blur-sm">
+      <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-ironlore-blue px-10 py-8">
+        <Upload className="h-8 w-8 text-ironlore-blue" />
+        <span className="text-sm font-medium text-primary">Drop files to upload</span>
+        <span className="text-xs text-secondary">
+          PDF, images, Word, Excel, email, notebooks, and more
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function ViewerLoading() {
   return (

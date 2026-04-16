@@ -201,10 +201,14 @@ export function Sidebar() {
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent, path: string, isDir: boolean) => {
-    if (!isDir) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDropTarget(path);
+    if (isDir) {
+      e.dataTransfer.dropEffect = "move";
+      setDropTarget(path);
+    } else {
+      e.dataTransfer.dropEffect = "none";
+      setDropTarget(null);
+    }
   }, []);
 
   const handleDragLeave = useCallback(() => {

@@ -1,4 +1,4 @@
-import { AlertTriangle, CircleDot, Loader2, Wifi, WifiOff } from "lucide-react";
+import { AlertTriangle, CircleDot, Loader2, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
@@ -24,6 +24,7 @@ function relativeSaved(lastSavedAt: number | null, now: number): string {
 export function StatusBar() {
   const activePath = useAppStore((s) => s.activePath);
   const wsConnected = useAppStore((s) => s.wsConnected);
+  const wsReconnecting = useAppStore((s) => s.wsReconnecting);
   const editorStatus = useEditorStore((s) => s.status);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
 
@@ -50,7 +51,7 @@ export function StatusBar() {
       <div className="flex-1" />
       <div className="flex items-center gap-3">
         <EditorStatusPill status={editorStatus} savedLabel={savedLabel} />
-        <ConnectionPill connected={wsConnected} />
+        <ConnectionPill connected={wsConnected} reconnecting={wsReconnecting} />
       </div>
     </footer>
   );
@@ -107,20 +108,42 @@ function EditorStatusPill({
  * WebSocket connection pill. Text + icon so greyscale users still see
  * the status. Uses Wifi / WifiOff to mirror the OfflineBanner chrome.
  */
-function ConnectionPill({ connected }: { connected: boolean }) {
+function ConnectionPill({
+  connected,
+  reconnecting,
+}: {
+  connected: boolean;
+  reconnecting: boolean;
+}) {
+  const label = connected
+    ? "Live"
+    : reconnecting
+      ? "Reconnecting\u2026"
+      : "Offline";
+
+  const color = connected
+    ? "text-signal-green"
+    : reconnecting
+      ? "text-signal-amber"
+      : "text-signal-red";
+
+  const icon = connected ? (
+    <Wifi className="h-3 w-3" aria-hidden="true" />
+  ) : reconnecting ? (
+    <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
+  ) : (
+    <WifiOff className="h-3 w-3" aria-hidden="true" />
+  );
+
   return (
     <span
       role="status"
       aria-live="polite"
-      aria-label={connected ? "Live connection active" : "Disconnected from server"}
-      className={`flex items-center gap-1 ${connected ? "text-signal-green" : "text-signal-red"}`}
+      aria-label={label}
+      className={`flex items-center gap-1 ${color}`}
     >
-      {connected ? (
-        <Wifi className="h-3 w-3" aria-hidden="true" />
-      ) : (
-        <WifiOff className="h-3 w-3" aria-hidden="true" />
-      )}
-      {connected ? "Live" : "Offline"}
+      {icon}
+      {label}
     </span>
   );
 }

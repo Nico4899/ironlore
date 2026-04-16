@@ -34,6 +34,7 @@ export class WsClient {
   private onConnectionChange: ((connected: boolean) => void) | null = null;
   private onResync: ((reason: "buffer_overflow" | "server_restart" | "gap") => void) | null = null;
   private onReplayComplete: (() => void) | null = null;
+  private onReconnecting: ((attempting: boolean) => void) | null = null;
 
   constructor() {
     this.lastSeq = loadLastSeq();
@@ -62,6 +63,11 @@ export class WsClient {
     this.onReplayComplete = handler;
   }
 
+  /** Fires when a reconnect attempt starts (true) or succeeds/is abandoned (false). */
+  setReconnectingHandler(handler: (attempting: boolean) => void): void {
+    this.onReconnecting = handler;
+  }
+
   /** Back-compat shim — prefer setResyncHandler. */
   setGapHandler(handler: () => void): void {
     this.onResync = () => handler();
@@ -83,6 +89,7 @@ export class WsClient {
 
     this.ws.onopen = () => {
       this.reconnectAttempt = 0;
+      this.onReconnecting?.(false);
       this.onConnectionChange?.(true);
     };
 
@@ -179,6 +186,7 @@ export class WsClient {
   }
 
   private scheduleReconnect(): void {
+    this.onReconnecting?.(true);
     const delay = Math.min(RECONNECT_BASE_MS * 2 ** this.reconnectAttempt, RECONNECT_MAX_MS);
     this.reconnectAttempt++;
     this.reconnectTimer = setTimeout(() => {

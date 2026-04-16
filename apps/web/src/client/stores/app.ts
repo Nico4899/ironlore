@@ -46,6 +46,7 @@ interface AppStore {
   openPaths: string[];
   theme: "dark" | "light";
   wsConnected: boolean;
+  wsReconnecting: boolean;
 
   toggleSidebar: () => void;
   toggleAIPanel: () => void;
@@ -59,6 +60,7 @@ interface AppStore {
   toggleTheme: () => void;
   setSidebarWidth: (width: number) => void;
   setWsConnected: (connected: boolean) => void;
+  setWsReconnecting: (reconnecting: boolean) => void;
 }
 
 function persistSidebarWidth(width: number): void {
@@ -88,6 +90,7 @@ export const useAppStore = create<AppStore>((set) => ({
   openPaths: [],
   theme: loadTheme(),
   wsConnected: false,
+  wsReconnecting: false,
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleAIPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
@@ -131,4 +134,5 @@ export const useAppStore = create<AppStore>((set) => ({
     set({ sidebarWidth: clamped });
   },
   setWsConnected: (connected) => set({ wsConnected: connected }),
+  setWsReconnecting: (reconnecting) => set({ wsReconnecting: reconnecting }),
 }));

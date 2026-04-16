@@ -22,6 +22,10 @@ export function useWebSocket(): void {
       useAppStore.getState().setWsConnected(connected);
     });
 
+    wsClient.setReconnectingHandler((attempting) => {
+      useAppStore.getState().setWsReconnecting(attempting);
+    });
+
     wsClient.setResyncHandler(() => {
       // Cold refresh — the replay buffer couldn't cover our gap, so
       // the only safe move is to rehydrate tree state from the API.
