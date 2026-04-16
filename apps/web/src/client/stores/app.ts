@@ -47,6 +47,7 @@ interface AppStore {
   theme: "dark" | "light";
   wsConnected: boolean;
   wsReconnecting: boolean;
+  provenance: { pagePath: string; blockId: string } | null;
 
   toggleSidebar: () => void;
   toggleAIPanel: () => void;
