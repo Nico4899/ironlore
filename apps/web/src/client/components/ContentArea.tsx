@@ -1,7 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { Upload } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useAutoSave } from "../hooks/useAutoSave.js";
 import type { ConflictResponse } from "../lib/api.js";
-import { fetchPage, fetchRaw } from "../lib/api.js";
+import { fetchPage, fetchRaw, uploadFile } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
@@ -134,14 +135,84 @@ export function ContentArea() {
     setConflict(null);
   }, []);
 
+  // ─── File upload via drag-and-drop ────────────────────────────────
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounter = useRef(0);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    // Only show overlay for external file drops, not internal sidebar drags
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragCounter.current++;
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setDragOver(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      dragCounter.current = 0;
+      setDragOver(false);
+
+      const files = e.dataTransfer.files;
+      if (!files.length) return;
+
+      // Determine the target directory from the current active path
+      const nodes = useTreeStore.getState().nodes;
+      const activeNode = nodes.find((n) => n.path === activePath);
+      let targetDir = "";
+      if (activeNode) {
+        targetDir =
+          activeNode.type === "directory"
+            ? activeNode.path
+            : activeNode.path.includes("/")
+              ? activeNode.path.slice(0, activeNode.path.lastIndexOf("/"))
+              : "";
+      }
+
+      for (const file of files) {
+        const destPath = targetDir ? `${targetDir}/${file.name}` : file.name;
+        const buf = await file.arrayBuffer();
+        try {
+          await uploadFile(destPath, buf);
+        } catch {
+          // Upload errors are non-fatal; file watcher will pick up
+          // any that landed on disk via other means.
+        }
+      }
+    },
+    [activePath],
+  );
+
+  const dropZoneProps = {
+    onDragEnter: handleDragEnter,
+    onDragLeave: handleDragLeave,
+    onDragOver: handleDragOver,
+    onDrop: handleDrop,
+  };
+
   // No active file — welcome screen
   if (!activePath || !filePath) {
     return (
       <main
         id="main-content"
         aria-label="Workspace"
-        className="flex flex-1 flex-col overflow-hidden"
+        className="relative flex flex-1 flex-col overflow-hidden"
         style={{ minWidth: "480px" }}
+        {...dropZoneProps}
       >
         <TabBar />
         <div className="flex flex-1 items-center justify-center">
@@ -150,8 +221,12 @@ export function ContentArea() {
             <p className="mt-2 text-sm text-secondary">
               Select a page from the sidebar or create a new one.
             </p>
+            <p className="mt-1 text-xs text-secondary">
+              Drop files here to upload them.
+            </p>
           </div>
         </div>
+        {dragOver && <DropOverlay />}
       </main>
     );
   }
@@ -159,8 +234,9 @@ export function ContentArea() {
   return (
     <main
       id="main-content"
-      className="flex flex-1 flex-col overflow-hidden"
+      className="relative flex flex-1 flex-col overflow-hidden"
       style={{ minWidth: "480px" }}
+      {...dropZoneProps}
     >
       <TabBar />
 

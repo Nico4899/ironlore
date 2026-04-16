@@ -266,6 +266,19 @@ export async function deleteFolder(dirPath: string): Promise<void> {
   }
 }
 
+/** Upload a binary file (docx, xlsx, pdf, image, etc.). */
+export async function uploadFile(
+  filePath: string,
+  data: ArrayBuffer,
+): Promise<{ path: string; etag: string }> {
+  const res = await apiFetch(`${RAW_BASE}/upload/${filePath}`, {
+    method: "POST",
+    body: data,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Auth API
 // ---------------------------------------------------------------------------
