@@ -250,8 +250,22 @@ function MessageList() {
               pageId={msg.pageId}
               diff={msg.diff}
               approved={msg.approved}
-              onApprove={() => {}}
-              onReject={() => {}}
+              onApprove={() => {
+                const msgs = useAIPanelStore.getState().messages;
+                const target = msgs[i];
+                if (target?.type === "diff_preview") {
+                  (target as { approved: boolean | null }).approved = true;
+                  useAIPanelStore.setState({ messages: [...msgs] });
+                }
+              }}
+              onReject={() => {
+                const msgs = useAIPanelStore.getState().messages;
+                const target = msgs[i];
+                if (target?.type === "diff_preview") {
+                  (target as { approved: boolean | null }).approved = false;
+                  useAIPanelStore.setState({ messages: [...msgs] });
+                }
+              }}
             />
           )}
           {msg.type === "error" && (
