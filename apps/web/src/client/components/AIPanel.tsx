@@ -10,7 +10,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { revertJob } from "../lib/api.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
@@ -96,6 +96,9 @@ export function AIPanel() {
         <span className="text-xs font-medium text-secondary">{activeAgent}</span>
       </div>
 
+      {/* Auto-pause banner */}
+      <AgentPauseBanner slug={activeAgent} />
+
       {/* Messages or empty state */}
       <div className="flex-1 overflow-y-auto px-4 py-4" role="log" aria-live="polite">
         {messages.length === 0 ? <AIEmptyState /> : <MessageList />}
@@ -158,6 +161,34 @@ export function AIPanel() {
 // ---------------------------------------------------------------------------
 // Empty state — three cards laid out 2 + 1.
 // ---------------------------------------------------------------------------
+
+function AgentPauseBanner({ slug }: { slug: string }) {
+  const [paused, setPaused] = useState(false);
+  const [reason, setReason] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/projects/main/agents/${slug}/state`)
+      .then((r) => r.json())
+      .then((data: { canRun: boolean; reason: string | null }) => {
+        if (!data.canRun) {
+          setPaused(true);
+          setReason(data.reason);
+        } else {
+          setPaused(false);
+        }
+      })
+      .catch(() => {});
+  }, [slug]);
+
+  if (!paused) return null;
+
+  return (
+    <div className="flex items-center gap-2 border-b border-signal-amber/30 bg-signal-amber/10 px-4 py-2 text-xs text-signal-amber">
+      <span className="font-semibold">Agent paused</span>
+      {reason && <span className="text-secondary">— {reason}</span>}
+    </div>
+  );
+}
 
 function AIEmptyState() {
   return (
