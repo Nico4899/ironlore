@@ -13,6 +13,7 @@ import {
 import { useCallback, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
+import { DiffPreview } from "./DiffPreview.js";
 
 export function AIPanel() {
   const messages = useAIPanelStore((s) => s.messages);
@@ -239,6 +240,15 @@ function MessageList() {
               </div>
               <div className="text-xs leading-relaxed text-primary">{msg.text}</div>
             </div>
+          )}
+          {msg.type === "diff_preview" && (
+            <DiffPreview
+              pageId={msg.pageId}
+              diff={msg.diff}
+              approved={msg.approved}
+              onApprove={() => {}}
+              onReject={() => {}}
+            />
           )}
           {msg.type === "error" && (
             <div className="rounded-lg bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>

@@ -112,6 +112,9 @@ function AppShell() {
 
       {/* Search dialog (Cmd+K) */}
       {searchDialogOpen && <SearchDialog />}
+
+      {/* Agent completion/failure toasts */}
+      <AgentToastContainer />
     </div>
   );
 }
