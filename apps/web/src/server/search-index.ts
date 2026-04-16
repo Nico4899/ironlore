@@ -4,6 +4,7 @@ import {
   detectPageType,
   extractableFormat,
   isSupportedExtension,
+  parseBlocks,
   type PageType,
 } from "@ironlore/core";
 import { extract } from "@ironlore/core/extractors";
@@ -171,6 +172,21 @@ export class SearchIndex {
       CREATE INDEX IF NOT EXISTS idx_pages_parent
       ON pages(parent)
     `);
+
+    // Chunk-level FTS5 — ~800-token chunks split at block-ID seams.
+    // Enables paragraph-level search results with block-ID citations
+    // ([[page#blk_...]]) instead of page-level matches. Additive to
+    // pages_fts; rollback is DROP TABLE pages_chunks_fts.
+    // See docs/02-storage-and-sync.md §Derived indexes.
+    this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS pages_chunks_fts USING fts5(
+        path,
+        chunk_idx,
+        block_id_start,
+        block_id_end,
+        content
+      )
+    `);
   }
 
   /**
@@ -182,11 +198,42 @@ export class SearchIndex {
     const links = extractWikiLinks(content);
 
     const txn = this.db.transaction(() => {
-      // FTS5: delete old, insert new
+      // FTS5 page-level: delete old, insert new
       this.db.prepare("DELETE FROM pages_fts WHERE path = ?").run(pagePath);
       this.db
         .prepare("INSERT INTO pages_fts (path, title, content) VALUES (?, ?, ?)")
         .run(pagePath, title, content);
+
+      // FTS5 chunk-level: split at block-ID boundaries, ~800 tokens per chunk.
+      this.db.prepare("DELETE FROM pages_chunks_fts WHERE path = ?").run(pagePath);
+      const blocks = parseBlocks(content);
+      if (blocks.length > 0) {
+        const insertChunk = this.db.prepare(
+          `INSERT INTO pages_chunks_fts (path, chunk_idx, block_id_start, block_id_end, content)
+           VALUES (?, ?, ?, ?, ?)`,
+        );
+        let chunkIdx = 0;
+        let chunkText = "";
+        let chunkStartId = blocks[0]?.id ?? "";
+        let chunkEndId = chunkStartId;
+
+        for (const block of blocks) {
+          const blockTokens = block.text.length / 4; // rough token estimate
+          if (chunkText.length > 0 && chunkText.length / 4 + blockTokens > 800) {
+            // Flush the current chunk.
+            insertChunk.run(pagePath, chunkIdx, chunkStartId, chunkEndId, chunkText);
+            chunkIdx++;
+            chunkText = "";
+            chunkStartId = block.id;
+          }
+          chunkText += (chunkText ? "\n\n" : "") + block.text;
+          chunkEndId = block.id;
+        }
+        // Flush the last chunk.
+        if (chunkText) {
+          insertChunk.run(pagePath, chunkIdx, chunkStartId, chunkEndId, chunkText);
+        }
+      }
 
       // Backlinks: delete old outgoing links, insert new
       this.db.prepare("DELETE FROM backlinks WHERE source_path = ?").run(pagePath);
