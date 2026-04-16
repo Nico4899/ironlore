@@ -150,6 +150,14 @@ export class SearchIndex {
       )
     `);
 
+    // Migration: add `rel` column to existing backlinks tables that
+    // were created before typed wiki-links shipped (Track C Step 4).
+    try {
+      this.db.exec("ALTER TABLE backlinks ADD COLUMN rel TEXT");
+    } catch {
+      // Column already exists — expected on databases created after the change.
+    }
+
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_backlinks_target
       ON backlinks(target_path)
