@@ -49,6 +49,10 @@ interface AppStore {
   wsReconnecting: boolean;
   provenance: { pagePath: string; blockId: string } | null;
   inboxOpen: boolean;
+  /** Current folder path in the sidebar drill-down navigation. "" = root. */
+  sidebarFolder: string;
+  /** Active sidebar tab: home, search, explore. */
+  sidebarTab: "home" | "search" | "explore";
 
   toggleSidebar: () => void;
   toggleAIPanel: () => void;
@@ -66,6 +70,8 @@ interface AppStore {
   openProvenance: (pagePath: string, blockId: string) => void;
   closeProvenance: () => void;
   toggleInbox: () => void;
+  setSidebarFolder: (folder: string) => void;
+  setSidebarTab: (tab: "home" | "search" | "explore") => void;
 }
 
 function persistSidebarWidth(width: number): void {
@@ -98,6 +104,8 @@ export const useAppStore = create<AppStore>((set) => ({
   wsReconnecting: false,
   provenance: null,
   inboxOpen: false,
+  sidebarFolder: "",
+  sidebarTab: "home",
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleAIPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
@@ -145,4 +153,6 @@ export const useAppStore = create<AppStore>((set) => ({
   openProvenance: (pagePath, blockId) => set({ provenance: { pagePath, blockId } }),
   closeProvenance: () => set({ provenance: null }),
   toggleInbox: () => set((s) => ({ inboxOpen: !s.inboxOpen })),
+  setSidebarFolder: (folder) => set({ sidebarFolder: folder }),
+  setSidebarTab: (tab) => set({ sidebarTab: tab }),
 }));
