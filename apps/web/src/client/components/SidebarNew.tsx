@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Compass,
   FileCode,
-  FilePlus,
   FileSpreadsheet,
   FileText,
   FileType,
@@ -43,7 +42,7 @@ import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
 
 // ---------------------------------------------------------------------------
-// File icon
+// File icon — each type gets its own color
 // ---------------------------------------------------------------------------
 
 function FileIcon({ type }: { type: PageType | "directory" }) {
@@ -85,22 +84,20 @@ function FileIcon({ type }: { type: PageType | "directory" }) {
 }
 
 // ---------------------------------------------------------------------------
-// Context menu
+// Context menu state
 // ---------------------------------------------------------------------------
 
 interface ContextMenuState {
   x: number;
   y: number;
-  /** The folder to create items in, or "" for root. */
   targetFolder: string;
-  /** If right-clicked on a specific item, its path and type. */
   itemPath?: string;
   itemType?: PageType | "directory";
   itemName?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Main Sidebar component
+// Main Sidebar
 // ---------------------------------------------------------------------------
 
 export function SidebarNew() {
@@ -114,51 +111,41 @@ export function SidebarNew() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
-  const [creatingType, setCreatingType] = useState<"file" | "folder" | null>(null);
-  const [creatingName, setCreatingName] = useState("");
   const [slideDir, setSlideDir] = useState<"left" | "right" | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
+  const [hovered, setHovered] = useState(false);
+
+  const collapsed = !sidebarOpen;
+  const inboxCount = 2; // placeholder
 
   // Load tree on mount
   useEffect(() => {
     fetchTree()
       .then(({ pages }) => {
         useTreeStore.getState().setNodes(
-          pages.map((p) => ({
-            id: p.path,
-            name: p.name,
-            path: p.path,
-            type: p.type,
-          })),
+          pages.map((p) => ({ id: p.path, name: p.name, path: p.path, type: p.type })),
         );
       })
       .catch(() => {});
   }, []);
 
-  // Items visible at the current folder level
+  // Items at current folder level
   const visibleItems = useMemo(() => {
     const prefix = sidebarFolder ? `${sidebarFolder}/` : "";
     return nodes
       .filter((n) => {
-        if (sidebarFolder === "") {
-          // Root level: items with no "/" in path
-          return !n.path.includes("/");
-        }
-        // Items directly inside the current folder
+        if (sidebarFolder === "") return !n.path.includes("/");
         if (!n.path.startsWith(prefix)) return false;
-        const rest = n.path.slice(prefix.length);
-        return !rest.includes("/");
+        return !n.path.slice(prefix.length).includes("/");
       })
       .sort((a, b) => {
-        // Folders first
-        const aDir = a.type === "directory" ? 0 : 1;
-        const bDir = b.type === "directory" ? 0 : 1;
-        if (aDir !== bDir) return aDir - bDir;
+        const ad = a.type === "directory" ? 0 : 1;
+        const bd = b.type === "directory" ? 0 : 1;
+        if (ad !== bd) return ad - bd;
         return a.name.localeCompare(b.name);
       });
   }, [nodes, sidebarFolder]);
 
-  // Drill into a folder with animation
+  // Navigation
   const drillInto = useCallback((folderPath: string) => {
     setSlideDir("left");
     setTimeout(() => {
@@ -167,7 +154,6 @@ export function SidebarNew() {
     }, 150);
   }, []);
 
-  // Navigate up one level
   const drillUp = useCallback(() => {
     setSlideDir("right");
     setTimeout(() => {
@@ -178,7 +164,6 @@ export function SidebarNew() {
     }, 150);
   }, [sidebarFolder]);
 
-  // Navigate to root
   const drillToRoot = useCallback(() => {
     setSlideDir("right");
     setTimeout(() => {
@@ -187,27 +172,11 @@ export function SidebarNew() {
     }, 150);
   }, []);
 
-  // Click a file → open it
   const openFile = useCallback((path: string) => {
     useAppStore.getState().setActivePath(path);
   }, []);
 
-  // Create new page
-  const handleNewPage = useCallback(async () => {
-    const folder = sidebarFolder;
-    const name = "Untitled";
-    const path = folder ? `${folder}/${name}.md` : `${name}.md`;
-    try {
-      await createPage(path, `# ${name}\n`);
-      useAppStore.getState().setActivePath(path);
-      setEditingPath(path);
-      setEditingValue(name);
-    } catch {
-      // Creation failed
-    }
-  }, [sidebarFolder]);
-
-  // Create new folder
+  // New folder (only in expanded sidebar)
   const handleNewFolder = useCallback(async () => {
     const folder = sidebarFolder;
     const name = "Untitled";
@@ -217,11 +186,11 @@ export function SidebarNew() {
       setEditingPath(path);
       setEditingValue(name);
     } catch {
-      // Creation failed
+      /* */
     }
   }, [sidebarFolder]);
 
-  // Rename commit
+  // Rename
   const commitRename = useCallback(async (oldPath: string, newName: string) => {
     if (!newName.trim()) {
       setEditingPath(null);
@@ -234,13 +203,13 @@ export function SidebarNew() {
       try {
         await movePage(oldPath, newPath);
       } catch {
-        // Rename failed
+        /* */
       }
     }
     setEditingPath(null);
   }, []);
 
-  // Delete item
+  // Delete
   const handleDelete = useCallback(
     async (path: string, type: PageType | "directory", name: string) => {
       const msg =
@@ -249,19 +218,16 @@ export function SidebarNew() {
           : `Delete "${name}"?`;
       if (!window.confirm(msg)) return;
       try {
-        if (type === "directory") {
-          await deleteFolder(path);
-        } else {
-          await deletePage(path);
-        }
+        if (type === "directory") await deleteFolder(path);
+        else await deletePage(path);
       } catch {
-        // Delete failed
+        /* */
       }
     },
     [],
   );
 
-  // Right-click context menu
+  // Context menu
   const handleContextMenu = useCallback(
     (
       e: React.MouseEvent,
@@ -270,13 +236,13 @@ export function SidebarNew() {
       itemName?: string,
     ) => {
       e.preventDefault();
-      const targetFolder = itemType === "directory" && itemPath ? itemPath : sidebarFolder;
+      const targetFolder =
+        itemType === "directory" && itemPath ? itemPath : sidebarFolder;
       setContextMenu({ x: e.clientX, y: e.clientY, targetFolder, itemPath, itemType, itemName });
     },
     [sidebarFolder],
   );
 
-  // Close context menu on click outside
   useEffect(() => {
     if (!contextMenu) return;
     const close = () => setContextMenu(null);
@@ -284,7 +250,6 @@ export function SidebarNew() {
     return () => window.removeEventListener("click", close);
   }, [contextMenu]);
 
-  // Context menu create in folder
   const ctxNewFile = useCallback(async () => {
     if (!contextMenu) return;
     const folder = contextMenu.targetFolder;
@@ -293,10 +258,8 @@ export function SidebarNew() {
     setContextMenu(null);
     try {
       await createPage(path, `# ${name}\n`);
-      // If created in a subfolder, drill into it
-      if (folder && folder !== sidebarFolder) {
+      if (folder && folder !== sidebarFolder)
         useAppStore.getState().setSidebarFolder(folder);
-      }
       useAppStore.getState().setActivePath(path);
       setEditingPath(path);
       setEditingValue(name);
@@ -313,9 +276,8 @@ export function SidebarNew() {
     setContextMenu(null);
     try {
       await createFolder(path);
-      if (folder && folder !== sidebarFolder) {
+      if (folder && folder !== sidebarFolder)
         useAppStore.getState().setSidebarFolder(folder);
-      }
       setEditingPath(path);
       setEditingValue(name);
     } catch {
@@ -336,7 +298,6 @@ export function SidebarNew() {
     setContextMenu(null);
   }, [contextMenu, handleDelete]);
 
-  // Logout
   const handleLogout = useCallback(async () => {
     try {
       await logout();
@@ -346,33 +307,35 @@ export function SidebarNew() {
     }
   }, []);
 
-  const collapsed = !sidebarOpen;
-  const inboxCount = 2; // Placeholder badge
-
   return (
     <aside
       className={`sidebar-chrome flex h-full shrink-0 flex-col transition-all ${
         collapsed ? "w-14" : "w-64"
       }`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      {/* ─── Top: Logo + name + collapse ─── */}
-      <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-        {/* Logo — three overlapping circles */}
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center">
+      {/* ─── Top: Logo / collapse toggle ─── */}
+      <div className="relative flex items-center gap-2 border-b border-border px-3 py-2.5">
+        {/* Logo — visible when NOT hovered (or when expanded) */}
+        <div
+          className={`flex h-6 w-6 shrink-0 items-center justify-center transition-opacity duration-150 ${
+            collapsed && hovered ? "opacity-0" : "opacity-100"
+          }`}
+        >
           <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
             <circle cx="9" cy="10" r="6" fill="oklch(0.65 0.18 250)" opacity="0.7" />
             <circle cx="15" cy="10" r="6" fill="oklch(0.65 0.15 160)" opacity="0.7" />
             <circle cx="12" cy="15" r="6" fill="oklch(0.70 0.15 80)" opacity="0.7" />
           </svg>
         </div>
-        {!collapsed && (
-          <span className="text-sm font-semibold tracking-tight text-primary">ironlore</span>
-        )}
-        <div className="flex-1" />
+        {/* Collapse/expand — overlays the logo position, visible on hover */}
         <button
           type="button"
           onClick={() => useAppStore.getState().toggleSidebar()}
-          className="rounded p-1 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+          className={`absolute left-3 flex h-6 w-6 items-center justify-center rounded text-secondary transition-opacity duration-150 hover:bg-ironlore-slate-hover hover:text-primary ${
+            collapsed ? (hovered ? "opacity-100" : "opacity-0") : "opacity-0 hover:opacity-100"
+          }`}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
           {collapsed ? (
@@ -381,32 +344,48 @@ export function SidebarNew() {
             <PanelLeftClose className="h-4 w-4" />
           )}
         </button>
+        {!collapsed && (
+          <>
+            <span className="text-sm font-semibold tracking-tight text-primary">ironlore</span>
+            <div className="flex-1" />
+            {/* Expand collapse visible on hover in expanded mode */}
+            <button
+              type="button"
+              onClick={() => useAppStore.getState().toggleSidebar()}
+              className="rounded p-1 text-secondary opacity-0 transition-opacity hover:bg-ironlore-slate-hover hover:text-primary group-hover:opacity-100"
+              style={{ opacity: hovered ? 1 : 0 }}
+              aria-label="Collapse sidebar"
+            >
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            </button>
+          </>
+        )}
       </div>
 
-      {/* ─── Tabs: Home / Search / Explore ─── */}
-      {!collapsed && (
-        <div className="flex border-b border-border">
-          {[
-            { id: "home" as const, icon: Home, label: "Home" },
-            { id: "search" as const, icon: Search, label: "Search" },
-            { id: "explore" as const, icon: Compass, label: "Explore" },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => useAppStore.getState().setSidebarTab(tab.id)}
-              className={`flex flex-1 items-center justify-center gap-1.5 py-2 text-xs ${
-                sidebarTab === tab.id
-                  ? "border-b-2 border-ironlore-blue font-medium text-primary"
-                  : "text-secondary hover:text-primary"
-              }`}
-            >
-              <tab.icon className="h-3.5 w-3.5" />
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* ─── Vertical tabs: Home / Search / Explore ─── */}
+      <div className={`flex flex-col gap-0.5 border-b border-border px-1 py-1.5 ${collapsed ? "items-center" : ""}`}>
+        <SidebarNavTab
+          icon={Home}
+          label="Home"
+          collapsed={collapsed}
+          active={sidebarTab === "home"}
+          onClick={() => useAppStore.getState().setSidebarTab("home")}
+        />
+        <SidebarNavTab
+          icon={Search}
+          label="Search"
+          collapsed={collapsed}
+          active={false}
+          onClick={() => useAppStore.getState().toggleSearchDialog()}
+        />
+        <SidebarNavTab
+          icon={Compass}
+          label="Explore"
+          collapsed={collapsed}
+          active={sidebarTab === "explore"}
+          onClick={() => useAppStore.getState().setSidebarTab("explore")}
+        />
+      </div>
 
       {/* ─── Folder breadcrumb (when drilled in) ─── */}
       {!collapsed && sidebarFolder && sidebarTab === "home" && (
@@ -433,11 +412,10 @@ export function SidebarNew() {
         </div>
       )}
 
-      {/* ─── File/folder list (scrollable) ─── */}
+      {/* ─── File/folder list (scrollable, home tab only, expanded only) ─── */}
       {!collapsed && sidebarTab === "home" && (
         // biome-ignore lint/a11y/noStaticElementInteractions: context menu on container
         <div
-          ref={listRef}
           className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-150 ${
             slideDir === "left"
               ? "-translate-x-full opacity-0"
@@ -447,7 +425,7 @@ export function SidebarNew() {
           }`}
           onContextMenu={(e) => handleContextMenu(e)}
         >
-          {visibleItems.length === 0 && !creatingType && (
+          {visibleItems.length === 0 && (
             <div className="py-8 text-center text-xs text-secondary">No pages yet</div>
           )}
           {visibleItems.map((item) => {
@@ -466,11 +444,8 @@ export function SidebarNew() {
                 }`}
                 onClick={() => {
                   if (isEditing) return;
-                  if (isDir) {
-                    drillInto(item.path);
-                  } else {
-                    openFile(item.path);
-                  }
+                  if (isDir) drillInto(item.path);
+                  else openFile(item.path);
                 }}
                 onContextMenu={(e) => {
                   e.stopPropagation();
@@ -509,125 +484,20 @@ export function SidebarNew() {
               </div>
             );
           })}
-
-          {/* Inline creation */}
-          {creatingType && (
-            <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm">
-              {creatingType === "folder" ? (
-                <FolderClosed className="h-4 w-4 shrink-0 text-secondary" />
-              ) : (
-                <FileText className="h-4 w-4 shrink-0 text-secondary" />
-              )}
-              <input
-                className="flex-1 rounded border border-ironlore-blue bg-transparent px-1 text-sm text-primary focus:outline-none"
-                value={creatingName}
-                onChange={(e) => setCreatingName(e.target.value)}
-                onBlur={async () => {
-                  if (creatingName.trim()) {
-                    if (creatingType === "folder") {
-                      const path = sidebarFolder
-                        ? `${sidebarFolder}/${creatingName}`
-                        : creatingName;
-                      try {
-                        await createFolder(path);
-                      } catch {
-                        /* */
-                      }
-                    } else {
-                      const name = creatingName.endsWith(".md")
-                        ? creatingName
-                        : `${creatingName}.md`;
-                      const path = sidebarFolder ? `${sidebarFolder}/${name}` : name;
-                      try {
-                        await createPage(path, `# ${creatingName.replace(/\.md$/, "")}\n`);
-                        useAppStore.getState().setActivePath(path);
-                      } catch {
-                        /* */
-                      }
-                    }
-                  }
-                  setCreatingType(null);
-                  setCreatingName("");
-                }}
-                onKeyDown={async (e) => {
-                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                  if (e.key === "Escape") {
-                    setCreatingType(null);
-                    setCreatingName("");
-                  }
-                }}
-                placeholder="Untitled"
-                // biome-ignore lint/a11y/noAutofocus: inline creation needs immediate focus
-                autoFocus
-              />
-            </div>
-          )}
         </div>
       )}
 
-      {/* Search tab content */}
-      {!collapsed && sidebarTab === "search" && (
-        <div className="flex flex-1 items-center justify-center px-4 text-xs text-secondary">
-          <button
-            type="button"
-            onClick={() => useAppStore.getState().toggleSearchDialog()}
-            className="flex items-center gap-2 rounded-lg border border-border px-4 py-2 hover:bg-ironlore-slate-hover"
-          >
-            <Search className="h-4 w-4" />
-            Search
-          </button>
-        </div>
-      )}
+      {/* Collapsed: no file list shown */}
+      {collapsed && <div className="flex-1" />}
 
-      {/* Explore tab content (placeholder) */}
-      {!collapsed && sidebarTab === "explore" && (
-        <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-secondary">
-          Explore your knowledge graph. Coming soon.
-        </div>
-      )}
-
-      {/* Collapsed: just icons for tabs */}
-      {collapsed && (
-        <div className="flex flex-1 flex-col items-center gap-1 py-2">
-          <button
-            type="button"
-            onClick={() => {
-              useAppStore.getState().toggleSidebar();
-              useAppStore.getState().setSidebarTab("home");
-            }}
-            className="rounded p-2 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-            title="Home"
-          >
-            <Home className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => useAppStore.getState().toggleSearchDialog()}
-            className="rounded p-2 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-            title="Search"
-          >
-            <Search className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              useAppStore.getState().toggleSidebar();
-              useAppStore.getState().setSidebarTab("explore");
-            }}
-            className="rounded p-2 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-            title="Explore"
-          >
-            <Compass className="h-4 w-4" />
-          </button>
-        </div>
-      )}
+      {/* Explore/Search placeholders only visible in expanded non-home tabs */}
+      {!collapsed && sidebarTab !== "home" && <div className="flex-1" />}
 
       {/* ─── Divider ─── */}
       <div className="border-t border-border" />
 
       {/* ─── Fixed bottom section ─── */}
-      <div className="flex flex-col gap-0.5 px-1 py-1.5">
-        {/* Agent Inbox */}
+      <div className={`flex flex-col gap-0.5 px-1 py-1.5 ${collapsed ? "items-center" : ""}`}>
         <SidebarBottomTab
           icon={Inbox}
           label="Inbox"
@@ -635,47 +505,24 @@ export function SidebarNew() {
           badge={inboxCount}
           onClick={() => useAppStore.getState().toggleInbox()}
         />
-        {/* AI Panel */}
-        <SidebarBottomTab
-          icon={({ className }: { className?: string }) => (
-            <svg
-              viewBox="0 0 24 24"
-              className={className}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <title>AI</title>
-              <path d="M12 3v2m0 14v2M5.6 5.6l1.4 1.4m10 10l1.4 1.4M3 12h2m14 0h2M5.6 18.4l1.4-1.4m10-10l1.4-1.4" />
-              <circle cx="12" cy="12" r="4" />
-            </svg>
-          )}
-          label="AI"
-          collapsed={collapsed}
-          onClick={() => useAppStore.getState().toggleAIPanel()}
-        />
-        {/* Terminal */}
         <SidebarBottomTab
           icon={TerminalSquare}
           label="Terminal"
           collapsed={collapsed}
           onClick={() => useAppStore.getState().toggleTerminal()}
         />
-        {/* Feedback (placeholder) */}
         <SidebarBottomTab
           icon={MessageSquare}
           label="Feedback"
           collapsed={collapsed}
           onClick={() => {}}
         />
-        {/* Theme toggle */}
         <SidebarBottomTab
           icon={theme === "dark" ? Sun : Moon}
           label={theme === "dark" ? "Light mode" : "Dark mode"}
           collapsed={collapsed}
           onClick={() => useAppStore.getState().toggleTheme()}
         />
-        {/* Logout */}
         <SidebarBottomTab
           icon={LogOut}
           label="Log out"
@@ -684,25 +531,19 @@ export function SidebarNew() {
         />
       </div>
 
-      {/* ─── New page / New folder buttons ─── */}
-      <div className="flex items-center gap-1 border-t border-border px-2 py-2">
-        <button
-          type="button"
-          onClick={handleNewPage}
-          className={`btn-depth flex flex-1 items-center justify-center gap-1.5 rounded-md bg-ironlore-blue py-1.5 text-xs font-medium text-white hover:bg-ironlore-blue-strong ${collapsed ? "px-2" : "px-3"}`}
-        >
-          <FilePlus className="h-3.5 w-3.5" />
-          {!collapsed && "New page"}
-        </button>
-        <button
-          type="button"
-          onClick={handleNewFolder}
-          className="rounded-md border border-border p-1.5 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-          title="New folder"
-        >
-          <FolderPlus className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      {/* ─── New folder button (expanded only) ─── */}
+      {!collapsed && (
+        <div className="flex items-center gap-1 border-t border-border px-2 py-2">
+          <button
+            type="button"
+            onClick={handleNewFolder}
+            className="btn-depth flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border py-1.5 text-xs text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+          >
+            <FolderPlus className="h-3.5 w-3.5" />
+            New folder
+          </button>
+        </div>
+      )}
 
       {/* ─── Context menu ─── */}
       {contextMenu && (
@@ -728,6 +569,36 @@ export function SidebarNew() {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+function SidebarNavTab({
+  icon: Icon,
+  label,
+  collapsed,
+  active,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  collapsed: boolean;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+        active
+          ? "bg-ironlore-blue/15 font-medium text-primary"
+          : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+      } ${collapsed ? "justify-center" : ""}`}
+      title={collapsed ? label : undefined}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {!collapsed && <span>{label}</span>}
+    </button>
+  );
+}
 
 function SidebarBottomTab({
   icon: Icon,
