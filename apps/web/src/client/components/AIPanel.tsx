@@ -1,5 +1,17 @@
-import { ArrowUp, Highlighter, Lightbulb, Paperclip, Sparkles, X } from "lucide-react";
-import { useCallback, useRef } from "react";
+import {
+  ArrowUp,
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
+  Highlighter,
+  Lightbulb,
+  Paperclip,
+  Sparkles,
+  Wrench,
+  X,
+} from "lucide-react";
+import { useCallback, useRef, useState } from "react";
+import { useAgentSession } from "../hooks/useAgentSession.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 
 export function AIPanel() {
@@ -7,6 +19,7 @@ export function AIPanel() {
   const activeAgent = useAIPanelStore((s) => s.activeAgent);
   const inputDraft = useAIPanelStore((s) => s.inputDraft);
   const setInputDraft = useAIPanelStore((s) => s.setInputDraft);
+  const isStreaming = useAIPanelStore((s) => s.isStreaming);
   const contexts = useAIPanelStore((s) => s.contexts);
   const removeContext = useAIPanelStore((s) => s.removeContext);
 
@@ -32,15 +45,20 @@ export function AIPanel() {
     e.target.value = "";
   }, []);
 
+  const { sendMessage } = useAgentSession();
+
   const handleSend = useCallback(() => {
     const draft = inputDraft.trim();
     if (!draft && contexts.length === 0) return;
-    const { addMessage, clearContexts } = useAIPanelStore.getState();
-    const attachments = contexts.map((c) => c.label);
-    addMessage({ type: "user", text: draft, attachments });
+    // Build the full prompt including any context pills.
+    const contextBlock = contexts.length > 0
+      ? contexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n") + "\n\n"
+      : "";
+    const fullPrompt = contextBlock + draft;
+    sendMessage(fullPrompt);
     setInputDraft("");
-    clearContexts();
-  }, [inputDraft, contexts, setInputDraft]);
+    useAIPanelStore.getState().clearContexts();
+  }, [inputDraft, contexts, setInputDraft, sendMessage]);
 
   const onPromptKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -63,8 +81,11 @@ export function AIPanel() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-ironlore-blue" />
+          <Sparkles className={`h-4 w-4 ${isStreaming ? "animate-pulse text-ironlore-blue-strong" : "text-ironlore-blue"}`} />
           <span className="text-sm font-semibold tracking-tight">AI</span>
+          {isStreaming && (
+            <span className="text-[10px] font-medium text-ironlore-blue">thinking…</span>
+          )}
         </div>
         <span className="text-xs font-medium text-secondary">{activeAgent}</span>
       </div>
@@ -206,6 +227,16 @@ function MessageList() {
           {msg.type === "assistant" && (
             <div className="px-1 leading-relaxed text-primary">{msg.text}</div>
           )}
+          {msg.type === "tool_call" && <ToolCallCard msg={msg} />}
+          {msg.type === "journal" && (
+            <div className="rounded-lg border border-ironlore-blue/30 bg-ironlore-blue/5 px-3 py-2">
+              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-ironlore-blue">
+                <BookOpen className="h-3.5 w-3.5" />
+                Journal
+              </div>
+              <div className="text-xs leading-relaxed text-primary">{msg.text}</div>
+            </div>
+          )}
           {msg.type === "error" && (
             <div className="rounded-lg bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
           )}
@@ -225,6 +256,56 @@ function MessageList() {
         </div>
       ))}
     </>
+  );
+}
+
+/**
+ * Collapsible tool-call card. Shows tool name + collapsed args by
+ * default; clicking expands to show the full args JSON + result.
+ */
+function ToolCallCard({
+  msg,
+}: {
+  msg: { tool: string; args: unknown; result?: unknown; collapsed: boolean };
+}) {
+  const [expanded, setExpanded] = useState(!msg.collapsed);
+  const hasResult = msg.result !== undefined;
+
+  return (
+    <div className="rounded-lg border border-border bg-ironlore-slate-hover/50 text-xs">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-1.5 px-3 py-2 text-left"
+      >
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-secondary" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-secondary" />
+        )}
+        <Wrench className="h-3.5 w-3.5 shrink-0 text-accent-violet" />
+        <span className="font-semibold text-primary">{msg.tool}</span>
+        {hasResult && (
+          <span className="ml-auto text-[10px] text-signal-green">done</span>
+        )}
+      </button>
+      {expanded && (
+        <div className="border-t border-border px-3 py-2">
+          <div className="mb-1 text-[10px] font-medium uppercase text-secondary">Args</div>
+          <pre className="mb-2 max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-secondary">
+            {typeof msg.args === "string" ? msg.args : JSON.stringify(msg.args, null, 2)}
+          </pre>
+          {hasResult && (
+            <>
+              <div className="mb-1 text-[10px] font-medium uppercase text-secondary">Result</div>
+              <pre className="max-h-32 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-primary">
+                {typeof msg.result === "string" ? msg.result : JSON.stringify(msg.result, null, 2)}
+              </pre>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
