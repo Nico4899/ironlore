@@ -159,16 +159,13 @@ export function SidebarNew() {
   }, [nodes, sidebarFolder]);
 
   // Drill into a folder with animation
-  const drillInto = useCallback(
-    (folderPath: string) => {
-      setSlideDir("left");
-      setTimeout(() => {
-        useAppStore.getState().setSidebarFolder(folderPath);
-        setSlideDir(null);
-      }, 150);
-    },
-    [],
-  );
+  const drillInto = useCallback((folderPath: string) => {
+    setSlideDir("left");
+    setTimeout(() => {
+      useAppStore.getState().setSidebarFolder(folderPath);
+      setSlideDir(null);
+    }, 150);
+  }, []);
 
   // Navigate up one level
   const drillUp = useCallback(() => {
@@ -225,51 +222,55 @@ export function SidebarNew() {
   }, [sidebarFolder]);
 
   // Rename commit
-  const commitRename = useCallback(
-    async (oldPath: string, newName: string) => {
-      if (!newName.trim()) {
-        setEditingPath(null);
-        return;
-      }
-      const parts = oldPath.split("/");
-      parts[parts.length - 1] = newName;
-      const newPath = parts.join("/");
-      if (newPath !== oldPath) {
-        try {
-          await movePage(oldPath, newPath);
-        } catch {
-          // Rename failed
-        }
-      }
+  const commitRename = useCallback(async (oldPath: string, newName: string) => {
+    if (!newName.trim()) {
       setEditingPath(null);
+      return;
+    }
+    const parts = oldPath.split("/");
+    parts[parts.length - 1] = newName;
+    const newPath = parts.join("/");
+    if (newPath !== oldPath) {
+      try {
+        await movePage(oldPath, newPath);
+      } catch {
+        // Rename failed
+      }
+    }
+    setEditingPath(null);
+  }, []);
+
+  // Delete item
+  const handleDelete = useCallback(
+    async (path: string, type: PageType | "directory", name: string) => {
+      const msg =
+        type === "directory"
+          ? `Delete folder "${name}" and all its contents?`
+          : `Delete "${name}"?`;
+      if (!window.confirm(msg)) return;
+      try {
+        if (type === "directory") {
+          await deleteFolder(path);
+        } else {
+          await deletePage(path);
+        }
+      } catch {
+        // Delete failed
+      }
     },
     [],
   );
 
-  // Delete item
-  const handleDelete = useCallback(async (path: string, type: PageType | "directory", name: string) => {
-    const msg = type === "directory"
-      ? `Delete folder "${name}" and all its contents?`
-      : `Delete "${name}"?`;
-    if (!window.confirm(msg)) return;
-    try {
-      if (type === "directory") {
-        await deleteFolder(path);
-      } else {
-        await deletePage(path);
-      }
-    } catch {
-      // Delete failed
-    }
-  }, []);
-
   // Right-click context menu
   const handleContextMenu = useCallback(
-    (e: React.MouseEvent, itemPath?: string, itemType?: PageType | "directory", itemName?: string) => {
+    (
+      e: React.MouseEvent,
+      itemPath?: string,
+      itemType?: PageType | "directory",
+      itemName?: string,
+    ) => {
       e.preventDefault();
-      const targetFolder = itemType === "directory" && itemPath
-        ? itemPath
-        : sidebarFolder;
+      const targetFolder = itemType === "directory" && itemPath ? itemPath : sidebarFolder;
       setContextMenu({ x: e.clientX, y: e.clientY, targetFolder, itemPath, itemType, itemName });
     },
     [sidebarFolder],
@@ -299,7 +300,9 @@ export function SidebarNew() {
       useAppStore.getState().setActivePath(path);
       setEditingPath(path);
       setEditingValue(name);
-    } catch { /* */ }
+    } catch {
+      /* */
+    }
   }, [contextMenu, sidebarFolder]);
 
   const ctxNewFolder = useCallback(async () => {
@@ -315,7 +318,9 @@ export function SidebarNew() {
       }
       setEditingPath(path);
       setEditingValue(name);
-    } catch { /* */ }
+    } catch {
+      /* */
+    }
   }, [contextMenu, sidebarFolder]);
 
   const ctxRename = useCallback(() => {
@@ -336,7 +341,9 @@ export function SidebarNew() {
     try {
       await logout();
       useAuthStore.getState().checkSession();
-    } catch { /* */ }
+    } catch {
+      /* */
+    }
   }, []);
 
   const collapsed = !sidebarOpen;
@@ -379,11 +386,11 @@ export function SidebarNew() {
       {/* ─── Tabs: Home / Search / Explore ─── */}
       {!collapsed && (
         <div className="flex border-b border-border">
-          {([
+          {[
             { id: "home" as const, icon: Home, label: "Home" },
             { id: "search" as const, icon: Search, label: "Search" },
             { id: "explore" as const, icon: Compass, label: "Explore" },
-          ]).map((tab) => (
+          ].map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -428,6 +435,7 @@ export function SidebarNew() {
 
       {/* ─── File/folder list (scrollable) ─── */}
       {!collapsed && sidebarTab === "home" && (
+        // biome-ignore lint/a11y/noStaticElementInteractions: context menu on container
         <div
           ref={listRef}
           className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-150 ${
@@ -448,6 +456,7 @@ export function SidebarNew() {
             const isEditing = editingPath === item.path;
 
             return (
+              // biome-ignore lint/a11y/useSemanticElements: complex interactive row with context menu
               <div
                 key={item.path}
                 className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
@@ -519,14 +528,22 @@ export function SidebarNew() {
                       const path = sidebarFolder
                         ? `${sidebarFolder}/${creatingName}`
                         : creatingName;
-                      try { await createFolder(path); } catch { /* */ }
+                      try {
+                        await createFolder(path);
+                      } catch {
+                        /* */
+                      }
                     } else {
-                      const name = creatingName.endsWith(".md") ? creatingName : `${creatingName}.md`;
+                      const name = creatingName.endsWith(".md")
+                        ? creatingName
+                        : `${creatingName}.md`;
                       const path = sidebarFolder ? `${sidebarFolder}/${name}` : name;
                       try {
                         await createPage(path, `# ${creatingName.replace(/\.md$/, "")}\n`);
                         useAppStore.getState().setActivePath(path);
-                      } catch { /* */ }
+                      } catch {
+                        /* */
+                      }
                     }
                   }
                   setCreatingType(null);
@@ -620,8 +637,15 @@ export function SidebarNew() {
         />
         {/* AI Panel */}
         <SidebarBottomTab
-          icon={() => (
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+          icon={({ className }: { className?: string }) => (
+            <svg
+              viewBox="0 0 24 24"
+              className={className}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <title>AI</title>
               <path d="M12 3v2m0 14v2M5.6 5.6l1.4 1.4m10 10l1.4 1.4M3 12h2m14 0h2M5.6 18.4l1.4-1.4m10-10l1.4-1.4" />
               <circle cx="12" cy="12" r="4" />
             </svg>

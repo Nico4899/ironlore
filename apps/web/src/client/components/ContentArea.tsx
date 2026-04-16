@@ -286,6 +286,7 @@ export function ContentArea() {
       {filePath && (
         <div className="flex items-center gap-1 border-b border-border px-4 py-1 text-xs text-secondary">
           {filePath.split("/").map((seg, i, arr) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: breadcrumb segments are path-derived
             <span key={`${seg}-${i}`} className="flex items-center gap-1">
               {i > 0 && <span className="text-border">/</span>}
               {i < arr.length - 1 ? (
