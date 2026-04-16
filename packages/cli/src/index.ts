@@ -22,7 +22,10 @@ program
   .description("Check and fix data integrity, index consistency, and schema migrations")
   .option("--project <id>", "Project ID to lint", "main")
   .option("--fix", "Auto-repair issues (default: report only)")
-  .option("--check <category>", "Run a single check category (index-consistency, schema-migration, data-integrity)")
+  .option(
+    "--check <category>",
+    "Run a single check category (index-consistency, schema-migration, data-integrity)",
+  )
   .option("--all", "Lint all projects (for index-consistency)")
   .action(lint);
 

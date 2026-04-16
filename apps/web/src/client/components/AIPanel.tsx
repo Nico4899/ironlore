@@ -449,14 +449,15 @@ function CitationText({ text }: { text: string }) {
     { kind: "text"; value: string } | { kind: "citation"; page: string; blockId: string }
   > = [];
   let lastIndex = 0;
-  let match: RegExpExecArray | null;
+  let match: RegExpExecArray | null = CITATION_RE.exec(text);
 
-  while ((match = CITATION_RE.exec(text)) !== null) {
+  while (match !== null) {
     if (match.index > lastIndex) {
       parts.push({ kind: "text", value: text.slice(lastIndex, match.index) });
     }
     parts.push({ kind: "citation", page: match[1] ?? "", blockId: match[2] ?? "" });
     lastIndex = match.index + match[0].length;
+    match = CITATION_RE.exec(text);
   }
   if (lastIndex < text.length) {
     parts.push({ kind: "text", value: text.slice(lastIndex) });
@@ -468,10 +469,11 @@ function CitationText({ text }: { text: string }) {
     <>
       {parts.map((p, i) =>
         p.kind === "text" ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: stable split
+          // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
           <span key={i}>{p.value}</span>
         ) : (
           <button
+            // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
             key={i}
             type="button"
             className="mx-0.5 inline rounded bg-ironlore-blue/15 px-1 py-0.5 text-xs font-medium text-ironlore-blue hover:bg-ironlore-blue/25"

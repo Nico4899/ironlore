@@ -135,14 +135,19 @@ export default function Terminal() {
   return (
     <div className="flex flex-col border-t border-border bg-ironlore-slate" style={{ height }}>
       {/* Resize handle */}
+      {/* biome-ignore lint/a11y/useSemanticElements: hr is semantic but lacks pointer capture support */}
       <div
-        className="h-1 cursor-row-resize bg-transparent hover:bg-ironlore-blue/30 active:bg-ironlore-blue/50"
+        className="h-1 cursor-row-resize bg-transparent hover:bg-ironlore-blue/30 active:bg-ironlore-blue/50 focus-visible:bg-ironlore-blue/30"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         role="separator"
+        tabIndex={0}
         aria-orientation="horizontal"
         aria-label="Resize terminal"
+        aria-valuenow={height}
+        aria-valuemin={120}
+        aria-valuemax={600}
       />
       <div className="flex items-center justify-between border-b border-border px-3 py-1">
         <span className="text-xs text-secondary">Terminal</span>

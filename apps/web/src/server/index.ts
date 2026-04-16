@@ -214,9 +214,7 @@ async function start() {
         };
         if (parsed.commitShaStart || parsed.commitShaEnd) {
           jobsDb
-            .prepare(
-              "UPDATE jobs SET commit_sha_start = ?, commit_sha_end = ? WHERE id = ?",
-            )
+            .prepare("UPDATE jobs SET commit_sha_start = ?, commit_sha_end = ? WHERE id = ?")
             .run(parsed.commitShaStart ?? null, parsed.commitShaEnd ?? null, job.id);
         }
         // Create inbox entry for inbox-mode runs.

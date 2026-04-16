@@ -99,7 +99,6 @@ function CellRow({ cell }: { cell: NotebookCell }) {
       <div className="mb-4 border-l-2 border-transparent pl-4">
         <div
           className="prose prose-sm max-w-none text-primary"
-          // biome-ignore lint/security/noDangerouslySetInnerHtml: output passes through renderMarkdownSafe
           dangerouslySetInnerHTML={{ __html: renderMarkdownSafe(cell.source) }}
         />
       </div>

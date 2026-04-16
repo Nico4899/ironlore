@@ -59,11 +59,8 @@ export async function executeAgentRun(
   const { provider, projectContext, dispatcher, dataRoot, projectDir, model, agentSlug } = opts;
 
   // Check if this agent uses inbox mode for autonomous runs.
-  const reviewMode =
-    job.mode === "autonomous" ? parseReviewMode(dataRoot, agentSlug) : null;
-  const inboxBranch = reviewMode === "inbox"
-    ? `agents/${agentSlug}/${job.id}`
-    : null;
+  const reviewMode = job.mode === "autonomous" ? parseReviewMode(dataRoot, agentSlug) : null;
+  const inboxBranch = reviewMode === "inbox" ? `agents/${agentSlug}/${job.id}` : null;
 
   // Create and checkout inbox staging branch if needed.
   if (inboxBranch) {

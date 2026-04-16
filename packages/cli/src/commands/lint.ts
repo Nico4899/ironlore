@@ -1,5 +1,5 @@
-import { reindex } from "./reindex.js";
 import { migrate } from "./migrate.js";
+import { reindex } from "./reindex.js";
 import { repair } from "./repair.js";
 
 /**
@@ -30,9 +30,7 @@ interface LintOptions {
 }
 
 export function lint(options: LintOptions): void {
-  const categories: Category[] = options.check
-    ? ([options.check] as Category[])
-    : [...CATEGORIES];
+  const categories: Category[] = options.check ? ([options.check] as Category[]) : [...CATEGORIES];
 
   console.log(`\nironlore lint${options.fix ? " --fix" : ""}`);
   console.log("─".repeat(50));
@@ -66,7 +64,7 @@ export function lint(options: LintOptions): void {
     }
   }
 
-  console.log("\n" + "─".repeat(50));
+  console.log(`\n${"─".repeat(50)}`);
   if (issues > 0) {
     console.log(`  ${issues} issue(s) found. Run with --fix to repair.`);
     process.exit(1);
