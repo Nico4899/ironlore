@@ -58,6 +58,26 @@ export async function executeAgentRun(
 ): Promise<JobResult> {
   const { provider, projectContext, dispatcher, dataRoot, projectDir, model, agentSlug } = opts;
 
+  // Check if this agent uses inbox mode for autonomous runs.
+  const reviewMode =
+    job.mode === "autonomous" ? parseReviewMode(dataRoot, agentSlug) : null;
+  const inboxBranch = reviewMode === "inbox"
+    ? `agents/${agentSlug}/${job.id}`
+    : null;
+
+  // Create and checkout inbox staging branch if needed.
+  if (inboxBranch) {
+    try {
+      execSync(`git checkout -b ${inboxBranch}`, {
+        cwd: projectDir,
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
+    } catch {
+      // Branch creation failed — proceed on main.
+    }
+  }
+
   // Capture git HEAD before the run for commit-range tracking.
   let commitShaStart: string | null = null;
   try {
@@ -234,12 +254,26 @@ export async function executeAgentRun(
     // No commits produced — skip.
   }
 
+  // Switch back to main if we were on an inbox staging branch.
+  if (inboxBranch) {
+    try {
+      execSync("git checkout main", {
+        cwd: projectDir,
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
+    } catch {
+      // Checkout back to main failed — log but don't fail the run.
+    }
+  }
+
   return {
     status: "done",
     result: JSON.stringify({
       outcome: journalEmitted ? "finalized" : "completed",
       commitShaStart,
       commitShaEnd,
+      inboxBranch,
     }),
   };
 }
@@ -259,4 +293,16 @@ function loadPersona(dataRoot: string, slug: string): string {
   // Strip YAML frontmatter — the persona body is the system prompt.
   const stripped = raw.replace(/^---[\s\S]*?^---\r?\n?/m, "").trim();
   return stripped || `You are the ${slug} assistant for this Ironlore knowledge base.`;
+}
+
+/**
+ * Parse the persona's YAML frontmatter for `review_mode`.
+ * Returns `"inbox"` if the persona declares it, `null` otherwise.
+ */
+function parseReviewMode(dataRoot: string, slug: string): "inbox" | null {
+  const personaPath = join(dataRoot, ".agents", slug, "persona.md");
+  if (!existsSync(personaPath)) return null;
+  const raw = readFileSync(personaPath, "utf-8");
+  const match = /^review_mode:\s*(\w+)/m.exec(raw);
+  return match?.[1] === "inbox" ? "inbox" : null;
 }

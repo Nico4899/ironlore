@@ -204,12 +204,13 @@ async function start() {
     // Record outcome for auto-pause rails.
     rails.recordOutcome(jobCtx.projectId, agentSlug, result.status === "done");
 
-    // Write commit SHA range back to the job row for revert support.
+    // Write commit SHA range back to the job row + create inbox entry if applicable.
     if (result.result) {
       try {
         const parsed = JSON.parse(result.result) as {
           commitShaStart?: string;
           commitShaEnd?: string;
+          inboxBranch?: string;
         };
         if (parsed.commitShaStart || parsed.commitShaEnd) {
           jobsDb
@@ -217,6 +218,19 @@ async function start() {
               "UPDATE jobs SET commit_sha_start = ?, commit_sha_end = ? WHERE id = ?",
             )
             .run(parsed.commitShaStart ?? null, parsed.commitShaEnd ?? null, job.id);
+        }
+        // Create inbox entry for inbox-mode runs.
+        if (parsed.inboxBranch) {
+          inbox.createEntry({
+            id: `inbox-${job.id}`,
+            projectId: jobCtx.projectId,
+            agentSlug,
+            branch: parsed.inboxBranch,
+            jobId: job.id,
+            filesChanged: [],
+            startedAt: job.started_at ?? Date.now(),
+            finalizedAt: Date.now(),
+          });
         }
       } catch {
         // Non-JSON result — skip.
