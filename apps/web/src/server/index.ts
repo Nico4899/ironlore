@@ -1,25 +1,39 @@
+import { join } from "node:path";
 import { serve } from "@hono/node-server";
 import type { HealthResponse, ReadyResponse } from "@ironlore/core";
 import { DEFAULT_HOST, DEFAULT_PORT, DEFAULT_PROJECT_ID } from "@ironlore/core";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { createAgentApi, createJobApi } from "./agents/api.js";
+import { executeAgentRun } from "./agents/executor.js";
+import { AgentRails } from "./agents/rails.js";
+import { seedAgents } from "./agents/seed-agents.js";
 import { createAuthApi, SessionStore } from "./auth.js";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
 import { FileWatcher } from "./file-watcher.js";
 import { GitWorker } from "./git-worker.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
+import { openJobsDb } from "./jobs/schema.js";
+import { WorkerPool } from "./jobs/worker.js";
 import { LinksRegistry } from "./links-registry.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
 import { createPagesApi, createRawApi } from "./pages-api.js";
 import { checkPermissions } from "./permissions.js";
+import { ProviderRegistry } from "./providers/registry.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { createSearchApi } from "./search-api.js";
 import { SearchIndex } from "./search-index.js";
 import { StorageWriter } from "./storage-writer.js";
 import { TerminalManager } from "./terminal.js";
+import { createAgentJournal } from "./tools/agent-journal.js";
+import { ToolDispatcher } from "./tools/dispatcher.js";
+import { createKbCreatePage } from "./tools/kb-create-page.js";
+import { createKbReadPage } from "./tools/kb-read-page.js";
+import { createKbReplaceBlock } from "./tools/kb-replace-block.js";
+import { createKbSearch } from "./tools/kb-search.js";
 import type { Wal } from "./wal.js";
 import { WebSocketManager } from "./ws.js";
 
@@ -131,6 +145,65 @@ async function start() {
   const { indexed } = await searchIndex.reindexAll(writer.getDataRoot());
   console.log(`Search index: ${indexed} pages indexed`);
 
+  // ─── Jobs + agents engine ───────────────────────────────────────
+  const jobsDbPath = join(installRoot, "jobs.sqlite");
+  const jobsDb = openJobsDb(jobsDbPath);
+  const pool = new WorkerPool(jobsDb);
+  const rails = new AgentRails(jobsDb);
+
+  // Seed agent_state rows for default agents.
+  seedAgents(writer.getDataRoot(), jobsDb);
+
+  // Provider registry — auto-detect Ollama, register Anthropic from env.
+  const providerRegistry = new ProviderRegistry();
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  if (anthropicKey) {
+    providerRegistry.registerAnthropic(anthropicKey);
+    console.log("Provider: Anthropic registered");
+  }
+  const ollamaDetected = await providerRegistry.autoDetectOllama();
+  if (ollamaDetected) {
+    console.log(`Provider: Ollama detected (${providerRegistry.getOllamaModels().length} models)`);
+  }
+
+  // Tool dispatcher — register all kb.* tools + agent.journal.
+  const dispatcher = new ToolDispatcher();
+  dispatcher.register(createKbSearch(searchIndex));
+  dispatcher.register(createKbReadPage(writer));
+  dispatcher.register(createKbReplaceBlock(writer, searchIndex));
+  dispatcher.register(createKbCreatePage(writer, searchIndex));
+  dispatcher.register(createAgentJournal(writer.getDataRoot()));
+
+  // Register the agent.run job handler.
+  pool.register("agent.run", async (job, jobCtx) => {
+    const payload = JSON.parse(job.payload) as { prompt?: string };
+    const agentSlug = job.owner_id ?? "general";
+    const provider = providerRegistry.resolve();
+    if (!provider) {
+      jobCtx.emitEvent("message.error", { text: "No AI provider configured" });
+      return { status: "failed", result: "No AI provider configured" };
+    }
+    const projectContext = ProviderRegistry.buildContext(jobCtx.projectId, fetch);
+    const result = await executeAgentRun(job, jobCtx, {
+      provider,
+      projectContext,
+      dispatcher,
+      dataRoot: writer.getDataRoot(),
+      model: provider.name === "ollama" ? (providerRegistry.getOllamaModels()[0] ?? "llama3") : "claude-sonnet-4-20250514",
+      agentSlug,
+      prompt: payload.prompt,
+    });
+
+    // Record outcome for auto-pause rails.
+    rails.recordOutcome(jobCtx.projectId, agentSlug, result.status === "done");
+
+    return result;
+  });
+
+  // Start the worker pool.
+  pool.start();
+  console.log("Worker pool started");
+
   // Create broadcast callback that forwards to the WebSocket manager
   // (wsManager is assigned below; the closure reads the module-level
   // reference at call time, so late binding is fine).
@@ -149,6 +222,16 @@ async function start() {
   // Mount search API (FTS5, backlinks, recent edits)
   const searchApi = createSearchApi(searchIndex);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/search`, searchApi);
+
+  // Mount agent API (run, state, pause/resume)
+  app.use("/api/projects/*/agents/*", authMiddleware);
+  const agentApi = createAgentApi(pool, rails, DEFAULT_PROJECT_ID);
+  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/agents`, agentApi);
+
+  // Mount job API (status, events)
+  app.use("/api/projects/*/jobs/*", authMiddleware);
+  const jobApi = createJobApi(pool);
+  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/jobs`, jobApi);
 
   // Expose WAL for health endpoint
   wal = writer.getWal();
