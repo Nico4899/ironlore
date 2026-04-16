@@ -184,8 +184,11 @@ export async function executeAgentRun(
       journalEmitted = true;
     }
 
-    // For interactive mode, we'd wait for the next user message here.
-    // That's wired in Step 8 via the WebSocket bridge.
+    // Interactive mode requires a WebSocket bridge that pipes user
+    // messages into an async queue the executor awaits between turns.
+    // That wiring is Track B work (AI panel + job_events WS
+    // subscription + disconnect→pause→reconnect lifecycle). Until
+    // then, interactive runs execute one turn and return.
     break;
   }
 
