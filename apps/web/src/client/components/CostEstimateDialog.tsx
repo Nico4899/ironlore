@@ -53,7 +53,7 @@ export function CostEstimateDialog({ agentSlug, onConfirm, onCancel }: CostEstim
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div
         ref={dialogRef}
-        className="w-96 rounded-xl border border-border bg-ironlore-slate p-5 shadow-2xl"
+        className="surface-glass w-96 rounded-xl p-5"
         role="dialog"
         aria-label="Cost estimate"
       >

@@ -47,40 +47,40 @@ import { useTreeStore } from "../stores/tree.js";
 // ---------------------------------------------------------------------------
 
 function FileIcon({ type }: { type: PageType | "directory" }) {
-  const cls = "h-4 w-4 shrink-0 text-secondary";
+  const base = "h-4 w-4 shrink-0";
   switch (type) {
     case "directory":
-      return <FolderClosed className={cls} />;
+      return <FolderClosed className={`${base} icon-folder`} />;
     case "markdown":
-      return <FileText className={cls} />;
+      return <FileText className={`${base} icon-markdown`} />;
     case "pdf":
-      return <FileType className={cls} />;
+      return <FileType className={`${base} icon-pdf`} />;
     case "csv":
-      return <FileSpreadsheet className={cls} />;
+      return <FileSpreadsheet className={`${base} icon-csv`} />;
     case "image":
-      return <Image className={cls} />;
+      return <Image className={`${base} icon-image`} />;
     case "video":
-      return <Video className={cls} />;
+      return <Video className={`${base} icon-video`} />;
     case "audio":
-      return <Music className={cls} />;
+      return <Music className={`${base} icon-audio`} />;
     case "source-code":
-      return <FileCode className={cls} />;
+      return <FileCode className={`${base} icon-code`} />;
     case "mermaid":
-      return <Workflow className={cls} />;
+      return <Workflow className={`${base} icon-mermaid`} />;
     case "text":
-      return <FileText className={cls} />;
+      return <FileText className={`${base} icon-text`} />;
     case "transcript":
-      return <Captions className={cls} />;
+      return <Captions className={`${base} icon-markdown`} />;
     case "word":
-      return <FileType className={cls} />;
+      return <FileType className={`${base} icon-word`} />;
     case "excel":
-      return <FileSpreadsheet className={cls} />;
+      return <FileSpreadsheet className={`${base} icon-excel`} />;
     case "email":
-      return <Mail className={cls} />;
+      return <Mail className={`${base} icon-email`} />;
     case "notebook":
-      return <BookOpen className={cls} />;
+      return <BookOpen className={`${base} icon-notebook`} />;
     default:
-      return <FileText className={cls} />;
+      return <FileText className={`${base} text-secondary`} />;
   }
 }
 
@@ -351,7 +351,7 @@ export function SidebarNew() {
 
   return (
     <aside
-      className={`flex h-full shrink-0 flex-col border-r border-border bg-ironlore-slate transition-all ${
+      className={`sidebar-chrome flex h-full shrink-0 flex-col transition-all ${
         collapsed ? "w-14" : "w-64"
       }`}
     >
@@ -459,9 +459,9 @@ export function SidebarNew() {
               // biome-ignore lint/a11y/useSemanticElements: complex interactive row with context menu
               <div
                 key={item.path}
-                className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+                className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-100 ${
                   isActive
-                    ? "bg-ironlore-blue/15 text-primary"
+                    ? "sidebar-item-active text-primary"
                     : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
                 }`}
                 onClick={() => {
@@ -689,7 +689,7 @@ export function SidebarNew() {
         <button
           type="button"
           onClick={handleNewPage}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md bg-ironlore-blue py-1.5 text-xs font-medium text-white hover:bg-ironlore-blue-strong ${collapsed ? "px-2" : "px-3"}`}
+          className={`btn-depth flex flex-1 items-center justify-center gap-1.5 rounded-md bg-ironlore-blue py-1.5 text-xs font-medium text-white hover:bg-ironlore-blue-strong ${collapsed ? "px-2" : "px-3"}`}
         >
           <FilePlus className="h-3.5 w-3.5" />
           {!collapsed && "New page"}
@@ -707,7 +707,7 @@ export function SidebarNew() {
       {/* ─── Context menu ─── */}
       {contextMenu && (
         <div
-          className="fixed z-50 rounded-lg border border-border bg-ironlore-slate py-1 shadow-xl"
+          className="surface-glass fixed z-50 rounded-lg py-1"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <ContextMenuItem label="New file" onClick={ctxNewFile} />
@@ -752,7 +752,7 @@ function SidebarBottomTab({
       <Icon className="h-4 w-4 shrink-0" />
       {!collapsed && <span>{label}</span>}
       {badge !== undefined && badge > 0 && (
-        <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-red px-1 text-[10px] font-bold text-white">
+        <span className="badge-glow absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-signal-red px-1 text-[10px] font-bold text-white">
           {badge}
         </span>
       )}

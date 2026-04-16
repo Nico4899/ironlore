@@ -2,76 +2,101 @@
 
 /* ─── OKLCh Color System ─── */
 
-/* Dark mode is the default (spec §Dark / light toggle). The `light`
- * custom variant activates when `.light` is on an ancestor of the
- * element; `useThemeClass` toggles it on <html> when the user picks
- * light mode. */
 @custom-variant light (&:is(.light *));
 
 @theme inline {
-  /* Ironlore palette — bolder, more committed. The previous tokens sat
-   * mid-lightness and read timid; these punch harder while staying in
-   * OKLCh so contrast stays verifiable. */
+  /* Core palette */
   --color-ironlore-blue: oklch(0.65 0.18 258);
   --color-ironlore-blue-strong: oklch(0.72 0.20 258);
-  --color-ironlore-slate: oklch(0.22 0.015 260);
-  --color-ironlore-slate-hover: oklch(0.28 0.015 260);
-  /* Editor / workspace canvas — deeper than slate so panels read as
-   * "stage" against the chrome "apron". */
-  --color-background: oklch(0.16 0.01 260);
+  --color-ironlore-blue-dim: oklch(0.45 0.12 258);
+  --color-ironlore-slate: oklch(0.20 0.015 260);
+  --color-ironlore-slate-hover: oklch(0.26 0.018 260);
+  --color-ironlore-slate-elevated: oklch(0.24 0.016 260);
+  --color-background: oklch(0.14 0.012 260);
+  --color-background-raised: oklch(0.18 0.014 260);
 
+  /* Signals */
   --color-signal-amber: oklch(0.82 0.17 80);
   --color-signal-red: oklch(0.62 0.22 25);
   --color-signal-green: oklch(0.72 0.17 148);
 
-  /* Accent — a deliberate warm contrast to the blue, used only for AI
-   * surfaces (sparkles, Ask AI, example-prompt card). Stays muted so
-   * it doesn't fight the blue. */
+  /* Accents */
   --color-accent-violet: oklch(0.68 0.17 300);
-  /* Highlight tones for the Highlight & Ask pop-up. Four deliberate
-   * marker colors that read at 0.4 alpha on both light and dark. */
+  --color-accent-teal: oklch(0.70 0.14 185);
+  --color-accent-rose: oklch(0.68 0.16 10);
+
+  /* Highlights */
   --color-highlight-yellow: oklch(0.90 0.17 95);
   --color-highlight-green: oklch(0.78 0.17 150);
   --color-highlight-blue: oklch(0.78 0.14 230);
   --color-highlight-pink: oklch(0.75 0.17 0);
 
-  --color-primary: oklch(0.96 0.005 260);
-  --color-secondary: oklch(0.68 0.015 260);
-  --color-border: oklch(0.32 0.01 260);
+  /* Text */
+  --color-primary: oklch(0.94 0.005 260);
+  --color-secondary: oklch(0.58 0.015 260);
+  --color-tertiary: oklch(0.42 0.012 260);
+
+  /* Borders */
+  --color-border: oklch(0.28 0.012 260);
   --color-border-strong: oklch(0.52 0.020 260);
+  --color-border-glow: oklch(0.65 0.18 258 / 0.3);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3), 0 1px 3px oklch(0 0 0 / 0.2);
+  --shadow-md: 0 4px 6px oklch(0 0 0 / 0.3), 0 2px 4px oklch(0 0 0 / 0.2);
+  --shadow-lg: 0 10px 25px oklch(0 0 0 / 0.4), 0 4px 10px oklch(0 0 0 / 0.3);
+  --shadow-glow-blue: 0 0 12px oklch(0.65 0.18 258 / 0.25), 0 0 4px oklch(0.65 0.18 258 / 0.15);
+  --shadow-glow-amber: 0 0 12px oklch(0.82 0.17 80 / 0.2);
+  --shadow-glow-red: 0 0 12px oklch(0.62 0.22 25 / 0.2);
+  --shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.25);
 }
 
 /* ─── Light mode overrides ─── */
 
 @variant light {
   @theme inline {
-    --color-ironlore-blue: oklch(0.55 0.20 258);
-    --color-ironlore-blue-strong: oklch(0.48 0.22 258);
-    --color-ironlore-slate: oklch(0.95 0.008 260);
-    --color-ironlore-slate-hover: oklch(0.90 0.010 260);
-    --color-background: oklch(0.99 0.003 260);
+    --color-ironlore-blue: oklch(0.52 0.20 258);
+    --color-ironlore-blue-strong: oklch(0.45 0.22 258);
+    --color-ironlore-blue-dim: oklch(0.72 0.10 258);
+    --color-ironlore-slate: oklch(0.96 0.006 260);
+    --color-ironlore-slate-hover: oklch(0.92 0.008 260);
+    --color-ironlore-slate-elevated: oklch(0.98 0.004 260);
+    --color-background: oklch(0.93 0.005 260);
+    --color-background-raised: oklch(0.99 0.003 260);
 
     --color-signal-amber: oklch(0.68 0.17 75);
     --color-signal-red: oklch(0.55 0.22 25);
     --color-signal-green: oklch(0.56 0.17 148);
 
     --color-accent-violet: oklch(0.55 0.20 300);
+    --color-accent-teal: oklch(0.50 0.14 185);
+    --color-accent-rose: oklch(0.55 0.16 10);
+
     --color-highlight-yellow: oklch(0.90 0.17 95);
     --color-highlight-green: oklch(0.82 0.15 150);
     --color-highlight-blue: oklch(0.82 0.12 230);
     --color-highlight-pink: oklch(0.80 0.15 0);
 
-    --color-primary: oklch(0.18 0.01 260);
-    --color-secondary: oklch(0.42 0.012 260);
-    --color-border: oklch(0.82 0.010 260);
+    --color-primary: oklch(0.16 0.012 260);
+    --color-secondary: oklch(0.46 0.012 260);
+    --color-tertiary: oklch(0.62 0.010 260);
+
+    --color-border: oklch(0.85 0.008 260);
     --color-border-strong: oklch(0.72 0.015 260);
+    --color-border-glow: oklch(0.52 0.20 258 / 0.2);
+
+    --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04);
+    --shadow-md: 0 4px 6px oklch(0 0 0 / 0.08), 0 2px 4px oklch(0 0 0 / 0.04);
+    --shadow-lg: 0 10px 25px oklch(0 0 0 / 0.1), 0 4px 10px oklch(0 0 0 / 0.06);
+    --shadow-glow-blue: 0 0 12px oklch(0.52 0.20 258 / 0.15);
+    --shadow-glow-amber: 0 0 12px oklch(0.68 0.17 75 / 0.12);
+    --shadow-glow-red: 0 0 12px oklch(0.55 0.22 25 / 0.12);
+    --shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.06);
   }
 }
 
 /* ─── Base ─── */
 
-/* Dark is the default. `useThemeClass` overrides `color-scheme` at
- * runtime when the user picks light mode. */
 html {
   color-scheme: dark;
 }
@@ -99,13 +124,134 @@ kbd {
   font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
-/* Text selection — primary tint, slightly darker than the background so
- * the selected span reads as an elevated surface rather than a bright
- * blue rectangle. Applies everywhere outside CodeMirror/ProseMirror
- * (those have their own selection rules). */
 ::selection {
   background-color: oklch(from var(--color-ironlore-blue) l c h / 0.35);
   color: var(--color-primary);
+}
+
+/* ─── Depth utilities ─── */
+
+/* Elevated surface — used for cards, panels, floating UI */
+.surface-elevated {
+  background-color: var(--color-ironlore-slate-elevated);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-border);
+}
+
+/* Raised surface — subtle lift for active states */
+.surface-raised {
+  background-color: var(--color-background-raised);
+  box-shadow: var(--shadow-md);
+}
+
+/* Glass effect — for overlays, dialogs, floating menus */
+.surface-glass {
+  background: oklch(from var(--color-ironlore-slate) l c h / 0.85);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border: 1px solid oklch(from var(--color-border) l c h / 0.6);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Inset surface — for inputs, wells, embedded content */
+.surface-inset {
+  background-color: var(--color-background);
+  box-shadow: var(--shadow-inner);
+  border: 1px solid var(--color-border);
+}
+
+/* Glow focus ring — for primary interactive elements */
+.glow-focus:focus-visible {
+  outline: 2px solid var(--color-ironlore-blue);
+  outline-offset: 2px;
+  box-shadow: var(--shadow-glow-blue);
+}
+
+/* Button depth — elevated button with hover lift */
+.btn-depth {
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s, transform 0.1s;
+}
+.btn-depth:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-0.5px);
+}
+.btn-depth:active {
+  box-shadow: var(--shadow-inner);
+  transform: translateY(0.5px);
+}
+
+/* Gradient border — subtle color shift on borders */
+.border-gradient {
+  border-image: linear-gradient(
+    to bottom,
+    oklch(from var(--color-border) calc(l + 0.08) c h),
+    var(--color-border),
+    oklch(from var(--color-border) calc(l - 0.04) c h)
+  ) 1;
+}
+
+/* Badge glow — notification badges */
+.badge-glow {
+  box-shadow: 0 0 6px oklch(0.62 0.22 25 / 0.5);
+}
+
+/* ─── File type icon colors ─── */
+
+.icon-markdown { color: oklch(0.72 0.12 258); }
+.icon-pdf { color: oklch(0.62 0.18 25); }
+.icon-csv { color: oklch(0.68 0.16 148); }
+.icon-image { color: oklch(0.72 0.14 80); }
+.icon-video { color: oklch(0.68 0.16 300); }
+.icon-audio { color: oklch(0.72 0.14 185); }
+.icon-code { color: oklch(0.68 0.14 148); }
+.icon-mermaid { color: oklch(0.72 0.14 185); }
+.icon-text { color: oklch(0.58 0.015 260); }
+.icon-word { color: oklch(0.58 0.18 258); }
+.icon-excel { color: oklch(0.62 0.18 148); }
+.icon-email { color: oklch(0.68 0.14 80); }
+.icon-notebook { color: oklch(0.72 0.16 38); }
+.icon-folder { color: oklch(0.72 0.14 80); }
+
+/* ─── Sidebar depth ─── */
+
+.sidebar-chrome {
+  background: linear-gradient(
+    180deg,
+    var(--color-ironlore-slate) 0%,
+    oklch(from var(--color-ironlore-slate) calc(l - 0.02) c h) 100%
+  );
+  box-shadow: inset -1px 0 0 var(--color-border),
+              2px 0 8px oklch(0 0 0 / 0.15);
+}
+
+/* Active sidebar item — subtle glow */
+.sidebar-item-active {
+  background: linear-gradient(
+    135deg,
+    oklch(from var(--color-ironlore-blue) l c h / 0.15) 0%,
+    oklch(from var(--color-ironlore-blue) l c h / 0.08) 100%
+  );
+  box-shadow: inset 0 0 0 1px oklch(from var(--color-ironlore-blue) l c h / 0.2);
+}
+
+/* ─── Tab depth ─── */
+
+.tab-active {
+  background: var(--color-background-raised);
+  box-shadow: 0 -2px 0 var(--color-ironlore-blue) inset,
+              var(--shadow-sm);
+}
+
+.tab-inactive {
+  background: transparent;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.tab-inactive:hover {
+  opacity: 1;
+  background: oklch(from var(--color-ironlore-slate-hover) l c h / 0.5);
 }
 
 /* ─── Skip navigation (a11y) ─── */
@@ -124,17 +270,70 @@ kbd {
   top: 0;
 }
 
-/* ─── PDF text layer (Phase 2.5 §PDF text selection) ─────────────────
- *
- * pdfjs-dist emits invisible positioned spans on top of each page
- * canvas so the user can drag-select text, the OS find-in-page works,
- * and screen readers announce semantic content. The browser's selection
- * styling (set globally above) carries through to highlighted spans.
- *
- * Class names live under the `ir-pdf-` namespace so we don't conflict
- * with the upstream PDF.js viewer styles in case anyone imports them
- * later. Keep this CSS minimal — PDF.js itself only needs
- * absolute-positioned, transparent, line-height-1 spans to work. */
+/* ─── Focus rings (a11y) ─── */
+
+:is(button, [role="button"], [role="treeitem"], [role="tab"], [role="option"], [role="menuitem"], a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--color-ironlore-blue);
+  outline-offset: 2px;
+  border-radius: 3px;
+  box-shadow: var(--shadow-glow-blue);
+}
+
+.ProseMirror:focus-visible {
+  outline: none;
+}
+
+/* ─── Inputs with depth ─── */
+
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  box-shadow: var(--shadow-inner);
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+textarea:focus,
+select:focus {
+  box-shadow: var(--shadow-inner), var(--shadow-glow-blue);
+  border-color: var(--color-ironlore-blue) !important;
+}
+
+/* ─── Scrollbar styling ─── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(from var(--color-secondary) l c h / 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(from var(--color-secondary) l c h / 0.5);
+}
+
+/* ─── Reduced motion ─── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── PDF text layer ─── */
+
 .ir-pdf-page {
   position: relative;
   display: block;
@@ -159,7 +358,6 @@ kbd {
   transform-origin: 0% 0%;
 }
 
-/* PDF.js uses `endOfContent` as a tail marker; keep it invisible. */
 .ir-pdf-textLayer .endOfContent {
   display: block;
   position: absolute;
@@ -169,38 +367,7 @@ kbd {
   user-select: none;
 }
 
-/* ─── Focus rings (a11y) ─── */
-
-/*
- * Many interactive elements use Tailwind's `outline-none` to kill the
- * default browser ring. Restore a visible ring for keyboard-only focus so
- * keyboard users always see where they are. Mouse clicks don't trigger
- * :focus-visible in modern browsers, so pointer users aren't affected.
- */
-:is(button, [role="button"], [role="treeitem"], [role="tab"], [role="option"], [role="menuitem"], a, input, select, textarea, summary):focus-visible {
-  outline: 2px solid var(--color-ironlore-blue);
-  outline-offset: 2px;
-  border-radius: 3px;
-}
-
-.ProseMirror:focus-visible {
-  outline: none;
-}
-
-/* ─── Reduced motion ─── */
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-/* ─── .docx-body (mammoth-rendered Word output) ─── */
+/* ─── .docx-body ─── */
 
 .docx-body {
   font-family: Inter, system-ui, -apple-system, sans-serif;
@@ -209,37 +376,12 @@ kbd {
   color: var(--color-primary);
 }
 
-.docx-body h1 {
-  font-size: 22px;
-  font-weight: 600;
-  margin: 1.4em 0 0.6em;
-}
-
-.docx-body h2 {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 1.2em 0 0.5em;
-}
-
-.docx-body h3 {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 1em 0 0.4em;
-}
-
-.docx-body p {
-  margin: 0.6em 0;
-}
-
-.docx-body ul,
-.docx-body ol {
-  padding-left: 1.5em;
-  margin: 0.6em 0;
-}
-
-.docx-body li {
-  margin: 0.2em 0;
-}
+.docx-body h1 { font-size: 22px; font-weight: 600; margin: 1.4em 0 0.6em; }
+.docx-body h2 { font-size: 18px; font-weight: 600; margin: 1.2em 0 0.5em; }
+.docx-body h3 { font-size: 15px; font-weight: 600; margin: 1em 0 0.4em; }
+.docx-body p { margin: 0.6em 0; }
+.docx-body ul, .docx-body ol { padding-left: 1.5em; margin: 0.6em 0; }
+.docx-body li { margin: 0.2em 0; }
 
 .docx-body blockquote {
   border-left: 3px solid var(--color-border);
@@ -256,13 +398,8 @@ kbd {
   border-radius: 3px;
 }
 
-.docx-body table {
-  border-collapse: collapse;
-  margin: 0.8em 0;
-}
-
-.docx-body th,
-.docx-body td {
+.docx-body table { border-collapse: collapse; margin: 0.8em 0; }
+.docx-body th, .docx-body td {
   border: 1px solid var(--color-border);
   padding: 0.4em 0.7em;
   text-align: left;

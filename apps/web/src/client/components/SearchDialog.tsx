@@ -167,10 +167,7 @@ export function SearchDialog() {
       aria-modal="true"
       aria-label={messages.sidebarSearch}
     >
-      <div
-        ref={dialogRef}
-        className="flex w-full max-w-lg flex-col rounded-lg border border-border bg-ironlore-slate shadow-lg"
-      >
+      <div ref={dialogRef} className="surface-glass flex w-full max-w-lg flex-col rounded-xl">
         {/* Search input */}
         <div className="flex items-center gap-2 border-b border-border px-4 py-3">
           <Search className="h-4 w-4 shrink-0 text-secondary" />

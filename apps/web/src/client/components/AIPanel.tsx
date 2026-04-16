@@ -78,8 +78,11 @@ export function AIPanel() {
 
   return (
     <aside
-      className="flex shrink-0 flex-col border-l border-border bg-ironlore-slate"
-      style={{ width: "380px" }}
+      className="flex shrink-0 flex-col border-l border-border bg-ironlore-slate-elevated"
+      style={{
+        width: "380px",
+        boxShadow: "inset 1px 0 0 var(--color-border), -4px 0 12px oklch(0 0 0 / 0.15)",
+      }}
       aria-label="AI panel"
     >
       {/* Header */}
