@@ -203,7 +203,9 @@ async function start() {
     return result;
   });
 
-  // Start the worker pool.
+  // Start the worker pool + backpressure controller.
+  const backpressure = new BackpressureController();
+  backpressure.start();
   pool.start();
   workerPool = pool;
   console.log("Worker pool started");

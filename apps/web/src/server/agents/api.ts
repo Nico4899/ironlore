@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
+import { estimateRunCost } from "./cost-estimate.js";
 import type { AgentInbox } from "./inbox.js";
 import type { AgentRails } from "./rails.js";
 import { revertAgentRun } from "./revert-run.js";
@@ -93,6 +94,15 @@ export function createAgentApi(pool: WorkerPool, rails: AgentRails, projectId: s
     rails.setPauseState(projectId, slug, body.paused);
 
     return c.json({ ok: true, paused: body.paused });
+  });
+
+  // -----------------------------------------------------------------------
+  // Pre-run cost estimate
+  // -----------------------------------------------------------------------
+  api.get("/:slug/cost-estimate", (c) => {
+    const model = c.req.query("model") ?? "claude-sonnet-4-20250514";
+    const estimate = estimateRunCost(model, 2000, 4000, 8000);
+    return c.json(estimate);
   });
 
   return api;
