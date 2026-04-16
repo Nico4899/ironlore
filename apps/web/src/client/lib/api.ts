@@ -280,6 +280,56 @@ export async function uploadFile(
 }
 
 // ---------------------------------------------------------------------------
+// Jobs / Agent API
+// ---------------------------------------------------------------------------
+
+const JOBS_BASE = `${BASE}/jobs`;
+
+/** Fetch pending inbox entries. */
+export async function fetchInbox(): Promise<{
+  entries: Array<{
+    id: string;
+    agentSlug: string;
+    branch: string;
+    jobId: string;
+    filesChanged: string[];
+    finalizedAt: number;
+    status: string;
+  }>;
+}> {
+  const res = await apiFetch(`${BASE}/inbox`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** Approve an inbox entry (merge staging branch to main). */
+export async function approveInboxEntry(
+  entryId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const res = await apiFetch(`${BASE}/inbox/${entryId}/approve`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** Reject an inbox entry (delete staging branch). */
+export async function rejectInboxEntry(
+  entryId: string,
+): Promise<{ success: boolean; error?: string }> {
+  const res = await apiFetch(`${BASE}/inbox/${entryId}/reject`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** Revert a completed agent run via git revert. */
+export async function revertJob(
+  jobId: string,
+): Promise<{ success: boolean; revertedCommits: string[]; conflicts: string[]; error?: string }> {
+  const res = await apiFetch(`${JOBS_BASE}/${jobId}/revert`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Auth API
 // ---------------------------------------------------------------------------
 

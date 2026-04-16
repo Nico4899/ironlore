@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
+import type { AgentInbox } from "./inbox.js";
 import type { AgentRails } from "./rails.js";
+import { revertAgentRun } from "./revert-run.js";
 
 /**
  * Agent API routes.
@@ -101,7 +103,7 @@ export function createAgentApi(pool: WorkerPool, rails: AgentRails, projectId: s
  *
  * Mounted at `/api/projects/:id/jobs`.
  */
-export function createJobApi(pool: WorkerPool): Hono {
+export function createJobApi(pool: WorkerPool, projectDir: string): Hono {
   const api = new Hono();
 
   // -----------------------------------------------------------------------
@@ -136,6 +138,55 @@ export function createJobApi(pool: WorkerPool): Hono {
 
     const events = pool.getJobEvents(jobId, since);
     return c.json({ events, jobStatus: job.status });
+  });
+
+  // -----------------------------------------------------------------------
+  // Revert a completed agent run
+  // -----------------------------------------------------------------------
+  // -----------------------------------------------------------------------
+  // Revert a completed agent run
+  // -----------------------------------------------------------------------
+  api.post("/:id/revert", (c) => {
+    const jobId = c.req.param("id") ?? "";
+    const job = pool.getJob(jobId);
+    if (!job) return c.json({ error: "Job not found" }, 404);
+    if (job.status !== "done") {
+      return c.json({ error: "Can only revert completed jobs" }, 400);
+    }
+    if (!job.commit_sha_start || !job.commit_sha_end) {
+      return c.json({ error: "Job has no commit range to revert" }, 400);
+    }
+
+    const result = revertAgentRun(job, projectDir);
+    return c.json(result);
+  });
+
+  return api;
+}
+
+/**
+ * Inbox API routes.
+ *
+ * Mounted at `/api/projects/:id/inbox`.
+ */
+export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir: string): Hono {
+  const api = new Hono();
+
+  api.get("/", (c) => {
+    const entries = inbox.getPending(projectId);
+    return c.json({ entries });
+  });
+
+  api.post("/:entryId/approve", (c) => {
+    const entryId = c.req.param("entryId") ?? "";
+    const result = inbox.approveAll(entryId, projectDir);
+    return c.json(result);
+  });
+
+  api.post("/:entryId/reject", (c) => {
+    const entryId = c.req.param("entryId") ?? "";
+    const result = inbox.rejectAll(entryId, projectDir);
+    return c.json(result);
   });
 
   return api;

@@ -1,5 +1,6 @@
 import {
   ChevronRight,
+  Inbox,
   LogOut,
   Moon,
   PanelLeftClose,
@@ -104,6 +105,15 @@ export function Header() {
           title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
         >
           {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
+        <button
+          type="button"
+          className={iconBtn}
+          onClick={() => useAppStore.getState().toggleInbox()}
+          aria-label="Agent inbox"
+          title="Agent inbox"
+        >
+          <Inbox className="h-4 w-4" />
         </button>
         <button
           type="button"

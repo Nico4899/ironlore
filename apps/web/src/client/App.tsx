@@ -5,6 +5,7 @@ import { AIPanelRail } from "./components/AIPanelRail.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { Header } from "./components/Header.js";
+import { InboxPanel } from "./components/InboxPanel.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OfflineBanner } from "./components/OfflineBanner.js";
 import { ProvenancePane } from "./components/ProvenancePane.js";
@@ -54,6 +55,7 @@ function AppShell() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
   const provenance = useAppStore((s) => s.provenance);
+  const inboxOpen = useAppStore((s) => s.inboxOpen);
   const searchDialogOpen = useAppStore((s) => s.searchDialogOpen);
   const terminalOpen = useAppStore((s) => s.terminalOpen);
 
@@ -99,6 +101,9 @@ function AppShell() {
       <div className="flex flex-1 overflow-hidden">
         {sidebarOpen && <Sidebar />}
         <ContentArea />
+        {inboxOpen && (
+          <InboxPanel onClose={() => useAppStore.getState().toggleInbox()} />
+        )}
         {aiPanelOpen ? <AIPanel /> : <AIPanelRail />}
         {provenance && (
           <ProvenancePane

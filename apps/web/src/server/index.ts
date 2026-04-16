@@ -5,7 +5,8 @@ import { DEFAULT_HOST, DEFAULT_PORT, DEFAULT_PROJECT_ID } from "@ironlore/core";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { createAgentApi, createJobApi } from "./agents/api.js";
+import { createAgentApi, createInboxApi, createJobApi } from "./agents/api.js";
+import { AgentInbox } from "./agents/inbox.js";
 import { executeAgentRun } from "./agents/executor.js";
 import { AgentRails } from "./agents/rails.js";
 import { seedAgents } from "./agents/seed-agents.js";
@@ -232,8 +233,13 @@ async function start() {
 
   // Mount job API (status, events)
   app.use("/api/projects/*/jobs/*", authMiddleware);
-  const jobApi = createJobApi(pool);
+  const jobApi = createJobApi(pool, projectDir);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/jobs`, jobApi);
+
+  // Mount inbox API (staging branch review)
+  const inbox = new AgentInbox(jobsDb);
+  const inboxApi = createInboxApi(inbox, DEFAULT_PROJECT_ID, projectDir);
+  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/inbox`, inboxApi);
 
   // Expose WAL for health endpoint
   wal = writer.getWal();

@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
+import { revertJob } from "../lib/api.js";
+import { useAppStore } from "../stores/app.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { DiffPreview } from "./DiffPreview.js";
 
@@ -229,7 +231,9 @@ function MessageList() {
             <div className="rounded-lg bg-ironlore-blue/15 px-3 py-2 text-primary">{msg.text}</div>
           )}
           {msg.type === "assistant" && (
-            <div className="px-1 leading-relaxed text-primary">{msg.text}</div>
+            <div className="px-1 leading-relaxed text-primary">
+              <CitationText text={msg.text} />
+            </div>
           )}
           {msg.type === "tool_call" && <ToolCallCard msg={msg} />}
           {msg.type === "journal" && (
@@ -254,17 +258,7 @@ function MessageList() {
             <div className="rounded-lg bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
           )}
           {msg.type === "run_finalized" && (
-            <div className="rounded-lg border border-border bg-ironlore-slate-hover px-3 py-2 text-xs">
-              <div className="font-semibold text-primary">Run finalized · {msg.agentSlug}</div>
-              <div className="mt-0.5 text-secondary">
-                {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
-                {" · "}
-                <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
-                {"…"}
-                <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
-                {msg.revertedAt !== null && " · reverted"}
-              </div>
-            </div>
+            <RunFinalizedCard msg={msg} />
           )}
         </div>
       ))}
@@ -327,6 +321,122 @@ function ToolCallCard({
 interface ContextChipProps {
   ctx: ContextPill;
   onRemove: () => void;
+}
+
+/**
+ * Run-finalized card with optional Revert button.
+ */
+function RunFinalizedCard({
+  msg,
+}: {
+  msg: {
+    runId: string;
+    agentSlug: string;
+    commitShaStart: string;
+    commitShaEnd: string;
+    filesChanged: string[];
+    revertedAt: number | null;
+  };
+}) {
+  const [reverting, setReverting] = useState(false);
+  const [reverted, setReverted] = useState(msg.revertedAt !== null);
+  const [revertError, setRevertError] = useState<string | null>(null);
+
+  const handleRevert = async () => {
+    if (reverting || reverted) return;
+    setReverting(true);
+    setRevertError(null);
+    try {
+      const result = await revertJob(msg.runId);
+      if (result.success) {
+        setReverted(true);
+      } else {
+        setRevertError(result.error ?? "Revert failed");
+      }
+    } catch (err) {
+      setRevertError((err as Error).message);
+    } finally {
+      setReverting(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border border-border bg-ironlore-slate-hover px-3 py-2 text-xs">
+      <div className="flex items-center justify-between">
+        <div className="font-semibold text-primary">
+          Run finalized · {msg.agentSlug}
+        </div>
+        {!reverted && msg.commitShaStart && msg.commitShaEnd && (
+          <button
+            type="button"
+            disabled={reverting}
+            onClick={handleRevert}
+            className="rounded border border-border px-2 py-0.5 text-[10px] text-secondary hover:bg-ironlore-slate hover:text-primary disabled:opacity-50"
+          >
+            {reverting ? "Reverting\u2026" : "Revert this run"}
+          </button>
+        )}
+      </div>
+      <div className="mt-0.5 text-secondary">
+        {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
+        {" \u00B7 "}
+        <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
+        {"\u2026"}
+        <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
+        {reverted && " \u00B7 reverted"}
+      </div>
+      {revertError && (
+        <div className="mt-1 text-signal-red">{revertError}</div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Render text with clickable `[[Page#blk_…]]` citations.
+ * Clicking a citation opens the provenance pane scrolled to that block.
+ */
+function CitationText({ text }: { text: string }) {
+  const CITATION_RE = /\[\[([^\]#]+)(?:#(blk_[A-Za-z0-9]+))?\]\]/g;
+
+  const parts: Array<{ kind: "text"; value: string } | { kind: "citation"; page: string; blockId: string }> = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = CITATION_RE.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ kind: "text", value: text.slice(lastIndex, match.index) });
+    }
+    parts.push({ kind: "citation", page: match[1] ?? "", blockId: match[2] ?? "" });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push({ kind: "text", value: text.slice(lastIndex) });
+  }
+
+  if (parts.length === 0) return <>{text}</>;
+
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.kind === "text" ? (
+          // biome-ignore lint/suspicious/noArrayIndexKey: stable split
+          <span key={i}>{p.value}</span>
+        ) : (
+          <button
+            key={i}
+            type="button"
+            className="mx-0.5 inline rounded bg-ironlore-blue/15 px-1 py-0.5 text-xs font-medium text-ironlore-blue hover:bg-ironlore-blue/25"
+            onClick={() => useAppStore.getState().openProvenance(p.page, p.blockId)}
+            title={`Open ${p.page}${p.blockId ? `#${p.blockId}` : ""}`}
+          >
+            {p.page}
+            {p.blockId ? `#${p.blockId.slice(0, 10)}…` : ""}
+          </button>
+        ),
+      )}
+    </>
+  );
 }
 
 function ContextChip({ ctx, onRemove }: ContextChipProps) {

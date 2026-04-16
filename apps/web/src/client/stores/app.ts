@@ -48,6 +48,7 @@ interface AppStore {
   wsConnected: boolean;
   wsReconnecting: boolean;
   provenance: { pagePath: string; blockId: string } | null;
+  inboxOpen: boolean;
 
   toggleSidebar: () => void;
   toggleAIPanel: () => void;
@@ -64,6 +65,7 @@ interface AppStore {
   setWsReconnecting: (reconnecting: boolean) => void;
   openProvenance: (pagePath: string, blockId: string) => void;
   closeProvenance: () => void;
+  toggleInbox: () => void;
 }
 
 function persistSidebarWidth(width: number): void {
@@ -95,6 +97,7 @@ export const useAppStore = create<AppStore>((set) => ({
   wsConnected: false,
   wsReconnecting: false,
   provenance: null,
+  inboxOpen: false,
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleAIPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
@@ -141,4 +144,5 @@ export const useAppStore = create<AppStore>((set) => ({
   setWsReconnecting: (reconnecting) => set({ wsReconnecting: reconnecting }),
   openProvenance: (pagePath, blockId) => set({ provenance: { pagePath, blockId } }),
   closeProvenance: () => set({ provenance: null }),
+  toggleInbox: () => set((s) => ({ inboxOpen: !s.inboxOpen })),
 }));
