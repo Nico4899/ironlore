@@ -4,8 +4,8 @@ import {
   detectPageType,
   extractableFormat,
   isSupportedExtension,
-  parseBlocks,
   type PageType,
+  parseBlocks,
 } from "@ironlore/core";
 import { extract } from "@ironlore/core/extractors";
 import Database from "better-sqlite3";

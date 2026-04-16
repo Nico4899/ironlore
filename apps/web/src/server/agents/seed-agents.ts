@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type Database from "better-sqlite3";
 import { AGENTS_DIR, AGENTS_LIBRARY_DIR, AGENTS_SHARED_DIR } from "@ironlore/core";
+import type Database from "better-sqlite3";
 
 /**
  * Seed the agent filesystem layout and agent_state rows for the
@@ -65,11 +65,7 @@ export function seedAgents(dataDir: string, jobsDb: Database.Database): void {
   ensureState.run("main", "editor", now);
 }
 
-function seedAgentDir(
-  dataDir: string,
-  slug: string,
-  meta: Record<string, unknown>,
-): void {
+function seedAgentDir(dataDir: string, slug: string, meta: Record<string, unknown>): void {
   const agentDir = join(dataDir, AGENTS_DIR, slug);
   const personaPath = join(agentDir, "persona.md");
 
@@ -80,15 +76,14 @@ function seedAgentDir(
   mkdirSync(join(agentDir, "skills"), { recursive: true });
 
   const frontmatter = buildFrontmatter(slug, meta);
-  const body = typeof meta.role === "string" ? `\nYou are the ${meta.name} assistant for this Ironlore knowledge base.\n${meta.role}.\n` : "";
+  const body =
+    typeof meta.role === "string"
+      ? `\nYou are the ${meta.name} assistant for this Ironlore knowledge base.\n${meta.role}.\n`
+      : "";
   writeFileSync(personaPath, `${frontmatter}\n${body}`, "utf-8");
 }
 
-function seedLibraryTemplate(
-  dataDir: string,
-  slug: string,
-  meta: Record<string, unknown>,
-): void {
+function seedLibraryTemplate(dataDir: string, slug: string, meta: Record<string, unknown>): void {
   const templateDir = join(dataDir, AGENTS_LIBRARY_DIR, slug);
   const personaPath = join(templateDir, "persona.md");
 
@@ -108,7 +103,8 @@ function buildFrontmatter(slug: string, meta: Record<string, unknown>): string {
   if (meta.role) lines.push(`role: "${meta.role}"`);
   if (meta.provider) lines.push(`provider: ${meta.provider}`);
   lines.push(`active: ${meta.active ?? false}`);
-  if (meta.scope) lines.push(`scope:\n  pages: ${JSON.stringify((meta.scope as { pages: string[] }).pages)}`);
+  if (meta.scope)
+    lines.push(`scope:\n  pages: ${JSON.stringify((meta.scope as { pages: string[] }).pages)}`);
   if (meta.writable_kinds) lines.push(`writable_kinds: ${JSON.stringify(meta.writable_kinds)}`);
   lines.push("---");
   return lines.join("\n");

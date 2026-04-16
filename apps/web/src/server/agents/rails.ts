@@ -30,7 +30,9 @@ export class AgentRails {
   ): { allowed: true } | { allowed: false; reason: string } {
     const state = this.db
       .prepare("SELECT * FROM agent_state WHERE project_id = ? AND slug = ?")
-      .get(projectId, slug) as { status: string; max_runs_per_hour: number; max_runs_per_day: number } | undefined;
+      .get(projectId, slug) as
+      | { status: string; max_runs_per_hour: number; max_runs_per_day: number }
+      | undefined;
 
     if (!state) return { allowed: true }; // No state row → no constraints.
 
@@ -50,7 +52,10 @@ export class AgentRails {
     ).cnt;
 
     if (hourCount >= state.max_runs_per_hour) {
-      return { allowed: false, reason: `rate limited: ${hourCount}/${state.max_runs_per_hour} runs this hour` };
+      return {
+        allowed: false,
+        reason: `rate limited: ${hourCount}/${state.max_runs_per_hour} runs this hour`,
+      };
     }
 
     // Check daily rate limit.
@@ -64,7 +69,10 @@ export class AgentRails {
     ).cnt;
 
     if (dayCount >= state.max_runs_per_day) {
-      return { allowed: false, reason: `rate limited: ${dayCount}/${state.max_runs_per_day} runs today` };
+      return {
+        allowed: false,
+        reason: `rate limited: ${dayCount}/${state.max_runs_per_day} runs today`,
+      };
     }
 
     return { allowed: true };
