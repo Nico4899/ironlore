@@ -9,11 +9,6 @@ Markdown on disk is the contract. Everything else — editor, sync engine, AI, U
 - [Node.js](https://nodejs.org/) 22 LTS or later
 - [pnpm](https://pnpm.io/) 10+
 
-```sh
-# install pnpm if you don't have it
-npm install -g pnpm
-```
-
 ## Setup
 
 ```sh
@@ -25,153 +20,93 @@ pnpm install
 ## Development
 
 ```sh
-# start the Vite dev server (proxies API to Hono on :3000)
-pnpm dev
-
-# start the API server in dev (separate terminal)
-cd apps/web && npx tsx watch src/server/index.ts
-
-# run unit + integration tests
-pnpm test
-
-# run tests in watch mode
-pnpm test:watch
-
-# run e2e tests (requires Playwright browsers)
-pnpm test:e2e
-
-# lint + format check
-pnpm check
-
-# auto-fix lint + format issues
-pnpm check:fix
-
-# typecheck all packages
-pnpm typecheck
+pnpm dev                                          # Vite dev server (port 5173)
+cd apps/web && npx tsx watch src/server/index.ts  # API server (port 3000, separate terminal)
+pnpm test                                         # unit + integration tests (572 tests)
+pnpm test:e2e                                     # e2e tests (Playwright)
+pnpm check                                        # lint + format (Biome)
+pnpm typecheck                                    # tsc -b
 ```
 
 ## First run
 
-On first start, Ironlore seeds the `projects/main/data/` directory with getting-started content (5 onboarding pages), a carousel folder showcasing 10+ file types (CSV, PDF, PNG, SVG, Mermaid, TypeScript, plain text, log, VTT transcript, EML email), two default agent personas (General read-only assistant + Editor with mutations), and a library of 20 specialist agent templates (CEO, Product Manager, Technical Writer, Wiki Gardener, etc.) in `.agents/.library/`.
+On first start, Ironlore seeds `projects/main/data/` with:
 
-It also generates a random admin password, prints it to stdout, and writes the bootstrap record to `.ironlore-install.json` (mode 0600). Save the password — it will not be shown again.
+- **Getting Started** — 5 onboarding pages (pages, agents, search, shortcuts)
+- **Carousel** — sample files for every viewer type (PDF, CSV, PNG, SVG, Mermaid, TypeScript, plain text, log, VTT transcript, EML email, Jupyter notebook)
+- **Default agents** — General (read-only assistant) + Editor (page mutations)
+- **Agent library** — 20 specialist templates in `.agents/.library/` (CEO, Product Manager, Technical Writer, Wiki Gardener, etc.)
 
-On first login you will be forced to change the password. The install record is deleted after the change completes; there is no shipped credential to forget to rotate.
+A random admin password is printed to stdout and written to `.ironlore-install.json` (mode 0600). Save it — it will not be shown again. On first login you must change the password.
+
+## AI providers
+
+Ironlore is BYOK (bring your own key). Configure a provider:
+
+- **Anthropic**: set `ANTHROPIC_API_KEY` before starting the server
+- **Ollama**: run Ollama on `localhost:11434` — auto-detected on startup
+- **No provider**: the editor, search, terminal, and all viewers work without AI. The AI panel shows a hint until a provider is configured
 
 ## Supported file types
 
-Ironlore is not markdown-only. Every file type in the content model has a dedicated viewer:
-
 | Type | Extensions | Viewer | Editable |
 |---|---|---|---|
-| Markdown | `.md` | ProseMirror WYSIWYG + CodeMirror source | Yes (auto-save) |
-| CSV | `.csv` | Spreadsheet table (papaparse) | Yes (auto-save) |
-| PDF | `.pdf` | PDF.js canvas renderer (lazy-loaded) | Read-only |
-| Image | `.png` `.jpg` `.jpeg` `.webp` `.gif` `.svg` | Zoomable image viewer | Read-only |
-| Video | `.mp4` `.webm` `.mov` | HTML5 video player | Read-only |
-| Audio | `.mp3` `.wav` `.m4a` `.ogg` | HTML5 audio player | Read-only |
-| Source code | `.ts` `.js` `.py` `.go` `.rs` + 20 more | Read-only CodeMirror with syntax highlighting | Read-only |
-| Mermaid | `.mermaid` `.mmd` | Mermaid diagram renderer (lazy-loaded) | Read-only |
-| Plain text | `.txt` `.log` | Read-only CodeMirror | Read-only |
-| Transcript | `.vtt` `.srt` | Timestamp + caption table | Read-only |
-| Word | `.docx` | Sanitized HTML (mammoth, lazy-loaded) | Read-only |
-| Excel | `.xlsx` | Tabbed spreadsheet (SheetJS, lazy-loaded, 500-row render cap) | Read-only |
-| Email | `.eml` | Header block + body (postal-mime, lazy-loaded) | Read-only |
-| Notebook | `.ipynb` | Jupyter cells: markdown + code + outputs (lazy-loaded) | Read-only |
+| Markdown | `.md` | ProseMirror WYSIWYG + CodeMirror source | Yes |
+| CSV | `.csv` | Spreadsheet table | Yes |
+| PDF | `.pdf` | PDF.js canvas with text selection | No |
+| Image | `.png` `.jpg` `.webp` `.gif` `.svg` | Zoomable viewer | No |
+| Video | `.mp4` `.webm` `.mov` | HTML5 player | No |
+| Audio | `.mp3` `.wav` `.m4a` `.ogg` | HTML5 player | No |
+| Source code | `.ts` `.js` `.py` `.go` `.rs` + 20 more | CodeMirror with syntax highlighting | No |
+| Mermaid | `.mermaid` `.mmd` | Diagram renderer | No |
+| Plain text | `.txt` `.log` | CodeMirror | No |
+| Transcript | `.vtt` `.srt` | Timestamp + caption table with citations | No |
+| Word | `.docx` | Mammoth HTML + convert-to-markdown button | No |
+| Excel | `.xlsx` | Tabbed grid + convert-to-CSV button | No |
+| Email | `.eml` | Header block + text body | No |
+| Notebook | `.ipynb` | Jupyter cells (markdown + code + outputs) | No |
 
-The sidebar shows file-type-specific Lucide icons. `ContentArea` dispatches to the correct viewer based on the `PageType` detected from the file extension.
+Binary files can be uploaded via drag-and-drop onto the content area.
 
 ## Configuration
 
-All configuration is via environment variables. Unset means "safe default".
-
 | Variable | Default | Description |
 |---|---|---|
-| `IRONLORE_BIND` | `127.0.0.1` | Listen address. Non-loopback requires `IRONLORE_PUBLIC_URL`. |
-| `IRONLORE_PORT` | `3000` | Listen port. |
-| `IRONLORE_PUBLIC_URL` | — | Required for non-loopback bind. Must start with `https://`. |
-| `IRONLORE_ALLOWED_ORIGINS` | same-origin | Comma-separated CORS origin allowlist. `*` is rejected. |
-| `IRONLORE_METRICS` | `false` | Set to `true` to enable the `/metrics` Prometheus endpoint. |
+| `IRONLORE_BIND` | `127.0.0.1` | Listen address |
+| `IRONLORE_PORT` | `3000` | Listen port |
+| `IRONLORE_PUBLIC_URL` | — | Required for non-loopback bind (`https://` only) |
+| `IRONLORE_ALLOWED_ORIGINS` | same-origin | CORS allowlist (comma-separated, `*` rejected) |
+| `IRONLORE_METRICS` | `false` | Enable `/metrics` Prometheus endpoint |
+| `ANTHROPIC_API_KEY` | — | Anthropic API key for Claude models |
 
 ## Project structure
 
 ```
 ironlore/
 ├── apps/
-│   ├── web/              Vite + React SPA + Hono API server
+│   ├── web/                 Vite + React SPA + Hono API server
 │   │   └── src/
-│   │       ├── client/           React 19 SPA
-│   │       │   ├── components/
-│   │       │   │   ├── editor/   ProseMirror + CodeMirror editors, HighlightToolbar
-│   │       │   │   ├── viewers/  File type viewers (11 components)
-│   │       │   │   ├── AIPanel.tsx       AI agent chat interface
-│   │       │   │   ├── ContentArea.tsx   Viewer dispatch hub
-│   │       │   │   ├── Header.tsx        Top nav: logo, search, theme, AI panel
-│   │       │   │   ├── Sidebar.tsx       Hierarchical tree nav with type icons
-│   │       │   │   ├── TabBar.tsx        Tab switcher with disambiguated labels
-│   │       │   │   └── StatusBar.tsx     Last-saved, connection status
-│   │       │   ├── hooks/        useAutoSave, useAgentSession, useWebSocket, useFocusTrap, useResponsiveLayout, useThemeClass
-│   │       │   ├── lib/          API client, markdown rendering, block merge, WebSocket
-│   │       │   └── stores/       Zustand (app, editor, tree, aiPanel, auth)
-│   │       └── server/           Hono API server
-│   │           ├── pages-api.ts        /pages/* and /raw/* endpoints
-│   │           ├── search-api.ts       /search endpoint (FTS5 + chunk-level)
-│   │           ├── storage-writer.ts   File I/O + WAL + ETag + moveDir
-│   │           ├── search-index.ts     FTS5 + chunk FTS5 + backlinks + typed wiki-links
-│   │           ├── file-watcher.ts     External edit detection
-│   │           ├── seed.ts             First-run content seeding
-│   │           ├── ws.ts               WebSocket (ring buffer, replay, resync)
-│   │           ├── terminal.ts         Embedded terminal (buildSafeEnv)
-│   │           ├── jobs/               Durable job queue, worker pool, backpressure
-│   │           ├── providers/          AI providers (Anthropic, Ollama, registry)
-│   │           ├── tools/              Agent tools (kb.*, agent.journal, dispatcher)
-│   │           ├── agents/             Agent executor, rails, session bridge, API
-│   │           └── search/             Query expansion, LLM reranking
-│   ├── worker/           Background job daemon (placeholder)
-│   └── electron/         Desktop shell (placeholder)
+│   │       ├── client/      React 19 SPA (components, hooks, stores, lib)
+│   │       └── server/      Hono API (storage, search, auth, WebSocket,
+│   │                        jobs, providers, tools, agents, terminal)
+│   ├── worker/              Background job daemon (placeholder)
+│   └── electron/            Desktop shell (placeholder)
 ├── packages/
-│   ├── core/             Shared types, schemas, constants, utilities
-│   │   └── src/
-│   │       ├── page-type.ts     PageType detection + extension helpers
-│   │       ├── types.ts         Shared type definitions (PageType, JobStatus, AgentStatus, ProviderId)
-│   │       ├── messages.ts      UI string constants (i18n-ready)
-│   │       ├── block-parser.ts  Block-level markdown parsing (shared client + server)
-│   │       ├── contrast.ts      OKLCh → WCAG contrast ratio computation
-│   │       ├── ws-events.ts     WebSocket event types (tree, search, resync, recovery, lint)
-│   │       ├── extractors/      Content extractors (word, excel, email, notebook)
-│   │       ├── index.ts         Browser-safe exports
-│   │       └── server.ts        Node-only exports (etag, resolve-safe)
-│   ├── cli/              `ironlore` CLI (reindex, flush, migrate, repair, backup, restore, eval)
-│   └── create-ironlore/  `npx create-ironlore` project scaffolder
-├── projects/
-│   └── main/                 Default project
-│       ├── project.yaml      Project config (kind, egress policy)
-│       ├── data/             Knowledge base content (seeded on first run)
-│       └── .ironlore/        Derived state (never committed to git)
-│           ├── index.sqlite  FTS5 search index, backlinks, tags, recent edits
-│           ├── wal/          Write-ahead log (crash recovery)
-│           └── locks/        Advisory lock files (cross-process mutex)
-├── .ironlore-install.json    Bootstrap credentials (deleted after first password change)
-├── ipc.token                 Worker ↔ web auth token (rotated every startup)
-├── password.salt             Per-instance Argon2id salt
-├── sessions.sqlite           Server-side session store
-├── projects.sqlite           Project registry
-└── fixtures/
-    └── kb/                   Test fixture pages
+│   ├── core/                Shared types, schemas, extractors
+│   ├── cli/                 ironlore CLI (lint, reindex, backup, restore, eval)
+│   └── create-ironlore/    npx create-ironlore scaffolder
+├── projects/main/           Default project (data/, .ironlore/, .git/)
+└── fixtures/kb/             Test fixture pages
 ```
-
-Files at the install root (`ipc.token`, `password.salt`, `sessions.sqlite`, `projects.sqlite`, `.ironlore-install.json`) are created with mode 0600. The server refuses to start if any of them have broader permissions.
 
 ## Security
 
-Ironlore is designed for single-user self-hosting but treats security as load-bearing, not decorative:
-
-- **Auth**: Argon2id password hashing with per-instance salt. Ed25519-signed session cookies (`Secure`, `HttpOnly`, `SameSite=Lax`) backed by a server-side session table for instant revocation.
-- **Rate limiting**: token bucket on auth endpoints (5/min per IP) and agent tool calls (60/min per project+agent).
-- **Path traversal**: `resolveSafe()` validates both the logical path and the realpath (symlink resolution). Fuzz-tested with 200 crafted inputs.
-- **Egress enforcement**: all outbound HTTP goes through `fetchForProject()`, gated by the project's `egress.policy` in `project.yaml`. A lint rule bans direct `fetch`/`axios`/`node:https` imports.
-- **IPC auth**: worker ↔ web routes require loopback origin + a timing-safe token comparison.
-- **File permissions**: sensitive files are mode 0600; the server checks on startup and refuses to run if any are too broad.
+- **Auth**: Argon2id + Ed25519 session cookies, server-side revocation
+- **Rate limiting**: 5/min on auth, per-agent tool-call caps
+- **Path traversal**: `resolveSafe()` with realpath check, fuzz-tested (200 inputs)
+- **Egress**: all outbound HTTP via `fetchForProject()` with per-project allowlist
+- **Subprocess safety**: `spawnSafe()` with whitelist-only env (Biome rule enforced)
+- **File permissions**: sensitive files mode 0600, checked on startup
 
 ## License
 

@@ -299,6 +299,7 @@ export class SearchIndex {
   removePage(pagePath: string): void {
     const txn = this.db.transaction(() => {
       this.db.prepare("DELETE FROM pages_fts WHERE path = ?").run(pagePath);
+      this.db.prepare("DELETE FROM pages_chunks_fts WHERE path = ?").run(pagePath);
       this.db.prepare("DELETE FROM backlinks WHERE source_path = ?").run(pagePath);
       this.db.prepare("DELETE FROM tags WHERE path = ?").run(pagePath);
       this.db.prepare("DELETE FROM recent_edits WHERE path = ?").run(pagePath);
@@ -380,8 +381,10 @@ export class SearchIndex {
         existing.score += rrfScore;
         // Prefer chunk snippet (more precise) over page snippet.
         if (r.snippet) existing.result.snippet = r.snippet;
-        if (r.blockIdStart) (existing.result as unknown as Record<string, unknown>).blockIdStart = r.blockIdStart;
-        if (r.blockIdEnd) (existing.result as unknown as Record<string, unknown>).blockIdEnd = r.blockIdEnd;
+        if (r.blockIdStart)
+          (existing.result as unknown as Record<string, unknown>).blockIdStart = r.blockIdStart;
+        if (r.blockIdEnd)
+          (existing.result as unknown as Record<string, unknown>).blockIdEnd = r.blockIdEnd;
       } else {
         scoreMap.set(key, {
           score: rrfScore,
@@ -451,6 +454,7 @@ export class SearchIndex {
     // Clear all tables
     const clear = this.db.transaction(() => {
       this.db.prepare("DELETE FROM pages_fts").run();
+      this.db.prepare("DELETE FROM pages_chunks_fts").run();
       this.db.prepare("DELETE FROM backlinks").run();
       this.db.prepare("DELETE FROM tags").run();
       this.db.prepare("DELETE FROM recent_edits").run();
