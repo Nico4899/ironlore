@@ -7,6 +7,7 @@ import { ContentArea } from "./components/ContentArea.js";
 import { Header } from "./components/Header.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OfflineBanner } from "./components/OfflineBanner.js";
+import { ProvenancePane } from "./components/ProvenancePane.js";
 import { RecoveryBanner } from "./components/RecoveryBanner.js";
 import { SearchDialog } from "./components/SearchDialog.js";
 import { Sidebar } from "./components/Sidebar.js";
@@ -52,6 +53,7 @@ function AppShell() {
 
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
+  const provenance = useAppStore((s) => s.provenance);
   const searchDialogOpen = useAppStore((s) => s.searchDialogOpen);
   const terminalOpen = useAppStore((s) => s.terminalOpen);
 
@@ -98,6 +100,13 @@ function AppShell() {
         {sidebarOpen && <Sidebar />}
         <ContentArea />
         {aiPanelOpen ? <AIPanel /> : <AIPanelRail />}
+        {provenance && (
+          <ProvenancePane
+            pagePath={provenance.pagePath}
+            blockId={provenance.blockId}
+            onClose={() => useAppStore.getState().closeProvenance()}
+          />
+        )}
       </div>
 
       {/* Terminal panel (Ctrl+`) */}
