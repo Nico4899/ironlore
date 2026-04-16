@@ -35,6 +35,12 @@ export interface ExecutorOptions {
   prompt?: string;
   /** Budget caps for the run. */
   budget?: Partial<RunBudget>;
+  /**
+   * Interactive bridge — if provided, the executor waits for user
+   * messages between turns instead of exiting after one turn.
+   * Only meaningful for `mode='interactive'` jobs.
+   */
+  interactiveBridge?: import("./interactive-bridge.js").InteractiveBridge;
 }
 
 /**
@@ -184,11 +190,21 @@ export async function executeAgentRun(
       journalEmitted = true;
     }
 
-    // Interactive mode requires a WebSocket bridge that pipes user
-    // messages into an async queue the executor awaits between turns.
-    // That wiring is Track B work (AI panel + job_events WS
-    // subscription + disconnect→pause→reconnect lifecycle). Until
-    // then, interactive runs execute one turn and return.
+    // Interactive mode: wait for the next user message via the bridge.
+    // If no bridge is provided (e.g. tests), exit after one turn.
+    if (job.mode === "interactive" && opts.interactiveBridge) {
+      const nextMessage = await opts.interactiveBridge.waitForUserMessage();
+      if (nextMessage === null) {
+        // WS disconnected — pause the job, don't finalize.
+        jobCtx.emitEvent("session.paused", { reason: "client_disconnected" });
+        return { status: "done", result: "paused" };
+      }
+      messages.push({ role: "user", content: nextMessage });
+      jobCtx.emitEvent("message.user", { text: nextMessage });
+      continue; // Loop back to the next provider call.
+    }
+
+    // No bridge or autonomous mode — exit after this turn.
     break;
   }
 
