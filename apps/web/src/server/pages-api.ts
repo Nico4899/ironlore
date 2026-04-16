@@ -528,5 +528,30 @@ export function createRawApi(writer: StorageWriter): Hono {
     }
   });
 
+  // -----------------------------------------------------------------------
+  // Upload binary files (docx, xlsx, pdf, images, etc.)
+  // -----------------------------------------------------------------------
+  api.post("/upload/:path{.+}", async (c) => {
+    const filePath = c.req.param("path") ?? "";
+    if (!filePath) {
+      return c.json({ error: "Path required" }, 400);
+    }
+
+    const body = await c.req.arrayBuffer();
+    if (!body || body.byteLength === 0) {
+      return c.json({ error: "Empty body" }, 400);
+    }
+
+    try {
+      const { etag } = await writer.writeBinary(filePath, new Uint8Array(body));
+      return c.json({ ok: true, path: filePath, etag });
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      throw err;
+    }
+  });
+
   return api;
 }

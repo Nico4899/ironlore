@@ -163,6 +163,59 @@ export class StorageWriter {
   }
 
   /**
+   * Write a binary file (PDF, image, docx, xlsx, etc.).
+   * Skips WAL content storage (binary is too large) but records the
+   * operation for git attribution. No ETag check — binary uploads are
+   * create-or-overwrite.
+   */
+  async writeBinary(
+    pagePath: string,
+    data: Uint8Array,
+    author = "user",
+  ): Promise<{ etag: string }> {
+    const absPath = resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator);
+    const relPath = relative(this.dataRoot, absPath);
+
+    return this.mutex.withLock(relPath, async () => {
+      let preHash: string | null = null;
+      try {
+        const current = readFileSync(absPath);
+        preHash = computeEtag(current);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      }
+
+      const postHash = computeEtag(Buffer.from(data));
+      if (preHash === postHash) return { etag: postHash };
+
+      // WAL entry with null content (binary too large for WAL storage).
+      const walId = this.wal.append({
+        path: relPath,
+        op: "write",
+        preHash,
+        postHash,
+        content: null,
+        author,
+        message: preHash ? `Update ${relPath}` : `Upload ${relPath}`,
+      });
+
+      const dir = dirname(absPath);
+      mkdirSync(dir, { recursive: true });
+      const tmpPath = join(dir, `.${randomBytes(8).toString("hex")}.tmp`);
+      try {
+        writeFileSync(tmpPath, data);
+        renameSync(tmpPath, absPath);
+      } catch (err) {
+        try { unlinkSync(tmpPath); } catch { /* ignore */ }
+        throw err;
+      }
+
+      this.wal.markCommitted(walId);
+      return { etag: postHash };
+    });
+  }
+
+  /**
    * Delete a page with ETag check. Works for text and binary files.
    * Pass ifMatch=null to skip the check (used by callers that have no
    * cached ETag, e.g. sidebar delete of non-markdown files).
