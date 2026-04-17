@@ -40,17 +40,21 @@ export async function expandQuery(
   const probeResults = searchIndex.search(query, 3);
 
   if (probeResults.length >= 2) {
-    const top1Score = Math.abs(probeResults[0]?.rank ?? 0);
-    const top2Score = Math.abs(probeResults[1]?.rank ?? 0);
-    const normalizedTop1 = top1Score > 0 ? 1.0 : 0;
+    // FTS5 rank is negative (lower = better). Convert to magnitude so
+    // higher = better for the comparison below.
+    const top1Magnitude = Math.abs(probeResults[0]?.rank ?? 0);
+    const top2Magnitude = Math.abs(probeResults[1]?.rank ?? 0);
 
-    // FTS5 rank is negative (lower = better). Normalize: if the gap
-    // between #1 and #2 is large relative to #1, the signal is strong.
-    if (top2Score > 0 && top1Score > 0) {
-      const ratio = top2Score / top1Score;
-      if (ratio >= STRONG_SIGNAL_GAP && normalizedTop1 >= STRONG_SIGNAL_THRESHOLD) {
-        return { original: query, lexRewrite: null, skipped: true };
-      }
+    // Strong signal: top-1 magnitude clears the threshold AND dominates
+    // top-2 by the configured ratio. Both conditions guard against
+    // "ambiguous but loud" queries where a long body contains many
+    // keyword variants.
+    if (
+      top1Magnitude >= STRONG_SIGNAL_THRESHOLD &&
+      top2Magnitude > 0 &&
+      top1Magnitude / top2Magnitude >= STRONG_SIGNAL_GAP
+    ) {
+      return { original: query, lexRewrite: null, skipped: true };
     }
   }
 

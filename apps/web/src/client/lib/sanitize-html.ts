@@ -60,7 +60,8 @@ const ALLOWED_PROTOCOLS = ["http:", "https:", "mailto:"];
 
 function isSafeUrl(value: string): boolean {
   const trimmed = value.trim().toLowerCase();
-  if (trimmed.startsWith("//")) return true;
+  // Same-page anchors, absolute paths, query strings — always safe.
+  // (No protocol implied; the browser resolves against the current origin.)
   if (trimmed.startsWith("/") || trimmed.startsWith("#") || trimmed.startsWith("?")) return true;
   try {
     const url = new URL(trimmed, "http://local/");

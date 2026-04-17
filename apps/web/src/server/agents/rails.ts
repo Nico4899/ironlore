@@ -95,6 +95,10 @@ export class AgentRails {
   recordOutcome(projectId: string, slug: string, succeeded: boolean): void {
     const now = Date.now();
 
+    // Ensure the state row exists — custom agents (not seeded by
+    // seed-agents.ts) need a row to accumulate failure_streak against.
+    this.ensureState(projectId, slug);
+
     if (succeeded) {
       this.db
         .prepare(
