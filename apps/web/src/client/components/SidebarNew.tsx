@@ -113,6 +113,9 @@ export function SidebarNew() {
   const [editingValue, setEditingValue] = useState("");
   const [slideDir, setSlideDir] = useState<"left" | "right" | null>(null);
   const [hovered, setHovered] = useState(false);
+  // DnD state — the string is either a folder path (drop-into), or one of
+  // the sentinels "__root__" / "__up__" for breadcrumb targets.
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const collapsed = !sidebarOpen;
   const inboxCount = 2; // placeholder
@@ -175,6 +178,56 @@ export function SidebarNew() {
   const openFile = useCallback((path: string) => {
     useAppStore.getState().setActivePath(path);
   }, []);
+
+  // ─── Drag and drop (file moves) ──────────────────────────────────
+  // Files can be dragged onto any folder row in the current view, or
+  // onto the breadcrumb Home/up buttons to move out of the current
+  // folder. The backend (POST /pages/:path/move) handles the sidecar
+  // move and WS broadcast; the tree store picks up the resulting
+  // tree:move event without a full refresh.
+  const handleDragStart = useCallback((e: React.DragEvent, path: string) => {
+    e.dataTransfer.setData("text/plain", path);
+    e.dataTransfer.effectAllowed = "move";
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, target: string, valid: boolean) => {
+    e.preventDefault();
+    if (valid) {
+      e.dataTransfer.dropEffect = "move";
+      setDropTarget(target);
+    } else {
+      e.dataTransfer.dropEffect = "none";
+      setDropTarget(null);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDropTarget(null);
+  }, []);
+
+  const performMove = useCallback(async (sourcePath: string, targetDir: string) => {
+    const fileName = sourcePath.includes("/")
+      ? sourcePath.slice(sourcePath.lastIndexOf("/") + 1)
+      : sourcePath;
+    const destination = targetDir ? `${targetDir}/${fileName}` : fileName;
+    if (sourcePath === destination) return;
+    try {
+      await movePage(sourcePath, destination);
+    } catch {
+      // Move failed — tree state unchanged, WS would revert optimistic UI.
+    }
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent, targetDir: string) => {
+      e.preventDefault();
+      setDropTarget(null);
+      const sourcePath = e.dataTransfer.getData("text/plain");
+      if (!sourcePath) return;
+      await performMove(sourcePath, targetDir);
+    },
+    [performMove],
+  );
 
   // New folder (only in expanded sidebar)
   const handleNewFolder = useCallback(async () => {
@@ -392,16 +445,34 @@ export function SidebarNew() {
           <button
             type="button"
             onClick={drillToRoot}
-            className="rounded p-0.5 hover:bg-ironlore-slate-hover hover:text-primary"
-            title="Go to root"
+            onDragOver={(e) => handleDragOver(e, "__root__", true)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => void handleDrop(e, "")}
+            className={`rounded p-0.5 hover:bg-ironlore-slate-hover hover:text-primary ${
+              dropTarget === "__root__"
+                ? "ring-1 ring-ironlore-blue bg-ironlore-slate-hover text-primary"
+                : ""
+            }`}
+            title="Go to root (drop here to move to root)"
           >
             <Home className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
             onClick={drillUp}
-            className="rounded p-0.5 hover:bg-ironlore-slate-hover hover:text-primary"
-            title="Go up one level"
+            onDragOver={(e) => handleDragOver(e, "__up__", true)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => {
+              const parts = sidebarFolder.split("/");
+              parts.pop();
+              void handleDrop(e, parts.join("/"));
+            }}
+            className={`rounded p-0.5 hover:bg-ironlore-slate-hover hover:text-primary ${
+              dropTarget === "__up__"
+                ? "ring-1 ring-ironlore-blue bg-ironlore-slate-hover text-primary"
+                : ""
+            }`}
+            title="Go up one level (drop here to move up)"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
@@ -432,6 +503,7 @@ export function SidebarNew() {
             const isActive = activePath === item.path;
             const isEditing = editingPath === item.path;
 
+            const isDropTarget = isDir && dropTarget === item.path;
             return (
               // biome-ignore lint/a11y/useSemanticElements: complex interactive row with context menu
               <div
@@ -439,8 +511,17 @@ export function SidebarNew() {
                 className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-100 ${
                   isActive
                     ? "sidebar-item-active text-primary"
-                    : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+                    : isDropTarget
+                      ? "border border-ironlore-blue bg-ironlore-slate-hover text-primary"
+                      : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
                 }`}
+                draggable={!isDir && !isEditing}
+                onDragStart={(e) => !isDir && handleDragStart(e, item.path)}
+                onDragOver={(e) => handleDragOver(e, item.path, isDir)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => {
+                  if (isDir) void handleDrop(e, item.path);
+                }}
                 onClick={() => {
                   if (isEditing) return;
                   if (isDir) drillInto(item.path);
