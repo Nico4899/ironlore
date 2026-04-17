@@ -1,14 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type {
-  ChatEvent,
-  ChatOptions,
-  ProjectContext,
-  Provider,
-} from "../providers/types.js";
+import type { ChatEvent, ChatOptions, ProjectContext, Provider } from "../providers/types.js";
 import { SearchIndex } from "../search-index.js";
 import { expandQuery, searchWithExpansion } from "./query-expansion.js";
 
@@ -224,7 +219,7 @@ describe("expandQuery — strong-signal skip", () => {
     // incidental hit. BM25 should rate them very differently.
     index.indexPage(
       "signal.md",
-      "# Signal\n\n" + "zebras ".repeat(100) + "\n\nmore zebras content here.",
+      `# Signal\n\n${"zebras ".repeat(100)}\n\nmore zebras content here.`,
       "test",
     );
     index.indexPage("noise.md", "# Noise\n\nOne zebras mention here.", "test");

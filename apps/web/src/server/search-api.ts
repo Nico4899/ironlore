@@ -90,13 +90,7 @@ export function createSearchApi(searchIndex: SearchIndex, opts?: SearchApiOption
         opts?.defaultModel &&
         results.length > 3
       ) {
-        results = await rerankResults(
-          query,
-          results,
-          provider,
-          projectContext,
-          opts.defaultModel,
-        );
+        results = await rerankResults(query, results, provider, projectContext, opts.defaultModel);
       }
 
       return c.json({ results: results.slice(0, limit) });

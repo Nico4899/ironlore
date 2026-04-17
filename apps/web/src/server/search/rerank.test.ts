@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  ChatEvent,
-  ChatOptions,
-  ProjectContext,
-  Provider,
-} from "../providers/types.js";
+import type { ChatEvent, ChatOptions, ProjectContext, Provider } from "../providers/types.js";
 import type { SearchResult } from "../search-index.js";
 import { rerankResults } from "./rerank.js";
 
@@ -89,25 +84,13 @@ describe("rerankResults — degradation paths", () => {
 
   it("returns input unchanged when provider errors out", async () => {
     const provider = new StubProvider({ kind: "error", message: "429" });
-    const out = await rerankResults(
-      "query",
-      baseline,
-      provider,
-      ctx,
-      "claude-haiku-4-20250514",
-    );
+    const out = await rerankResults("query", baseline, provider, ctx, "claude-haiku-4-20250514");
     expect(out).toEqual(baseline);
   });
 
   it("returns input unchanged when LLM emits non-JSON response", async () => {
     const provider = new StubProvider({ kind: "scores", text: "Sure, here are the scores." });
-    const out = await rerankResults(
-      "query",
-      baseline,
-      provider,
-      ctx,
-      "claude-haiku-4-20250514",
-    );
+    const out = await rerankResults("query", baseline, provider, ctx, "claude-haiku-4-20250514");
     expect(out).toEqual(baseline);
   });
 });
@@ -128,13 +111,7 @@ describe("rerankResults — blended ordering", () => {
     // decay is modest there (1.0 vs 0.8 vs 0.6), and a score delta of
     // +9 at weight 0.25 is enough to flip them.
     const provider = new StubProvider({ kind: "scores", text: "[1, 10, 1, 1, 1]" });
-    const out = await rerankResults(
-      "query",
-      baseline,
-      provider,
-      ctx,
-      "claude-haiku-4-20250514",
-    );
+    const out = await rerankResults("query", baseline, provider, ctx, "claude-haiku-4-20250514");
 
     expect(out.length).toBe(baseline.length);
     const top = out[0];
@@ -146,13 +123,7 @@ describe("rerankResults — blended ordering", () => {
     // (position 1 = 1.0, position 5 = 0.0) should keep the original top-1
     // at the top.
     const provider = new StubProvider({ kind: "scores", text: "[5, 5, 5, 5, 5]" });
-    const out = await rerankResults(
-      "query",
-      baseline,
-      provider,
-      ctx,
-      "claude-haiku-4-20250514",
-    );
+    const out = await rerankResults("query", baseline, provider, ctx, "claude-haiku-4-20250514");
     expect(out[0]?.path).toBe("a.md");
   });
 
@@ -164,13 +135,7 @@ describe("rerankResults — blended ordering", () => {
       kind: "scores",
       text: "Here are the scores: [9, 8, 7, 6, 5] — ordered by relevance.",
     });
-    const out = await rerankResults(
-      "query",
-      baseline,
-      provider,
-      ctx,
-      "claude-haiku-4-20250514",
-    );
+    const out = await rerankResults("query", baseline, provider, ctx, "claude-haiku-4-20250514");
     expect(out[0]?.path).toBe("a.md"); // score 9 + rank 1
   });
 
