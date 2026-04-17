@@ -168,29 +168,29 @@ describe("ironlore eval", () => {
   });
 
   it("exits with code 1 when overall score is below 50", async () => {
-    // A project with only 1 isolated page has wiki_integrity=1,
-    // orphan_rate=1, block_id_coverage=0, chunk_coverage can vary —
-    // score computation: 30 + 0 + 0 + 20*chunk = 30-50. Forcing a low
-    // score deterministically requires a fixture with an orphan and
-    // no block IDs.
+    // Score = wiki_integrity*30 + (1-orphan)*25 + block_id_cov*25 + chunk*20.
+    // Forcing sub-50: a page with a broken backlink (drops wiki integrity),
+    // no block IDs (drops block-ID coverage), orphan (drops orphan score).
     const projectDir = makeProject(cwd, "main");
     const index = new SearchIndex(projectDir);
     try {
-      // One page, no block IDs, no backlinks → orphan + 0% block-ID
-      // coverage. Score = wiki_integrity*30 + (1-orphan)*25 + 0 + chunk*20
-      //                = 1*30         + 0*25              + 0 + 0 = 30.
-      index.indexPage("lonely.md", "# Alone\n\nNo links, no blocks.", "test");
+      // Isolated page with broken backlink → wiki_integrity ≈ 0,
+      // orphan_rate = 1, block_id_coverage = 0 (no .md on disk).
+      // Even if chunk_coverage hits 1.0, score = 0 + 0 + 0 + 20 = 20.
+      index.indexPage("broken.md", "Links to [[NonExistentTarget]].", "test");
     } finally {
       index.close();
     }
 
-    await expect(evalCommand({
-      project: "main",
-      json: true,
-      perfOnly: false,
-      qualityOnly: false,
-      cwd,
-    })).rejects.toThrow("__exit_1__");
+    await expect(
+      evalCommand({
+        project: "main",
+        json: true,
+        perfOnly: false,
+        qualityOnly: false,
+        cwd,
+      }),
+    ).rejects.toThrow("__exit_1__");
   });
 
   it("emits a human-readable report without --json", async () => {

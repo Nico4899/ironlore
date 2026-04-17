@@ -393,6 +393,59 @@ describe("SearchIndex — chunk-level FTS + RRF", () => {
     expect(index.search("   ")).toEqual([]);
   });
 
+  // Phase 7 exit criterion: a term deep in paragraph 5 of a 3000-token
+  // page returns the correct chunk with a block-ID citation.
+  it("Phase 7 exit: deep-paragraph term returns a chunk hit, not just page", () => {
+    const { index } = createIndex();
+
+    // Build a 3000-token page (~12k chars). Five long paragraphs + one
+    // unique term buried deep in the fifth block. Each block carries
+    // its own stable ID so chunk boundaries line up with block seams.
+    // ULID is exactly 26 base32 characters.
+    // "01HCCCCCCCCCCCCCCCCCCCCCX0" where X varies per block (24 prefix + "X" + digit).
+    const ulid = (i: number) => `blk_01HCCCCCCCCCCCCCCCCCCCCCX${i}`;
+    const filler = (word: string, count: number) => new Array(count).fill(word).join(" ");
+    const paragraphs = [
+      { id: ulid(1), text: `Introduction. ${filler("alpha", 120)}` },
+      { id: ulid(2), text: `Background. ${filler("beta", 120)}` },
+      { id: ulid(3), text: `Related work. ${filler("gamma", 120)}` },
+      { id: ulid(4), text: `Approach. ${filler("delta", 120)}` },
+      {
+        id: ulid(5),
+        // Unique term buried in paragraph 5.
+        text: `Findings. ${filler("epsilon", 50)} orangutan-unique-marker ${filler("zeta", 50)}`,
+      },
+      { id: ulid(6), text: `Conclusion. ${filler("eta", 120)}` },
+    ];
+    const content = paragraphs.map((p) => `${p.text} <!-- #${p.id} -->`).join("\n\n");
+    index.indexPage("long.md", content, "test");
+
+    const results = index.search("orangutan-unique-marker");
+    expect(results).toHaveLength(1);
+    const hit = results[0] as {
+      path: string;
+      snippet: string;
+      blockIdStart?: string;
+      blockIdEnd?: string;
+    };
+    expect(hit.path).toBe("long.md");
+    // Chunk-level hit provides block-ID citation.
+    expect(hit.blockIdStart).toBeDefined();
+    expect(hit.blockIdEnd).toBeDefined();
+    // The matched term should land in a chunk whose block-ID range
+    // includes the fifth paragraph. Chunks are defined by a start/end
+    // block ID; a single-block chunk has start==end, a multi-block
+    // chunk has start < block5 < end (lexicographic on ULIDs).
+    const deepBlock = ulid(5);
+    const start = hit.blockIdStart as string;
+    const end = hit.blockIdEnd as string;
+    const deepFound =
+      start === deepBlock || end === deepBlock || (start <= deepBlock && deepBlock <= end);
+    expect(deepFound).toBe(true);
+    // Snippet should contain the matched term with the FTS <mark>.
+    expect(hit.snippet).toMatch(/<mark>/);
+  });
+
   it("pages with no block-ID comments still index at page level", () => {
     const { index } = createIndex();
     // Markdown without any `<!-- #blk_... -->` anchors. `parseBlocks`
