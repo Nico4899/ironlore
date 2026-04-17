@@ -33,6 +33,9 @@ import { TerminalManager } from "./terminal.js";
 import { createAgentJournal } from "./tools/agent-journal.js";
 import { ToolDispatcher } from "./tools/dispatcher.js";
 import { createKbCreatePage } from "./tools/kb-create-page.js";
+import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
+import { createKbInsertAfter } from "./tools/kb-insert-after.js";
+import { createKbReadBlock } from "./tools/kb-read-block.js";
 import { createKbReadPage } from "./tools/kb-read-page.js";
 import { createKbReplaceBlock } from "./tools/kb-replace-block.js";
 import { createKbSearch } from "./tools/kb-search.js";
@@ -173,7 +176,10 @@ async function start() {
   const dispatcher = new ToolDispatcher();
   dispatcher.register(createKbSearch(searchIndex));
   dispatcher.register(createKbReadPage(writer));
+  dispatcher.register(createKbReadBlock(writer));
   dispatcher.register(createKbReplaceBlock(writer, searchIndex));
+  dispatcher.register(createKbInsertAfter(writer, searchIndex));
+  dispatcher.register(createKbDeleteBlock(writer, searchIndex));
   dispatcher.register(createKbCreatePage(writer, searchIndex));
   dispatcher.register(createAgentJournal(writer.getDataRoot()));
 

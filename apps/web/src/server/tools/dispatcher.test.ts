@@ -10,6 +10,9 @@ import { StorageWriter } from "../storage-writer.js";
 import { createAgentJournal } from "./agent-journal.js";
 import { ToolDispatcher } from "./dispatcher.js";
 import { createKbCreatePage } from "./kb-create-page.js";
+import { createKbDeleteBlock } from "./kb-delete-block.js";
+import { createKbInsertAfter } from "./kb-insert-after.js";
+import { createKbReadBlock } from "./kb-read-block.js";
 import { createKbReadPage } from "./kb-read-page.js";
 import { createKbReplaceBlock } from "./kb-replace-block.js";
 import { createKbSearch } from "./kb-search.js";
@@ -68,7 +71,10 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const dispatcher = new ToolDispatcher();
     dispatcher.register(createKbSearch(index));
     dispatcher.register(createKbReadPage(writer));
+    dispatcher.register(createKbReadBlock(writer));
     dispatcher.register(createKbReplaceBlock(writer, index));
+    dispatcher.register(createKbInsertAfter(writer, index));
+    dispatcher.register(createKbDeleteBlock(writer, index));
     dispatcher.register(createKbCreatePage(writer, index));
     dispatcher.register(createAgentJournal(dataRoot));
 
@@ -217,5 +223,303 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const result = await dispatcher.call("kb.nonexistent", {}, ctx, budget);
     expect(result.isError).toBe(true);
     expect(result.result).toContain("Unknown tool");
+  });
+
+  // -------------------------------------------------------------------------
+  // kb.read_block
+  // -------------------------------------------------------------------------
+
+  it("kb.read_block returns the target block text + page ETag", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown: annotated } = assignBlockIds("# Title\n\nFirst paragraph.\n\nSecond.\n");
+    await writer.write("rb.md", annotated, null);
+
+    const read = await dispatcher.call("kb.read_page", { path: "rb.md" }, ctx, budget);
+    const { blocks, etag } = JSON.parse(read.result) as {
+      blocks: Array<{ id: string }>;
+      etag: string;
+    };
+    const firstPara = blocks[1]?.id;
+    expect(firstPara).toBeDefined();
+
+    const result = await dispatcher.call(
+      "kb.read_block",
+      { path: "rb.md", blockId: firstPara },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    expect(data.blockId).toBe(firstPara);
+    expect(data.text).toContain("First paragraph");
+    expect(data.etag).toBe(etag);
+  });
+
+  it("kb.read_block returns 404 for an unknown block", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown } = assignBlockIds("# Title\n\nBody.\n");
+    await writer.write("rb2.md", markdown, null);
+
+    const result = await dispatcher.call(
+      "kb.read_block",
+      { path: "rb2.md", blockId: "blk_NONEXISTENT00000000000" },
+      ctx,
+      budget,
+    );
+    const data = JSON.parse(result.result);
+    expect(data.error).toContain("not found");
+    expect(data.availableBlocks).toBeDefined();
+  });
+
+  it("kb.read_block returns page-not-found for missing paths", async () => {
+    const { dispatcher, ctx, budget } = setup();
+    const result = await dispatcher.call(
+      "kb.read_block",
+      { path: "missing.md", blockId: "blk_ANY" },
+      ctx,
+      budget,
+    );
+    const data = JSON.parse(result.result);
+    expect(data.error).toBe("Page not found");
+  });
+
+  // -------------------------------------------------------------------------
+  // kb.insert_after
+  // -------------------------------------------------------------------------
+
+  it("kb.insert_after splices a new block after the reference", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown } = assignBlockIds("# Title\n\nOriginal paragraph.\n");
+    await writer.write("ia.md", markdown, null);
+
+    const read = await dispatcher.call("kb.read_page", { path: "ia.md" }, ctx, budget);
+    const { blocks, etag } = JSON.parse(read.result) as {
+      blocks: Array<{ id: string }>;
+      etag: string;
+    };
+    const firstPara = blocks[1]?.id ?? blocks[0]?.id;
+
+    const result = await dispatcher.call(
+      "kb.insert_after",
+      { path: "ia.md", blockId: firstPara, markdown: "Inserted paragraph.", etag },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    expect(data.ok).toBe(true);
+    expect(data.newEtag).toBeDefined();
+
+    // Verify the file now contains both paragraphs in the right order.
+    const { content } = writer.read("ia.md");
+    expect(content).toContain("Original paragraph");
+    expect(content).toContain("Inserted paragraph");
+    expect(content.indexOf("Original")).toBeLessThan(content.indexOf("Inserted"));
+  });
+
+  it("kb.insert_after rejects stale ETags", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown } = assignBlockIds("# Title\n\nBody.\n");
+    await writer.write("ia2.md", markdown, null);
+    const read = await dispatcher.call("kb.read_page", { path: "ia2.md" }, ctx, budget);
+    const { blocks } = JSON.parse(read.result) as { blocks: Array<{ id: string }> };
+    const blockId = blocks[1]?.id ?? blocks[0]?.id;
+
+    const result = await dispatcher.call(
+      "kb.insert_after",
+      {
+        path: "ia2.md",
+        blockId,
+        markdown: "new",
+        etag: computeEtag("stale content"),
+      },
+      ctx,
+      budget,
+    );
+    const data = JSON.parse(result.result);
+    expect(data.error).toContain("ETag mismatch");
+    expect(data.currentEtag).toBeDefined();
+  });
+
+  it("kb.insert_after rejects unknown block IDs", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown } = assignBlockIds("# T\n\nBody.\n");
+    await writer.write("ia3.md", markdown, null);
+    const { etag } = writer.read("ia3.md");
+
+    const result = await dispatcher.call(
+      "kb.insert_after",
+      { path: "ia3.md", blockId: "blk_NONEXISTENT00000000000", markdown: "x", etag },
+      ctx,
+      budget,
+    );
+    const data = JSON.parse(result.result);
+    expect(data.error).toContain("not found");
+    expect(data.availableBlocks).toBeDefined();
+  });
+
+  // -------------------------------------------------------------------------
+  // kb.delete_block
+  // -------------------------------------------------------------------------
+
+  it("kb.delete_block removes the target block from the page", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown } = assignBlockIds("# Title\n\nKeep me.\n\nDelete me.\n\nKeep me too.\n");
+    await writer.write("db.md", markdown, null);
+
+    const read = await dispatcher.call("kb.read_page", { path: "db.md" }, ctx, budget);
+    const { blocks, etag } = JSON.parse(read.result) as {
+      blocks: Array<{ id: string; preview: string }>;
+      etag: string;
+    };
+    const toDelete = blocks.find((b) => b.preview.includes("Delete"));
+    expect(toDelete).toBeDefined();
+
+    const result = await dispatcher.call(
+      "kb.delete_block",
+      { path: "db.md", blockId: toDelete?.id, etag },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    expect(data.ok).toBe(true);
+
+    const { content } = writer.read("db.md");
+    expect(content).not.toContain("Delete me");
+    expect(content).toContain("Keep me.");
+    expect(content).toContain("Keep me too.");
+  });
+
+  it("kb.delete_block rejects stale ETags", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown } = assignBlockIds("# T\n\nA.\n\nB.\n");
+    await writer.write("db2.md", markdown, null);
+    const read = await dispatcher.call("kb.read_page", { path: "db2.md" }, ctx, budget);
+    const { blocks } = JSON.parse(read.result) as { blocks: Array<{ id: string }> };
+
+    const result = await dispatcher.call(
+      "kb.delete_block",
+      { path: "db2.md", blockId: blocks[1]?.id, etag: computeEtag("stale") },
+      ctx,
+      budget,
+    );
+    const data = JSON.parse(result.result);
+    expect(data.error).toContain("ETag mismatch");
+  });
+
+  it("kb.delete_block rejects unknown block IDs", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown } = assignBlockIds("# T\n\nA.\n");
+    await writer.write("db3.md", markdown, null);
+    const { etag } = writer.read("db3.md");
+
+    const result = await dispatcher.call(
+      "kb.delete_block",
+      { path: "db3.md", blockId: "blk_NONEXISTENT00000000000", etag },
+      ctx,
+      budget,
+    );
+    const data = JSON.parse(result.result);
+    expect(data.error).toContain("not found");
+  });
+
+  // -------------------------------------------------------------------------
+  // End-to-end: 5-tool-call edit run (Phase 4 exit criterion)
+  // -------------------------------------------------------------------------
+
+  it("executes a 5-tool-call sequential edit run without crashing", async () => {
+    // Simulates what the executor would drive: search → read → replace →
+    // insert → journal. This is the "5-tool-call edit" exit criterion
+    // from docs/06-implementation-roadmap.md §Phase 4.
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown } = assignBlockIds(
+      "# Carousel\n\nFirst slide description.\n\nSecond slide description.\n",
+    );
+    await writer.write("carousel.md", markdown, null);
+
+    // 1. Search for the page.
+    const searchRes = await dispatcher.call(
+      "kb.search",
+      { query: "carousel" },
+      ctx,
+      budget,
+    );
+    expect(searchRes.isError).toBe(false);
+
+    // 2. Read the page.
+    const readRes = await dispatcher.call(
+      "kb.read_page",
+      { path: "carousel.md" },
+      ctx,
+      budget,
+    );
+    const { blocks, etag } = JSON.parse(readRes.result) as {
+      blocks: Array<{ id: string; preview: string }>;
+      etag: string;
+    };
+    const firstSlide = blocks.find((b) => b.preview.includes("First"));
+    expect(firstSlide).toBeDefined();
+
+    // 3. Replace a block.
+    const replaceRes = await dispatcher.call(
+      "kb.replace_block",
+      {
+        path: "carousel.md",
+        blockId: firstSlide?.id,
+        markdown: "First slide (revised).",
+        etag,
+      },
+      ctx,
+      budget,
+    );
+    const { newEtag: etag2 } = JSON.parse(replaceRes.result) as { newEtag: string };
+    expect(etag2).toBeDefined();
+
+    // 4. Insert after the (new) revised first slide. Re-read to get the
+    // current block IDs first — the replace may have changed them.
+    const reread = await dispatcher.call(
+      "kb.read_page",
+      { path: "carousel.md" },
+      ctx,
+      budget,
+    );
+    const { blocks: blocks2, etag: etag3 } = JSON.parse(reread.result) as {
+      blocks: Array<{ id: string; preview: string }>;
+      etag: string;
+    };
+    const revised = blocks2.find((b) => b.preview.includes("revised"));
+    expect(revised).toBeDefined();
+
+    const insertRes = await dispatcher.call(
+      "kb.insert_after",
+      {
+        path: "carousel.md",
+        blockId: revised?.id,
+        markdown: "Bonus slide inserted between.",
+        etag: etag3,
+      },
+      ctx,
+      budget,
+    );
+    expect(insertRes.isError).toBe(false);
+
+    // 5. Journal the run.
+    const journalRes = await dispatcher.call(
+      "agent.journal",
+      { text: "Revised carousel: replaced slide 1 and inserted a bonus slide." },
+      ctx,
+      budget,
+    );
+    expect(journalRes.isError).toBe(false);
+
+    // Budget accounting — 5 tool calls used.
+    expect(budget.usedToolCalls).toBe(5);
+
+    // Verify the final page has all expected content.
+    const { content } = writer.read("carousel.md");
+    expect(content).toContain("revised");
+    expect(content).toContain("Bonus slide");
+    expect(content).toContain("Second slide");
   });
 });
