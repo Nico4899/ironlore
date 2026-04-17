@@ -110,7 +110,6 @@
     {
       "includes": [
         "apps/web/src/client/components/editor/MarkdownPreview.tsx",
-        "apps/web/src/client/components/SearchDialog.tsx",
         "apps/web/src/client/components/viewers/DocxViewer.tsx",
         "apps/web/src/client/components/viewers/NotebookViewer.tsx"
       ],

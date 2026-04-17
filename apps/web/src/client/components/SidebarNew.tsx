@@ -27,7 +27,7 @@ import {
   Video,
   Workflow,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createFolder,
   createPage,
@@ -586,6 +586,8 @@ function SidebarNavTab({
     <button
       type="button"
       onClick={onClick}
+      aria-label={label}
+      aria-pressed={active}
       className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
         active
           ? "bg-ironlore-blue/15 font-medium text-primary"
@@ -616,6 +618,7 @@ function SidebarBottomTab({
     <button
       type="button"
       onClick={onClick}
+      aria-label={label}
       className={`relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs text-secondary hover:bg-ironlore-slate-hover hover:text-primary ${collapsed ? "justify-center" : ""}`}
       title={collapsed ? label : undefined}
     >
