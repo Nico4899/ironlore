@@ -112,7 +112,12 @@ export function createAgentApi(
     }>();
 
     // Read all library personas and replace {{...}} template variables.
-    const { existsSync, readFileSync, writeFileSync, readdirSync } = await import("node:fs");
+    // Templates are seeded as `.library/<slug>/persona.md`, so walk the
+    // tree rather than reading a flat directory — the pre-fix version
+    // globbed top-level `.md` files only and never matched anything.
+    const { existsSync, readFileSync, writeFileSync, readdirSync, statSync } = await import(
+      "node:fs"
+    );
     const { join } = await import("node:path");
 
     if (!projectDir) return c.json({ ok: false, error: "No project dir" }, 500);
@@ -121,10 +126,26 @@ export function createAgentApi(
       return c.json({ ok: true, updated: 0 });
     }
 
+    function collectMarkdownFiles(dir: string): string[] {
+      const out: string[] = [];
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        try {
+          const stat = statSync(full);
+          if (stat.isDirectory()) {
+            out.push(...collectMarkdownFiles(full));
+          } else if (entry.endsWith(".md")) {
+            out.push(full);
+          }
+        } catch {
+          // Skip unreadable entries — don't fail the whole substitution pass.
+        }
+      }
+      return out;
+    }
+
     let updated = 0;
-    for (const file of readdirSync(libDir)) {
-      if (!file.endsWith(".md")) continue;
-      const filePath = join(libDir, file);
+    for (const filePath of collectMarkdownFiles(libDir)) {
       let content = readFileSync(filePath, "utf-8");
       let changed = false;
 

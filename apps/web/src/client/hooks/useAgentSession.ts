@@ -214,5 +214,28 @@ function processJobEvent(event: { seq: number; kind: string; data: string }): vo
     case "session.paused":
       // Interactive session paused (client disconnected).
       break;
+
+    case "run.finalized": {
+      // Server emits this at the end of an autonomous run with the
+      // commit range + file list. We surface it as a finalized card
+      // so the user can eyeball the commit range or hit Revert.
+      const runId = (data.runId as string) ?? "";
+      const agentSlug = (data.agentSlug as string) ?? store.activeAgent;
+      const commitShaStart = (data.commitShaStart as string) ?? "";
+      const commitShaEnd = (data.commitShaEnd as string) ?? "";
+      const filesChanged = Array.isArray(data.filesChanged) ? (data.filesChanged as string[]) : [];
+      if (commitShaStart && commitShaEnd) {
+        store.addMessage({
+          type: "run_finalized",
+          runId,
+          agentSlug,
+          commitShaStart,
+          commitShaEnd,
+          filesChanged,
+          revertedAt: null,
+        });
+      }
+      break;
+    }
   }
 }

@@ -216,6 +216,7 @@ async function start() {
         const parsed = JSON.parse(result.result) as {
           commitShaStart?: string;
           commitShaEnd?: string;
+          filesChanged?: string[];
           inboxBranch?: string;
         };
         if (parsed.commitShaStart || parsed.commitShaEnd) {
@@ -231,7 +232,7 @@ async function start() {
             agentSlug,
             branch: parsed.inboxBranch,
             jobId: job.id,
-            filesChanged: [],
+            filesChanged: parsed.filesChanged ?? [],
             startedAt: job.started_at ?? Date.now(),
             finalizedAt: Date.now(),
           });

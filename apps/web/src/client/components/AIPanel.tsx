@@ -168,6 +168,7 @@ export function AIPanel() {
 function AgentPauseBanner({ slug }: { slug: string }) {
   const [paused, setPaused] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(false);
 
   useEffect(() => {
     fetch(`/api/projects/main/agents/${slug}/state`)
@@ -183,12 +184,40 @@ function AgentPauseBanner({ slug }: { slug: string }) {
       .catch(() => {});
   }, [slug]);
 
+  const handleResume = useCallback(async () => {
+    if (resuming) return;
+    setResuming(true);
+    try {
+      const res = await fetch(`/api/projects/main/agents/${slug}/state`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paused: false }),
+      });
+      if (res.ok) {
+        setPaused(false);
+        setReason(null);
+      }
+    } catch {
+      // Resume failed — keep the banner visible, user can retry.
+    } finally {
+      setResuming(false);
+    }
+  }, [slug, resuming]);
+
   if (!paused) return null;
 
   return (
     <div className="flex items-center gap-2 border-b border-signal-amber/30 bg-signal-amber/10 px-4 py-2 text-xs text-signal-amber">
       <span className="font-semibold">Agent paused</span>
       {reason && <span className="text-secondary">— {reason}</span>}
+      <button
+        type="button"
+        onClick={handleResume}
+        disabled={resuming}
+        className="ml-auto rounded border border-signal-amber/50 px-2 py-0.5 text-[10px] font-medium text-signal-amber hover:bg-signal-amber/15 disabled:opacity-50"
+      >
+        {resuming ? "Resuming\u2026" : "Resume"}
+      </button>
     </div>
   );
 }

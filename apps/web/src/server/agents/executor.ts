@@ -251,6 +251,35 @@ export async function executeAgentRun(
     // No commits produced — skip.
   }
 
+  // Compute the list of files changed across the run so the AI panel's
+  // run-finalized card and the inbox entry can show "N files changed".
+  let filesChanged: string[] = [];
+  if (commitShaStart && commitShaEnd && commitShaStart !== commitShaEnd) {
+    try {
+      const raw = execSync(`git diff --name-only ${commitShaStart} ${commitShaEnd}`, {
+        cwd: projectDir,
+        encoding: "utf-8",
+        stdio: "pipe",
+      }).trim();
+      filesChanged = raw.length > 0 ? raw.split("\n") : [];
+    } catch {
+      // No diff available — leave the list empty.
+    }
+  }
+
+  // Emit the run_finalized event so the AI panel can render a finalized
+  // card (with commit range + revert button). The client's
+  // `processJobEvent` maps this to a `run_finalized` message.
+  if (commitShaStart && commitShaEnd) {
+    jobCtx.emitEvent("run.finalized", {
+      runId: job.id,
+      agentSlug,
+      commitShaStart,
+      commitShaEnd,
+      filesChanged,
+    });
+  }
+
   // Switch back to main if we were on an inbox staging branch.
   if (inboxBranch) {
     try {
@@ -270,6 +299,7 @@ export async function executeAgentRun(
       outcome: journalEmitted ? "finalized" : "completed",
       commitShaStart,
       commitShaEnd,
+      filesChanged,
       inboxBranch,
     }),
   };
