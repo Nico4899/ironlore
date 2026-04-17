@@ -104,6 +104,8 @@ export interface SearchResult {
 export interface BacklinkEntry {
   sourcePath: string;
   linkText: string;
+  /** Typed-relation label from `[[target | rel]]` syntax, or null for plain links. */
+  rel: string | null;
 }
 
 /**
@@ -401,11 +403,25 @@ export class SearchIndex {
 
   /**
    * Get all pages that link to the given target path or page name.
+   *
+   * Optionally filters by typed relation (`[[target | rel]]` syntax).
+   * When `rel` is provided, only backlinks with that exact relation
+   * label are returned. When omitted, all backlinks (typed + untyped)
+   * are returned so existing callers behave unchanged.
+   *
+   * See docs/01-content-model.md §Wiki-link relations.
    */
-  getBacklinks(targetPath: string): BacklinkEntry[] {
+  getBacklinks(targetPath: string, rel?: string): BacklinkEntry[] {
+    if (rel !== undefined) {
+      return this.db
+        .prepare(
+          "SELECT source_path AS sourcePath, link_text AS linkText, rel FROM backlinks WHERE target_path = ? AND rel = ?",
+        )
+        .all(targetPath, rel) as BacklinkEntry[];
+    }
     return this.db
       .prepare(
-        "SELECT source_path AS sourcePath, link_text AS linkText FROM backlinks WHERE target_path = ?",
+        "SELECT source_path AS sourcePath, link_text AS linkText, rel FROM backlinks WHERE target_path = ?",
       )
       .all(targetPath) as BacklinkEntry[];
   }
