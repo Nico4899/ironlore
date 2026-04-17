@@ -55,45 +55,88 @@ function splitFrontmatter(markdown: string): { frontmatter: string; body: string
  * Returns the cleaned markdown and a map of line numbers → block IDs
  * for reinsertion on save.
  */
-function stripBlockIds(markdown: string): {
+/**
+ * Strip block-ID comments, recording each ID alongside the cleaned line
+ * text it used to live on. Reinsertion below uses the text as a
+ * fingerprint so block IDs stick to their content even if ProseMirror
+ * shifts lines around (inserts a new paragraph, reorders blocks, etc).
+ *
+ * A pure line-index map (the pre-fix behavior) silently attached IDs
+ * to the wrong blocks when the line count changed — the server's
+ * `assignBlockIds` then preserved those wrong assignments because its
+ * contract is "don't overwrite existing IDs". Using a content-based
+ * ledger is strictly more robust: unmatched entries are discarded
+ * rather than ending up on an arbitrary line.
+ */
+export function stripBlockIds(markdown: string): {
   cleaned: string;
-  blockIds: Map<number, string>;
+  entries: Array<{ id: string; text: string }>;
 } {
-  const blockIds = new Map<number, string>();
+  const entries: Array<{ id: string; text: string }> = [];
   const lines = markdown.split("\n");
   const cleaned: string[] = [];
 
   for (const line of lines) {
     const match = line.match(/<!-- #(blk_[A-Z0-9]{26}) -->/);
     if (match?.[1]) {
-      blockIds.set(cleaned.length, match[1]);
       const stripped = line.replace(BLOCK_ID_RE, "").trimEnd();
+      entries.push({ id: match[1], text: stripped });
       cleaned.push(stripped);
     } else {
       cleaned.push(line);
     }
   }
 
-  return { cleaned: cleaned.join("\n"), blockIds };
+  return { cleaned: cleaned.join("\n"), entries };
 }
 
 /**
  * Reinsert block IDs into markdown after ProseMirror serialization.
- * Uses the saved line → blockId map from `stripBlockIds`. New blocks
- * (lines that didn't previously have an ID) are left for the server's
- * `assignBlockIds()` to handle on PUT.
+ *
+ * Content-based: for each output line, try to find an unused entry
+ * whose stored text matches exactly. Once matched, the entry is
+ * consumed so a later duplicate line can't steal the same ID.
+ * Entries that never find a match (block was deleted or substantially
+ * edited) drop silently. Lines with no match stay plain — the server's
+ * `assignBlockIds()` on PUT will stamp a fresh ULID on them.
+ *
+ * Exported for the block-id-preservation test suite.
  */
-function reinsertBlockIds(markdown: string, blockIds: Map<number, string>): string {
-  if (blockIds.size === 0) return markdown;
+export function reinsertBlockIds(
+  markdown: string,
+  entries: Array<{ id: string; text: string }>,
+): string {
+  if (entries.length === 0) return markdown;
 
   const lines = markdown.split("\n");
   const result: string[] = [];
+  const consumed = new Set<number>();
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const blockId = blockIds.get(i);
-    if (blockId && !line.includes(`<!-- #${blockId} -->`)) {
-      result.push(`${line} <!-- #${blockId} -->`);
+  for (const line of lines) {
+    // If the line already carries a block ID, leave it alone — it
+    // came back through the roundtrip intact.
+    if (BLOCK_ID_RE.test(line)) {
+      result.push(line);
+      continue;
+    }
+    // Blank lines don't anchor block IDs.
+    if (line.trim() === "") {
+      result.push(line);
+      continue;
+    }
+    // Find the first unused entry whose text matches.
+    let matchedIdx = -1;
+    for (let i = 0; i < entries.length; i++) {
+      if (consumed.has(i)) continue;
+      if (entries[i]?.text === line) {
+        matchedIdx = i;
+        break;
+      }
+    }
+    if (matchedIdx >= 0) {
+      consumed.add(matchedIdx);
+      const id = entries[matchedIdx]?.id;
+      result.push(`${line} <!-- #${id} -->`);
     } else {
       result.push(line);
     }

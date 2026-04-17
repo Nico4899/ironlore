@@ -279,10 +279,6 @@ kbd {
   box-shadow: var(--shadow-glow-blue);
 }
 
-.ProseMirror:focus-visible {
-  outline: none;
-}
-
 /* ─── Inputs with depth ─── */
 
 input:not([type="checkbox"]):not([type="radio"]),

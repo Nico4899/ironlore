@@ -27,6 +27,13 @@
   outline: none;
 }
 
+/* Keyboard focus specifically — mirrors :focus so the editor never
+ * draws a blue ring around itself (ProseMirror handles its own caret
+ * + selection styling internally). */
+.ProseMirror:focus-visible {
+  outline: none;
+}
+
 /* ─── Headings ─── */
 
 .ProseMirror h1,
