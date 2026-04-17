@@ -22,10 +22,17 @@ interface EvalOptions {
   json: boolean;
   perfOnly: boolean;
   qualityOnly: boolean;
+  /**
+   * Override the working directory root. Defaults to `process.cwd()`.
+   * The project is resolved as `<cwd>/projects/<project>` — exposing
+   * cwd lets tests run against a tempdir without mutating global state.
+   */
+  cwd?: string;
 }
 
 export async function evalCommand(opts: EvalOptions): Promise<void> {
-  const projectDir = join(process.cwd(), "projects", opts.project);
+  const baseCwd = opts.cwd ?? process.cwd();
+  const projectDir = join(baseCwd, "projects", opts.project);
   const dataRoot = join(projectDir, "data");
   const indexPath = join(projectDir, ".ironlore", "index.sqlite");
 

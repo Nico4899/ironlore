@@ -100,6 +100,41 @@ describe("SearchIndex", () => {
     const backlinks = index.getBacklinks("Target Page");
     expect(backlinks).toHaveLength(1);
     expect(backlinks[0]?.sourcePath).toBe("source.md");
+    expect(backlinks[0]?.rel).toBeNull();
+  });
+
+  it("returns typed-relation backlinks with the rel field populated", () => {
+    const { index } = createIndex();
+    index.indexPage(
+      "claim.md",
+      "# Claim\n\nThis [[Paper X | contradicts]] the finding.",
+      "user",
+    );
+    const backlinks = index.getBacklinks("Paper X");
+    expect(backlinks).toHaveLength(1);
+    expect(backlinks[0]?.rel).toBe("contradicts");
+  });
+
+  it("filters backlinks by typed relation when rel is supplied", () => {
+    const { index } = createIndex();
+    index.indexPage("a.md", "See [[Target]].", "user"); // untyped
+    index.indexPage("b.md", "[[Target | supports]] this.", "user"); // typed: supports
+    index.indexPage("c.md", "[[Target | contradicts]] that.", "user"); // typed: contradicts
+
+    // No filter → all three.
+    expect(index.getBacklinks("Target")).toHaveLength(3);
+
+    // Filter by specific relation.
+    const supports = index.getBacklinks("Target", "supports");
+    expect(supports).toHaveLength(1);
+    expect(supports[0]?.sourcePath).toBe("b.md");
+
+    const contradicts = index.getBacklinks("Target", "contradicts");
+    expect(contradicts).toHaveLength(1);
+    expect(contradicts[0]?.sourcePath).toBe("c.md");
+
+    // Unknown relation → empty.
+    expect(index.getBacklinks("Target", "supersedes")).toHaveLength(0);
   });
 
   it("updates backlinks on re-index", () => {

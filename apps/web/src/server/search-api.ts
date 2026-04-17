@@ -105,7 +105,11 @@ export function createSearchApi(searchIndex: SearchIndex, opts?: SearchApiOption
     if (!path) {
       return c.json({ error: "path query parameter required" }, 400);
     }
-    const backlinks = searchIndex.getBacklinks(path);
+    // Optional ?rel=... filter for typed-relation backlinks
+    // (e.g. `kb.backlinks(pageId, "contradicts")` → only returns
+    // blocks that explicitly claim to contradict this page).
+    const rel = c.req.query("rel");
+    const backlinks = rel ? searchIndex.getBacklinks(path, rel) : searchIndex.getBacklinks(path);
     return c.json({ backlinks });
   });
 
