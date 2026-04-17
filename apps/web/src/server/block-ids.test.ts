@@ -148,7 +148,10 @@ describe("writeBlocksSidecar and readBlocksSidecar", () => {
 
     const sidecarPath = join(dir, "page.blocks.json");
     const raw = readFileSync(sidecarPath, "utf-8");
-    const parsed = JSON.parse(raw) as { version: number; blocks: Array<{ id: string; type: string }> };
+    const parsed = JSON.parse(raw) as {
+      version: number;
+      blocks: Array<{ id: string; type: string }>;
+    };
     expect(parsed.version).toBe(1);
     expect(parsed.blocks.length).toBeGreaterThan(0);
     expect(parsed.blocks[0]?.id).toMatch(/^blk_/);

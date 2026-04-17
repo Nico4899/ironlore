@@ -38,8 +38,7 @@ export function lint(options: LintOptions): void {
   // with a helpful error, not a silent "Unknown check category" line.
   if (options.check && !isCategory(options.check)) {
     console.error(
-      `Unknown check category: "${options.check}". ` +
-        `Valid categories: ${CATEGORIES.join(", ")}`,
+      `Unknown check category: "${options.check}". ` + `Valid categories: ${CATEGORIES.join(", ")}`,
     );
     process.exit(1);
   }
