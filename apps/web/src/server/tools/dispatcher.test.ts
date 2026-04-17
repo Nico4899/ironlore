@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { computeEtag } from "@ironlore/core/server";
 import { afterEach, describe, expect, it } from "vitest";
+import { DryRunBridge } from "../agents/dry-run-bridge.js";
 import { assignBlockIds } from "../block-ids.js";
 import { SearchIndex } from "../search-index.js";
 import { StorageWriter } from "../storage-writer.js";
@@ -504,5 +505,218 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     expect(content).toContain("revised");
     expect(content).toContain("Bonus slide");
     expect(content).toContain("Second slide");
+  });
+
+  // -------------------------------------------------------------------------
+  // Dry-run diff preview flow
+  // -------------------------------------------------------------------------
+  // When the agent's persona declares `review_mode: dry_run`, the
+  // executor attaches a DryRunBridge to the tool context. Destructive
+  // tools then emit `diff_preview` + wait for approval instead of
+  // mutating directly. These tests cover the three outcomes:
+  // approve → normal execute; reject → skipped; unknown tool → no-op.
+
+  it("dry-run: emits diff_preview and waits on bridge before mutating", async () => {
+    const { writer, dispatcher, budget, dataRoot } = setup();
+    const { markdown } = assignBlockIds("# Page\n\nOriginal paragraph.\n");
+    await writer.write("dry.md", markdown, null);
+    const { etag } = writer.read("dry.md");
+    // Second block — first is the heading, we want the paragraph.
+    const blockMatches = [...writer.read("dry.md").content.matchAll(/blk_[A-Z0-9]{26}/g)];
+    const blockId = blockMatches[1]?.[0] ?? blockMatches[0]?.[0];
+    expect(blockId).toBeDefined();
+
+    const events: Array<{ kind: string; data: unknown }> = [];
+    const bridge = new DryRunBridge();
+    const ctx: ToolCallContext = {
+      projectId: "main",
+      agentSlug: "editor",
+      jobId: "test-job",
+      emitEvent: (kind, data) => events.push({ kind, data }),
+      dataRoot,
+      dryRunBridge: bridge,
+    };
+
+    // Fire the tool call and the verdict concurrently.
+    const call = dispatcher.call(
+      "kb.replace_block",
+      { path: "dry.md", blockId, markdown: "New content.", etag },
+      ctx,
+      budget,
+      "tool-call-xyz",
+    );
+
+    // Wait until the dispatcher has actually emitted the preview and
+    // parked on the bridge. Polling beats a fixed sleep here — bridge
+    // wiring is fast but not synchronous.
+    await new Promise((resolve) => {
+      const check = () => {
+        if (events.some((e) => e.kind === "diff_preview")) resolve(undefined);
+        else setTimeout(check, 5);
+      };
+      check();
+    });
+
+    const previewEvent = events.find((e) => e.kind === "diff_preview");
+    expect(previewEvent).toBeDefined();
+    const previewData = previewEvent?.data as {
+      toolCallId: string;
+      tool: string;
+      pageId: string;
+      diff: string;
+    };
+    expect(previewData.toolCallId).toBe("tool-call-xyz");
+    expect(previewData.tool).toBe("kb.replace_block");
+    expect(previewData.pageId).toBe("dry.md");
+    expect(previewData.diff).toContain("- Original paragraph.");
+    expect(previewData.diff).toContain("+ New content.");
+
+    // Approve → the mutation proceeds.
+    expect(bridge.submitVerdict("tool-call-xyz", "approve")).toBe(true);
+    const result = await call;
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    expect(data.ok).toBe(true);
+
+    const { content } = writer.read("dry.md");
+    expect(content).toContain("New content.");
+  });
+
+  it("dry-run: reject short-circuits the mutation with a skipped result", async () => {
+    const { writer, dispatcher, budget, dataRoot } = setup();
+    const { markdown } = assignBlockIds("# Page\n\nKeep me.\n");
+    await writer.write("dry2.md", markdown, null);
+    const { etag } = writer.read("dry2.md");
+    const blockId = [...writer.read("dry2.md").content.matchAll(/blk_[A-Z0-9]{26}/g)][1]?.[0];
+
+    const bridge = new DryRunBridge();
+    const ctx: ToolCallContext = {
+      projectId: "main",
+      agentSlug: "editor",
+      jobId: "test-job",
+      emitEvent: () => {},
+      dataRoot,
+      dryRunBridge: bridge,
+    };
+
+    const call = dispatcher.call(
+      "kb.replace_block",
+      { path: "dry2.md", blockId, markdown: "Evil rewrite.", etag },
+      ctx,
+      budget,
+      "tool-call-reject",
+    );
+
+    // Wait until the dispatcher is parked, then reject.
+    await new Promise((resolve) => {
+      const check = () => {
+        if (bridge.pendingCount > 0) resolve(undefined);
+        else setTimeout(check, 5);
+      };
+      check();
+    });
+    bridge.submitVerdict("tool-call-reject", "reject");
+
+    const result = await call;
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    expect(data.ok).toBe(false);
+    expect(data.skipped).toBe(true);
+    expect(data.reason).toContain("user rejected");
+
+    // Verify the page was NOT modified.
+    const { content } = writer.read("dry2.md");
+    expect(content).toContain("Keep me.");
+    expect(content).not.toContain("Evil rewrite.");
+  });
+
+  it("dry-run: bridge timeout is treated as a rejection", async () => {
+    const { writer, dispatcher, budget, dataRoot } = setup();
+    const { markdown } = assignBlockIds("# Page\n\nOriginal.\n");
+    await writer.write("dry3.md", markdown, null);
+    const { etag } = writer.read("dry3.md");
+    const blockId = [...writer.read("dry3.md").content.matchAll(/blk_[A-Z0-9]{26}/g)][1]?.[0];
+
+    // Use a bridge that returns "timeout" immediately by calling
+    // cancelAll right after the dispatcher parks.
+    const bridge = new DryRunBridge();
+    const ctx: ToolCallContext = {
+      projectId: "main",
+      agentSlug: "editor",
+      jobId: "test-job",
+      emitEvent: () => {},
+      dataRoot,
+      dryRunBridge: bridge,
+    };
+
+    const call = dispatcher.call(
+      "kb.replace_block",
+      { path: "dry3.md", blockId, markdown: "timeout", etag },
+      ctx,
+      budget,
+      "tool-call-timeout",
+    );
+
+    await new Promise((resolve) => {
+      const check = () => {
+        if (bridge.pendingCount > 0) resolve(undefined);
+        else setTimeout(check, 5);
+      };
+      check();
+    });
+    bridge.cancelAll();
+
+    const result = await call;
+    const data = JSON.parse(result.result);
+    expect(data.skipped).toBe(true);
+    expect(data.reason).toContain("no response within review window");
+
+    const { content } = writer.read("dry3.md");
+    expect(content).toContain("Original.");
+  });
+
+  it("dry-run: tools without computeDiff bypass the bridge entirely", async () => {
+    // kb.search / kb.read_page / kb.read_page / kb.create_page do not
+    // implement computeDiff. Even with a bridge attached, these run
+    // normally — no diff_preview event, no verdict wait.
+    const { dispatcher, budget, dataRoot } = setup();
+    const bridge = new DryRunBridge();
+    const events: Array<{ kind: string; data: unknown }> = [];
+    const ctx: ToolCallContext = {
+      projectId: "main",
+      agentSlug: "general",
+      jobId: "test-job",
+      emitEvent: (kind, data) => events.push({ kind, data }),
+      dataRoot,
+      dryRunBridge: bridge,
+    };
+
+    const result = await dispatcher.call("kb.search", { query: "anything" }, ctx, budget);
+    expect(result.isError).toBe(false);
+    expect(bridge.pendingCount).toBe(0);
+    expect(events.some((e) => e.kind === "diff_preview")).toBe(false);
+  });
+
+  it("dry-run: no bridge attached means destructive tools run normally", async () => {
+    // Sanity check — the pre-dry-run behavior still works when no
+    // bridge is attached (the common "Editor agent in straight run
+    // mode" case).
+    const { writer, dispatcher, ctx, budget } = setup();
+    const { markdown } = assignBlockIds("# Page\n\nOriginal.\n");
+    await writer.write("no-bridge.md", markdown, null);
+    const { etag } = writer.read("no-bridge.md");
+    const blockId = [...writer.read("no-bridge.md").content.matchAll(/blk_[A-Z0-9]{26}/g)][1]?.[0];
+
+    const result = await dispatcher.call(
+      "kb.replace_block",
+      { path: "no-bridge.md", blockId, markdown: "Straight write.", etag },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    expect(data.ok).toBe(true);
+    const { content } = writer.read("no-bridge.md");
+    expect(content).toContain("Straight write.");
   });
 });

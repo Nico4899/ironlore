@@ -169,20 +169,32 @@ function AgentPauseBanner({ slug }: { slug: string }) {
   const [paused, setPaused] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
+  // Re-check whenever a run ends — a fresh failure streak may have
+  // tripped the pause rail mid-session. The original version only
+  // fetched on mount, so users saw a stale "active" banner until
+  // they refreshed.
+  const isStreaming = useAIPanelStore((s) => s.isStreaming);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isStreaming is the trigger, not a value read inside
   useEffect(() => {
+    let cancelled = false;
     fetch(`/api/projects/main/agents/${slug}/state`)
       .then((r) => r.json())
       .then((data: { canRun: boolean; reason: string | null }) => {
+        if (cancelled) return;
         if (!data.canRun) {
           setPaused(true);
           setReason(data.reason);
         } else {
           setPaused(false);
+          setReason(null);
         }
       })
       .catch(() => {});
-  }, [slug]);
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, isStreaming]);
 
   const handleResume = useCallback(async () => {
     if (resuming) return;
@@ -314,20 +326,32 @@ function MessageList() {
               diff={msg.diff}
               approved={msg.approved}
               onApprove={() => {
+                const jobId = useAIPanelStore.getState().jobId;
+                if (!jobId || !msg.toolCallId) return;
+                // Mark locally before the round-trip so the buttons
+                // hide immediately; the server call is best-effort,
+                // because if the bridge has already timed out there's
+                // nothing the user can do to un-timeout it.
                 const msgs = useAIPanelStore.getState().messages;
                 const target = msgs[i];
                 if (target?.type === "diff_preview") {
                   (target as { approved: boolean | null }).approved = true;
                   useAIPanelStore.setState({ messages: [...msgs] });
                 }
+                void submitDryRunVerdict(jobId, msg.toolCallId, "approve").catch(() => {
+                  // Swallow — the verdict is a best-effort unblock.
+                });
               }}
               onReject={() => {
+                const jobId = useAIPanelStore.getState().jobId;
+                if (!jobId || !msg.toolCallId) return;
                 const msgs = useAIPanelStore.getState().messages;
                 const target = msgs[i];
                 if (target?.type === "diff_preview") {
                   (target as { approved: boolean | null }).approved = false;
                   useAIPanelStore.setState({ messages: [...msgs] });
                 }
+                void submitDryRunVerdict(jobId, msg.toolCallId, "reject").catch(() => {});
               }}
             />
           )}

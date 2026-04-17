@@ -43,7 +43,7 @@ export class ToolDispatcher {
      * When omitted, a synthetic ID is generated — tests and one-shot
      * invocations don't need to wire the provider's ID through.
      */
-     toolCallId?: string,
+    toolCallId?: string,
   ): Promise<{ result: string; isError: boolean }> {
     // Budget gate.
     if (budget.usedToolCalls >= budget.maxToolCalls) {
@@ -80,7 +80,8 @@ export class ToolDispatcher {
           });
           const verdict = await ctx.dryRunBridge.awaitVerdict(diffId);
           if (verdict === "reject" || verdict === "timeout") {
-            const reason = verdict === "timeout" ? "no response within review window" : "user rejected change";
+            const reason =
+              verdict === "timeout" ? "no response within review window" : "user rejected change";
             const resultPayload = JSON.stringify({
               ok: false,
               skipped: true,

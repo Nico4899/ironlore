@@ -71,9 +71,7 @@ export async function executeAgentRun(
   // on every destructive tool call and wait for user verdict.
   const reviewMode = parseReviewMode(dataRoot, agentSlug);
   const inboxBranch =
-    job.mode === "autonomous" && reviewMode === "inbox"
-      ? `agents/${agentSlug}/${job.id}`
-      : null;
+    job.mode === "autonomous" && reviewMode === "inbox" ? `agents/${agentSlug}/${job.id}` : null;
   // Dry-run bridge is attached whenever the persona declares it, even
   // for interactive sessions — the user explicitly wants a review step
   // regardless of job mode.
