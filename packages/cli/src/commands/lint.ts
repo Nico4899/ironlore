@@ -22,6 +22,10 @@ import { repair } from "./repair.js";
 const CATEGORIES = ["index-consistency", "schema-migration", "data-integrity"] as const;
 type Category = (typeof CATEGORIES)[number];
 
+function isCategory(s: string): s is Category {
+  return (CATEGORIES as readonly string[]).includes(s);
+}
+
 interface LintOptions {
   project: string;
   fix?: boolean;
@@ -30,12 +34,20 @@ interface LintOptions {
 }
 
 export function lint(options: LintOptions): void {
-  const categories: Category[] = options.check ? ([options.check] as Category[]) : [...CATEGORIES];
+  // Validate --check before dispatching so typos surface immediately
+  // with a helpful error, not a silent "Unknown check category" line.
+  if (options.check && !isCategory(options.check)) {
+    console.error(
+      `Unknown check category: "${options.check}". ` +
+        `Valid categories: ${CATEGORIES.join(", ")}`,
+    );
+    process.exit(1);
+  }
+
+  const categories: Category[] = options.check ? [options.check as Category] : [...CATEGORIES];
 
   console.log(`\nironlore lint${options.fix ? " --fix" : ""}`);
   console.log("─".repeat(50));
-
-  let issues = 0;
 
   for (const cat of categories) {
     switch (cat) {
@@ -57,18 +69,9 @@ export function lint(options: LintOptions): void {
         console.log(`\n  [${cat}]`);
         repair({ project: options.project, dryRun: !options.fix });
         break;
-
-      default:
-        console.log(`  Unknown check category: ${cat}`);
-        issues++;
     }
   }
 
   console.log(`\n${"─".repeat(50)}`);
-  if (issues > 0) {
-    console.log(`  ${issues} issue(s) found. Run with --fix to repair.`);
-    process.exit(1);
-  } else {
-    console.log("  All checks passed.");
-  }
+  console.log("  All checks passed.");
 }
