@@ -69,7 +69,9 @@ describe("OllamaProvider — NDJSON parsing", () => {
       provider.chat({ model: "llama3", systemPrompt: "", messages: [] }, ctx(mockFetch(body))),
     );
 
-    const texts = events.filter((e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text");
+    const texts = events.filter(
+      (e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text",
+    );
     expect(texts.map((t) => t.text).join("")).toBe("Hello world");
 
     const done = events.find((e): e is Extract<ChatEvent, { type: "done" }> => e.type === "done");
@@ -91,7 +93,9 @@ describe("OllamaProvider — NDJSON parsing", () => {
       provider.chat({ model: "llama3", systemPrompt: "", messages: [] }, ctx(mockFetch(body))),
     );
 
-    const texts = events.filter((e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text");
+    const texts = events.filter(
+      (e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text",
+    );
     expect(texts.map((t) => t.text).join("")).toBe("hello");
     expect(events.some((e) => e.type === "done")).toBe(true);
   });
@@ -108,7 +112,9 @@ describe("OllamaProvider — NDJSON parsing", () => {
       provider.chat({ model: "llama3", systemPrompt: "", messages: [] }, ctx(mockFetch(body))),
     );
 
-    const texts = events.filter((e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text");
+    const texts = events.filter(
+      (e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text",
+    );
     expect(texts.map((t) => t.text).join("")).toBe("beforeafter");
   });
 
@@ -131,10 +137,7 @@ describe("OllamaProvider — NDJSON parsing", () => {
     }) as unknown as typeof globalThis.fetch;
 
     const events = await collect(
-      provider.chat(
-        { model: "llama3", systemPrompt: "", messages: [] },
-        ctx(throwingFetch),
-      ),
+      provider.chat({ model: "llama3", systemPrompt: "", messages: [] }, ctx(throwingFetch)),
     );
     expect(events[0]?.type).toBe("error");
     const err = events[0] as Extract<ChatEvent, { type: "error" }>;
@@ -143,10 +146,7 @@ describe("OllamaProvider — NDJSON parsing", () => {
 
   it("emits an error when the response body is missing", async () => {
     const events = await collect(
-      provider.chat(
-        { model: "llama3", systemPrompt: "", messages: [] },
-        ctx(mockFetch(null, 200)),
-      ),
+      provider.chat({ model: "llama3", systemPrompt: "", messages: [] }, ctx(mockFetch(null, 200))),
     );
     // Response(null) produces an empty stream, not a null body — the
     // parser completes cleanly with zero content. Either outcome
@@ -158,7 +158,7 @@ describe("OllamaProvider — NDJSON parsing", () => {
 
   it("flattens tool_use + tool_result messages when tools aren't supported natively", async () => {
     let capturedBody: unknown = null;
-    const capturingFetch: typeof globalThis.fetch = (async (_url, init) => {
+    const capturingFetch: typeof globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(init?.body as string);
       return new Response(encodeNdjson([{ done: true }]), { status: 200 });
     }) as unknown as typeof globalThis.fetch;
@@ -195,7 +195,7 @@ describe("OllamaProvider — NDJSON parsing", () => {
 
   it("includes num_predict + temperature in the request options", async () => {
     let capturedBody: unknown = null;
-    const capturingFetch: typeof globalThis.fetch = (async (_url, init) => {
+    const capturingFetch: typeof globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(init?.body as string);
       return new Response(encodeNdjson([{ done: true }]), { status: 200 });
     }) as unknown as typeof globalThis.fetch;
@@ -252,7 +252,9 @@ describe("OllamaProvider.detect", () => {
 
   it("handles empty models array", async () => {
     const fetchFn = (async () =>
-      new Response(JSON.stringify({ models: [] }), { status: 200 })) as unknown as typeof globalThis.fetch;
+      new Response(JSON.stringify({ models: [] }), {
+        status: 200,
+      })) as unknown as typeof globalThis.fetch;
     const result = await OllamaProvider.detect(fetchFn);
     expect(result).toEqual({ models: [] });
   });

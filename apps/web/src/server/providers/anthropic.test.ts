@@ -76,7 +76,9 @@ describe("AnthropicProvider — SSE parsing", () => {
       ),
     );
 
-    const texts = events.filter((e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text");
+    const texts = events.filter(
+      (e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text",
+    );
     expect(texts.map((t) => t.text).join("")).toBe("Hello world");
 
     const done = events.find((e): e is Extract<ChatEvent, { type: "done" }> => e.type === "done");
@@ -190,8 +192,10 @@ describe("AnthropicProvider — SSE parsing", () => {
     // parser keeps an incomplete line in its buffer and fuses it with
     // the next chunk.
     const raw1 = 'data: {"type":"message_start","message":{"usage":{"input_toke';
-    const raw2 = 'ns":5}}}\n\ndata: {"type":"content_block_start","content_block":{"type":"text"}}\n\n';
-    const raw3 = 'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"split"}}\n\n';
+    const raw2 =
+      'ns":5}}}\n\ndata: {"type":"content_block_start","content_block":{"type":"text"}}\n\n';
+    const raw3 =
+      'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"split"}}\n\n';
     const raw4 = 'data: {"type":"content_block_stop"}\n\ndata: {"type":"message_stop"}\n\n';
 
     const body = encodeSseStream([raw1, raw2, raw3, raw4]);
@@ -202,7 +206,9 @@ describe("AnthropicProvider — SSE parsing", () => {
       ),
     );
 
-    const texts = events.filter((e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text");
+    const texts = events.filter(
+      (e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text",
+    );
     expect(texts.map((t) => t.text).join("")).toBe("split");
   });
 
@@ -223,7 +229,9 @@ describe("AnthropicProvider — SSE parsing", () => {
       ),
     );
 
-    const texts = events.filter((e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text");
+    const texts = events.filter(
+      (e): e is Extract<ChatEvent, { type: "text" }> => e.type === "text",
+    );
     expect(texts.map((t) => t.text).join("")).toBe("survived");
   });
 
@@ -249,7 +257,7 @@ describe("AnthropicProvider — SSE parsing", () => {
 
   it("passes tool definitions through to the request body", async () => {
     let capturedBody: unknown = null;
-    const capturingFetch: typeof globalThis.fetch = (async (_url, init) => {
+    const capturingFetch: typeof globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(init?.body as string);
       const body = encodeSseStream([
         frame({ type: "message_start", message: { usage: { input_tokens: 1 } } }),
@@ -290,7 +298,7 @@ describe("AnthropicProvider — SSE parsing", () => {
 
   it("marks the system prompt for prompt-caching when requested", async () => {
     let capturedBody: unknown = null;
-    const capturingFetch: typeof globalThis.fetch = (async (_url, init) => {
+    const capturingFetch: typeof globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(init?.body as string);
       const body = encodeSseStream([frame({ type: "message_stop" })]);
       return new Response(body, { status: 200 });
@@ -316,7 +324,7 @@ describe("AnthropicProvider — SSE parsing", () => {
 
   it("omits cache_control when cacheSystemPrompt is false", async () => {
     let capturedBody: unknown = null;
-    const capturingFetch: typeof globalThis.fetch = (async (_url, init) => {
+    const capturingFetch: typeof globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(init?.body as string);
       const body = encodeSseStream([frame({ type: "message_stop" })]);
       return new Response(body, { status: 200 });
@@ -342,7 +350,7 @@ describe("AnthropicProvider — SSE parsing", () => {
 
   it("converts tool_use + tool_result messages into Anthropic's content-block shape", async () => {
     let capturedBody: unknown = null;
-    const capturingFetch: typeof globalThis.fetch = (async (_url, init) => {
+    const capturingFetch: typeof globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
       capturedBody = JSON.parse(init?.body as string);
       const body = encodeSseStream([frame({ type: "message_stop" })]);
       return new Response(body, { status: 200 });
