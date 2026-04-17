@@ -344,6 +344,26 @@ export async function revertJob(
   return res.json();
 }
 
+/**
+ * Submit a dry-run verdict for a pending destructive tool call. The
+ * server resolves the DryRunBridge handshake and the dispatcher either
+ * proceeds with the mutation (`approve`) or returns a skipped result
+ * (`reject`).
+ */
+export async function submitDryRunVerdict(
+  jobId: string,
+  toolCallId: string,
+  verdict: "approve" | "reject",
+): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`${JOBS_BASE}/${jobId}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ toolCallId, verdict }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Auth API
 // ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
-import { revertJob } from "../lib/api.js";
+import { revertJob, submitDryRunVerdict } from "../lib/api.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { DiffPreview } from "./DiffPreview.js";

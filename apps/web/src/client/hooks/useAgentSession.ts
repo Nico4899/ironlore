@@ -215,6 +215,20 @@ function processJobEvent(event: { seq: number; kind: string; data: string }): vo
       // Interactive session paused (client disconnected).
       break;
 
+    case "diff_preview": {
+      // Server is pausing on a destructive tool call pending the
+      // user's verdict. Render the diff with approve/reject controls.
+      store.addMessage({
+        type: "diff_preview",
+        toolCallId: (data.toolCallId as string) ?? "",
+        tool: (data.tool as string) ?? "unknown",
+        pageId: (data.pageId as string) ?? "",
+        diff: (data.diff as string) ?? "",
+        approved: null,
+      });
+      break;
+    }
+
     case "run.finalized": {
       // Server emits this at the end of an autonomous run with the
       // commit range + file list. We surface it as a finalized card

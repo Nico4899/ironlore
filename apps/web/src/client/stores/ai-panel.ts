@@ -5,7 +5,16 @@ export type ConversationMessage =
   | { type: "assistant"; text: string }
   | { type: "tool_call"; tool: string; args: unknown; result?: unknown; collapsed: boolean }
   | { type: "journal"; text: string }
-  | { type: "diff_preview"; pageId: string; diff: string; approved: boolean | null }
+  | {
+      type: "diff_preview";
+      /** The tool-call ID the dispatcher is waiting on. */
+      toolCallId: string;
+      /** Tool name for display (kb.replace_block, kb.insert_after, kb.delete_block). */
+      tool: string;
+      pageId: string;
+      diff: string;
+      approved: boolean | null;
+    }
   | {
       type: "run_finalized";
       runId: string;

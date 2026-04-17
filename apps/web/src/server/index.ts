@@ -207,6 +207,7 @@ async function start() {
           : "claude-sonnet-4-20250514",
       agentSlug,
       prompt: payload.prompt,
+      dryRunBridge,
     });
 
     // Record outcome for auto-pause rails.
@@ -289,7 +290,7 @@ async function start() {
 
   // Mount job API (status, events)
   app.use("/api/projects/*/jobs/*", authMiddleware);
-  const jobApi = createJobApi(pool, projectDir);
+  const jobApi = createJobApi(pool, projectDir, dryRunBridge);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/jobs`, jobApi);
 
   // Mount inbox API (staging branch review)
