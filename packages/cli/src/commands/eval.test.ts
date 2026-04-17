@@ -2,13 +2,53 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-// Relative path — the web app isn't a published package, and the CLI
-// package.json doesn't wire it as a workspace dep. For tests only,
-// reaching into the sibling app's source is acceptable.
-// biome-ignore lint/style/useImportType: runtime value
-import { SearchIndex } from "../../../../apps/web/src/server/search-index.js";
+import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { evalCommand } from "./eval.js";
+
+/**
+ * Build a minimal SearchIndex-compatible SQLite schema inline. The
+ * eval command is in the CLI package which can't import the web
+ * app's SearchIndex (different tsconfig rootDir). Rather than wire a
+ * workspace dep, we duplicate the subset of tables eval reads from.
+ * If search-index.ts ever adds columns eval depends on, this stub
+ * needs to track — but the surface is stable (docs/02-storage-and-sync.md).
+ */
+function openMiniIndex(projectDir: string): Database.Database {
+  const db = new Database(join(projectDir, ".ironlore", "index.sqlite"));
+  db.pragma("journal_mode = WAL");
+  db.exec(`
+    CREATE VIRTUAL TABLE pages_fts USING fts5(path, title, content);
+    CREATE VIRTUAL TABLE pages_chunks_fts USING fts5(
+      path, chunk_idx UNINDEXED, block_id_start UNINDEXED, block_id_end UNINDEXED, content
+    );
+    CREATE TABLE pages (
+      path TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      parent TEXT,
+      file_type TEXT NOT NULL,
+      updated_at TEXT
+    );
+    CREATE TABLE backlinks (
+      source_path TEXT NOT NULL,
+      target_path TEXT NOT NULL,
+      link_text TEXT NOT NULL,
+      rel TEXT,
+      PRIMARY KEY (source_path, target_path, link_text)
+    );
+    CREATE TABLE tags (
+      path TEXT NOT NULL,
+      tag TEXT NOT NULL,
+      PRIMARY KEY (path, tag)
+    );
+    CREATE TABLE recent_edits (
+      path TEXT PRIMARY KEY,
+      updated_at TEXT NOT NULL,
+      author TEXT NOT NULL
+    );
+  `);
+  return db;
+}
 
 /**
  * `ironlore eval` tests.
@@ -58,7 +98,8 @@ function seedIndex(projectDir: string, pageCount: number): void {
 
 describe("ironlore eval", () => {
   let cwd: string;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let exitSpy: ReturnType<typeof vi.fn>;
+  let origExit: typeof process.exit;
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errSpy: ReturnType<typeof vi.spyOn>;
 
@@ -66,15 +107,17 @@ describe("ironlore eval", () => {
     cwd = makeTmpCwd();
     // Intercept process.exit so it doesn't kill the test runner.
     // Throw a sentinel so tests can assert the exit code.
-    exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+    origExit = process.exit;
+    exitSpy = vi.fn((code?: number) => {
       throw new Error(`__exit_${code ?? 0}__`);
-    }) as never);
+    });
+    process.exit = exitSpy as unknown as typeof process.exit;
     logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
-    exitSpy.mockRestore();
+    process.exit = origExit;
     logSpy.mockRestore();
     errSpy.mockRestore();
     try {
