@@ -185,7 +185,7 @@ interface SlashMenuState {
 export function MarkdownEditor({ markdown, onChange, onSelectionChange }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const blockIdsRef = useRef<Map<number, string>>(new Map());
+  const blockIdsRef = useRef<Array<{ id: string; text: string }>>([]);
   const frontmatterRef = useRef<string>("");
   const onChangeRef = useRef(onChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
@@ -220,8 +220,8 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
   const createView = useCallback((container: HTMLDivElement) => {
     const { frontmatter, body } = splitFrontmatter(markdown);
     frontmatterRef.current = frontmatter;
-    const { cleaned, blockIds } = stripBlockIds(body);
-    blockIdsRef.current = blockIds;
+    const { cleaned, entries } = stripBlockIds(body);
+    blockIdsRef.current = entries;
 
     const schema = wikiMarkdownParser.schema;
     const doc = wikiMarkdownParser.parse(cleaned);
@@ -389,13 +389,13 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
 
     const { frontmatter, body } = splitFrontmatter(markdown);
     frontmatterRef.current = frontmatter;
-    const { cleaned, blockIds } = stripBlockIds(body);
+    const { cleaned, entries } = stripBlockIds(body);
     const currentSerialized = wikiMarkdownSerializer.serialize(view.state.doc);
 
     // Don't replace if content matches — avoids cursor jumps
     if (currentSerialized === cleaned) return;
 
-    blockIdsRef.current = blockIds;
+    blockIdsRef.current = entries;
     const doc = wikiMarkdownParser.parse(cleaned);
     if (!doc) return;
 
