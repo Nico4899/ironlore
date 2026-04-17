@@ -261,8 +261,15 @@ async function start() {
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/raw`, rawApi);
 
   // Mount search API (FTS5, backlinks, recent edits)
+  const searchProvider = providerRegistry.resolve();
   const searchApi = createSearchApi(searchIndex, {
-    provider: providerRegistry.resolve(),
+    provider: searchProvider,
+    projectId: DEFAULT_PROJECT_ID,
+    projectDir,
+    defaultModel:
+      searchProvider?.name === "ollama"
+        ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
+        : "claude-haiku-4-20250514",
   });
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/search`, searchApi);
 
