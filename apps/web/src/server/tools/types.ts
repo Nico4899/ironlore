@@ -9,6 +9,7 @@
  * See docs/04-ai-and-agents.md §The edit protocol.
  */
 
+import type { DryRunBridge } from "../agents/dry-run-bridge.js";
 import type { ToolDefinition } from "../providers/types.js";
 
 export interface ToolCallContext {
@@ -19,6 +20,22 @@ export interface ToolCallContext {
   emitEvent: (kind: string, data: unknown) => void;
   /** Data root for the project (for StorageWriter access). */
   dataRoot: string;
+  /**
+   * Dry-run coordination bridge. Present only when the executor sets
+   * up dry-run mode for a run (persona `review_mode: dry_run`). When
+   * set, destructive tools route through the `diff_preview` →
+   * approve/reject dance before mutating.
+   */
+  dryRunBridge?: DryRunBridge;
+}
+
+/**
+ * Unified diff for a proposed mutation. `pageId` is the target page's
+ * path; `diff` is a rendered `+`/`-` block ready for display.
+ */
+export interface DryRunDiff {
+  pageId: string;
+  diff: string;
 }
 
 export interface ToolImplementation {
@@ -26,6 +43,18 @@ export interface ToolImplementation {
   definition: ToolDefinition;
   /** Execute the tool. Returns a string result for the model. */
   execute: (args: unknown, ctx: ToolCallContext) => Promise<string>;
+  /**
+   * Optional dry-run diff generator. Tools that implement this opt in
+   * to the review flow: when the agent runs under `review_mode:
+   * dry_run`, the dispatcher fetches the diff, emits a `diff_preview`
+   * event, and waits for approval before running `execute`.
+   *
+   * Returns `null` when the proposed args would no-op or fail
+   * validation (e.g., unknown block ID) — the dispatcher treats that
+   * as "nothing to review" and falls through to `execute` for the
+   * tool's normal error path.
+   */
+  computeDiff?: (args: unknown, ctx: ToolCallContext) => Promise<DryRunDiff | null>;
 }
 
 /**

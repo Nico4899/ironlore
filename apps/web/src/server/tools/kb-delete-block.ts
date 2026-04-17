@@ -4,6 +4,11 @@ import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 
+function renderDeleteDiff(blockId: string, oldText: string): string {
+  const lines = oldText.split("\n").map((l) => `- ${l}`);
+  return [`@@ delete block ${blockId} @@`, ...lines].join("\n");
+}
+
 /**
  * kb.delete_block — atomic block deletion with ETag concurrency.
  *
@@ -38,6 +43,22 @@ export function createKbDeleteBlock(
         },
         required: ["path", "blockId", "etag"],
       },
+    },
+    async computeDiff(args, _ctx) {
+      const { path, blockId } = args as { path: string; blockId: string };
+      let current: string;
+      try {
+        current = writer.read(path).content;
+      } catch {
+        return null;
+      }
+      const blocks = parseBlocks(current);
+      const target = blocks.find((b) => b.id === blockId);
+      if (!target) return null;
+      return {
+        pageId: path,
+        diff: renderDeleteDiff(blockId, target.text),
+      };
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
       const { path, blockId, etag } = args as {

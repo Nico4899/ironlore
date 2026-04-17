@@ -4,6 +4,13 @@ import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 
+/** Render a minimal +/- diff for a single-block replacement. */
+function renderReplaceDiff(oldText: string, newText: string, blockId: string): string {
+  const oldLines = oldText.split("\n").map((l) => `- ${l}`);
+  const newLines = newText.split("\n").map((l) => `+ ${l}`);
+  return [`@@ block ${blockId} @@`, ...oldLines, ...newLines].join("\n");
+}
+
 /**
  * kb.replace_block — atomic block replacement with ETag concurrency.
  *
@@ -44,6 +51,26 @@ export function createKbReplaceBlock(
         },
         required: ["path", "blockId", "markdown", "etag"],
       },
+    },
+    async computeDiff(args, _ctx) {
+      const { path, blockId, markdown } = args as {
+        path: string;
+        blockId: string;
+        markdown: string;
+      };
+      let current: string;
+      try {
+        current = writer.read(path).content;
+      } catch {
+        return null;
+      }
+      const blocks = parseBlocks(current);
+      const target = blocks.find((b) => b.id === blockId);
+      if (!target) return null;
+      return {
+        pageId: path,
+        diff: renderReplaceDiff(target.text, markdown, blockId),
+      };
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
       const {

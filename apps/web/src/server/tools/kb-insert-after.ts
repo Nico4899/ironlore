@@ -4,6 +4,11 @@ import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 
+function renderInsertDiff(anchorBlockId: string, newText: string): string {
+  const lines = newText.split("\n").map((l) => `+ ${l}`);
+  return [`@@ insert after ${anchorBlockId} @@`, ...lines].join("\n");
+}
+
 /**
  * kb.insert_after — atomic block insertion after a reference block.
  *
@@ -54,6 +59,26 @@ export function createKbInsertAfter(
         },
         required: ["path", "blockId", "markdown", "etag"],
       },
+    },
+    async computeDiff(args, _ctx) {
+      const { path, blockId, markdown } = args as {
+        path: string;
+        blockId: string;
+        markdown: string;
+      };
+      let current: string;
+      try {
+        current = writer.read(path).content;
+      } catch {
+        return null;
+      }
+      const blocks = parseBlocks(current);
+      const target = blocks.find((b) => b.id === blockId);
+      if (!target) return null;
+      return {
+        pageId: path,
+        diff: renderInsertDiff(blockId, markdown),
+      };
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
       const {
