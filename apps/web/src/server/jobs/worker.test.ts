@@ -157,6 +157,45 @@ describe("WorkerPool", () => {
     // (Some may not finish in 3s with only 5 parallel; just check the limit held.)
   });
 
+  it("periodically reclaims expired leases while running", async () => {
+    // Simulates a worker crashing mid-run: a job is marked running
+    // with an expired lease, but no one has restarted the pool.
+    // The pre-fix version relied on a restart to reclaim; now the
+    // poll loop itself sweeps expired leases and the job gets
+    // re-dispatched automatically.
+    const db = openJobsDb(join(tmpDir, "jobs.sqlite"));
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO jobs (id, project_id, kind, mode, payload, status, lease_until, worker_id, scheduled_at, created_at)
+       VALUES (?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`,
+    ).run(
+      "stuck-job",
+      "main",
+      "resumable.job",
+      "autonomous",
+      "{}",
+      now - 10_000, // lease expired 10s ago
+      "dead-worker",
+      now - 60_000,
+      now - 60_000,
+    );
+
+    let pickedUp = false;
+    pool.register("resumable.job", async () => {
+      pickedUp = true;
+      return { status: "done" };
+    });
+    pool.start();
+
+    // Wait for a poll cycle to run.
+    await new Promise((r) => setTimeout(r, 2000));
+
+    expect(pickedUp).toBe(true);
+    const job = pool.getJob("stuck-job");
+    expect(job?.status).toBe("done");
+    db.close();
+  });
+
   it("reclaims expired leases on startup", () => {
     // Manually insert a job with an expired lease (simulating a crash).
     const db = openJobsDb(join(tmpDir, "jobs.sqlite"));
