@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { createAgentApi, createInboxApi, createJobApi } from "./agents/api.js";
+import { DryRunBridge } from "./agents/dry-run-bridge.js";
 import { executeAgentRun } from "./agents/executor.js";
 import { AgentInbox } from "./agents/inbox.js";
 import { AgentRails } from "./agents/rails.js";
@@ -156,6 +157,7 @@ async function start() {
   const jobsDb = openJobsDb(jobsDbPath);
   const pool = new WorkerPool(jobsDb);
   const rails = new AgentRails(jobsDb);
+  const dryRunBridge = new DryRunBridge();
 
   // Seed agent_state rows for default agents.
   seedAgents(writer.getDataRoot(), jobsDb);

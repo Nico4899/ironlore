@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { estimateRunCost } from "./cost-estimate.js";
+import type { DryRunBridge } from "./dry-run-bridge.js";
 import type { AgentInbox } from "./inbox.js";
 import type { AgentRails } from "./rails.js";
 import { revertAgentRun } from "./revert-run.js";
@@ -184,7 +185,11 @@ export function createAgentApi(
  *
  * Mounted at `/api/projects/:id/jobs`.
  */
-export function createJobApi(pool: WorkerPool, projectDir: string): Hono {
+export function createJobApi(
+  pool: WorkerPool,
+  projectDir: string,
+  dryRunBridge?: DryRunBridge,
+): Hono {
   const api = new Hono();
 
   // -----------------------------------------------------------------------
@@ -240,6 +245,37 @@ export function createJobApi(pool: WorkerPool, projectDir: string): Hono {
 
     const result = revertAgentRun(job, projectDir);
     return c.json(result);
+  });
+
+  // -----------------------------------------------------------------------
+  // Submit a dry-run verdict for a pending tool call
+  // -----------------------------------------------------------------------
+  // When an agent runs under `review_mode: dry_run`, every destructive
+  // tool call emits `diff_preview` and waits on the DryRunBridge. The
+  // AI panel's DiffPreview component posts here when the user hits
+  // approve or reject; a `true` response means the verdict routed back
+  // to the pending dispatcher call.
+  api.post("/:id/approve", async (c) => {
+    if (!dryRunBridge) {
+      return c.json({ error: "Dry-run bridge not configured" }, 501);
+    }
+    const jobId = c.req.param("id") ?? "";
+    const job = pool.getJob(jobId);
+    if (!job) return c.json({ error: "Job not found" }, 404);
+
+    const body = await c.req.json<{ toolCallId?: string; verdict?: "approve" | "reject" }>();
+    if (!body.toolCallId || (body.verdict !== "approve" && body.verdict !== "reject")) {
+      return c.json(
+        { error: "Body must include toolCallId + verdict ('approve' | 'reject')" },
+        400,
+      );
+    }
+
+    const delivered = dryRunBridge.submitVerdict(body.toolCallId, body.verdict);
+    if (!delivered) {
+      return c.json({ error: "No pending verdict for that tool call" }, 404);
+    }
+    return c.json({ ok: true });
   });
 
   return api;

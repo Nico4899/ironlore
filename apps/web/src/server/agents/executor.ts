@@ -5,6 +5,7 @@ import type { JobContext, JobResult, JobRow } from "../jobs/types.js";
 import type { ChatMessage, ProjectContext, Provider } from "../providers/types.js";
 import type { ToolDispatcher } from "../tools/dispatcher.js";
 import type { RunBudget, ToolCallContext } from "../tools/types.js";
+import type { DryRunBridge } from "./dry-run-bridge.js";
 
 /**
  * Agent execution loop.
@@ -43,6 +44,13 @@ export interface ExecutorOptions {
    * Only meaningful for `mode='interactive'` jobs.
    */
   interactiveBridge?: import("./interactive-bridge.js").InteractiveBridge;
+  /**
+   * Dry-run bridge — if provided, the executor attaches it to the
+   * tool context so destructive tools route through the
+   * diff_preview / approve flow. Only set when the agent's persona
+   * declares `review_mode: dry_run`.
+   */
+  dryRunBridge?: DryRunBridge;
 }
 
 /**
@@ -58,9 +66,18 @@ export async function executeAgentRun(
 ): Promise<JobResult> {
   const { provider, projectContext, dispatcher, dataRoot, projectDir, model, agentSlug } = opts;
 
-  // Check if this agent uses inbox mode for autonomous runs.
-  const reviewMode = job.mode === "autonomous" ? parseReviewMode(dataRoot, agentSlug) : null;
-  const inboxBranch = reviewMode === "inbox" ? `agents/${agentSlug}/${job.id}` : null;
+  // Parse the agent's review mode from persona frontmatter. `inbox`
+  // runs land on a staging branch for approval; `dry_run` runs pause
+  // on every destructive tool call and wait for user verdict.
+  const reviewMode = parseReviewMode(dataRoot, agentSlug);
+  const inboxBranch =
+    job.mode === "autonomous" && reviewMode === "inbox"
+      ? `agents/${agentSlug}/${job.id}`
+      : null;
+  // Dry-run bridge is attached whenever the persona declares it, even
+  // for interactive sessions — the user explicitly wants a review step
+  // regardless of job mode.
+  const effectiveDryRun = reviewMode === "dry_run" ? opts.dryRunBridge : undefined;
 
   // Create and checkout inbox staging branch if needed.
   if (inboxBranch) {
@@ -104,6 +121,7 @@ export async function executeAgentRun(
     jobId: job.id,
     emitEvent: jobCtx.emitEvent,
     dataRoot,
+    ...(effectiveDryRun ? { dryRunBridge: effectiveDryRun } : {}),
   };
 
   // Conversation history.
@@ -181,7 +199,13 @@ export async function executeAgentRun(
 
       // Execute each tool call sequentially.
       for (const tc of pendingToolCalls) {
-        const { result, isError } = await dispatcher.call(tc.name, tc.input, toolCtx, budget);
+        const { result, isError } = await dispatcher.call(
+          tc.name,
+          tc.input,
+          toolCtx,
+          budget,
+          tc.id,
+        );
 
         messages.push({ role: "tool_result", id: tc.id, content: result, is_error: isError });
 
@@ -324,12 +348,14 @@ function loadPersona(dataRoot: string, slug: string): string {
 
 /**
  * Parse the persona's YAML frontmatter for `review_mode`.
- * Returns `"inbox"` if the persona declares it, `null` otherwise.
+ * Returns `"inbox"` or `"dry_run"` if declared, `null` otherwise.
  */
-function parseReviewMode(dataRoot: string, slug: string): "inbox" | null {
+function parseReviewMode(dataRoot: string, slug: string): "inbox" | "dry_run" | null {
   const personaPath = join(dataRoot, ".agents", slug, "persona.md");
   if (!existsSync(personaPath)) return null;
   const raw = readFileSync(personaPath, "utf-8");
   const match = /^review_mode:\s*(\w+)/m.exec(raw);
-  return match?.[1] === "inbox" ? "inbox" : null;
+  if (match?.[1] === "inbox") return "inbox";
+  if (match?.[1] === "dry_run") return "dry_run";
+  return null;
 }
