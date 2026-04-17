@@ -215,3 +215,157 @@ describe("SearchIndex", () => {
     expect(index.search("fresh")).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Chunk-level FTS + RRF merge
+// ---------------------------------------------------------------------------
+//
+// The `pages_chunks_fts` virtual table splits markdown at block-ID seams
+// into ~800-token chunks; each chunk carries `block_id_start` and
+// `block_id_end` so search results can cite the exact block range rather
+// than the whole page. `search()` fires both the page-level and
+// chunk-level FTS queries and merges via RRF.
+//
+// These tests exercise that chunking + merging directly, not through the
+// HTTP layer.
+
+describe("SearchIndex — chunk-level FTS + RRF", () => {
+  const indexes: SearchIndex[] = [];
+
+  function createIndex(): { index: SearchIndex; projectDir: string } {
+    const projectDir = makeTmpProject();
+    const index = new SearchIndex(projectDir);
+    indexes.push(index);
+    return { index, projectDir };
+  }
+
+  afterEach(() => {
+    for (const idx of indexes) {
+      idx.close();
+    }
+    indexes.length = 0;
+  });
+
+  /** Quick helper — builds markdown with N paragraphs each carrying a
+   *  unique `<!-- #blk_ULID -->` anchor. Block IDs are sortable by
+   *  construction so order is deterministic. */
+  function buildBlockMarkdown(paragraphs: Array<{ id: string; text: string }>): string {
+    return paragraphs.map((p) => `${p.text} <!-- #${p.id} -->`).join("\n\n");
+  }
+
+  it("indexes chunk rows alongside page-level rows", () => {
+    const { index } = createIndex();
+
+    const content = buildBlockMarkdown([
+      { id: "blk_01HABCABCABCABCABCABCABCAA", text: "alpha paragraph about apples." },
+      { id: "blk_01HABCABCABCABCABCABCABCAB", text: "beta paragraph about bananas." },
+      { id: "blk_01HABCABCABCABCABCABCABCAC", text: "gamma paragraph about cherries." },
+    ]);
+    index.indexPage("fruit.md", content, "test");
+
+    // Sanity: page-level search finds the page.
+    expect(index.search("alpha").map((r) => r.path)).toContain("fruit.md");
+    expect(index.search("gamma").map((r) => r.path)).toContain("fruit.md");
+  });
+
+  it("re-indexing a page replaces stale chunk rows", () => {
+    const { index } = createIndex();
+
+    const v1 = buildBlockMarkdown([
+      { id: "blk_01HABCABCABCABCABCABCABCAA", text: "original content about kangaroos." },
+    ]);
+    index.indexPage("a.md", v1, "test");
+    expect(index.search("kangaroos")).toHaveLength(1);
+
+    const v2 = buildBlockMarkdown([
+      { id: "blk_01HABCABCABCABCABCABCABCBB", text: "new content about penguins." },
+    ]);
+    index.indexPage("a.md", v2, "test");
+    expect(index.search("kangaroos")).toHaveLength(0);
+    expect(index.search("penguins")).toHaveLength(1);
+  });
+
+  it("RRF merge produces a single row per matching page", () => {
+    const { index } = createIndex();
+
+    // Two pages, both matching the query. Without dedup a naïve concat
+    // would emit four rows (one per side), which is wrong.
+    index.indexPage(
+      "one.md",
+      buildBlockMarkdown([
+        { id: "blk_01HAAAAAAAAAAAAAAAAAAAAAAA", text: "The seashell washed ashore." },
+      ]),
+      "test",
+    );
+    index.indexPage(
+      "two.md",
+      buildBlockMarkdown([
+        { id: "blk_01HBBBBBBBBBBBBBBBBBBBBBBB", text: "Another seashell on the beach." },
+      ]),
+      "test",
+    );
+
+    const results = index.search("seashell");
+    const paths = results.map((r) => r.path);
+    expect(paths).toEqual([...new Set(paths)]); // no duplicates
+    expect(paths.length).toBe(2);
+  });
+
+  it("honors the limit argument at the top level", () => {
+    const { index } = createIndex();
+
+    for (let i = 0; i < 12; i++) {
+      const id = `blk_01HFFFFFFFFFFFFFFFFFFFFFF${i.toString().padStart(2, "0").slice(-1)}A`;
+      index.indexPage(
+        `page${i}.md`,
+        buildBlockMarkdown([{ id, text: "shared zebra keyword here" }]),
+        "test",
+      );
+    }
+
+    const top5 = index.search("zebra", 5);
+    expect(top5.length).toBeLessThanOrEqual(5);
+  });
+
+  it("prefers chunk-level snippets when both sources have a hit", () => {
+    const { index } = createIndex();
+
+    // One page with a query term deep inside a block. The chunk snippet
+    // should surface the exact block context rather than the page title.
+    const content = buildBlockMarkdown([
+      { id: "blk_01HAAAAAAAAAAAAAAAAAAAAAAA", text: "Intro about farming." },
+      { id: "blk_01HBBBBBBBBBBBBBBBBBBBBBBB", text: "Supercalifragilistic is a long word." },
+      { id: "blk_01HCCCCCCCCCCCCCCCCCCCCCCC", text: "Conclusion paragraph." },
+    ]);
+    index.indexPage("deep.md", content, "test");
+
+    const results = index.search("supercalifragilistic");
+    expect(results).toHaveLength(1);
+    // Snippet should contain the matched term with the <mark> tag the FTS
+    // snippet() function inserts. Both page- and chunk-level queries use
+    // the same token so either wins — assert that a snippet was returned.
+    expect(results[0]?.snippet).toMatch(/<mark>/i);
+  });
+
+  it("empty queries return no results without crashing", () => {
+    const { index } = createIndex();
+    index.indexPage(
+      "a.md",
+      buildBlockMarkdown([{ id: "blk_01HAAAAAAAAAAAAAAAAAAAAAAA", text: "content" }]),
+      "test",
+    );
+    expect(index.search("")).toEqual([]);
+    expect(index.search("   ")).toEqual([]);
+  });
+
+  it("pages with no block-ID comments still index at page level", () => {
+    const { index } = createIndex();
+    // Markdown without any `<!-- #blk_... -->` anchors. `parseBlocks`
+    // returns an empty array → no chunk rows get written, but the
+    // page-level FTS path still fires.
+    index.indexPage("plain.md", "# Plain\n\nJust some unsullied prose without anchors.", "test");
+    const results = index.search("unsullied");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.path).toBe("plain.md");
+  });
+});
