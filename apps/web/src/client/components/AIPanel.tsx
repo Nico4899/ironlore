@@ -15,7 +15,16 @@ import { useAgentSession } from "../hooks/useAgentSession.js";
 import { revertJob, submitDryRunVerdict } from "../lib/api.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
+import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
+
+/**
+ * Storage key pattern for cost-estimate acknowledgement per agent slug.
+ * Once the user confirms the estimate for an agent, the dialog skips
+ * for the rest of the session — the intent is a heads-up on first
+ * use, not a ceremony on every message.
+ */
+const COST_ACK_KEY = (slug: string) => `ironlore.costEstimate.acknowledged.${slug}`;
 
 export function AIPanel() {
   const messages = useAIPanelStore((s) => s.messages);
@@ -50,6 +59,23 @@ export function AIPanel() {
 
   const { sendMessage } = useAgentSession();
 
+  // Cost-estimate dialog state. The first user send of each session
+  // for a given agent gates through this dialog; subsequent sends
+  // skip it. sessionStorage clears on tab close, so reopening the
+  // app re-shows the estimate — intentional since pricing could
+  // change between sessions.
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const [costDialogOpen, setCostDialogOpen] = useState(false);
+
+  const doSend = useCallback(
+    (fullPrompt: string) => {
+      sendMessage(fullPrompt);
+      setInputDraft("");
+      useAIPanelStore.getState().clearContexts();
+    },
+    [sendMessage, setInputDraft],
+  );
+
   const handleSend = useCallback(() => {
     const draft = inputDraft.trim();
     if (!draft && contexts.length === 0) return;
@@ -59,10 +85,43 @@ export function AIPanel() {
         ? `${contexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n")}\n\n`
         : "";
     const fullPrompt = contextBlock + draft;
-    sendMessage(fullPrompt);
-    setInputDraft("");
-    useAIPanelStore.getState().clearContexts();
-  }, [inputDraft, contexts, setInputDraft, sendMessage]);
+
+    // Cost-estimate gate: show on the first send per agent per
+    // session. Any read/write failure of sessionStorage just skips
+    // the dialog — estimate is informational, not a safety rail.
+    let alreadyAcknowledged = false;
+    try {
+      alreadyAcknowledged = window.sessionStorage.getItem(COST_ACK_KEY(activeAgent)) === "1";
+    } catch {
+      alreadyAcknowledged = true;
+    }
+
+    if (!alreadyAcknowledged) {
+      setPendingPrompt(fullPrompt);
+      setCostDialogOpen(true);
+      return;
+    }
+
+    doSend(fullPrompt);
+  }, [inputDraft, contexts, activeAgent, doSend]);
+
+  const handleCostConfirm = useCallback(() => {
+    try {
+      window.sessionStorage.setItem(COST_ACK_KEY(activeAgent), "1");
+    } catch {
+      /* storage denied — don't block the send */
+    }
+    setCostDialogOpen(false);
+    if (pendingPrompt !== null) {
+      doSend(pendingPrompt);
+      setPendingPrompt(null);
+    }
+  }, [activeAgent, pendingPrompt, doSend]);
+
+  const handleCostCancel = useCallback(() => {
+    setCostDialogOpen(false);
+    setPendingPrompt(null);
+  }, []);
 
   const onPromptKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -157,6 +216,13 @@ export function AIPanel() {
           </button>
         </div>
       </div>
+      {costDialogOpen && (
+        <CostEstimateDialog
+          agentSlug={activeAgent}
+          onConfirm={handleCostConfirm}
+          onCancel={handleCostCancel}
+        />
+      )}
     </aside>
   );
 }
