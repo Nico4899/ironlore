@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { BackpressureController } from "../jobs/backpressure.js";
 import type { JobContext, JobResult, JobRow } from "../jobs/types.js";
 import type { ChatMessage, ProjectContext, Provider } from "../providers/types.js";
 import type { ToolDispatcher } from "../tools/dispatcher.js";
@@ -51,6 +52,12 @@ export interface ExecutorOptions {
    * declares `review_mode: dry_run`.
    */
   dryRunBridge?: DryRunBridge;
+  /**
+   * Adaptive backpressure controller. The executor acquires a slot
+   * per provider.chat() call and releases it when the stream ends,
+   * so the pool self-tunes under 429 pressure.
+   */
+  backpressure?: BackpressureController;
 }
 
 /**
@@ -143,44 +150,76 @@ export async function executeAgentRun(
   while (turnCount < maxTurns && !journalEmitted && !jobCtx.signal.aborted) {
     turnCount++;
 
-    const stream = provider.chat(
-      {
-        model,
-        systemPrompt,
-        messages,
-        tools: provider.supportsTools ? toolDefinitions : undefined,
-        cacheSystemPrompt: provider.supportsPromptCache,
-      },
-      projectContext,
-    );
+    // Adaptive backpressure gate: if the provider is at its cap
+    // (after prior 429s halved it), wait briefly before retrying
+    // rather than firing the request and compounding the throttle.
+    if (opts.backpressure) {
+      if (!opts.backpressure.canProceed(provider.name)) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue; // Retry the turn after backoff.
+      }
+      opts.backpressure.acquire(provider.name);
+    }
 
     let assistantText = "";
     let pendingToolCalls: Array<{ id: string; name: string; input: unknown }> = [];
+    let providerError: string | null = null;
 
-    for await (const event of stream) {
-      if (jobCtx.signal.aborted) break;
+    try {
+      const stream = provider.chat(
+        {
+          model,
+          systemPrompt,
+          messages,
+          tools: provider.supportsTools ? toolDefinitions : undefined,
+          cacheSystemPrompt: provider.supportsPromptCache,
+        },
+        projectContext,
+      );
 
-      switch (event.type) {
-        case "text":
-          assistantText += event.text;
-          jobCtx.emitEvent("message.text", { text: event.text });
-          break;
+      for await (const event of stream) {
+        if (jobCtx.signal.aborted) break;
 
-        case "tool_use":
-          pendingToolCalls.push({ id: event.id, name: event.name, input: event.input });
-          break;
+        switch (event.type) {
+          case "text":
+            assistantText += event.text;
+            jobCtx.emitEvent("message.text", { text: event.text });
+            break;
 
-        case "done":
-          if (event.usage) {
-            budget.usedTokens += event.usage.inputTokens + event.usage.outputTokens;
-            jobCtx.emitEvent("usage", event.usage);
-          }
-          break;
+          case "tool_use":
+            pendingToolCalls.push({ id: event.id, name: event.name, input: event.input });
+            break;
 
-        case "error":
-          jobCtx.emitEvent("message.error", { text: event.message });
-          return { status: "failed", result: event.message };
+          case "done":
+            if (event.usage) {
+              budget.usedTokens += event.usage.inputTokens + event.usage.outputTokens;
+              jobCtx.emitEvent("usage", event.usage);
+            }
+            break;
+
+          case "error":
+            providerError = event.message;
+            // Feed rate-limit signals back into backpressure. Any
+            // provider error whose message mentions "429" or "rate"
+            // halves the cap for that provider so concurrent runs
+            // back off.
+            if (
+              opts.backpressure &&
+              (/(^|\s)429/.test(event.message) || /rate.limit/i.test(event.message))
+            ) {
+              opts.backpressure.onRateLimit(provider.name);
+            }
+            break;
+        }
+        if (providerError) break;
       }
+    } finally {
+      if (opts.backpressure) opts.backpressure.release(provider.name);
+    }
+
+    if (providerError) {
+      jobCtx.emitEvent("message.error", { text: providerError });
+      return { status: "failed", result: providerError };
     }
 
     // Record the assistant's text response.

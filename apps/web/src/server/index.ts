@@ -158,6 +158,10 @@ async function start() {
   const pool = new WorkerPool(jobsDb);
   const rails = new AgentRails(jobsDb);
   const dryRunBridge = new DryRunBridge();
+  // Backpressure is created up front (not deep in the route mounting
+  // section) so the agent.run job handler closure can capture a live
+  // reference. The controller's recovery timer is kick-started below.
+  const backpressure = new BackpressureController();
 
   // Seed agent_state rows for default agents.
   seedAgents(writer.getDataRoot(), jobsDb);
@@ -208,6 +212,7 @@ async function start() {
       agentSlug,
       prompt: payload.prompt,
       dryRunBridge,
+      backpressure,
     });
 
     // Record outcome for auto-pause rails.
@@ -248,8 +253,7 @@ async function start() {
     return result;
   });
 
-  // Start the worker pool + backpressure controller.
-  const backpressure = new BackpressureController();
+  // Start the worker pool + backpressure controller recovery timer.
   backpressure.start();
   pool.start();
   workerPool = pool;
