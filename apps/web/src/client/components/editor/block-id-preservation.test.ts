@@ -92,9 +92,7 @@ describe("reinsertBlockIds — content-based matching", () => {
     expect(restored).toContain("# Title <!-- #blk_01HABCABCABCABCABCABCABCAA -->");
     // The existing paragraph keeps its ID even though its line
     // index shifted from 2 to 4.
-    expect(restored).toContain(
-      "Existing paragraph. <!-- #blk_01HABCABCABCABCABCABCABCAB -->",
-    );
+    expect(restored).toContain("Existing paragraph. <!-- #blk_01HABCABCABCABCABCABCABCAB -->");
     // The new paragraph stays plain — server will assign an ID on PUT.
     expect(restored).toContain("Brand new paragraph.");
     expect(restored).not.toContain("Brand new paragraph. <!-- #blk_");

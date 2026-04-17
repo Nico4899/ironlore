@@ -46,7 +46,7 @@ function collectCss(dir: string, out: string[] = []): string[] {
 }
 
 function insideEditorDir(filePath: string): boolean {
-  return filePath.startsWith(`${EDITOR_DIR}${join("/")}`) || filePath.startsWith(EDITOR_DIR + "/");
+  return filePath.startsWith(`${EDITOR_DIR}/`);
 }
 
 describe("Stylesheet scoping — .ProseMirror selectors", () => {
