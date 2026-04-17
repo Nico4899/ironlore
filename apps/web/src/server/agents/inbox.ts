@@ -104,7 +104,18 @@ export class AgentInbox {
   }
 
   /**
-   * Approve all — fast-forward the staging branch onto main.
+   * Approve all — merge the staging branch into main.
+   *
+   * Tries a fast-forward merge first (clean when main hasn't moved
+   * since the branch was created). Falls back to a non-ff merge
+   * commit when main has diverged but the branches compose cleanly.
+   * Aborts on conflict so the repo stays clean for the next run.
+   *
+   * The pre-fix version tried `git rebase <branch>` as a fallback,
+   * which rebases main ONTO the staging branch (backwards direction
+   * — staging's commits vanish from view, main's commits get
+   * replayed on top of staging's). Replaced with a proper merge
+   * fallback that actually lands the agent's work on main.
    */
   approveAll(entryId: string, projectDir: string): { success: boolean; error?: string } {
     const entry = this.getEntry(entryId);
@@ -125,22 +136,24 @@ export class AgentInbox {
       this.setStatus(entryId, "approved");
       return { success: true };
     } catch (_err) {
-      // Fast-forward failed — try rebase.
+      // Fast-forward failed (main diverged). Fall back to a merge
+      // commit that lands the agent work without rewriting history.
       try {
-        execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" rebase ${entry.branch}`, {
-          encoding: "utf-8",
-          stdio: "pipe",
-        });
+        execSync(
+          `git --git-dir="${gitDir}" --work-tree="${projectDir}" merge --no-ff --no-edit ${entry.branch}`,
+          { encoding: "utf-8", stdio: "pipe" },
+        );
         execSync(
           `git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -d ${entry.branch}`,
           { encoding: "utf-8", stdio: "pipe" },
         );
         this.setStatus(entryId, "approved");
         return { success: true };
-      } catch (rebaseErr) {
-        // Abort failed rebase.
+      } catch (mergeErr) {
+        // Conflict — abort so the repo is clean and the user can
+        // resolve manually (or retry later once main stabilizes).
         try {
-          execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" rebase --abort`, {
+          execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" merge --abort`, {
             encoding: "utf-8",
             stdio: "pipe",
           });
@@ -149,7 +162,7 @@ export class AgentInbox {
         }
         return {
           success: false,
-          error: rebaseErr instanceof Error ? rebaseErr.message : String(rebaseErr),
+          error: mergeErr instanceof Error ? mergeErr.message : String(mergeErr),
         };
       }
     }
