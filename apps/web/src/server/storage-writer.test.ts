@@ -240,6 +240,112 @@ describe("StorageWriter", () => {
     });
   });
 
+  describe("writeBinary", () => {
+    it("writes binary bytes atomically and returns an etag", async () => {
+      const { writer, projectDir } = createWriter();
+      const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // PNG magic
+      const { etag } = await writer.writeBinary("photo.png", bytes);
+      expect(etag).toBeTruthy();
+      const onDisk = readFileSync(join(projectDir, "data", "photo.png"));
+      expect(new Uint8Array(onDisk)).toEqual(bytes);
+    });
+
+    it("overwrites an existing binary file", async () => {
+      const { writer, projectDir } = createWriter();
+      await writer.writeBinary("a.bin", new Uint8Array([1, 2, 3]));
+      await writer.writeBinary("a.bin", new Uint8Array([4, 5, 6]));
+      const onDisk = readFileSync(join(projectDir, "data", "a.bin"));
+      expect(new Uint8Array(onDisk)).toEqual(new Uint8Array([4, 5, 6]));
+    });
+
+    it("skips write when content is unchanged", async () => {
+      const { writer } = createWriter();
+      const bytes = new Uint8Array([1, 2, 3]);
+      const first = await writer.writeBinary("a.bin", bytes);
+      const second = await writer.writeBinary("a.bin", bytes);
+      expect(first.etag).toBe(second.etag);
+    });
+
+    it("creates parent directories for nested paths", async () => {
+      const { writer, projectDir } = createWriter();
+      await writer.writeBinary("nested/deep/photo.png", new Uint8Array([1, 2, 3]));
+      expect(existsSync(join(projectDir, "data", "nested/deep/photo.png"))).toBe(true);
+    });
+
+    it("stores null content in WAL (binary too large for WAL)", async () => {
+      const { writer } = createWriter();
+      await writer.writeBinary("a.bin", new Uint8Array([1, 2, 3]));
+      const wal = writer.getWal();
+      const pending = wal.getCommittedPending();
+      const entry = pending.find((e) => e.path === "a.bin");
+      expect(entry).toBeDefined();
+      expect(entry?.content).toBeNull();
+    });
+  });
+
+  describe("mkdir and rmdir", () => {
+    it("mkdir creates a directory under data root", () => {
+      const { writer, projectDir } = createWriter();
+      writer.mkdir("my-folder");
+      expect(existsSync(join(projectDir, "data", "my-folder"))).toBe(true);
+    });
+
+    it("mkdir is idempotent", () => {
+      const { writer } = createWriter();
+      writer.mkdir("x");
+      expect(() => writer.mkdir("x")).not.toThrow();
+    });
+
+    it("mkdir creates nested parents", () => {
+      const { writer, projectDir } = createWriter();
+      writer.mkdir("a/b/c");
+      expect(existsSync(join(projectDir, "data", "a/b/c"))).toBe(true);
+    });
+
+    it("rmdir removes a directory and all contents", async () => {
+      const { writer, projectDir } = createWriter();
+      writer.mkdir("folder");
+      await writer.write("folder/file.md", "# Test\n", null);
+      writer.rmdir("folder");
+      expect(existsSync(join(projectDir, "data", "folder"))).toBe(false);
+    });
+
+    it("rmdir is a no-op for missing directory", () => {
+      const { writer } = createWriter();
+      expect(() => writer.rmdir("nonexistent")).not.toThrow();
+    });
+
+    it("rmdir throws when path is a file, not a directory", async () => {
+      const { writer } = createWriter();
+      await writer.write("file.md", "# Test\n", null);
+      expect(() => writer.rmdir("file.md")).toThrow(/Not a directory/);
+    });
+  });
+
+  describe("exists", () => {
+    it("returns true for existing file", async () => {
+      const { writer } = createWriter();
+      await writer.write("file.md", "# Test\n", null);
+      expect(writer.exists("file.md")).toBe(true);
+    });
+
+    it("returns true for existing directory", () => {
+      const { writer } = createWriter();
+      writer.mkdir("folder");
+      expect(writer.exists("folder")).toBe(true);
+    });
+
+    it("returns false for missing path", () => {
+      const { writer } = createWriter();
+      expect(writer.exists("nothing.md")).toBe(false);
+    });
+
+    it("throws ForbiddenError for path traversal attempts", () => {
+      const { writer } = createWriter();
+      expect(() => writer.exists("../../etc/passwd")).toThrow();
+    });
+  });
+
   describe("crash recovery", () => {
     it("replays uncommitted writes", async () => {
       const { writer, projectDir } = createWriter();
