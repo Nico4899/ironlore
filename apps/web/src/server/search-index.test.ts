@@ -105,11 +105,7 @@ describe("SearchIndex", () => {
 
   it("returns typed-relation backlinks with the rel field populated", () => {
     const { index } = createIndex();
-    index.indexPage(
-      "claim.md",
-      "# Claim\n\nThis [[Paper X | contradicts]] the finding.",
-      "user",
-    );
+    index.indexPage("claim.md", "# Claim\n\nThis [[Paper X | contradicts]] the finding.", "user");
     const backlinks = index.getBacklinks("Paper X");
     expect(backlinks).toHaveLength(1);
     expect(backlinks[0]?.rel).toBe("contradicts");

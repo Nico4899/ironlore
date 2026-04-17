@@ -75,24 +75,36 @@ function makeProject(cwd: string, projectId: string): string {
 }
 
 function seedIndex(projectDir: string, pageCount: number): void {
-  const index = new SearchIndex(projectDir);
+  const db = openMiniIndex(projectDir);
+  const ftsStmt = db.prepare("INSERT INTO pages_fts (path, title, content) VALUES (?, ?, ?)");
+  const pagesStmt = db.prepare(
+    "INSERT INTO pages (path, name, parent, file_type, updated_at) VALUES (?, ?, NULL, 'markdown', datetime('now'))",
+  );
+  const backlinkStmt = db.prepare(
+    "INSERT INTO backlinks (source_path, target_path, link_text, rel) VALUES (?, ?, ?, NULL)",
+  );
+  const chunkStmt = db.prepare(
+    "INSERT INTO pages_chunks_fts (path, chunk_idx, block_id_start, block_id_end, content) VALUES (?, ?, ?, ?, ?)",
+  );
+  const blockId = (i: number) =>
+    `blk_01HABCABCABCABCABCABCABC${i.toString(36).padStart(2, "0").toUpperCase().slice(-2)}`;
+
   try {
+    // Also write the .md files so eval's block-ID coverage walk finds them.
+    const dataRoot = join(projectDir, "data");
+    const { writeFileSync } = require("node:fs") as typeof import("node:fs");
     for (let i = 0; i < pageCount; i++) {
-      // Each page has a block-ID comment so block-ID coverage is 100%.
-      // Pages cross-link to build a connected graph (no orphans).
-      const prev = i > 0 ? `See [[page-${i - 1}]].` : "";
-      const next = i < pageCount - 1 ? `See [[page-${i + 1}]].` : "";
-      const content = [
-        `# Page ${i}`,
-        "",
-        `${prev} Some content about topic ${i}. ${next}`,
-        "",
-        `<!-- #blk_01HABCABCABCABCABCABCABC${i.toString(36).padStart(2, "0").toUpperCase().slice(-2)} -->`,
-      ].join("\n");
-      index.indexPage(`page-${i}.md`, content, "test");
+      const path = `page-${i}.md`;
+      const title = `Page ${i}`;
+      const content = `# ${title}\n\nContent with <!-- #${blockId(i)} -->`;
+      writeFileSync(join(dataRoot, path), content);
+      ftsStmt.run(path, title, content);
+      pagesStmt.run(path, path);
+      chunkStmt.run(path, 0, blockId(i), blockId(i), content);
+      if (i > 0) backlinkStmt.run(path, `page-${i - 1}`, `page-${i - 1}`);
     }
   } finally {
-    index.close();
+    db.close();
   }
 }
 
@@ -129,13 +141,15 @@ describe("ironlore eval", () => {
 
   it("exits with an error when no index exists", async () => {
     makeProject(cwd, "main");
-    await expect(evalCommand({
-      project: "main",
-      json: false,
-      perfOnly: false,
-      qualityOnly: false,
-      cwd,
-    })).rejects.toThrow("__exit_1__");
+    await expect(
+      evalCommand({
+        project: "main",
+        json: false,
+        perfOnly: false,
+        qualityOnly: false,
+        cwd,
+      }),
+    ).rejects.toThrow("__exit_1__");
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("No index found"));
   });
 
@@ -212,17 +226,25 @@ describe("ironlore eval", () => {
 
   it("exits with code 1 when overall score is below 50", async () => {
     // Score = wiki_integrity*30 + (1-orphan)*25 + block_id_cov*25 + chunk*20.
-    // Forcing sub-50: a page with a broken backlink (drops wiki integrity),
-    // no block IDs (drops block-ID coverage), orphan (drops orphan score).
+    // Isolated page with broken backlink → wiki_integrity ≈ 0,
+    // orphan_rate = 1, block_id_coverage = 0 (no .md on disk).
     const projectDir = makeProject(cwd, "main");
-    const index = new SearchIndex(projectDir);
+    const db = openMiniIndex(projectDir);
     try {
-      // Isolated page with broken backlink → wiki_integrity ≈ 0,
-      // orphan_rate = 1, block_id_coverage = 0 (no .md on disk).
-      // Even if chunk_coverage hits 1.0, score = 0 + 0 + 0 + 20 = 20.
-      index.indexPage("broken.md", "Links to [[NonExistentTarget]].", "test");
+      db.prepare("INSERT INTO pages_fts (path, title, content) VALUES (?, ?, ?)").run(
+        "broken.md",
+        "Broken",
+        "Links to [[NonExistentTarget]].",
+      );
+      db.prepare(
+        "INSERT INTO pages (path, name, parent, file_type, updated_at) VALUES (?, ?, NULL, 'markdown', datetime('now'))",
+      ).run("broken.md", "broken.md");
+      // Broken backlink: target doesn't exist in pages table.
+      db.prepare(
+        "INSERT INTO backlinks (source_path, target_path, link_text, rel) VALUES (?, ?, ?, NULL)",
+      ).run("broken.md", "NonExistentTarget", "NonExistentTarget");
     } finally {
-      index.close();
+      db.close();
     }
 
     await expect(
