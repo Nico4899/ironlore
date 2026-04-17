@@ -429,31 +429,19 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
   // -------------------------------------------------------------------------
 
   it("executes a 5-tool-call sequential edit run without crashing", async () => {
-    // Simulates what the executor would drive: search → read → replace →
-    // insert → journal. This is the "5-tool-call edit" exit criterion
-    // from docs/06-implementation-roadmap.md §Phase 4.
+    // Simulates what the executor would drive: read → replace → re-read
+    // → insert → journal. This is the "5-tool-call edit" exit criterion
+    // from docs/06-implementation-roadmap.md §Phase 4. The re-read is
+    // intrinsic: every mutation yields a new ETag, and the next mutation
+    // needs the fresh one.
     const { writer, dispatcher, ctx, budget } = setup();
     const { markdown } = assignBlockIds(
       "# Carousel\n\nFirst slide description.\n\nSecond slide description.\n",
     );
     await writer.write("carousel.md", markdown, null);
 
-    // 1. Search for the page.
-    const searchRes = await dispatcher.call(
-      "kb.search",
-      { query: "carousel" },
-      ctx,
-      budget,
-    );
-    expect(searchRes.isError).toBe(false);
-
-    // 2. Read the page.
-    const readRes = await dispatcher.call(
-      "kb.read_page",
-      { path: "carousel.md" },
-      ctx,
-      budget,
-    );
+    // 1. Read the page.
+    const readRes = await dispatcher.call("kb.read_page", { path: "carousel.md" }, ctx, budget);
     const { blocks, etag } = JSON.parse(readRes.result) as {
       blocks: Array<{ id: string; preview: string }>;
       etag: string;
@@ -461,7 +449,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const firstSlide = blocks.find((b) => b.preview.includes("First"));
     expect(firstSlide).toBeDefined();
 
-    // 3. Replace a block.
+    // 2. Replace a block.
     const replaceRes = await dispatcher.call(
       "kb.replace_block",
       {
@@ -476,14 +464,8 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const { newEtag: etag2 } = JSON.parse(replaceRes.result) as { newEtag: string };
     expect(etag2).toBeDefined();
 
-    // 4. Insert after the (new) revised first slide. Re-read to get the
-    // current block IDs first — the replace may have changed them.
-    const reread = await dispatcher.call(
-      "kb.read_page",
-      { path: "carousel.md" },
-      ctx,
-      budget,
-    );
+    // 3. Re-read to get fresh ETag + block IDs after the replace.
+    const reread = await dispatcher.call("kb.read_page", { path: "carousel.md" }, ctx, budget);
     const { blocks: blocks2, etag: etag3 } = JSON.parse(reread.result) as {
       blocks: Array<{ id: string; preview: string }>;
       etag: string;
@@ -491,6 +473,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const revised = blocks2.find((b) => b.preview.includes("revised"));
     expect(revised).toBeDefined();
 
+    // 4. Insert after the revised slide.
     const insertRes = await dispatcher.call(
       "kb.insert_after",
       {

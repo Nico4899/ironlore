@@ -1,4 +1,5 @@
 import { parseBlocks } from "@ironlore/core";
+import { assignBlockIds } from "../block-ids.js";
 import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
@@ -87,9 +88,14 @@ export function createKbDeleteBlock(
       const after = currentContent.slice(sliceEnd);
       const newContent = before + after;
 
+      // Stamp block IDs on any surviving blocks whose ID anchors were
+      // adjacent to the deleted block and may now need re-assignment.
+      // `assignBlockIds` preserves existing IDs and only annotates new ones.
+      const { markdown: annotated } = assignBlockIds(newContent);
+
       try {
-        const { etag: newEtag } = await writer.write(path, newContent, etag, ctx.agentSlug);
-        searchIndex.indexPage(path, newContent, ctx.agentSlug);
+        const { etag: newEtag } = await writer.write(path, annotated, etag, ctx.agentSlug);
+        searchIndex.indexPage(path, annotated, ctx.agentSlug);
 
         return JSON.stringify({ ok: true, newEtag });
       } catch (err) {

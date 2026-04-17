@@ -1,4 +1,5 @@
 import { parseBlocks } from "@ironlore/core";
+import { assignBlockIds } from "../block-ids.js";
 import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
@@ -108,9 +109,14 @@ export function createKbInsertAfter(
       const trimmedInsert = markdown.replace(/^\s+|\s+$/g, "");
       const newContent = `${before}\n\n${trimmedInsert}${after.startsWith("\n") ? "" : "\n"}${after}`;
 
+      // Stamp block IDs on any freshly-inserted blocks so subsequent
+      // kb.* calls can reference them. `assignBlockIds` preserves
+      // existing IDs and only annotates new ones.
+      const { markdown: annotated } = assignBlockIds(newContent);
+
       try {
-        const { etag: newEtag } = await writer.write(path, newContent, etag, ctx.agentSlug);
-        searchIndex.indexPage(path, newContent, ctx.agentSlug);
+        const { etag: newEtag } = await writer.write(path, annotated, etag, ctx.agentSlug);
+        searchIndex.indexPage(path, annotated, ctx.agentSlug);
 
         return JSON.stringify({ ok: true, newEtag });
       } catch (err) {
