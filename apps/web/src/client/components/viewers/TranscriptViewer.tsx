@@ -1,5 +1,6 @@
 import { Copy } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
+import { MOTION } from "../../styles/motion.js";
 
 /**
  * Parse .vtt / .srt cues into `[timestamp, text]` rows.
@@ -82,7 +83,7 @@ export function TranscriptViewer({ content, path }: TranscriptViewerProps) {
     if (row instanceof HTMLElement) {
       row.scrollIntoView({ block: "center" });
       row.classList.add("bg-signal-amber/10");
-      setTimeout(() => row.classList.remove("bg-signal-amber/10"), 1500);
+      setTimeout(() => row.classList.remove("bg-signal-amber/10"), MOTION.flash);
     }
   }, []);
 

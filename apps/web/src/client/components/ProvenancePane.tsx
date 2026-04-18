@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { fetchPage } from "../lib/api.js";
 import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
+import { MOTION } from "../styles/motion.js";
 import { Reuleaux } from "./primitives/index.js";
 
 /**
@@ -56,7 +57,7 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
       if (el) {
         el.scrollIntoView({ block: "center" });
         el.classList.add("bg-signal-amber/20");
-        setTimeout(() => el.classList.remove("bg-signal-amber/20"), 1500);
+        setTimeout(() => el.classList.remove("bg-signal-amber/20"), MOTION.flash);
       }
     }, 100);
     return () => clearTimeout(timer);
