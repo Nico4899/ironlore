@@ -6,6 +6,7 @@ import {
   fetchInboxFiles,
   type InboxFileDiff,
   rejectInboxEntry,
+  setInboxFileDecision,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { Key, Reuleaux, Venn } from "./primitives/index.js";

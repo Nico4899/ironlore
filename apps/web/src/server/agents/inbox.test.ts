@@ -352,4 +352,106 @@ describe("AgentInbox — approve/reject against real git", () => {
 
     expect(inbox.getFileDiffStats("ghost", projectDir)).toEqual([]);
   });
+
+  it("setFileDecision round-trips approved/rejected/null and surfaces it on stats", () => {
+    execSync("git checkout -b agents/editor/dec1", { cwd: projectDir, stdio: "pipe" });
+    writeFileSync(join(projectDir, "a.md"), "alpha\n");
+    writeFileSync(join(projectDir, "b.md"), "beta\n");
+    execSync("git add -A", { cwd: projectDir, stdio: "pipe" });
+    execSync("git commit -m agent-dec", { cwd: projectDir, stdio: "pipe" });
+    execSync("git checkout main", { cwd: projectDir, stdio: "pipe" });
+
+    inbox.createEntry({
+      id: "dec1",
+      projectId: "main",
+      agentSlug: "editor",
+      branch: "agents/editor/dec1",
+      jobId: "dec1",
+      filesChanged: ["a.md", "b.md"],
+      startedAt: 1,
+      finalizedAt: 2,
+    });
+
+    expect(inbox.setFileDecision("dec1", "a.md", "approved").success).toBe(true);
+    expect(inbox.setFileDecision("dec1", "b.md", "rejected").success).toBe(true);
+    expect(inbox.getFileDecisions("dec1")).toEqual({ "a.md": "approved", "b.md": "rejected" });
+
+    const stats = inbox.getFileDiffStats("dec1", projectDir);
+    const byPath = new Map(stats.map((s) => [s.path, s]));
+    expect(byPath.get("a.md")?.decision).toBe("approved");
+    expect(byPath.get("b.md")?.decision).toBe("rejected");
+
+    // Clearing a decision removes that path from the map and
+    //  surfaces as null on stats.
+    expect(inbox.setFileDecision("dec1", "a.md", null).success).toBe(true);
+    expect(inbox.getFileDecisions("dec1")).toEqual({ "b.md": "rejected" });
+    const statsAfter = inbox.getFileDiffStats("dec1", projectDir);
+    const aAfter = statsAfter.find((s) => s.path === "a.md");
+    expect(aAfter?.decision).toBeNull();
+  });
+
+  it("setFileDecision returns error for unknown entries", () => {
+    const r = inbox.setFileDecision("nope", "a.md", "approved");
+    expect(r.success).toBe(false);
+    expect(r.error).toBe("Entry not found");
+  });
+
+  it("approveAll partial-approves only non-rejected files and marks entry partial", () => {
+    execSync("git checkout -b agents/editor/mix1", { cwd: projectDir, stdio: "pipe" });
+    writeFileSync(join(projectDir, "keep.md"), "keep me\n");
+    writeFileSync(join(projectDir, "drop.md"), "drop me\n");
+    execSync("git add -A", { cwd: projectDir, stdio: "pipe" });
+    execSync("git commit -m agent-mix", { cwd: projectDir, stdio: "pipe" });
+    execSync("git checkout main", { cwd: projectDir, stdio: "pipe" });
+
+    inbox.createEntry({
+      id: "mix1",
+      projectId: "main",
+      agentSlug: "editor",
+      branch: "agents/editor/mix1",
+      jobId: "mix1",
+      filesChanged: ["keep.md", "drop.md"],
+      startedAt: 1,
+      finalizedAt: 2,
+    });
+    inbox.setFileDecision("mix1", "drop.md", "rejected");
+
+    const result = inbox.approveAll("mix1", projectDir);
+    expect(result.success).toBe(true);
+
+    // Only the non-rejected file landed on main.
+    const files = execSync("ls", { cwd: projectDir, encoding: "utf-8" });
+    expect(files).toContain("keep.md");
+    expect(files).not.toContain("drop.md");
+
+    // Branch deleted, entry marked partial.
+    expect(branchExists(projectDir, "agents/editor/mix1")).toBe(false);
+    expect(inbox.getPending("main")).toHaveLength(0);
+  });
+
+  it("approveAll falls through to rejectAll when every file is rejected", () => {
+    execSync("git checkout -b agents/editor/all-rej", { cwd: projectDir, stdio: "pipe" });
+    writeFileSync(join(projectDir, "x.md"), "x\n");
+    execSync("git add -A", { cwd: projectDir, stdio: "pipe" });
+    execSync("git commit -m agent-all-rej", { cwd: projectDir, stdio: "pipe" });
+    execSync("git checkout main", { cwd: projectDir, stdio: "pipe" });
+    const mainHeadBefore = gitHead(projectDir);
+
+    inbox.createEntry({
+      id: "arej",
+      projectId: "main",
+      agentSlug: "editor",
+      branch: "agents/editor/all-rej",
+      jobId: "arej",
+      filesChanged: ["x.md"],
+      startedAt: 1,
+      finalizedAt: 2,
+    });
+    inbox.setFileDecision("arej", "x.md", "rejected");
+
+    const result = inbox.approveAll("arej", projectDir);
+    expect(result.success).toBe(true);
+    expect(gitHead(projectDir)).toBe(mainHeadBefore); // nothing merged
+    expect(branchExists(projectDir, "agents/editor/all-rej")).toBe(false);
+  });
 });
