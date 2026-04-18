@@ -1,8 +1,10 @@
+import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { estimateRunCost } from "./cost-estimate.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
 import type { AgentInbox } from "./inbox.js";
+import { getAgentConfig, getHourlyHistogram, getRecentRuns } from "./observability.js";
 import type { AgentRails } from "./rails.js";
 import { revertAgentRun } from "./revert-run.js";
 
@@ -23,6 +25,7 @@ import { revertAgentRun } from "./revert-run.js";
 export function createAgentApi(
   pool: WorkerPool,
   rails: AgentRails,
+  jobsDb: Database.Database,
   projectId: string,
   projectDir?: string,
 ): Hono {
@@ -100,6 +103,43 @@ export function createAgentApi(
     rails.setPauseState(projectId, slug, body.paused);
 
     return c.json({ ok: true, paused: body.paused });
+  });
+
+  // -----------------------------------------------------------------------
+  // Agent observability — recent runs, hourly histogram, config.
+  // See docs/04-ai-and-agents.md §§Run history and activity histogram
+  // and §§Exposing persona frontmatter.
+  // -----------------------------------------------------------------------
+  api.get("/:slug/runs", (c) => {
+    const slug = c.req.param("slug") ?? "";
+    if (!slug) return c.json({ error: "Agent slug required" }, 400);
+
+    // Clamp `limit` here too so bogus query strings don't reach SQLite.
+    const rawLimit = Number.parseInt(c.req.query("limit") ?? "24", 10);
+    const limit = Number.isFinite(rawLimit) ? rawLimit : 24;
+
+    const runs = getRecentRuns(jobsDb, projectId, slug, limit);
+    return c.json({ runs });
+  });
+
+  api.get("/:slug/histogram", (c) => {
+    const slug = c.req.param("slug") ?? "";
+    if (!slug) return c.json({ error: "Agent slug required" }, 400);
+
+    // Ensure a state row so the cap falls back to defaults rather than
+    //  returning 10/50 with no corresponding row downstream.
+    rails.ensureState(projectId, slug);
+    return c.json(getHourlyHistogram(jobsDb, projectId, slug));
+  });
+
+  api.get("/:slug/config", (c) => {
+    const slug = c.req.param("slug") ?? "";
+    if (!slug) return c.json({ error: "Agent slug required" }, 400);
+
+    rails.ensureState(projectId, slug);
+    const config = getAgentConfig(jobsDb, projectId, slug, projectDir ?? null);
+    if (!config) return c.json({ error: "Agent not found" }, 404);
+    return c.json(config);
   });
 
   // -----------------------------------------------------------------------

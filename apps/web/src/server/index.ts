@@ -289,7 +289,7 @@ async function start() {
 
   // Mount agent API (run, state, pause/resume)
   app.use("/api/projects/*/agents/*", authMiddleware);
-  const agentApi = createAgentApi(pool, rails, DEFAULT_PROJECT_ID, projectDir);
+  const agentApi = createAgentApi(pool, rails, jobsDb, DEFAULT_PROJECT_ID, projectDir);
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/agents`, agentApi);
 
   // Mount job API (status, events)
