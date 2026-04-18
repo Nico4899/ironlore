@@ -267,6 +267,46 @@ html.light {
   transform-origin: center;
 }
 
+/* ─── Motion + motif settings gates ─── */
+/*
+ * User-controlled overrides from Settings → Appearance. The OS
+ * `prefers-reduced-motion` media query below still applies at the
+ * system level; these attribute selectors let the user narrow from
+ * there (e.g. "reduced on a platform that reports no preference"
+ * or "none regardless of what the OS says"). Per
+ * docs/09-ui-and-brand.md §Motion language.
+ */
+html[data-motion="reduced"] .il-pulse::before {
+  animation: none;
+  opacity: 0.3;
+}
+html[data-motion="reduced"] .il-spin {
+  animation: none;
+}
+html[data-motion="none"] .il-pulse::before,
+html[data-motion="none"] .il-spin {
+  animation: none;
+}
+html[data-motion="none"] .il-pulse::before {
+  /* Kill the glow overlay entirely when the user opts all-off. */
+  display: none;
+}
+
+/*
+ * Motif-visibility gates. Two motifs are CSS-reachable today:
+ *   · agent-pulse — hides the animated overlay on live surfaces.
+ *   · provenance — hides the `.il-provenance-strip` root so cited
+ *     blocks render naked.
+ * The other two (`blockref-preview`, `reuleaux-pips`) are persisted
+ * via `data-motif-*` attributes for future features to read.
+ */
+html[data-motif-agent-pulse="off"] .il-pulse::before {
+  display: none;
+}
+html[data-motif-provenance="off"] .il-provenance-strip {
+  display: none;
+}
+
 /*
  * Blockref chip — the bespoke citation primitive from
  * docs/09-ui-and-brand.md §Signature motifs / Blockref. Lives in CSS
