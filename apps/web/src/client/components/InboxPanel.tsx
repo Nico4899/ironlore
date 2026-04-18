@@ -1,6 +1,12 @@
 import { Check, GitBranch, Inbox, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { approveInboxEntry, fetchInbox, rejectInboxEntry } from "../lib/api.js";
+import {
+  approveInboxEntry,
+  fetchInbox,
+  fetchInboxFiles,
+  type InboxFileDiff,
+  rejectInboxEntry,
+} from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { Key, Reuleaux, Venn } from "./primitives/index.js";
 
@@ -33,6 +39,16 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
   const [focusIdx, setFocusIdx] = useState(0);
   const [busy, setBusy] = useState(false);
 
+  /**
+   * Per-entry diff stats keyed by entry id. Populated lazily once
+   * the entry list lands — one git call per entry. Failure to compute
+   * for an individual entry surfaces as "no diff data" on that row
+   * rather than tanking the whole panel.
+   */
+  const [fileStats, setFileStats] = useState<Map<string, InboxFileDiff[] | "error">>(
+    () => new Map(),
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -48,6 +64,37 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Fan out the diff-stats fetches once the entry list changes. Each
+  //  entry's stats cache until entries change identity; we only fetch
+  //  for ids we haven't seen yet.
+  useEffect(() => {
+    if (entries.length === 0) return;
+    let cancelled = false;
+    for (const entry of entries) {
+      if (fileStats.has(entry.id)) continue;
+      fetchInboxFiles(entry.id)
+        .then((files) => {
+          if (cancelled) return;
+          setFileStats((prev) => {
+            const next = new Map(prev);
+            next.set(entry.id, files);
+            return next;
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setFileStats((prev) => {
+            const next = new Map(prev);
+            next.set(entry.id, "error");
+            return next;
+          });
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [entries, fileStats]);
 
   // Keep focus in range when entries shrink after approve/reject.
   useEffect(() => {
@@ -285,13 +332,11 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
                 {entry.filesChanged.length === 1 ? "" : "s"} changed
               </div>
 
-              <ul className="mt-1 max-h-20 overflow-y-auto text-[10px] text-secondary">
-                {entry.filesChanged.map((f) => (
-                  <li key={f} className="truncate font-mono">
-                    {f}
-                  </li>
-                ))}
-              </ul>
+              <InboxEntryFiles
+                entry={entry}
+                stats={fileStats.get(entry.id)}
+              />
+
 
               <div className="mt-2 flex gap-2">
                 <button
@@ -354,4 +399,88 @@ function InboxEmptyState() {
       </p>
     </div>
   );
+}
+
+/**
+ * Per-file diff rows for an inbox entry — `A/D/M  path  +N -M` per
+ * docs/09-ui-and-brand.md §Agent Inbox. Falls back to the plain
+ * filename list when git stats aren't available yet (loading / error
+ * / fell off the branch) so the row never goes empty.
+ */
+function InboxEntryFiles({
+  entry,
+  stats,
+}: {
+  entry: InboxEntry;
+  stats: InboxFileDiff[] | "error" | undefined;
+}) {
+  // While we're fetching or the endpoint failed, degrade to the plain
+  //  filename list. Never block the entry from rendering on this.
+  if (stats === undefined || stats === "error" || stats.length === 0) {
+    return (
+      <ul className="mt-1 max-h-20 overflow-y-auto text-[10px] text-secondary">
+        {entry.filesChanged.map((f) => (
+          <li key={f} className="truncate font-mono">
+            {f}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  return (
+    <ul className="mt-1 max-h-24 overflow-y-auto">
+      {stats.map((f) => (
+        <li
+          key={f.path}
+          className="grid items-center gap-2 py-0.5 font-mono"
+          style={{
+            gridTemplateColumns: "12px minmax(0, 1fr) auto",
+            fontSize: 10,
+          }}
+          title={f.path}
+        >
+          <span
+            className="uppercase"
+            style={{
+              letterSpacing: "0.06em",
+              fontWeight: 600,
+              color: statusColor(f.status),
+            }}
+          >
+            {f.status}
+          </span>
+          <span className="truncate text-secondary">{f.path}</span>
+          <span style={{ color: "var(--il-text4)" }}>{formatDelta(f)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function statusColor(status: InboxFileDiff["status"]): string {
+  switch (status) {
+    case "A":
+      return "var(--il-green)";
+    case "D":
+      return "var(--il-red)";
+    case "M":
+    case "R":
+      return "var(--il-blue)";
+    default:
+      return "var(--il-text3)";
+  }
+}
+
+/**
+ * Compact delta label — `+3 -2`, `+24`, `-8`, or `bin` for binary
+ * files (git reports `-` for both counts when the diff is unreadable
+ * as text). Zero-count columns drop out so the row stays short.
+ */
+function formatDelta(f: InboxFileDiff): string {
+  if (f.added === null && f.removed === null) return "bin";
+  const parts: string[] = [];
+  if ((f.added ?? 0) > 0) parts.push(`+${f.added}`);
+  if ((f.removed ?? 0) > 0) parts.push(`-${f.removed}`);
+  return parts.length === 0 ? "·" : parts.join(" ");
 }
