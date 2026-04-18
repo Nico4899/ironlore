@@ -321,33 +321,6 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           );
         })}
 
-        {false && !loading && entries.length > 0 && (
-          <div
-            className="mt-3 hidden flex-wrap gap-x-3 gap-y-1 border-t pt-2 font-mono uppercase"
-            style={{
-              borderColor: "var(--il-border-soft)",
-              fontSize: 10,
-              letterSpacing: "0.04em",
-              color: "var(--il-text3)",
-            }}
-          >
-            <span>
-              <Key>j</Key>/<Key>k</Key> move
-            </span>
-            <span>
-              <Key>a</Key> approve
-            </span>
-            <span>
-              <Key>r</Key> reject
-            </span>
-            <span>
-              <Key>⇧A</Key> all
-            </span>
-            <span>
-              <Key>↵</Key> open
-            </span>
-          </div>
-        )}
       </section>
     </div>
   );
