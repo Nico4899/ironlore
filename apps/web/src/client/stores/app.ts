@@ -8,6 +8,15 @@ export const SIDEBAR_DEFAULT_WIDTH = 260;
 
 const SIDEBAR_WIDTH_KEY = "ironlore.sidebarWidth";
 const THEME_KEY = "ironlore.theme";
+const DENSITY_KEY = "ironlore.density";
+const ACCENT_HUE_KEY = "ironlore.accentHue";
+
+/**
+ * Default OKLCh hue for Ironlore Blue — 258 is the seed; users can
+ * shift it ±30° via the Appearance settings (Phase 5 tweaks panel).
+ * Lightness + chroma stay pinned so the contrast check still holds.
+ */
+export const DEFAULT_ACCENT_HUE = 258;
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
@@ -34,6 +43,27 @@ function loadTheme(): "dark" | "light" {
   return "dark";
 }
 
+function loadDensity(): "comfortable" | "compact" {
+  try {
+    const raw = window.localStorage.getItem(DENSITY_KEY);
+    if (raw === "comfortable" || raw === "compact") return raw;
+  } catch {
+    /* storage denied */
+  }
+  return "comfortable";
+}
+
+function loadAccentHue(): number {
+  try {
+    const raw = window.localStorage.getItem(ACCENT_HUE_KEY);
+    const n = raw ? Number.parseFloat(raw) : Number.NaN;
+    if (Number.isFinite(n) && n >= 0 && n < 360) return n;
+  } catch {
+    /* storage denied */
+  }
+  return DEFAULT_ACCENT_HUE;
+}
+
 interface AppStore {
   currentProjectId: string;
   sidebarWidth: number;
@@ -45,6 +75,14 @@ interface AppStore {
   /** Paths of files currently open as tabs, in tab order. */
   openPaths: string[];
   theme: "dark" | "light";
+  /** Comfortable = body 13.5px / 12px rows; compact = body 12.5px / 6px rows. */
+  density: "comfortable" | "compact";
+  /**
+   * Hue channel for Ironlore Blue, in degrees (0–360). User-shifted
+   * accent while lightness + chroma stay pinned so the contrast
+   * guarantees still hold. 258 is the seed value (canonical blue).
+   */
+  accentHue: number;
   wsConnected: boolean;
   wsReconnecting: boolean;
   provenance: { pagePath: string; blockId: string } | null;
@@ -64,6 +102,9 @@ interface AppStore {
   closeAllTabs: () => void;
   setTheme: (theme: "dark" | "light") => void;
   toggleTheme: () => void;
+  setDensity: (density: "comfortable" | "compact") => void;
+  toggleDensity: () => void;
+  setAccentHue: (hue: number) => void;
   setSidebarWidth: (width: number) => void;
   setWsConnected: (connected: boolean) => void;
   setWsReconnecting: (reconnecting: boolean) => void;
@@ -90,6 +131,22 @@ function persistTheme(theme: "dark" | "light"): void {
   }
 }
 
+function persistDensity(density: "comfortable" | "compact"): void {
+  try {
+    window.localStorage.setItem(DENSITY_KEY, density);
+  } catch {
+    /* storage denied */
+  }
+}
+
+function persistAccentHue(hue: number): void {
+  try {
+    window.localStorage.setItem(ACCENT_HUE_KEY, String(hue));
+  } catch {
+    /* storage denied */
+  }
+}
+
 export const useAppStore = create<AppStore>((set) => ({
   currentProjectId: DEFAULT_PROJECT_ID,
   sidebarWidth: loadSidebarWidth(),
@@ -100,6 +157,8 @@ export const useAppStore = create<AppStore>((set) => ({
   activePath: null,
   openPaths: [],
   theme: loadTheme(),
+  density: loadDensity(),
+  accentHue: loadAccentHue(),
   wsConnected: false,
   wsReconnecting: false,
   provenance: null,
@@ -150,6 +209,22 @@ export const useAppStore = create<AppStore>((set) => ({
       persistTheme(theme);
       return { theme };
     }),
+  setDensity: (density) => {
+    persistDensity(density);
+    set({ density });
+  },
+  toggleDensity: () =>
+    set((s) => {
+      const density = s.density === "comfortable" ? "compact" : "comfortable";
+      persistDensity(density);
+      return { density };
+    }),
+  setAccentHue: (hue) => {
+    // Wrap into [0, 360) so a user who types 400 still lands on a valid hue.
+    const wrapped = ((hue % 360) + 360) % 360;
+    persistAccentHue(wrapped);
+    set({ accentHue: wrapped });
+  },
   setSidebarWidth: (width) => {
     const clamped = clamp(width, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
     persistSidebarWidth(clamped);
