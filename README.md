@@ -22,7 +22,7 @@ pnpm install
 ```sh
 pnpm dev                                          # Vite dev server (port 5173)
 cd apps/web && npx tsx watch src/server/index.ts  # API server (port 3000, separate terminal)
-pnpm test                                         # unit + integration tests (572 tests)
+pnpm test                                         # unit + integration tests (856 tests)
 pnpm test:e2e                                     # e2e tests (Playwright)
 pnpm check                                        # lint + format (Biome)
 pnpm typecheck                                    # tsc -b
@@ -107,6 +107,10 @@ ironlore/
 - **Egress**: all outbound HTTP via `fetchForProject()` with per-project allowlist
 - **Subprocess safety**: `spawnSafe()` with whitelist-only env (Biome rule enforced)
 - **File permissions**: sensitive files mode 0600, checked on startup
+
+## Design system
+
+Ironlore ships on a single OKLCh token layer and a three-family typographic triad. Every color is an `--il-*` CSS variable; every animation references one of four `--motion-*` durations (80ms snap, 180ms transit, 1500ms flash, 3200ms ambient pulse). Fonts are self-hosted via `@fontsource/*` — no Google or Adobe CDN at runtime. The full spec is in [docs/09-ui-and-brand.md](docs/09-ui-and-brand.md).
 
 ## License
 
