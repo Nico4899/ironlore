@@ -17,6 +17,7 @@ import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
+import { AgentPulse, Blockref, StatusPip } from "./primitives/index.js";
 
 /**
  * Storage key pattern for cost-estimate acknowledgement per agent slug.
@@ -144,19 +145,26 @@ export function AIPanel() {
       }}
       aria-label="AI panel"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <Sparkles
-            className={`h-4 w-4 ${isStreaming ? "animate-pulse text-ironlore-blue-strong" : "text-ironlore-blue"}`}
-          />
-          <span className="text-sm font-semibold tracking-tight">AI</span>
-          {isStreaming && (
-            <span className="text-[10px] font-medium text-ironlore-blue">thinking…</span>
-          )}
+      {/* Header.
+       *  Agent pulse: per spec the pulse sweeps the bottom rule of the
+       *  header (1px line, the building's heartbeat). We wrap the whole
+       *  header in AgentPulse and let the ::before rail run over the
+       *  border. Reuleaux pip replaces the Sparkles icon — Reuleaux is
+       *  the one shape we use for any form of agent-active state. */}
+      <AgentPulse active={isStreaming}>
+        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <StatusPip state={isStreaming ? "running" : "idle"} size={11} />
+            <span className="text-sm font-semibold tracking-tight">AI</span>
+            {isStreaming && (
+              <span className="font-mono text-[10px] uppercase tracking-wider text-ironlore-blue">
+                streaming
+              </span>
+            )}
+          </div>
+          <span className="text-xs font-medium text-secondary">{activeAgent}</span>
         </div>
-        <span className="text-xs font-medium text-secondary">{activeAgent}</span>
-      </div>
+      </AgentPulse>
 
       {/* Auto-pause banner */}
       <AgentPauseBanner slug={activeAgent} />
@@ -594,17 +602,18 @@ function CitationText({ text }: { text: string }) {
           // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
           <span key={i}>{p.value}</span>
         ) : (
-          <button
+          <span
             // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
             key={i}
-            type="button"
-            className="mx-0.5 inline rounded bg-ironlore-blue/15 px-1 py-0.5 text-xs font-medium text-ironlore-blue hover:bg-ironlore-blue/25"
-            onClick={() => useAppStore.getState().openProvenance(p.page, p.blockId)}
-            title={`Open ${p.page}${p.blockId ? `#${p.blockId}` : ""}`}
+            className="mx-0.5 inline-flex"
           >
-            {p.page}
-            {p.blockId ? `#${p.blockId.slice(0, 10)}…` : ""}
-          </button>
+            <Blockref
+              page={p.page}
+              block={p.blockId || undefined}
+              onClick={() => useAppStore.getState().openProvenance(p.page, p.blockId)}
+              title={`Open ${p.page}${p.blockId ? `#${p.blockId}` : ""}`}
+            />
+          </span>
         ),
       )}
     </>

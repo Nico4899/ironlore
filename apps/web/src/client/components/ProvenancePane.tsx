@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { fetchPage } from "../lib/api.js";
 import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
+import { Reuleaux } from "./primitives/index.js";
 
 /**
  * Provenance pane — opened by clicking a `[[Page#blk_…]]` citation
@@ -122,10 +123,16 @@ function PaneHeader({
   onClose: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex items-center gap-3 border-b border-border px-4 py-2">
+      {/* Blue Reuleaux anchors the header — this is a provenance surface,
+       *  so the universal pip + JetBrains Mono metadata undercurrent do
+       *  the talking. No "Provenance" label needed. */}
+      <Reuleaux size={10} color="var(--il-blue)" aria-label="Source of citation" />
       <div className="flex-1 min-w-0">
         <div className="truncate text-xs font-medium text-primary">{pagePath.split("/").pop()}</div>
-        <div className="truncate font-mono text-[10px] text-secondary">{blockId}</div>
+        <div className="truncate font-mono text-[10px] uppercase tracking-wider text-tertiary">
+          {blockId}
+        </div>
       </div>
       <button
         type="button"

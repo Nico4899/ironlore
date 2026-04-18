@@ -1,6 +1,7 @@
 import { Check, GitBranch, Inbox, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { approveInboxEntry, fetchInbox, rejectInboxEntry } from "../lib/api.js";
+import { Reuleaux, SectionLabel } from "./primitives/index.js";
 
 interface InboxEntry {
   id: string;
@@ -70,7 +71,17 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 overflow-y-auto p-3">
+        {/* Canvas-grammar section label — zero-padded index, title, mono
+         *  count on the right. "03 Pending" layout per spec. */}
+        {!loading && (
+          <SectionLabel
+            index={1}
+            title="Pending"
+            meta={`${entries.length} review${entries.length === 1 ? "" : "s"}`}
+          />
+        )}
+
         {loading && <div className="py-8 text-center text-xs text-secondary">Loading...</div>}
 
         {!loading && entries.length === 0 && (
@@ -86,10 +97,13 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
             key={entry.id}
             className="mb-2 rounded-lg border border-border bg-ironlore-slate-hover/50 p-3 text-xs"
           >
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
+              {/* Amber Reuleaux — this entry is pending review. Signal-
+               *  Amber is the inbox's state color per rev-3 spec. */}
+              <Reuleaux size={9} color="var(--il-amber)" aria-label="Pending review" />
               <GitBranch className="h-3.5 w-3.5 text-accent-violet" />
               <span className="font-semibold text-primary">{entry.agentSlug}</span>
-              <span className="ml-auto text-[10px] text-secondary">
+              <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-tertiary">
                 {new Date(entry.finalizedAt).toLocaleDateString()}
               </span>
             </div>
