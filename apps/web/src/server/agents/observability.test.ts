@@ -281,4 +281,94 @@ describe("getAgentConfig", () => {
     expect(cfg?.status).toBe("paused");
     expect(cfg?.pauseReason).toBe("user");
   });
+
+  it("projects persona frontmatter fields when the file parses cleanly", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(
+      join(personaDir, "persona.md"),
+      `---
+slug: a
+heartbeat: "*/20 * * * *"
+review_mode: inbox
+tools:
+  - kb.read
+  - kb.replace_block
+  - fs.list
+token_budget: 100000
+tool_call_cap: 50
+fsync_ms: 4
+scope:
+  pages:
+    - /engineering/**
+  writable_kinds:
+    - page
+---
+
+body
+`,
+      "utf-8",
+    );
+
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    expect(cfg?.persona?.heartbeat).toBe("*/20 * * * *");
+    expect(cfg?.persona?.reviewMode).toBe("inbox");
+    expect(cfg?.persona?.tools).toEqual(["kb.read", "kb.replace_block", "fs.list"]);
+    expect(cfg?.persona?.budget).toEqual({ tokens: 100000, toolCalls: 50, fsyncMs: 4 });
+    expect(cfg?.persona?.scope).toEqual({
+      pages: ["/engineering/**"],
+      writableKinds: ["page"],
+    });
+  });
+
+  it("returns individual-field nulls for a persona with missing keys", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(
+      join(personaDir, "persona.md"),
+      `---
+slug: a
+review_mode: auto-commit
+---
+`,
+      "utf-8",
+    );
+
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    expect(cfg?.persona?.reviewMode).toBe("auto-commit");
+    expect(cfg?.persona?.heartbeat).toBeNull();
+    expect(cfg?.persona?.tools).toBeNull();
+    expect(cfg?.persona?.budget).toBeNull();
+    expect(cfg?.persona?.scope).toBeNull();
+  });
+
+  it("returns persona: null when the YAML is malformed", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(
+      join(personaDir, "persona.md"),
+      "---\n: not valid yaml :\nbroken: [unclosed\n---\n",
+      "utf-8",
+    );
+
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    // Row still comes back — agent_state is intact; just no projection.
+    expect(cfg?.slug).toBe("a");
+    expect(cfg?.persona).toBeNull();
+  });
+
+  it("returns persona: null when projectDir is null", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const cfg = getAgentConfig(db, "main", "a", null);
+    expect(cfg?.persona).toBeNull();
+    expect(cfg?.personaPath).toBeNull();
+  });
 });
