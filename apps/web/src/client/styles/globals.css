@@ -5,23 +5,33 @@
 @custom-variant light (&:is(.light *));
 
 @theme inline {
+  /*
+   * Ironlore palette — rev 3 (09-ui-and-brand.md).
+   *
+   * Values refined toward a warmer blue-black canvas (hue 265, chroma
+   * capped at 0.015 on surfaces). The `--color-*` names are the
+   * Tailwind-visible tokens; `--il-*` aliases below give primitives a
+   * spec-matching namespace without breaking the hundreds of existing
+   * `bg-ironlore-slate` etc. classnames.
+   */
+
   /* Core palette */
-  --color-ironlore-blue: oklch(0.65 0.18 258);
+  --color-ironlore-blue: oklch(0.68 0.17 258);
   --color-ironlore-blue-strong: oklch(0.72 0.20 258);
   --color-ironlore-blue-dim: oklch(0.45 0.12 258);
-  --color-ironlore-slate: oklch(0.20 0.015 260);
-  --color-ironlore-slate-hover: oklch(0.26 0.018 260);
-  --color-ironlore-slate-elevated: oklch(0.24 0.016 260);
-  --color-background: oklch(0.14 0.012 260);
-  --color-background-raised: oklch(0.18 0.014 260);
+  --color-ironlore-slate: oklch(0.20 0.012 265);
+  --color-ironlore-slate-hover: oklch(0.24 0.014 265);
+  --color-ironlore-slate-elevated: oklch(0.22 0.013 265);
+  --color-background: oklch(0.13 0.008 265);
+  --color-background-raised: oklch(0.17 0.010 265);
 
   /* Signals */
   --color-signal-amber: oklch(0.82 0.17 80);
-  --color-signal-red: oklch(0.62 0.22 25);
-  --color-signal-green: oklch(0.72 0.17 148);
+  --color-signal-red: oklch(0.64 0.22 25);
+  --color-signal-green: oklch(0.74 0.16 148);
 
   /* Accents */
-  --color-accent-violet: oklch(0.68 0.17 300);
+  --color-accent-violet: oklch(0.70 0.17 300);
   --color-accent-teal: oklch(0.70 0.14 185);
   --color-accent-rose: oklch(0.68 0.16 10);
 
@@ -32,23 +42,42 @@
   --color-highlight-pink: oklch(0.75 0.17 0);
 
   /* Text */
-  --color-primary: oklch(0.94 0.005 260);
-  --color-secondary: oklch(0.58 0.015 260);
-  --color-tertiary: oklch(0.42 0.012 260);
+  --color-primary: oklch(0.95 0.005 260);
+  --color-secondary: oklch(0.68 0.012 260);
+  --color-tertiary: oklch(0.48 0.012 260);
+  --color-quaternary: oklch(0.36 0.010 260);
 
   /* Borders */
-  --color-border: oklch(0.28 0.012 260);
-  --color-border-strong: oklch(0.52 0.020 260);
-  --color-border-glow: oklch(0.65 0.18 258 / 0.3);
+  --color-border: oklch(0.28 0.012 265);
+  --color-border-soft: oklch(0.22 0.010 265);
+  --color-border-strong: oklch(0.42 0.015 265);
+  --color-border-glow: oklch(0.68 0.17 258 / 0.28);
 
   /* Shadows */
   --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3), 0 1px 3px oklch(0 0 0 / 0.2);
   --shadow-md: 0 4px 6px oklch(0 0 0 / 0.3), 0 2px 4px oklch(0 0 0 / 0.2);
   --shadow-lg: 0 10px 25px oklch(0 0 0 / 0.4), 0 4px 10px oklch(0 0 0 / 0.3);
-  --shadow-glow-blue: 0 0 12px oklch(0.65 0.18 258 / 0.25), 0 0 4px oklch(0.65 0.18 258 / 0.15);
+  --shadow-glow-blue: 0 0 12px oklch(0.68 0.17 258 / 0.28), 0 0 4px oklch(0.68 0.17 258 / 0.15);
   --shadow-glow-amber: 0 0 12px oklch(0.82 0.17 80 / 0.2);
-  --shadow-glow-red: 0 0 12px oklch(0.62 0.22 25 / 0.2);
+  --shadow-glow-red: 0 0 12px oklch(0.64 0.22 25 / 0.2);
   --shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.25);
+
+  /* Font stacks — rev 3 three-family triad */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-serif: "Instrument Serif", "GT Sectra", "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Menlo", monospace;
+
+  /*
+   * Motion durations — four values, zero others.
+   *   snap    (80ms)   — hover / focus feedback
+   *   transit (180ms)  — panel open, tab switch
+   *   flash   (1500ms) — attention flashes (provenance target)
+   *   pulse   (3200ms) — ambient agent-running sweep
+   */
+  --motion-snap: 80ms;
+  --motion-transit: 180ms;
+  --motion-flash: 1500ms;
+  --motion-pulse: 3200ms;
 }
 
 /* ─── Light mode overrides ─── */
