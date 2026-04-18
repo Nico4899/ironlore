@@ -10,6 +10,39 @@ const SIDEBAR_WIDTH_KEY = "ironlore.sidebarWidth";
 const THEME_KEY = "ironlore.theme";
 const DENSITY_KEY = "ironlore.density";
 const ACCENT_HUE_KEY = "ironlore.accentHue";
+const MOTION_KEY = "ironlore.motion";
+const MOTIFS_KEY = "ironlore.motifs";
+
+/**
+ * Motion intensity. `full` runs all animations; `reduced` mirrors
+ * `prefers-reduced-motion: reduce` (pulse fades instead of translates,
+ * Reuleaux rotation stops); `none` disables everything. CSS gating
+ * lives in globals.css via `html[data-motion="..."]` selectors.
+ */
+export type MotionSetting = "full" | "reduced" | "none";
+
+/**
+ * Five toggleable decorative motifs. Two (`provenance`, `agentPulse`)
+ * have live CSS plumbing that hides them when turned off. The other
+ * two are persisted state the UI exposes so the user can signal
+ * intent — `blockrefPreview` gates a tooltip feature that doesn't
+ * exist yet, and `reuleauxPips` would swap every Reuleaux SVG for a
+ * plain dot which is a larger component refactor. Both will light up
+ * in later PRs without a schema change.
+ */
+export interface MotifSettings {
+  provenance: boolean;
+  agentPulse: boolean;
+  blockrefPreview: boolean;
+  reuleauxPips: boolean;
+}
+
+export const DEFAULT_MOTIFS: MotifSettings = {
+  provenance: true,
+  agentPulse: true,
+  blockrefPreview: true,
+  reuleauxPips: true,
+};
 
 /**
  * Default OKLCh hue for Ironlore Blue — 258 is the seed; users can
@@ -64,6 +97,37 @@ function loadAccentHue(): number {
   return DEFAULT_ACCENT_HUE;
 }
 
+function loadMotion(): MotionSetting {
+  try {
+    const raw = window.localStorage.getItem(MOTION_KEY);
+    if (raw === "full" || raw === "reduced" || raw === "none") return raw;
+  } catch {
+    /* storage denied */
+  }
+  return "full";
+}
+
+/**
+ * Load motif toggles, tolerating partial / corrupt payloads. Any
+ * missing key falls back to `DEFAULT_MOTIFS[key] === true` so a
+ * later-added motif defaults to visible without a migration.
+ */
+function loadMotifs(): MotifSettings {
+  try {
+    const raw = window.localStorage.getItem(MOTIFS_KEY);
+    if (!raw) return { ...DEFAULT_MOTIFS };
+    const parsed = JSON.parse(raw) as Partial<Record<keyof MotifSettings, unknown>>;
+    return {
+      provenance: parsed.provenance !== false,
+      agentPulse: parsed.agentPulse !== false,
+      blockrefPreview: parsed.blockrefPreview !== false,
+      reuleauxPips: parsed.reuleauxPips !== false,
+    };
+  } catch {
+    return { ...DEFAULT_MOTIFS };
+  }
+}
+
 interface AppStore {
   currentProjectId: string;
   sidebarWidth: number;
@@ -91,6 +155,10 @@ interface AppStore {
    * guarantees still hold. 258 is the seed value (canonical blue).
    */
   accentHue: number;
+  /** Motion intensity — gates the keyframe animations in globals.css. */
+  motion: MotionSetting;
+  /** Decorative motif visibility toggles — see `MotifSettings` docs. */
+  motifs: MotifSettings;
   wsConnected: boolean;
   wsReconnecting: boolean;
   provenance: { pagePath: string; blockId: string } | null;
@@ -116,6 +184,13 @@ interface AppStore {
   setDensity: (density: "comfortable" | "compact") => void;
   toggleDensity: () => void;
   setAccentHue: (hue: number) => void;
+  setMotion: (motion: MotionSetting) => void;
+  /**
+   * Toggle one motif key. Using per-key setter (vs. a whole-object
+   * setter) means the Settings UI re-renders minimally and
+   * individual toggles are easy to wire into `onChange`.
+   */
+  setMotif: <K extends keyof MotifSettings>(key: K, value: MotifSettings[K]) => void;
   setSidebarWidth: (width: number) => void;
   setWsConnected: (connected: boolean) => void;
   setWsReconnecting: (reconnecting: boolean) => void;
@@ -158,6 +233,22 @@ function persistAccentHue(hue: number): void {
   }
 }
 
+function persistMotion(motion: MotionSetting): void {
+  try {
+    window.localStorage.setItem(MOTION_KEY, motion);
+  } catch {
+    /* storage denied */
+  }
+}
+
+function persistMotifs(motifs: MotifSettings): void {
+  try {
+    window.localStorage.setItem(MOTIFS_KEY, JSON.stringify(motifs));
+  } catch {
+    /* storage denied */
+  }
+}
+
 export const useAppStore = create<AppStore>((set) => ({
   currentProjectId: DEFAULT_PROJECT_ID,
   sidebarWidth: loadSidebarWidth(),
@@ -172,6 +263,8 @@ export const useAppStore = create<AppStore>((set) => ({
   theme: loadTheme(),
   density: loadDensity(),
   accentHue: loadAccentHue(),
+  motion: loadMotion(),
+  motifs: loadMotifs(),
   wsConnected: false,
   wsReconnecting: false,
   provenance: null,
@@ -244,6 +337,16 @@ export const useAppStore = create<AppStore>((set) => ({
     persistAccentHue(wrapped);
     set({ accentHue: wrapped });
   },
+  setMotion: (motion) => {
+    persistMotion(motion);
+    set({ motion });
+  },
+  setMotif: (key, value) =>
+    set((s) => {
+      const next: MotifSettings = { ...s.motifs, [key]: value };
+      persistMotifs(next);
+      return { motifs: next };
+    }),
   setSidebarWidth: (width) => {
     const clamped = clamp(width, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
     persistSidebarWidth(clamped);
