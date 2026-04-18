@@ -321,9 +321,9 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           );
         })}
 
-        {!loading && entries.length > 0 && (
+        {false && !loading && entries.length > 0 && (
           <div
-            className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t pt-2 font-mono uppercase"
+            className="mt-3 hidden flex-wrap gap-x-3 gap-y-1 border-t pt-2 font-mono uppercase"
             style={{
               borderColor: "var(--il-border-soft)",
               fontSize: 10,
