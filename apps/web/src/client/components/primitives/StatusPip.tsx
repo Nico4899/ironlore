@@ -13,14 +13,7 @@ import { Reuleaux } from "./Reuleaux.js";
  * Per docs/09-ui-and-brand.md §Reuleaux state table.
  */
 
-export type PipState =
-  | "idle"
-  | "running"
-  | "healthy"
-  | "warn"
-  | "error"
-  | "paused"
-  | "rate";
+export type PipState = "idle" | "running" | "healthy" | "warn" | "error" | "paused" | "rate";
 
 export interface StatusPipProps {
   state?: PipState;

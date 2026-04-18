@@ -11,6 +11,7 @@ import { HighlightToolbar } from "./editor/HighlightToolbar.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
+import { HomePanel } from "./HomePanel.js";
 import { OnboardingWizard } from "./OnboardingWizard.js";
 import { SplitPane } from "./SplitPane.js";
 import { TabBar } from "./TabBar.js";
@@ -269,15 +270,7 @@ export function ContentArea() {
             </div>
           </div>
         ) : (
-          <div className="flex flex-1 items-center justify-center">
-            <div className="text-center">
-              <h1 className="text-2xl font-semibold">Welcome to Ironlore</h1>
-              <p className="mt-2 text-sm text-secondary">
-                Select a page from the sidebar or create a new one.
-              </p>
-              <p className="mt-1 text-xs text-secondary">Drop files here to upload them.</p>
-            </div>
-          </div>
+          <HomePanel />
         )}
         {dragOver && <DropOverlay />}
       </main>

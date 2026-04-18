@@ -1,10 +1,4 @@
-import {
-  CIRCLE_A,
-  CIRCLE_B,
-  CIRCLE_C,
-  LOGO_R,
-  REULEAUX_PATH,
-} from "./primitives/logo-geometry.js";
+import { CIRCLE_A, CIRCLE_B, CIRCLE_C, LOGO_R, REULEAUX_PATH } from "./primitives/logo-geometry.js";
 
 /**
  * The Ironlore mark — three overlapping circles arranged in a
