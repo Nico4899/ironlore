@@ -325,6 +325,62 @@ export async function setAgentPaused(
   return res.json();
 }
 
+/** One row from the agent detail page's recent-runs table. */
+export interface AgentRunRecord {
+  jobId: string;
+  startedAt: number;
+  finishedAt: number | null;
+  status: "running" | "healthy" | "warn" | "error";
+  stepCount: number;
+  note: string | null;
+  commitShaStart: string | null;
+  commitShaEnd: string | null;
+}
+
+/** Rolling-24h activity histogram payload. */
+export interface AgentHistogramResponse {
+  windowStart: number;
+  windowEnd: number;
+  bucketHours: number;
+  buckets: number[];
+  cap: { perHour: number; perDay: number };
+}
+
+/** Read-only projection of the agent's rails state + persona paths. */
+export interface AgentConfigResponse {
+  slug: string;
+  status: "active" | "paused";
+  pauseReason: string | null;
+  maxRunsPerHour: number;
+  maxRunsPerDay: number;
+  failureStreak: number;
+  personaPath: string | null;
+  personaMtimeDriftSeconds: number | null;
+}
+
+/** Fetch the last N runs for an agent — newest first. */
+export async function fetchAgentRuns(slug: string, limit = 24): Promise<AgentRunRecord[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await apiFetch(`${BASE}/agents/${slug}/runs?${params}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { runs: AgentRunRecord[] };
+  return data.runs;
+}
+
+/** Fetch the 24h activity histogram for an agent. */
+export async function fetchAgentHistogram(slug: string): Promise<AgentHistogramResponse> {
+  const res = await apiFetch(`${BASE}/agents/${slug}/histogram`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** Fetch the agent's rails config projection. */
+export async function fetchAgentConfig(slug: string): Promise<AgentConfigResponse> {
+  const res = await apiFetch(`${BASE}/agents/${slug}/config`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
 /** Approve an inbox entry (merge staging branch to main). */
 export async function approveInboxEntry(
   entryId: string,
