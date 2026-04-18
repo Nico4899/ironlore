@@ -6,7 +6,6 @@ import { fetchPage, fetchRaw, submitOnboarding, uploadFile } from "../lib/api.js
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
-import { Meta, Reuleaux, StatusPip } from "./primitives/index.js";
 import { AgentDetailPage } from "./AgentDetailPage.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
 import { HighlightToolbar } from "./editor/HighlightToolbar.js";
@@ -15,6 +14,7 @@ import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
 import { HomePanel } from "./HomePanel.js";
 import { OnboardingWizard } from "./OnboardingWizard.js";
+import { Meta, Reuleaux, StatusPip } from "./primitives/index.js";
 import { SplitPane } from "./SplitPane.js";
 import { TabBar } from "./TabBar.js";
 import { ViewerErrorBoundary } from "./ViewerErrorBoundary.js";
@@ -567,10 +567,7 @@ function MarkdownContent({
         </div>
         <div className="flex-1" />
         <Meta k="etag" v={shortEtag(etag)} />
-        <span
-          aria-hidden="true"
-          style={{ width: 1, height: 14, background: "var(--il-border)" }}
-        />
+        <span aria-hidden="true" style={{ width: 1, height: 14, background: "var(--il-border)" }} />
         <span role="status" aria-live="polite">
           <StatusPip state={pip.state} label={pip.label} size={8} />
         </span>

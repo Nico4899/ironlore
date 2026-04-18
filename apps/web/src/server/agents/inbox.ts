@@ -191,6 +191,101 @@ export class AgentInbox {
     }
   }
 
+  /**
+   * Per-file diff stats for the entry's staging branch vs. the current
+   * merge base with main. Returns one row per touched file with its
+   * status (`A`dded / `D`eleted / `M`odified / `R`enamed) plus
+   * line-delta counts. Consumed by the Inbox UI's per-file row grammar
+   * (docs/09-ui-and-brand.md §Agent Inbox: `A  engineering/arch.md  +3 -2`).
+   *
+   * Runs two git calls because `--name-status` and `--numstat` each
+   * give half the answer; merging on file path yields the full row.
+   * The diff is computed live — staging branches can move under the
+   * entry (the agent keeps writing), so a snapshot stored at
+   * finalization would go stale.
+   *
+   * Binary files report `-` counts from numstat; we surface those as
+   * `null` rather than zero so the UI can render "binary" rather
+   * than a misleading "+0 -0".
+   */
+  getFileDiffStats(
+    entryId: string,
+    projectDir: string,
+  ): Array<{
+    path: string;
+    status: "A" | "D" | "M" | "R" | "?";
+    added: number | null;
+    removed: number | null;
+  }> {
+    const entry = this.getEntry(entryId);
+    if (!entry) return [];
+
+    const gitDir = join(projectDir, ".git");
+    const rangeArg = `main...${entry.branch}`;
+
+    type Row = {
+      path: string;
+      status: "A" | "D" | "M" | "R" | "?";
+      added: number | null;
+      removed: number | null;
+    };
+    const byPath = new Map<string, Row>();
+
+    // Name-status: first column is the letter, second is the path.
+    // Rename records emit an extra "new path" column we preserve as the
+    // canonical row path.
+    try {
+      const nameStatus = execSync(
+        `git --git-dir="${gitDir}" --work-tree="${projectDir}" diff --name-status ${rangeArg}`,
+        { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+      for (const line of nameStatus.split("\n")) {
+        if (!line.trim()) continue;
+        const parts = line.split("\t");
+        const raw = parts[0] ?? "";
+        // Rename statuses look like "R090" — normalize to just "R".
+        const letter = raw.startsWith("R")
+          ? "R"
+          : raw === "A" || raw === "D" || raw === "M"
+            ? raw
+            : "?";
+        const path = (parts.length === 3 ? parts[2] : parts[1]) ?? "";
+        if (!path) continue;
+        byPath.set(path, { path, status: letter as Row["status"], added: 0, removed: 0 });
+      }
+    } catch {
+      // Branch missing or git failure — return an empty list rather
+      // than a partial one so the UI shows the honest "no data" state.
+      return [];
+    }
+
+    try {
+      const numStat = execSync(
+        `git --git-dir="${gitDir}" --work-tree="${projectDir}" diff --numstat ${rangeArg}`,
+        { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+      for (const line of numStat.split("\n")) {
+        if (!line.trim()) continue;
+        const [addedRaw, removedRaw, path] = line.split("\t");
+        if (!path) continue;
+        const existing = byPath.get(path) ?? {
+          path,
+          status: "M" as Row["status"],
+          added: 0,
+          removed: 0,
+        };
+        existing.added = addedRaw === "-" ? null : Number.parseInt(addedRaw ?? "0", 10);
+        existing.removed = removedRaw === "-" ? null : Number.parseInt(removedRaw ?? "0", 10);
+        byPath.set(path, existing);
+      }
+    } catch {
+      // Numstat failed — keep whatever name-status returned with zero
+      // deltas. Callers will render "?" instead of "+N -M".
+    }
+
+    return Array.from(byPath.values());
+  }
+
   private getEntry(id: string): InboxEntry | null {
     const row = this.db.prepare("SELECT * FROM inbox_entries WHERE id = ?").get(id) as
       | Record<string, unknown>
