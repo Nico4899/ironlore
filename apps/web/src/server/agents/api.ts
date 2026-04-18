@@ -341,6 +341,18 @@ export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir:
     return c.json({ files });
   });
 
+  api.post("/:entryId/files/decision", async (c) => {
+    const entryId = c.req.param("entryId") ?? "";
+    if (!entryId) return c.json({ error: "Entry id required" }, 400);
+    const body = await c.req.json<{ path?: string; decision?: string | null }>();
+    if (!body.path || typeof body.path !== "string") {
+      return c.json({ error: "Body must include a file path" }, 400);
+    }
+    const decision =
+      body.decision === "approved" || body.decision === "rejected" ? body.decision : null;
+    return c.json(inbox.setFileDecision(entryId, body.path, decision));
+  });
+
   api.post("/:entryId/approve", (c) => {
     const entryId = c.req.param("entryId") ?? "";
     const result = inbox.approveAll(entryId, projectDir);

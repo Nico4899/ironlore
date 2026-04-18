@@ -397,6 +397,27 @@ export interface InboxFileDiff {
   added: number | null;
   /** null when git reports `-` (binary file). */
   removed: number | null;
+  /** User decision captured during review; null = undecided. */
+  decision: "approved" | "rejected" | null;
+}
+
+/**
+ * Set (or clear) the user's per-file decision for an inbox entry.
+ * Passing `null` clears the row, restoring default-accept at the
+ * next `approveInboxEntry`.
+ */
+export async function setInboxFileDecision(
+  entryId: string,
+  path: string,
+  decision: "approved" | "rejected" | null,
+): Promise<{ success: boolean; error?: string }> {
+  const res = await apiFetch(`${BASE}/inbox/${entryId}/files/decision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, decision }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
 }
 
 /**
