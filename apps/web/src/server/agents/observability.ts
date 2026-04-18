@@ -1,6 +1,7 @@
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
+import { load as loadYaml } from "js-yaml";
 
 /**
  * Per-agent observability queries — the read-only projections behind
@@ -55,11 +56,101 @@ export interface AgentConfigResponse {
    * without a separate endpoint.
    */
   personaMtimeDriftSeconds: number | null;
+  /**
+   * Persona-frontmatter projection — only populated when the file is
+   * readable. Every field is independently nullable so a persona that
+   * omits (say) `heartbeat` still renders the rest of the rail. The
+   * values here are the file's source of truth; rails mirror them on
+   * next reload.
+   */
+  persona: {
+    heartbeat: string | null;
+    reviewMode: "auto-commit" | "inbox" | null;
+    tools: string[] | null;
+    budget: { tokens: number | null; toolCalls: number | null; fsyncMs: number | null } | null;
+    scope: { pages: string[] | null; writableKinds: string[] | null } | null;
+  } | null;
 }
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const WINDOW_BUCKETS = 24;
+
+/** Matches the leading YAML frontmatter block of a persona file. */
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
+
+/**
+ * Parse the persona's YAML frontmatter into the projection shape the
+ * AgentDetailPage expects. Returns `null` for any field whose source
+ * is missing, malformed, or the wrong type — callers render "—" and
+ * move on, rather than tanking the whole config rail on one bad key.
+ *
+ * This is a projection, not a schema. The executor has the canonical
+ * view of persona fields for runtime; this helper only surfaces the
+ * ones visible on the detail page.
+ */
+function parsePersonaFrontmatter(raw: string): AgentConfigResponse["persona"] {
+  const match = FRONTMATTER_RE.exec(raw);
+  if (!match?.[1]) return null;
+
+  let doc: Record<string, unknown>;
+  try {
+    const parsed = loadYaml(match[1]);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    doc = parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  const heartbeat = typeof doc.heartbeat === "string" ? doc.heartbeat : null;
+
+  const rawReview = typeof doc.review_mode === "string" ? doc.review_mode : null;
+  const reviewMode =
+    rawReview === "auto-commit" || rawReview === "inbox"
+      ? (rawReview as "auto-commit" | "inbox")
+      : null;
+
+  const tools = Array.isArray(doc.tools)
+    ? (doc.tools.filter((t: unknown): t is string => typeof t === "string") as string[])
+    : null;
+
+  // Budget can live either as three top-level keys (token_budget,
+  //  tool_call_cap, fsync_ms) or nested under `budget:`. Accept both.
+  const budgetNested =
+    doc.budget && typeof doc.budget === "object" && !Array.isArray(doc.budget)
+      ? (doc.budget as Record<string, unknown>)
+      : null;
+  const budgetTokens = pickNumber(doc.token_budget ?? budgetNested?.tokens);
+  const budgetToolCalls = pickNumber(doc.tool_call_cap ?? budgetNested?.tool_calls);
+  const budgetFsyncMs = pickNumber(doc.fsync_ms ?? budgetNested?.fsync_ms);
+  const budget =
+    budgetTokens !== null || budgetToolCalls !== null || budgetFsyncMs !== null
+      ? { tokens: budgetTokens, toolCalls: budgetToolCalls, fsyncMs: budgetFsyncMs }
+      : null;
+
+  const scopeSrc =
+    doc.scope && typeof doc.scope === "object" && !Array.isArray(doc.scope)
+      ? (doc.scope as Record<string, unknown>)
+      : null;
+  const scopePages = Array.isArray(scopeSrc?.pages)
+    ? (scopeSrc.pages.filter((p: unknown): p is string => typeof p === "string") as string[])
+    : null;
+  const scopeWritable = Array.isArray(scopeSrc?.writable_kinds)
+    ? (scopeSrc.writable_kinds.filter(
+        (k: unknown): k is string => typeof k === "string",
+      ) as string[])
+    : null;
+  const scope =
+    scopePages !== null || scopeWritable !== null
+      ? { pages: scopePages, writableKinds: scopeWritable }
+      : null;
+
+  return { heartbeat, reviewMode, tools, budget, scope };
+}
+
+function pickNumber(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
 
 /**
  * Collapse a raw `jobs.status` into the four display states the
@@ -277,17 +368,30 @@ export function getAgentConfig(
 
   let personaPath: string | null = null;
   let personaMtimeDriftSeconds: number | null = null;
+  let persona: AgentConfigResponse["persona"] = null;
 
   if (projectDir) {
     personaPath = join("data", ".agents", slug, "persona.md");
+    const absPath = join(projectDir, personaPath);
     try {
-      const absPath = join(projectDir, personaPath);
       const stat = statSync(absPath);
       const driftMs = stat.mtime.getTime() - row.updatedAt;
       personaMtimeDriftSeconds = driftMs > 0 ? Math.floor(driftMs / 1000) : 0;
     } catch {
       // File missing — treat as no drift; agent may live elsewhere.
       personaMtimeDriftSeconds = null;
+    }
+
+    // The persona parse is independent of the mtime stat — a fresh
+    //  file with corrupt YAML still gets a drift number but a null
+    //  persona projection. Reading on every request is cheap (one
+    //  small markdown file) and guarantees the UI never shows a
+    //  stale frontmatter projection.
+    try {
+      const raw = readFileSync(absPath, "utf-8");
+      persona = parsePersonaFrontmatter(raw);
+    } catch {
+      persona = null;
     }
   }
 
@@ -300,5 +404,6 @@ export function getAgentConfig(
     failureStreak: row.failureStreak,
     personaPath,
     personaMtimeDriftSeconds,
+    persona,
   };
 }
