@@ -2,7 +2,7 @@ import { Check, GitBranch, Inbox, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { approveInboxEntry, fetchInbox, rejectInboxEntry } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
-import { Key, Reuleaux, SectionLabel, Venn } from "./primitives/index.js";
+import { Key, Reuleaux, Venn } from "./primitives/index.js";
 
 interface InboxEntry {
   id: string;
@@ -158,35 +158,80 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", handler);
   }, [entries, focusIdx, handleApprove, handleReject, handleApproveAll, handleRejectAll]);
 
+  const paddedCount = String(entries.length).padStart(2, "0");
+
   return (
     <div className="flex h-full w-80 flex-col border-l border-border bg-ironlore-slate">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <div className="flex items-center gap-1.5 text-sm font-semibold text-primary">
-          <Inbox className="h-4 w-4" />
-          Agent Inbox
+      {/*
+       * Header — canvas-grammar per docs/09-ui-and-brand.md §Agent
+       * Inbox. Mono uppercase overline `"<NN> pending"` sits above an
+       * Inter h1, followed by a keyboard-hint row. The close X and
+       * Inbox icon live at the top so mouse users still have one-click
+       * dismissal.
+       */}
+      <header className="border-b border-border px-3 py-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-secondary">
+            <Inbox className="h-3.5 w-3.5" aria-hidden="true" />
+          </div>
+          <button
+            type="button"
+            className="rounded p-1 text-secondary hover:bg-ironlore-slate-hover"
+            onClick={onClose}
+            aria-label="Close inbox"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
-        <button
-          type="button"
-          className="rounded p-1 text-secondary hover:bg-ironlore-slate-hover"
-          onClick={onClose}
-          aria-label="Close inbox"
+        <div
+          className="mt-1 font-mono uppercase"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.08em",
+            color: "var(--il-text3)",
+          }}
         >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      <section className="flex-1 overflow-y-auto p-3" aria-label="Pending inbox entries">
-        {!loading && (
-          <div className="flex items-center gap-2">
-            <SectionLabel
-              index={1}
-              title="Pending"
-              meta={`${entries.length} review${entries.length === 1 ? "" : "s"}`}
-              style={{ flex: 1, marginBottom: 6 }}
-            />
+          {paddedCount} pending
+        </div>
+        <h1
+          className="mt-0.5"
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 18,
+            fontWeight: 600,
+            letterSpacing: "-0.02em",
+            color: "var(--il-text)",
+            margin: 0,
+          }}
+        >
+          Agent Inbox
+        </h1>
+        {!loading && entries.length > 0 && (
+          <div
+            className="mt-3 flex flex-wrap gap-x-3 gap-y-1 font-mono uppercase"
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.04em",
+              color: "var(--il-text3)",
+            }}
+          >
+            <span>
+              <Key>j</Key>/<Key>k</Key> navigate
+            </span>
+            <span>
+              <Key>a</Key> approve
+            </span>
+            <span>
+              <Key>r</Key> reject
+            </span>
+            <span>
+              <Key>⇧A</Key> approve all
+            </span>
           </div>
         )}
+      </header>
 
+      <section className="flex-1 overflow-y-auto p-3" aria-label="Pending inbox entries">
         {!loading && entries.length > 1 && (
           <div className="mb-3 flex items-center gap-2">
             <button
