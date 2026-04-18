@@ -311,10 +311,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           const hashIdx = target.indexOf("#");
           const pagePart = hashIdx === -1 ? target : target.slice(0, hashIdx);
           const blockRaw = hashIdx === -1 ? null : target.slice(hashIdx + 1);
-          const shortBlock =
-            blockRaw == null
-              ? null
-              : blockRaw.replace(/^blk_/, "").slice(-4);
+          const shortBlock = blockRaw == null ? null : blockRaw.replace(/^blk_/, "").slice(-4);
 
           // Match the Blockref primitive's visual contract. The legacy
           //  `ir-wikilink` class is retained as a data hook for tests.

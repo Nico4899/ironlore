@@ -103,8 +103,7 @@ export const wikiSchema: Schema = new Schema({
         const hashIdx = target.indexOf("#");
         const pagePart = hashIdx === -1 ? target : target.slice(0, hashIdx);
         const blockRaw = hashIdx === -1 ? null : target.slice(hashIdx + 1);
-        const shortBlock =
-          blockRaw == null ? null : blockRaw.replace(/^blk_/, "").slice(-4);
+        const shortBlock = blockRaw == null ? null : blockRaw.replace(/^blk_/, "").slice(-4);
         const children: (string | [string, Record<string, string>, string])[] = [
           display ?? pagePart,
         ];
