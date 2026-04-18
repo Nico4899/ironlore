@@ -120,6 +120,49 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
+  /**
+   * Per-file decision toggle. Optimistically updates the local stats
+   * cache so the button flip is instant; rolls back on server error.
+   * The new `approveInboxEntry` call honors these decisions — rejected
+   * files are skipped during the cherry-pick path.
+   */
+  const handleFileDecision = useCallback(
+    async (entryId: string, path: string, decision: "approved" | "rejected" | null) => {
+      let prevDecision: "approved" | "rejected" | null = null;
+      setFileStats((prev) => {
+        const current = prev.get(entryId);
+        if (!Array.isArray(current)) return prev;
+        const next = new Map(prev);
+        next.set(
+          entryId,
+          current.map((f) => {
+            if (f.path !== path) return f;
+            prevDecision = f.decision;
+            return { ...f, decision };
+          }),
+        );
+        return next;
+      });
+      try {
+        const result = await setInboxFileDecision(entryId, path, decision);
+        if (!result.success) throw new Error(result.error ?? "Decision failed");
+      } catch {
+        // Roll back the optimistic update on failure.
+        setFileStats((prev) => {
+          const current = prev.get(entryId);
+          if (!Array.isArray(current)) return prev;
+          const next = new Map(prev);
+          next.set(
+            entryId,
+            current.map((f) => (f.path === path ? { ...f, decision: prevDecision } : f)),
+          );
+          return next;
+        });
+      }
+    },
+    [],
+  );
+
   const handleApproveAll = useCallback(async () => {
     if (busy || entries.length === 0) return;
     setBusy(true);
@@ -333,7 +376,11 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
                 {entry.filesChanged.length === 1 ? "" : "s"} changed
               </div>
 
-              <InboxEntryFiles entry={entry} stats={fileStats.get(entry.id)} />
+              <InboxEntryFiles
+                entry={entry}
+                stats={fileStats.get(entry.id)}
+                onDecisionChange={(path, decision) => handleFileDecision(entry.id, path, decision)}
+              />
 
               <div className="mt-2 flex gap-2">
                 <button
@@ -407,9 +454,11 @@ function InboxEmptyState() {
 function InboxEntryFiles({
   entry,
   stats,
+  onDecisionChange,
 }: {
   entry: InboxEntry;
   stats: InboxFileDiff[] | "error" | undefined;
+  onDecisionChange: (path: string, decision: "approved" | "rejected" | null) => void;
 }) {
   // While we're fetching or the endpoint failed, degrade to the plain
   //  filename list. Never block the entry from rendering on this.
@@ -426,32 +475,117 @@ function InboxEntryFiles({
   }
 
   return (
-    <ul className="mt-1 max-h-24 overflow-y-auto">
-      {stats.map((f) => (
-        <li
-          key={f.path}
-          className="grid items-center gap-2 py-0.5 font-mono"
-          style={{
-            gridTemplateColumns: "12px minmax(0, 1fr) auto",
-            fontSize: 10,
-          }}
-          title={f.path}
-        >
-          <span
-            className="uppercase"
+    <ul className="mt-1 max-h-32 overflow-y-auto">
+      {stats.map((f) => {
+        const isApproved = f.decision === "approved";
+        const isRejected = f.decision === "rejected";
+        // Toggle semantics: clicking an already-set decision clears
+        //  it (back to default-accept). Keeps the button pair
+        //  single-ended without needing a separate "clear" control.
+        const toggle = (next: "approved" | "rejected") => {
+          onDecisionChange(f.path, f.decision === next ? null : next);
+        };
+        return (
+          <li
+            key={f.path}
+            className="grid items-center gap-1.5 py-0.5"
             style={{
-              letterSpacing: "0.06em",
-              fontWeight: 600,
-              color: statusColor(f.status),
+              gridTemplateColumns: "12px minmax(0, 1fr) auto auto",
+              fontSize: 10,
+              background: isApproved
+                ? "color-mix(in oklch, var(--il-green) 10%, transparent)"
+                : isRejected
+                  ? "color-mix(in oklch, var(--il-red) 10%, transparent)"
+                  : "transparent",
+              opacity: isRejected ? 0.65 : 1,
+              paddingLeft: 2,
+              paddingRight: 2,
+              borderRadius: 2,
             }}
+            title={f.path}
           >
-            {f.status}
-          </span>
-          <span className="truncate text-secondary">{f.path}</span>
-          <span style={{ color: "var(--il-text4)" }}>{formatDelta(f)}</span>
-        </li>
-      ))}
+            <span
+              className="font-mono uppercase"
+              style={{
+                letterSpacing: "0.06em",
+                fontWeight: 600,
+                color: statusColor(f.status),
+              }}
+            >
+              {f.status}
+            </span>
+            <span
+              className="truncate font-mono"
+              style={{
+                color: "var(--il-text2)",
+                textDecoration: isRejected ? "line-through" : undefined,
+              }}
+            >
+              {f.path}
+            </span>
+            <span className="font-mono" style={{ color: "var(--il-text4)" }}>
+              {formatDelta(f)}
+            </span>
+            <span className="flex gap-1">
+              <FileDecisionButton
+                kind="rejected"
+                active={isRejected}
+                onClick={() => toggle("rejected")}
+              />
+              <FileDecisionButton
+                kind="approved"
+                active={isApproved}
+                onClick={() => toggle("approved")}
+              />
+            </span>
+          </li>
+        );
+      })}
     </ul>
+  );
+}
+
+/**
+ * Per-file ✓/✗ pill. The active state uses a solid fill; idle is
+ * outlined. Matches the canvas's miniBtn pattern — small, quiet,
+ * sits at the right edge of the file row.
+ */
+function FileDecisionButton({
+  kind,
+  active,
+  onClick,
+}: {
+  kind: "approved" | "rejected";
+  active: boolean;
+  onClick: () => void;
+}) {
+  const color = kind === "approved" ? "var(--il-green)" : "var(--il-red)";
+  const glyph = kind === "approved" ? "✓" : "✗";
+  const label = kind === "approved" ? "Approve this file" : "Reject this file";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={active}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      style={{
+        width: 16,
+        height: 14,
+        padding: 0,
+        fontSize: 9,
+        lineHeight: 1,
+        background: active ? color : "transparent",
+        color: active ? "var(--il-bg)" : color,
+        border: `1px solid ${active ? color : "var(--il-border)"}`,
+        borderRadius: 2,
+        cursor: "pointer",
+      }}
+    >
+      {glyph}
+    </button>
   );
 }
 

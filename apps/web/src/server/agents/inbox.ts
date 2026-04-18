@@ -67,9 +67,9 @@ export class AgentInbox {
     //  approve/reject decisions the user makes during review. Older
     //  rows get '{}' as the default. Use PRAGMA to detect the column
     //  rather than swallowing errors from a redundant ALTER.
-    const cols = this.db
-      .prepare("PRAGMA table_info(inbox_entries)")
-      .all() as Array<{ name: string }>;
+    const cols = this.db.prepare("PRAGMA table_info(inbox_entries)").all() as Array<{
+      name: string;
+    }>;
     if (!cols.some((c) => c.name === "file_decisions")) {
       this.db.exec(
         "ALTER TABLE inbox_entries ADD COLUMN file_decisions TEXT NOT NULL DEFAULT '{}'",
