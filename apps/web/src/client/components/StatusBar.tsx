@@ -1,8 +1,7 @@
-import { AlertTriangle, CircleDot, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
-import { StatusPip } from "./primitives/index.js";
+import { Reuleaux, StatusPip } from "./primitives/index.js";
 
 /**
  * Format "Saved <N>s ago" relative to the current clock. Updates on a
@@ -72,7 +71,7 @@ function EditorStatusPill({
   if (status === "dirty") {
     return (
       <span role="status" aria-live="polite" className="flex items-center gap-1 text-secondary">
-        <CircleDot className="h-3 w-3" aria-hidden="true" />
+        <Reuleaux size={7} color="var(--il-amber)" aria-label="Unsaved changes" />
         Unsaved
       </span>
     );
@@ -80,7 +79,7 @@ function EditorStatusPill({
   if (status === "syncing") {
     return (
       <span role="status" aria-live="polite" className="flex items-center gap-1 text-secondary">
-        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+        <Reuleaux size={7} color="var(--il-blue)" spin aria-label="Saving" />
         Saving…
       </span>
     );
@@ -92,7 +91,7 @@ function EditorStatusPill({
         aria-live="assertive"
         className="flex items-center gap-1 text-signal-amber"
       >
-        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+        <Reuleaux size={7} color="var(--il-amber)" aria-label="Conflict" />
         Conflict
       </span>
     );

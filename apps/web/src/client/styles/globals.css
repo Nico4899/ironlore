@@ -267,6 +267,24 @@ html.light {
   transform-origin: center;
 }
 
+/*
+ * Blockref hover — flushes the background to `--il-blue-glow` and
+ * thickens the 2px accent bar to 3px, per docs/09-ui-and-brand.md
+ * §Signature motifs / Blockref. The chip is inline-styled for layout
+ * so the hover channel lives here to keep the ruleset honest.
+ */
+.il-blockref:hover {
+  background: var(--il-blue-glow) !important;
+  border-left-width: 3px !important;
+}
+.il-blockref-stale:hover {
+  border-left-style: dashed !important;
+}
+.il-blockref:focus-visible {
+  outline: 2px solid var(--il-blue);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .il-pulse::before {
     animation: none;
