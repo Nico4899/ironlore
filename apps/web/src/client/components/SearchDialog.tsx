@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
 import { fetchRecentEdits, type RecentEdit, type SearchResult, searchPages } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
-import { Reuleaux } from "./primitives/index.js";
+import { Key, Reuleaux } from "./primitives/index.js";
 
 type Tab = "ALL" | "PAGES" | "BLOCKS" | "AGENTS";
 
@@ -419,19 +419,7 @@ export function SearchDialog() {
                     </div>
                   )}
                 </div>
-                <kbd
-                  className="font-mono"
-                  style={{
-                    fontSize: 10,
-                    color: "var(--il-text3)",
-                    background: "var(--il-slate-elev)",
-                    border: "1px solid var(--il-border-soft)",
-                    padding: "1px 5px",
-                    borderRadius: 3,
-                  }}
-                >
-                  ↵
-                </kbd>
+                <Key>↵</Key>
               </button>
             );
           })}
@@ -450,18 +438,18 @@ export function SearchDialog() {
             color: "var(--il-text3)",
           }}
         >
-          <span>
-            <kbd className="bg-ironlore-slate-hover px-1">↑↓</kbd> navigate
+          <span className="flex items-center gap-1">
+            <Key>↑↓</Key> navigate
           </span>
-          <span>
-            <kbd className="bg-ironlore-slate-hover px-1">↵</kbd> open
+          <span className="flex items-center gap-1">
+            <Key>↵</Key> open
           </span>
-          <span>
-            <kbd className="bg-ironlore-slate-hover px-1">⌘↵</kbd> open in provenance
+          <span className="flex items-center gap-1">
+            <Key>⌘↵</Key> open in provenance
           </span>
           <span style={{ flex: 1 }} />
-          <span>
-            <kbd className="bg-ironlore-slate-hover px-1">esc</kbd> close
+          <span className="flex items-center gap-1">
+            <Key>esc</Key> close
           </span>
         </div>
       </div>

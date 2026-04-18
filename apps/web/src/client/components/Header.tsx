@@ -16,6 +16,7 @@ import { logout } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
 import { Logo } from "./Logo.js";
+import { Key } from "./primitives/index.js";
 
 /**
  * Header / toolbar — left: logo + wordmark (links to home). Center:
@@ -86,7 +87,9 @@ export function Header() {
           title="Search (⌘K)"
         >
           <Search className="h-3.5 w-3.5" />
-          <kbd className="hidden font-mono text-[10px] text-secondary md:inline">⌘K</kbd>
+          <span className="hidden md:inline">
+            <Key>⌘K</Key>
+          </span>
         </button>
         <button
           type="button"

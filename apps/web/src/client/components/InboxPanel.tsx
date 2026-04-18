@@ -2,7 +2,7 @@ import { Check, GitBranch, Inbox, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { approveInboxEntry, fetchInbox, rejectInboxEntry } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
-import { Reuleaux, SectionLabel } from "./primitives/index.js";
+import { Key, Reuleaux, SectionLabel, Venn } from "./primitives/index.js";
 
 interface InboxEntry {
   id: string;
@@ -17,15 +17,21 @@ interface InboxEntry {
 /**
  * Agent Inbox panel — batch review UI for inbox-mode agent runs.
  *
- * Keyboard-first per docs/09-ui-and-brand.md §Agent Inbox: `j`/`k`
- * (or arrow keys) move between entries, `a` approves the focused
- * entry, `r` rejects, `Enter` opens provenance for the first file
- * changed. Buttons remain clickable for mouse users.
+ * Keyboard-first per docs/09-ui-and-brand.md §Agent Inbox:
+ *   · `j`/`k` (or ↑↓) move focus between entries
+ *   · `a` approves the focused entry, `r` rejects
+ *   · `⇧A` approve-all, `⇧R` reject-all
+ *   · `Enter` opens provenance for the first file changed
+ *
+ * Bulk operations fan out the per-entry endpoints serially so one
+ * failure doesn't cascade and partially-applied state is still
+ * observable in the list.
  */
 export function InboxPanel({ onClose }: { onClose: () => void }) {
   const [entries, setEntries] = useState<InboxEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusIdx, setFocusIdx] = useState(0);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -66,9 +72,36 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
-  // Panel-scoped keyboard shortcuts. Mounting the listener at the
-  // window lets keystrokes fire without the user first focusing a
-  // non-interactive region (which Biome a11y lint correctly rejects).
+  const handleApproveAll = useCallback(async () => {
+    if (busy || entries.length === 0) return;
+    setBusy(true);
+    // Snapshot ids — entries is filtered as each resolves.
+    const ids = entries.map((e) => e.id);
+    for (const id of ids) {
+      try {
+        await handleApprove(id);
+      } catch {
+        // Stop on first error so the user can inspect what's left.
+        break;
+      }
+    }
+    setBusy(false);
+  }, [busy, entries, handleApprove]);
+
+  const handleRejectAll = useCallback(async () => {
+    if (busy || entries.length === 0) return;
+    setBusy(true);
+    const ids = entries.map((e) => e.id);
+    for (const id of ids) {
+      try {
+        await handleReject(id);
+      } catch {
+        break;
+      }
+    }
+    setBusy(false);
+  }, [busy, entries, handleReject]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Skip when the user is typing into any input/textarea/contenteditable.
@@ -90,6 +123,15 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           e.preventDefault();
           setFocusIdx((i) => Math.max(i - 1, 0));
           break;
+        case "A":
+          // Capital A only (user must hold Shift) — approve-all.
+          e.preventDefault();
+          handleApproveAll();
+          break;
+        case "R":
+          e.preventDefault();
+          handleRejectAll();
+          break;
         case "a":
           if (entry) {
             e.preventDefault();
@@ -103,8 +145,6 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           }
           break;
         case "Enter": {
-          // Open provenance for the first file touched by this run;
-          // empty block id surfaces the page header.
           const file = entry?.filesChanged[0];
           if (file) {
             e.preventDefault();
@@ -116,7 +156,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [entries, focusIdx, handleApprove, handleReject]);
+  }, [entries, focusIdx, handleApprove, handleReject, handleApproveAll, handleRejectAll]);
 
   return (
     <div className="flex h-full w-80 flex-col border-l border-border bg-ironlore-slate">
@@ -137,22 +177,41 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
 
       <section className="flex-1 overflow-y-auto p-3" aria-label="Pending inbox entries">
         {!loading && (
-          <SectionLabel
-            index={1}
-            title="Pending"
-            meta={`${entries.length} review${entries.length === 1 ? "" : "s"}`}
-          />
+          <div className="flex items-center gap-2">
+            <SectionLabel
+              index={1}
+              title="Pending"
+              meta={`${entries.length} review${entries.length === 1 ? "" : "s"}`}
+              style={{ flex: 1, marginBottom: 6 }}
+            />
+          </div>
+        )}
+
+        {!loading && entries.length > 1 && (
+          <div className="mb-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRejectAll}
+              disabled={busy}
+              className="flex-1 rounded border border-border bg-transparent px-2 py-1 text-[11px] font-medium text-secondary hover:bg-ironlore-slate-hover disabled:opacity-40"
+            >
+              Reject all
+            </button>
+            <button
+              type="button"
+              onClick={handleApproveAll}
+              disabled={busy}
+              className="flex-1 rounded border-none bg-ironlore-blue px-2 py-1 text-[11px] font-medium text-background hover:bg-ironlore-blue-strong disabled:opacity-40"
+              style={{ boxShadow: "0 0 10px var(--il-blue-glow)" }}
+            >
+              Approve all
+            </button>
+          </div>
         )}
 
         {loading && <div className="py-8 text-center text-xs text-secondary">Loading...</div>}
 
-        {!loading && entries.length === 0 && (
-          <div className="py-8 text-center text-xs text-secondary">
-            No pending reviews. Runs with{" "}
-            <code className="rounded bg-ironlore-slate-hover px-1">review_mode: inbox</code> will
-            appear here.
-          </div>
-        )}
+        {!loading && entries.length === 0 && <InboxEmptyState />}
 
         {entries.map((entry, idx) => {
           const focused = idx === focusIdx;
@@ -199,7 +258,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
                   className="flex items-center gap-1 rounded border border-signal-green/30 bg-signal-green/10 px-2 py-1 text-signal-green hover:bg-signal-green/20"
                 >
                   <Check className="h-3 w-3" />
-                  Approve <kbd className="ml-1 font-mono text-[9px] opacity-60">a</kbd>
+                  Approve <Key style={{ fontSize: 9 }}>a</Key>
                 </button>
                 <button
                   type="button"
@@ -210,7 +269,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
                   className="flex items-center gap-1 rounded border border-signal-red/30 bg-signal-red/10 px-2 py-1 text-signal-red hover:bg-signal-red/20"
                 >
                   <X className="h-3 w-3" />
-                  Reject <kbd className="ml-1 font-mono text-[9px] opacity-60">r</kbd>
+                  Reject <Key style={{ fontSize: 9 }}>r</Key>
                 </button>
               </div>
             </div>
@@ -218,15 +277,64 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
         })}
 
         {!loading && entries.length > 0 && (
-          <div className="mt-3 border-t border-border-soft pt-2 font-mono text-[10px] uppercase tracking-wider text-tertiary">
-            <kbd className="bg-ironlore-slate-hover px-1">j</kbd>/
-            <kbd className="bg-ironlore-slate-hover px-1">k</kbd> move ·{" "}
-            <kbd className="bg-ironlore-slate-hover px-1">a</kbd> approve ·{" "}
-            <kbd className="bg-ironlore-slate-hover px-1">r</kbd> reject ·{" "}
-            <kbd className="bg-ironlore-slate-hover px-1">↵</kbd> open
+          <div
+            className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t pt-2 font-mono uppercase"
+            style={{
+              borderColor: "var(--il-border-soft)",
+              fontSize: 10,
+              letterSpacing: "0.04em",
+              color: "var(--il-text3)",
+            }}
+          >
+            <span>
+              <Key>j</Key>/<Key>k</Key> move
+            </span>
+            <span>
+              <Key>a</Key> approve
+            </span>
+            <span>
+              <Key>r</Key> reject
+            </span>
+            <span>
+              <Key>⇧A</Key> all
+            </span>
+            <span>
+              <Key>↵</Key> open
+            </span>
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function InboxEmptyState() {
+  return (
+    <div className="relative mt-10 flex flex-col items-center gap-4 px-6 text-center">
+      <div aria-hidden="true" style={{ opacity: 0.55 }}>
+        <Venn
+          size={80}
+          color="var(--il-text4)"
+          lineWidth={0.7}
+          ringOpacity={0.7}
+          fillOpacity={0.35}
+        />
+      </div>
+      <div
+        className="font-mono uppercase"
+        style={{
+          fontSize: 10,
+          letterSpacing: "0.08em",
+          color: "var(--il-text3)",
+        }}
+      >
+        inbox · zero
+      </div>
+      <p className="text-xs text-secondary">
+        No pending reviews. Runs with{" "}
+        <code className="rounded bg-ironlore-slate-hover px-1">review_mode: inbox</code> will appear
+        here.
+      </p>
     </div>
   );
 }
