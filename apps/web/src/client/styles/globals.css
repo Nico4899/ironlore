@@ -87,11 +87,11 @@
     --color-ironlore-blue: oklch(0.52 0.20 258);
     --color-ironlore-blue-strong: oklch(0.45 0.22 258);
     --color-ironlore-blue-dim: oklch(0.72 0.10 258);
-    --color-ironlore-slate: oklch(0.96 0.006 260);
-    --color-ironlore-slate-hover: oklch(0.92 0.008 260);
-    --color-ironlore-slate-elevated: oklch(0.98 0.004 260);
-    --color-background: oklch(0.93 0.005 260);
-    --color-background-raised: oklch(0.99 0.003 260);
+    --color-ironlore-slate: oklch(0.94 0.006 265);
+    --color-ironlore-slate-hover: oklch(0.90 0.008 265);
+    --color-ironlore-slate-elevated: oklch(0.98 0.004 265);
+    --color-background: oklch(0.96 0.004 265);
+    --color-background-raised: oklch(0.99 0.003 265);
 
     --color-signal-amber: oklch(0.68 0.17 75);
     --color-signal-red: oklch(0.55 0.22 25);
@@ -106,13 +106,15 @@
     --color-highlight-blue: oklch(0.82 0.12 230);
     --color-highlight-pink: oklch(0.80 0.15 0);
 
-    --color-primary: oklch(0.16 0.012 260);
-    --color-secondary: oklch(0.46 0.012 260);
-    --color-tertiary: oklch(0.62 0.010 260);
+    --color-primary: oklch(0.18 0.012 260);
+    --color-secondary: oklch(0.42 0.012 260);
+    --color-tertiary: oklch(0.58 0.010 260);
+    --color-quaternary: oklch(0.72 0.008 260);
 
-    --color-border: oklch(0.85 0.008 260);
-    --color-border-strong: oklch(0.72 0.015 260);
-    --color-border-glow: oklch(0.52 0.20 258 / 0.2);
+    --color-border: oklch(0.86 0.008 265);
+    --color-border-soft: oklch(0.92 0.006 265);
+    --color-border-strong: oklch(0.72 0.012 265);
+    --color-border-glow: oklch(0.52 0.20 258 / 0.18);
 
     --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04);
     --shadow-md: 0 4px 6px oklch(0 0 0 / 0.08), 0 2px 4px oklch(0 0 0 / 0.04);
@@ -121,6 +123,94 @@
     --shadow-glow-amber: 0 0 12px oklch(0.68 0.17 75 / 0.12);
     --shadow-glow-red: 0 0 12px oklch(0.55 0.22 25 / 0.12);
     --shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.06);
+  }
+}
+
+/* ─── Ironlore-namespaced aliases (primitives use these) ─── */
+/*
+ * The `--il-*` names are what the rev-3 spec (09-ui-and-brand.md) and
+ * the primitive components reference directly. They alias to the same
+ * OKLCh values the Tailwind `--color-*` tokens resolve to, so the new
+ * primitives can quote the spec's variable names without forcing every
+ * existing `bg-ironlore-slate` classname to migrate.
+ */
+:root {
+  --il-bg: var(--color-background);
+  --il-bg-raised: var(--color-background-raised);
+  --il-slate: var(--color-ironlore-slate);
+  --il-slate-hover: var(--color-ironlore-slate-hover);
+  --il-slate-elev: var(--color-ironlore-slate-elevated);
+  --il-text: var(--color-primary);
+  --il-text2: var(--color-secondary);
+  --il-text3: var(--color-tertiary);
+  --il-text4: var(--color-quaternary);
+  --il-border: var(--color-border);
+  --il-border-soft: var(--color-border-soft);
+  --il-border-strong: var(--color-border-strong);
+  --il-blue: var(--color-ironlore-blue);
+  --il-blue-dim: var(--color-ironlore-blue-dim);
+  --il-blue-glow: var(--color-border-glow);
+  --il-amber: var(--color-signal-amber);
+  --il-red: var(--color-signal-red);
+  --il-green: var(--color-signal-green);
+  --il-violet: var(--color-accent-violet);
+}
+
+/* ─── Ironlore keyframes + utility classes ─── */
+
+/* Agent pulse — subtle horizontal gradient sweep on live surfaces.
+ * 3.2s deliberately (long enough to feel ambient, not anxious). */
+@keyframes ilPulse {
+  0%, 100% { transform: translateX(-100%); }
+  50%      { transform: translateX(100%); }
+}
+
+/* Reuleaux rotation — used on the running-state status pip.
+ * 2s linear, direction left-to-right so it tracks reading order. */
+@keyframes ilSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Provenance target flash — 1.5s Signal-Amber fade-out on the block
+ * the user just navigated to via a citation click. */
+@keyframes ilFlash {
+  0%   { background-color: oklch(from var(--color-signal-amber) l c h / 0.25); }
+  100% { background-color: transparent; }
+}
+
+/*
+ * The agent pulse is applied to a wrapping surface (usually the AI
+ * panel composer or a live agent card). The surface must be
+ * `position: relative` + `overflow: hidden`; the ::before rail sweeps
+ * across it and auto-hides underneath content.
+ */
+.il-pulse {
+  position: relative;
+  overflow: hidden;
+}
+.il-pulse::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 20%, var(--il-blue-glow) 50%, transparent 80%);
+  animation: ilPulse var(--motion-pulse) ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.il-spin {
+  animation: ilSpin 2s linear infinite;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .il-pulse::before {
+    animation: none;
+    opacity: 0.3;
+  }
+  .il-spin {
+    animation: none;
   }
 }
 
