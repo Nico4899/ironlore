@@ -97,14 +97,28 @@ export const wikiSchema: Schema = new Schema({
       ],
       toDOM(node) {
         const { target, display } = node.attrs as { target: string; display: string | null };
+        // Mirrors the Blockref chip shape — see MarkdownEditor's
+        //  nodeView for the live-render path, and `.il-blockref` in
+        //  globals.css for the shared visual.
+        const hashIdx = target.indexOf("#");
+        const pagePart = hashIdx === -1 ? target : target.slice(0, hashIdx);
+        const blockRaw = hashIdx === -1 ? null : target.slice(hashIdx + 1);
+        const shortBlock =
+          blockRaw == null ? null : blockRaw.replace(/^blk_/, "").slice(-4);
+        const children: (string | [string, Record<string, string>, string])[] = [
+          display ?? pagePart,
+        ];
+        if (shortBlock) {
+          children.push(["span", { class: "il-blockref__id" }, `#${shortBlock}`]);
+        }
         return [
           "span",
           {
             "data-wikilink": target,
             "data-display": display ?? "",
-            class: "ir-wikilink",
+            class: "il-blockref ir-wikilink",
           },
-          display ?? target,
+          ...children,
         ];
       },
     }),

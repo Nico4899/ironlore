@@ -278,15 +278,14 @@
 }
 
 /* ─── Wiki-links ─── */
-
-.ProseMirror .ir-wikilink {
-  color: var(--color-ironlore-blue);
-  text-decoration: none;
-  border-bottom: 1px dashed var(--color-ironlore-blue);
-  cursor: pointer;
-  padding: 0 1px;
-}
-
-.ProseMirror .ir-wikilink:hover {
-  background-color: oklch(0.35 0.05 255 / 0.2);
+/*
+ * Wiki-link chips render as `.il-blockref` (defined in globals.css)
+ * so the editor's live citation shape matches every other Blockref in
+ * the product. The editor only overrides the inline behaviors that
+ * conflict with caret interaction: keep the chip inline-baseline,
+ * prevent it from swallowing selection, and let ProseMirror handle
+ * atomic-node caret movement.
+ */
+.ProseMirror .il-blockref {
+  user-select: all;
 }

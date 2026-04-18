@@ -3,11 +3,10 @@ import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
 /**
  * Blockref — bespoke chip for `[[Page#blk_…]]` citations.
  *
- * Replaces the generic inline anchor the editor previously emitted.
- * The chip is anchored by a 2px Ironlore-Blue left bar, carries the
- * page title in Inter and the block id in JetBrains Mono. Hovering
- * swaps the background to `--il-blue-glow` and thickens the bar to
- * 3px (handled purely in CSS via `:hover`).
+ * All visual styling lives in `.il-blockref` (globals.css) so the
+ * ProseMirror editor's wiki-link nodeView can render the same chip
+ * shape with the same class. Hover (3px bar + blue-glow background),
+ * the stale dashed variant, and focus rings are CSS-driven.
  *
  * Per docs/09-ui-and-brand.md §Signature motifs / Blockref.
  */
@@ -60,38 +59,10 @@ export function Blockref({
       className={["il-blockref", stale ? "il-blockref-stale" : "", className]
         .filter(Boolean)
         .join(" ")}
-      style={{
-        display: "inline-flex",
-        alignItems: "baseline",
-        gap: 4,
-        padding: "0 5px",
-        fontFamily: "var(--font-sans)",
-        fontSize: 13,
-        lineHeight: 1.4,
-        color: "var(--il-text)",
-        background: "color-mix(in oklch, var(--il-blue) 10%, transparent)",
-        borderLeft: stale ? "2px dashed var(--il-blue)" : "2px solid var(--il-blue)",
-        borderRadius: "0 2px 2px 0",
-        textDecoration: "none",
-        cursor: "pointer",
-        transition: "background var(--motion-snap) ease-out",
-        verticalAlign: "baseline",
-        ...style,
-      }}
+      style={style}
     >
       <span>{children ?? page}</span>
-      {short && (
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10.5,
-            color: "var(--il-text3)",
-            letterSpacing: "0.02em",
-          }}
-        >
-          #{short}
-        </span>
-      )}
+      {short && <span className="il-blockref__id">#{short}</span>}
     </button>
   );
 }

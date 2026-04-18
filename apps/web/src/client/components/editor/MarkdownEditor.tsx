@@ -303,21 +303,42 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
       },
       nodeViews: {
         wikilink: (node) => {
+          // Render the chip as a plain <span> (not <button>) so it
+          // stays an inline atom inside the editor's text flow;
+          // ProseMirror handles selection and caret placement.
           const dom = document.createElement("span");
           const { target, display } = node.attrs as { target: string; display: string | null };
-          dom.className = "ir-wikilink";
+          const hashIdx = target.indexOf("#");
+          const pagePart = hashIdx === -1 ? target : target.slice(0, hashIdx);
+          const blockRaw = hashIdx === -1 ? null : target.slice(hashIdx + 1);
+          const shortBlock =
+            blockRaw == null
+              ? null
+              : blockRaw.replace(/^blk_/, "").slice(-4);
+
+          // Match the Blockref primitive's visual contract. The legacy
+          //  `ir-wikilink` class is retained as a data hook for tests.
+          dom.className = "il-blockref ir-wikilink";
           dom.dataset.wikilink = target;
-          dom.textContent = display ?? target;
+          const label = document.createElement("span");
+          label.textContent = display ?? pagePart;
+          dom.appendChild(label);
+          if (shortBlock) {
+            const idNode = document.createElement("span");
+            idNode.className = "il-blockref__id";
+            idNode.textContent = `#${shortBlock}`;
+            dom.appendChild(idNode);
+          }
+
           dom.addEventListener("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            // Strip any `#blk_…` anchor for navigation; anchor handling is
-            // polish (scroll-to-block) and not required for Phase 2.
-            const hashIdx = target.indexOf("#");
-            const pagePath = hashIdx === -1 ? target : target.slice(0, hashIdx);
-            if (pagePath) {
-              const withExt = pagePath.endsWith(".md") ? pagePath : `${pagePath}.md`;
-              useAppStore.getState().setActivePath(withExt);
+            if (!pagePart) return;
+            const withExt = pagePart.endsWith(".md") ? pagePart : `${pagePart}.md`;
+            useAppStore.getState().setActivePath(withExt);
+            // Cmd/Ctrl-click opens the provenance pane instead of navigating.
+            if ((e.metaKey || e.ctrlKey) && blockRaw) {
+              useAppStore.getState().openProvenance(withExt, blockRaw);
             }
           });
           return { dom };
