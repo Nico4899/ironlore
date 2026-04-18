@@ -59,7 +59,7 @@ export function ProvenanceStrip({
       onClick={onClick}
       onKeyDown={onClick ? (e) => e.key === "Enter" && onClick() : undefined}
       tabIndex={onClick ? 0 : undefined}
-      className={className}
+      className={["il-provenance-strip", className].filter(Boolean).join(" ")}
       style={{
         display: "flex",
         alignItems: "center",

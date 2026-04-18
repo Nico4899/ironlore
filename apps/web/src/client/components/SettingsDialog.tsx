@@ -1,7 +1,12 @@
 import { X } from "lucide-react";
 import { type ReactNode, useCallback, useRef } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
-import { DEFAULT_ACCENT_HUE, useAppStore } from "../stores/app.js";
+import {
+  DEFAULT_ACCENT_HUE,
+  type MotifSettings,
+  type MotionSetting,
+  useAppStore,
+} from "../stores/app.js";
 
 type Tab = "general" | "appearance";
 
@@ -154,6 +159,8 @@ function AppearanceTab() {
   const theme = useAppStore((s) => s.theme);
   const density = useAppStore((s) => s.density);
   const accentHue = useAppStore((s) => s.accentHue);
+  const motion = useAppStore((s) => s.motion);
+  const motifs = useAppStore((s) => s.motifs);
 
   return (
     <>
@@ -214,20 +221,135 @@ function AppearanceTab() {
       <SettingRow
         n="04"
         label="Motion"
-        sub="Agent pulse + Reuleaux rotation respect the OS Reduce Motion setting; there is no separate toggle yet."
+        sub="Full runs every keyframe; Reduced fades the pulse and stops the Reuleaux rotation; None disables both. The OS Reduce Motion preference is still honored on top of this setting."
       >
+        <SegChoice
+          options={[
+            { value: "full", label: "Full" },
+            { value: "reduced", label: "Reduced" },
+            { value: "none", label: "None" },
+          ]}
+          active={motion}
+          onChange={(v) => useAppStore.getState().setMotion(v as MotionSetting)}
+        />
+      </SettingRow>
+
+      <SettingRow
+        n="05"
+        label="Motif visibility"
+        sub="Persisted per device. Two motifs have live plumbing today; the other two save state for future features."
+      >
+        <MotifToggleList motifs={motifs} />
+      </SettingRow>
+    </>
+  );
+}
+
+interface MotifToggleDef {
+  key: keyof MotifSettings;
+  label: string;
+  /** True when the toggle actually affects rendering today. */
+  live: boolean;
+}
+
+const MOTIF_TOGGLES: MotifToggleDef[] = [
+  { key: "provenance", label: "Provenance strip on cited blocks", live: true },
+  { key: "agentPulse", label: "Agent pulse on live surfaces", live: true },
+  { key: "blockrefPreview", label: "Blockref hover preview", live: false },
+  { key: "reuleauxPips", label: "Reuleaux status pips (vs. standard dots)", live: false },
+];
+
+function MotifToggleList({ motifs }: { motifs: MotifSettings }) {
+  const setMotif = useAppStore((s) => s.setMotif);
+  return (
+    <div className="grid gap-2">
+      {MOTIF_TOGGLES.map((def) => (
+        <MotifToggle
+          key={def.key}
+          label={def.label}
+          live={def.live}
+          value={motifs[def.key]}
+          onChange={(v) => setMotif(def.key, v)}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface MotifToggleProps {
+  label: string;
+  live: boolean;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}
+
+/**
+ * Canvas-shape switch: 26×14 pill with a 10×10 thumb that slides
+ * right when on. The "not live yet" badge appears next to the label
+ * when flipping the toggle doesn't affect rendering today — honest
+ * about which switches are cosmetic state vs. real feature gates.
+ */
+function MotifToggle({ label, live, value, onChange }: MotifToggleProps) {
+  // A real <input type="checkbox"> with a role="switch" — Biome's
+  //  a11y rule rejects a role on a non-interactive element, and also
+  //  rejects a <label> that wraps nothing except styled spans. Using
+  //  a hidden checkbox + clickable text keeps keyboard + screen
+  //  reader semantics correct without hand-rolling them.
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-3" style={{ userSelect: "none" }}>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={value}
+        aria-checked={value}
+        onChange={(e) => onChange(e.target.checked)}
+        aria-label={label}
+        className="sr-only"
+      />
+      <span
+        aria-hidden="true"
+        style={{
+          width: 26,
+          height: 14,
+          borderRadius: 7,
+          background: value ? "var(--il-blue)" : "var(--il-slate-elev)",
+          border: "1px solid var(--il-border)",
+          position: "relative",
+          transition: "background var(--motion-snap) ease-out",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            top: 1,
+            left: value ? 13 : 1,
+            width: 10,
+            height: 10,
+            borderRadius: "50%",
+            background: "var(--il-bg)",
+            transition: "left var(--motion-snap) ease-out",
+          }}
+        />
+      </span>
+      <span style={{ fontSize: 13, color: "var(--il-text)" }}>{label}</span>
+      {!live && (
         <span
           className="font-mono uppercase"
           style={{
-            fontSize: 10.5,
-            color: "var(--il-text3)",
+            fontSize: 9.5,
             letterSpacing: "0.04em",
+            color: "var(--il-text3)",
+            padding: "1px 4px",
+            border: "1px solid var(--il-border-soft)",
+            borderRadius: 2,
           }}
+          title="Saved per device; no runtime effect in the current build."
         >
-          system
+          soon
         </span>
-      </SettingRow>
-    </>
+      )}
+    </label>
   );
 }
 
