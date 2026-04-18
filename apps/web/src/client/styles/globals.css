@@ -223,6 +223,23 @@
   }
 }
 
+/* ─── Density ─── */
+/*
+ * Two tiers per spec §Density. `useThemeClass` mirrors the store
+ * value onto `<html data-density="…">` and cascades these variables
+ * outward. Components opt in by referencing `var(--il-row-pad)` etc.
+ * — most components inherit comfortable and stay unchanged.
+ */
+html {
+  --il-body-size: 13.5px;
+  --il-row-pad: 12px;
+}
+
+html[data-density="compact"] {
+  --il-body-size: 12.5px;
+  --il-row-pad: 6px;
+}
+
 /* ─── Base ─── */
 
 html {
