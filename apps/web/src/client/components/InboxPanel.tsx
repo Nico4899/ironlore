@@ -332,11 +332,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
                 {entry.filesChanged.length === 1 ? "" : "s"} changed
               </div>
 
-              <InboxEntryFiles
-                entry={entry}
-                stats={fileStats.get(entry.id)}
-              />
-
+              <InboxEntryFiles entry={entry} stats={fileStats.get(entry.id)} />
 
               <div className="mt-2 flex gap-2">
                 <button

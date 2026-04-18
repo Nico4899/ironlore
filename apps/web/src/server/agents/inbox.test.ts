@@ -289,4 +289,67 @@ describe("AgentInbox — approve/reject against real git", () => {
     expect(result.success).toBe(false);
     expect(result.error).toBe("Entry not found");
   });
+
+  it("getFileDiffStats returns [] for unknown entries", () => {
+    expect(inbox.getFileDiffStats("nonexistent", projectDir)).toEqual([]);
+  });
+
+  it("getFileDiffStats classifies adds/mods/deletes and counts line deltas", () => {
+    // Seed main with two files we'll touch from the staging branch.
+    writeFileSync(join(projectDir, "mod.md"), "a\nb\nc\n");
+    writeFileSync(join(projectDir, "del.md"), "one\ntwo\n");
+    execSync("git add mod.md del.md", { cwd: projectDir, stdio: "pipe" });
+    execSync("git commit -m base", { cwd: projectDir, stdio: "pipe" });
+
+    // Branch — modify, delete, and add files.
+    execSync("git checkout -b agents/editor/diff1", { cwd: projectDir, stdio: "pipe" });
+    writeFileSync(join(projectDir, "mod.md"), "a\nB-CHANGED\nc\nd\n");
+    execSync("rm del.md", { cwd: projectDir, stdio: "pipe" });
+    writeFileSync(join(projectDir, "new.md"), "fresh\nlines\nhere\n");
+    execSync("git add -A", { cwd: projectDir, stdio: "pipe" });
+    execSync("git commit -m agent-diff", { cwd: projectDir, stdio: "pipe" });
+    execSync("git checkout main", { cwd: projectDir, stdio: "pipe" });
+
+    inbox.createEntry({
+      id: "diff1",
+      projectId: "main",
+      agentSlug: "editor",
+      branch: "agents/editor/diff1",
+      jobId: "diff1",
+      filesChanged: ["mod.md", "del.md", "new.md"],
+      startedAt: 1,
+      finalizedAt: 2,
+    });
+
+    const stats = inbox.getFileDiffStats("diff1", projectDir);
+    const byPath = new Map(stats.map((s) => [s.path, s]));
+
+    expect(byPath.get("mod.md")?.status).toBe("M");
+    expect(byPath.get("mod.md")?.added).toBeGreaterThan(0);
+    expect(byPath.get("mod.md")?.removed).toBeGreaterThan(0);
+
+    expect(byPath.get("del.md")?.status).toBe("D");
+    // del.md had 2 lines; removing the file removes them.
+    expect(byPath.get("del.md")?.removed).toBe(2);
+    expect(byPath.get("del.md")?.added).toBe(0);
+
+    expect(byPath.get("new.md")?.status).toBe("A");
+    expect(byPath.get("new.md")?.added).toBe(3);
+    expect(byPath.get("new.md")?.removed).toBe(0);
+  });
+
+  it("getFileDiffStats returns [] when the staging branch is missing", () => {
+    inbox.createEntry({
+      id: "ghost",
+      projectId: "main",
+      agentSlug: "editor",
+      branch: "agents/editor/never-was",
+      jobId: "ghost",
+      filesChanged: ["ghost.md"],
+      startedAt: 1,
+      finalizedAt: 2,
+    });
+
+    expect(inbox.getFileDiffStats("ghost", projectDir)).toEqual([]);
+  });
 });
