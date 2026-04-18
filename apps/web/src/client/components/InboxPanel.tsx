@@ -320,7 +320,6 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
             </div>
           );
         })}
-
       </section>
     </div>
   );

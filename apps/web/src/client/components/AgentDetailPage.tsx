@@ -1,16 +1,9 @@
+import { AGENTS_DIR } from "@ironlore/core";
 import { Pause, Play, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { AGENTS_DIR } from "@ironlore/core";
 import { fetchAgentState, setAgentPaused } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
-import {
-  DisplayNum,
-  Key,
-  Meta,
-  SectionLabel,
-  StatusPip,
-  Venn,
-} from "./primitives/index.js";
+import { DisplayNum, Key, Meta, SectionLabel, StatusPip, Venn } from "./primitives/index.js";
 
 /**
  * AgentDetailPage — per-agent canvas-grammar detail surface.
@@ -183,10 +176,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
 
       {/* Body grid — recent runs left, config/controls rail right */}
       <div className="grid flex-1 min-h-0 grid-cols-[minmax(0,1fr)_320px]">
-        <div
-          className="px-10 py-6"
-          style={{ borderRight: "1px solid var(--il-border-soft)" }}
-        >
+        <div className="px-10 py-6" style={{ borderRight: "1px solid var(--il-border-soft)" }}>
           <SectionLabel index={1} title="Recent runs" meta="LAST 24H" />
           <div className="mt-3">
             <RecentRunsPlaceholder />
@@ -194,8 +184,10 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
 
           <div className="mt-8">
             <SectionLabel index={2} title="Activity" meta="HOUR OF DAY" />
-            <div className="mt-3 rounded border border-dashed px-4 py-6 text-center text-xs"
-                 style={{ borderColor: "var(--il-border-soft)", color: "var(--il-text3)" }}>
+            <div
+              className="mt-3 rounded border border-dashed px-4 py-6 text-center text-xs"
+              style={{ borderColor: "var(--il-border-soft)", color: "var(--il-text3)" }}
+            >
               Run-rate histogram lands when `/agents/:slug/runs` is wired. No fake data.
             </div>
           </div>
@@ -206,7 +198,18 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
           <div className="mt-3 grid gap-3 text-xs">
             <ConfigRow k="slug" v={slug} />
             <ConfigRow k="persona" v={`${AGENTS_DIR}/${slug}/persona.md`} mono />
-            <ConfigRow k="state" v={loadError ? `error: ${loadError}` : paused ? "paused" : state?.canRun ? "ready" : (state?.reason ?? "checking")} />
+            <ConfigRow
+              k="state"
+              v={
+                loadError
+                  ? `error: ${loadError}`
+                  : paused
+                    ? "paused"
+                    : state?.canRun
+                      ? "ready"
+                      : (state?.reason ?? "checking")
+              }
+            />
           </div>
 
           <div className="mt-6">
@@ -269,8 +272,8 @@ function RecentRunsPlaceholder() {
         color: "var(--il-text3)",
       }}
     >
-      Recent runs surface when <code className="font-mono">/jobs?agent=&lt;slug&gt;</code> is
-      added. Skipping rather than inventing a timeline.
+      Recent runs surface when <code className="font-mono">/jobs?agent=&lt;slug&gt;</code> is added.
+      Skipping rather than inventing a timeline.
     </div>
   );
 }
