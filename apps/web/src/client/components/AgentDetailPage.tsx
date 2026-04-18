@@ -278,18 +278,10 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
             />
             <ConfigRow
               k="rate caps"
-              v={
-                config
-                  ? `${config.maxRunsPerHour}/hour · ${config.maxRunsPerDay}/day`
-                  : "—"
-              }
+              v={config ? `${config.maxRunsPerHour}/hour · ${config.maxRunsPerDay}/day` : "—"}
               mono
             />
-            <ConfigRow
-              k="failure streak"
-              v={config ? `${config.failureStreak} / 3` : "—"}
-              mono
-            />
+            <ConfigRow k="failure streak" v={config ? `${config.failureStreak} / 3` : "—"} mono />
           </div>
 
           <div className="mt-6">
