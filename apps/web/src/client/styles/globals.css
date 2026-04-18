@@ -1,87 +1,109 @@
 @import "tailwindcss";
 
-/* ─── OKLCh Color System ─── */
+/*
+ * Self-hosted fonts. See `main.tsx` for the @fontsource imports that
+ * ship the actual WOFF2 files through Vite's asset pipeline — no
+ * Google/Adobe CDN is loaded at runtime, per docs/09-ui-and-brand.md
+ * §Typography ("load all three … with font-display: swap").
+ */
 
+/* ─── OKLCh Color System — canonical --il-* tokens ─── */
+/*
+ * Single source of truth per docs/09-ui-and-brand.md §Color. Every
+ * color in the product is one of these OKLCh values or a
+ * `color-mix(in oklch, …)` over one. Hex values are banned — start
+ * from commit 1; the no-hex rule is enforced by grep in review.
+ *
+ * Dark mode is default. Light mode overrides the subset of tokens
+ * that change in the `html.light` block below.
+ */
 @custom-variant light (&:is(.light *));
 
-@theme inline {
-  /*
-   * Ironlore palette — rev 3 (09-ui-and-brand.md).
-   *
-   * Values refined toward a warmer blue-black canvas (hue 265, chroma
-   * capped at 0.015 on surfaces). The `--color-*` names are the
-   * Tailwind-visible tokens; `--il-*` aliases below give primitives a
-   * spec-matching namespace without breaking the hundreds of existing
-   * `bg-ironlore-slate` etc. classnames.
-   */
-
+:root {
   /*
    * Brand-blue hue is user-tweakable via Appearance settings. The
-   * OKLCh tokens pull their hue channel from `--il-accent-hue`, so
+   * OKLCh tokens below pull their `h` channel from this var, so
    * lightness + chroma stay pinned while the hue slides. This keeps
-   * contrast ratios stable across personalizations (spec §Color).
-   * Default 258 = canonical Ironlore Blue.
+   * contrast ratios stable across personalizations. Default 258.
    */
   --il-accent-hue: 258;
 
-  /* Core palette */
-  --color-ironlore-blue: oklch(0.68 0.17 var(--il-accent-hue, 258));
-  --color-ironlore-blue-strong: oklch(0.72 0.2 var(--il-accent-hue, 258));
-  --color-ironlore-blue-dim: oklch(0.45 0.12 var(--il-accent-hue, 258));
-  --color-ironlore-slate: oklch(0.20 0.012 265);
-  --color-ironlore-slate-hover: oklch(0.24 0.014 265);
-  --color-ironlore-slate-elevated: oklch(0.22 0.013 265);
-  --color-background: oklch(0.13 0.008 265);
-  --color-background-raised: oklch(0.17 0.010 265);
+  /* Canvas + surface tokens (dark) */
+  --il-bg: oklch(0.13 0.008 265);
+  --il-bg-raised: oklch(0.17 0.010 265);
+  --il-slate: oklch(0.20 0.012 265);
+  --il-slate-hover: oklch(0.24 0.014 265);
+  --il-slate-elev: oklch(0.22 0.013 265);
 
-  /* Signals */
-  --color-signal-amber: oklch(0.82 0.17 80);
-  --color-signal-red: oklch(0.64 0.22 25);
-  --color-signal-green: oklch(0.74 0.16 148);
+  /* Brand (dark) — hue driven by --il-accent-hue */
+  --il-blue: oklch(0.68 0.17 var(--il-accent-hue, 258));
+  --il-blue-strong: oklch(0.72 0.20 var(--il-accent-hue, 258));
+  --il-blue-dim: oklch(0.45 0.12 var(--il-accent-hue, 258));
+  --il-blue-glow: oklch(0.68 0.17 var(--il-accent-hue, 258) / 0.28);
 
-  /* Accents */
-  --color-accent-violet: oklch(0.70 0.17 300);
-  --color-accent-teal: oklch(0.70 0.14 185);
-  --color-accent-rose: oklch(0.68 0.16 10);
+  /* Signal (dark) */
+  --il-amber: oklch(0.82 0.17 80);
+  --il-red: oklch(0.64 0.22 25);
+  --il-green: oklch(0.74 0.16 148);
 
-  /* Highlights */
-  --color-highlight-yellow: oklch(0.90 0.17 95);
-  --color-highlight-green: oklch(0.78 0.17 150);
-  --color-highlight-blue: oklch(0.78 0.14 230);
-  --color-highlight-pink: oklch(0.75 0.17 0);
+  /* Secondary accent — reserved for secondary agent identity only */
+  --il-violet: oklch(0.70 0.17 300);
 
-  /* Text */
-  --color-primary: oklch(0.95 0.005 260);
-  --color-secondary: oklch(0.68 0.012 260);
-  --color-tertiary: oklch(0.48 0.012 260);
-  --color-quaternary: oklch(0.36 0.010 260);
+  /* Text (dark) */
+  --il-text: oklch(0.95 0.005 260);
+  --il-text2: oklch(0.68 0.012 260);
+  --il-text3: oklch(0.48 0.012 260);
+  --il-text4: oklch(0.36 0.010 260);
 
-  /* Borders */
-  --color-border: oklch(0.28 0.012 265);
-  --color-border-soft: oklch(0.22 0.010 265);
-  --color-border-strong: oklch(0.42 0.015 265);
-  --color-border-glow: oklch(0.68 0.17 258 / 0.28);
+  /* Borders (dark) */
+  --il-border: oklch(0.28 0.012 265);
+  --il-border-soft: oklch(0.22 0.010 265);
+  --il-border-strong: oklch(0.42 0.015 265);
 
-  /* Shadows */
-  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3), 0 1px 3px oklch(0 0 0 / 0.2);
-  --shadow-md: 0 4px 6px oklch(0 0 0 / 0.3), 0 2px 4px oklch(0 0 0 / 0.2);
-  --shadow-lg: 0 10px 25px oklch(0 0 0 / 0.4), 0 4px 10px oklch(0 0 0 / 0.3);
-  --shadow-glow-blue: 0 0 12px oklch(0.68 0.17 258 / 0.28), 0 0 4px oklch(0.68 0.17 258 / 0.15);
-  --shadow-glow-amber: 0 0 12px oklch(0.82 0.17 80 / 0.2);
-  --shadow-glow-red: 0 0 12px oklch(0.64 0.22 25 / 0.2);
-  --shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.25);
+  /* Highlights (dark) — for user text highlight chips; intentionally
+   *  outside the signal palette. */
+  --il-highlight-yellow: oklch(0.90 0.17 95);
+  --il-highlight-green: oklch(0.78 0.17 150);
+  --il-highlight-blue: oklch(0.78 0.14 230);
+  --il-highlight-pink: oklch(0.75 0.17 0);
 
-  /* Font stacks — rev 3 three-family triad */
+  /* Accent auxiliaries (dark) — non-brand accents reserved for
+   *  per-type file icons, not for primary surfaces. */
+  --il-accent-teal: oklch(0.70 0.14 185);
+  --il-accent-rose: oklch(0.68 0.16 10);
+
+  /* Shadows — derived from OKLCh zero so they stay warm-neutral */
+  --il-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3), 0 1px 3px oklch(0 0 0 / 0.2);
+  --il-shadow-md: 0 4px 6px oklch(0 0 0 / 0.3), 0 2px 4px oklch(0 0 0 / 0.2);
+  --il-shadow-lg: 0 10px 25px oklch(0 0 0 / 0.4), 0 4px 10px oklch(0 0 0 / 0.3);
+  --il-shadow-glow-blue: 0 0 12px var(--il-blue-glow), 0 0 4px var(--il-blue-glow);
+  --il-shadow-glow-amber: 0 0 12px oklch(0.82 0.17 80 / 0.2);
+  --il-shadow-glow-red: 0 0 12px oklch(0.64 0.22 25 / 0.2);
+  --il-shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.25);
+
+  /*
+   * Type system — self-hosted by `@fontsource`. Inter, Instrument
+   * Serif, JetBrains Mono are loaded as WOFF2 through the bundler;
+   * `system-ui` fallbacks cover the brief moment before swap.
+   *
+   * `--font-display` (was `--font-serif`) names the editorial role
+   * directly — the family happens to be Instrument Serif.
+   */
+  --font-display: "Instrument Serif", "GT Sectra", "Times New Roman", serif;
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-serif: "Instrument Serif", "GT Sectra", "Times New Roman", serif;
   --font-mono: "JetBrains Mono", ui-monospace, "Menlo", monospace;
 
   /*
-   * Motion durations — four values, zero others.
-   *   snap    (80ms)   — hover / focus feedback
-   *   transit (180ms)  — panel open, tab switch
-   *   flash   (1500ms) — attention flashes (provenance target)
-   *   pulse   (3200ms) — ambient agent-running sweep
+   * Motion durations — exactly four values, zero others per
+   * docs/09-ui-and-brand.md §Motion language. Every transition,
+   * animation, and timed fade in the product references one of
+   * these four tokens. Drift is caught in review by searching for
+   * literal `ms` or `duration-<N>` outside this file.
+   *
+   *   snap    (80ms)    hover / focus feedback
+   *   transit (180ms)   panel open, tab switch, drawer
+   *   flash   (1500ms)  attention flash (provenance target)
+   *   pulse   (3200ms)  ambient agent-running sweep
    */
   --motion-snap: 80ms;
   --motion-transit: 180ms;
@@ -90,79 +112,111 @@
 }
 
 /* ─── Light mode overrides ─── */
+/*
+ * Only the tokens that genuinely change between modes. Brand hue
+ * stays driven by `--il-accent-hue` so slider tweaks survive a theme
+ * toggle.
+ */
+html.light {
+  --il-bg: oklch(0.96 0.004 265);
+  --il-bg-raised: oklch(0.99 0.003 265);
+  --il-slate: oklch(0.94 0.006 265);
+  --il-slate-hover: oklch(0.90 0.008 265);
+  --il-slate-elev: oklch(0.98 0.004 265);
 
-@variant light {
-  @theme inline {
-    --color-ironlore-blue: oklch(0.52 0.2 var(--il-accent-hue, 258));
-    --color-ironlore-blue-strong: oklch(0.45 0.22 var(--il-accent-hue, 258));
-    --color-ironlore-blue-dim: oklch(0.72 0.1 var(--il-accent-hue, 258));
-    --color-ironlore-slate: oklch(0.94 0.006 265);
-    --color-ironlore-slate-hover: oklch(0.90 0.008 265);
-    --color-ironlore-slate-elevated: oklch(0.98 0.004 265);
-    --color-background: oklch(0.96 0.004 265);
-    --color-background-raised: oklch(0.99 0.003 265);
+  --il-blue: oklch(0.52 0.20 var(--il-accent-hue, 258));
+  --il-blue-strong: oklch(0.45 0.22 var(--il-accent-hue, 258));
+  --il-blue-dim: oklch(0.72 0.10 var(--il-accent-hue, 258));
+  --il-blue-glow: oklch(0.52 0.20 var(--il-accent-hue, 258) / 0.18);
 
-    --color-signal-amber: oklch(0.68 0.17 75);
-    --color-signal-red: oklch(0.55 0.22 25);
-    --color-signal-green: oklch(0.56 0.17 148);
+  --il-amber: oklch(0.68 0.17 75);
+  --il-red: oklch(0.55 0.22 25);
+  --il-green: oklch(0.56 0.17 148);
 
-    --color-accent-violet: oklch(0.55 0.20 300);
-    --color-accent-teal: oklch(0.50 0.14 185);
-    --color-accent-rose: oklch(0.55 0.16 10);
+  --il-violet: oklch(0.55 0.20 300);
 
-    --color-highlight-yellow: oklch(0.90 0.17 95);
-    --color-highlight-green: oklch(0.82 0.15 150);
-    --color-highlight-blue: oklch(0.82 0.12 230);
-    --color-highlight-pink: oklch(0.80 0.15 0);
+  --il-text: oklch(0.18 0.012 260);
+  --il-text2: oklch(0.42 0.012 260);
+  --il-text3: oklch(0.58 0.010 260);
+  --il-text4: oklch(0.72 0.008 260);
 
-    --color-primary: oklch(0.18 0.012 260);
-    --color-secondary: oklch(0.42 0.012 260);
-    --color-tertiary: oklch(0.58 0.010 260);
-    --color-quaternary: oklch(0.72 0.008 260);
+  --il-border: oklch(0.86 0.008 265);
+  --il-border-soft: oklch(0.92 0.006 265);
+  --il-border-strong: oklch(0.72 0.012 265);
 
-    --color-border: oklch(0.86 0.008 265);
-    --color-border-soft: oklch(0.92 0.006 265);
-    --color-border-strong: oklch(0.72 0.012 265);
-    --color-border-glow: oklch(0.52 0.20 258 / 0.18);
+  --il-highlight-yellow: oklch(0.90 0.17 95);
+  --il-highlight-green: oklch(0.82 0.15 150);
+  --il-highlight-blue: oklch(0.82 0.12 230);
+  --il-highlight-pink: oklch(0.80 0.15 0);
 
-    --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04);
-    --shadow-md: 0 4px 6px oklch(0 0 0 / 0.08), 0 2px 4px oklch(0 0 0 / 0.04);
-    --shadow-lg: 0 10px 25px oklch(0 0 0 / 0.1), 0 4px 10px oklch(0 0 0 / 0.06);
-    --shadow-glow-blue: 0 0 12px oklch(0.52 0.20 258 / 0.15);
-    --shadow-glow-amber: 0 0 12px oklch(0.68 0.17 75 / 0.12);
-    --shadow-glow-red: 0 0 12px oklch(0.55 0.22 25 / 0.12);
-    --shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.06);
-  }
+  --il-accent-teal: oklch(0.50 0.14 185);
+  --il-accent-rose: oklch(0.55 0.16 10);
+
+  --il-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04);
+  --il-shadow-md: 0 4px 6px oklch(0 0 0 / 0.08), 0 2px 4px oklch(0 0 0 / 0.04);
+  --il-shadow-lg: 0 10px 25px oklch(0 0 0 / 0.1), 0 4px 10px oklch(0 0 0 / 0.06);
+  --il-shadow-glow-amber: 0 0 12px oklch(0.68 0.17 75 / 0.12);
+  --il-shadow-glow-red: 0 0 12px oklch(0.55 0.22 25 / 0.12);
+  --il-shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.06);
 }
 
-/* ─── Ironlore-namespaced aliases (primitives use these) ─── */
+/* ─── Tailwind v4 theme bridge ─── */
 /*
- * The `--il-*` names are what the rev-3 spec (09-ui-and-brand.md) and
- * the primitive components reference directly. They alias to the same
- * OKLCh values the Tailwind `--color-*` tokens resolve to, so the new
- * primitives can quote the spec's variable names without forcing every
- * existing `bg-ironlore-slate` classname to migrate.
+ * Tailwind utilities like `bg-ironlore-blue`, `text-primary`, etc. map
+ * to `--color-*` names under `@theme inline`. We keep the existing
+ * namespace for backwards compatibility with the hundreds of
+ * existing classnames, but the *values* come from `--il-*` above so
+ * there is only one source of truth. `@theme inline` emits raw
+ * `var(--il-*)` references instead of inlining a frozen computed
+ * color, which means the accent-hue slider and light-mode toggle
+ * still cascade through.
  */
-:root {
-  --il-bg: var(--color-background);
-  --il-bg-raised: var(--color-background-raised);
-  --il-slate: var(--color-ironlore-slate);
-  --il-slate-hover: var(--color-ironlore-slate-hover);
-  --il-slate-elev: var(--color-ironlore-slate-elevated);
-  --il-text: var(--color-primary);
-  --il-text2: var(--color-secondary);
-  --il-text3: var(--color-tertiary);
-  --il-text4: var(--color-quaternary);
-  --il-border: var(--color-border);
-  --il-border-soft: var(--color-border-soft);
-  --il-border-strong: var(--color-border-strong);
-  --il-blue: var(--color-ironlore-blue);
-  --il-blue-dim: var(--color-ironlore-blue-dim);
-  --il-blue-glow: var(--color-border-glow);
-  --il-amber: var(--color-signal-amber);
-  --il-red: var(--color-signal-red);
-  --il-green: var(--color-signal-green);
-  --il-violet: var(--color-accent-violet);
+@theme inline {
+  --color-ironlore-blue: var(--il-blue);
+  --color-ironlore-blue-strong: var(--il-blue-strong);
+  --color-ironlore-blue-dim: var(--il-blue-dim);
+  --color-ironlore-slate: var(--il-slate);
+  --color-ironlore-slate-hover: var(--il-slate-hover);
+  --color-ironlore-slate-elevated: var(--il-slate-elev);
+  --color-background: var(--il-bg);
+  --color-background-raised: var(--il-bg-raised);
+
+  --color-signal-amber: var(--il-amber);
+  --color-signal-red: var(--il-red);
+  --color-signal-green: var(--il-green);
+
+  --color-accent-violet: var(--il-violet);
+  --color-accent-teal: var(--il-accent-teal);
+  --color-accent-rose: var(--il-accent-rose);
+
+  --color-highlight-yellow: var(--il-highlight-yellow);
+  --color-highlight-green: var(--il-highlight-green);
+  --color-highlight-blue: var(--il-highlight-blue);
+  --color-highlight-pink: var(--il-highlight-pink);
+
+  --color-primary: var(--il-text);
+  --color-secondary: var(--il-text2);
+  --color-tertiary: var(--il-text3);
+  --color-quaternary: var(--il-text4);
+
+  --color-border: var(--il-border);
+  --color-border-soft: var(--il-border-soft);
+  --color-border-strong: var(--il-border-strong);
+  --color-border-glow: var(--il-blue-glow);
+
+  --shadow-sm: var(--il-shadow-sm);
+  --shadow-md: var(--il-shadow-md);
+  --shadow-lg: var(--il-shadow-lg);
+  --shadow-glow-blue: var(--il-shadow-glow-blue);
+  --shadow-glow-amber: var(--il-shadow-glow-amber);
+  --shadow-glow-red: var(--il-shadow-glow-red);
+  --shadow-inner: var(--il-shadow-inner);
+
+  /* Type stacks mirrored into Tailwind's namespace so `font-sans`
+   *  etc. keep working while primitives quote `--font-display`. */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-serif: "Instrument Serif", "GT Sectra", "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Menlo", monospace;
 }
 
 /* ─── Ironlore keyframes + utility classes ─── */
@@ -184,7 +238,7 @@
 /* Provenance target flash — 1.5s Signal-Amber fade-out on the block
  * the user just navigated to via a citation click. */
 @keyframes ilFlash {
-  0%   { background-color: oklch(from var(--color-signal-amber) l c h / 0.25); }
+  0%   { background-color: oklch(from var(--il-amber) l c h / 0.25); }
   100% { background-color: transparent; }
 }
 
@@ -291,12 +345,12 @@ html.light {
 }
 
 body {
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   margin: 0;
-  background-color: var(--color-background);
-  color: var(--color-primary);
+  background-color: var(--il-bg);
+  color: var(--il-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "ss01", "cv11";
@@ -306,63 +360,65 @@ body {
 code,
 pre,
 kbd {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 ::selection {
-  background-color: oklch(from var(--color-ironlore-blue) l c h / 0.35);
-  color: var(--color-primary);
+  background-color: oklch(from var(--il-blue) l c h / 0.35);
+  color: var(--il-text);
 }
 
 /* ─── Depth utilities ─── */
 
 /* Elevated surface — used for cards, panels, floating UI */
 .surface-elevated {
-  background-color: var(--color-ironlore-slate-elevated);
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--color-border);
+  background-color: var(--il-slate-elev);
+  box-shadow: var(--il-shadow-sm);
+  border: 1px solid var(--il-border);
 }
 
 /* Raised surface — subtle lift for active states */
 .surface-raised {
-  background-color: var(--color-background-raised);
-  box-shadow: var(--shadow-md);
+  background-color: var(--il-bg-raised);
+  box-shadow: var(--il-shadow-md);
 }
 
 /* Glass effect — for overlays, dialogs, floating menus */
 .surface-glass {
-  background: oklch(from var(--color-ironlore-slate) l c h / 0.85);
+  background: oklch(from var(--il-slate) l c h / 0.85);
   backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  border: 1px solid oklch(from var(--color-border) l c h / 0.6);
-  box-shadow: var(--shadow-lg);
+  border: 1px solid oklch(from var(--il-border) l c h / 0.6);
+  box-shadow: var(--il-shadow-lg);
 }
 
 /* Inset surface — for inputs, wells, embedded content */
 .surface-inset {
-  background-color: var(--color-background);
-  box-shadow: var(--shadow-inner);
-  border: 1px solid var(--color-border);
+  background-color: var(--il-bg);
+  box-shadow: var(--il-shadow-inner);
+  border: 1px solid var(--il-border);
 }
 
 /* Glow focus ring — for primary interactive elements */
 .glow-focus:focus-visible {
-  outline: 2px solid var(--color-ironlore-blue);
+  outline: 2px solid var(--il-blue);
   outline-offset: 2px;
-  box-shadow: var(--shadow-glow-blue);
+  box-shadow: var(--il-shadow-glow-blue);
 }
 
-/* Button depth — elevated button with hover lift */
+/* Button depth — elevated button with hover lift.
+ * Snap-fast feedback: the hover lift is immediate, not a drawn-out
+ * state transition, so both channels share --motion-snap. */
 .btn-depth {
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.15s, transform 0.1s;
+  box-shadow: var(--il-shadow-sm);
+  transition: box-shadow var(--motion-snap), transform var(--motion-snap);
 }
 .btn-depth:hover {
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--il-shadow-md);
   transform: translateY(-0.5px);
 }
 .btn-depth:active {
-  box-shadow: var(--shadow-inner);
+  box-shadow: var(--il-shadow-inner);
   transform: translateY(0.5px);
 }
 
@@ -370,9 +426,9 @@ kbd {
 .border-gradient {
   border-image: linear-gradient(
     to bottom,
-    oklch(from var(--color-border) calc(l + 0.08) c h),
-    var(--color-border),
-    oklch(from var(--color-border) calc(l - 0.04) c h)
+    oklch(from var(--il-border) calc(l + 0.08) c h),
+    var(--il-border),
+    oklch(from var(--il-border) calc(l - 0.04) c h)
   ) 1;
 }
 
@@ -382,7 +438,12 @@ kbd {
 }
 
 /* ─── File type icon colors ─── */
-
+/*
+ * Per-type file-tree glyph colors. Deliberately outside the brand
+ * palette so a PDF icon can't be mistaken for primary UI; values
+ * stay inside the OKLCh safe range (lightness 0.58–0.72, chroma
+ * ≤ 0.18).
+ */
 .icon-markdown { color: oklch(0.72 0.12 258); }
 .icon-pdf { color: oklch(0.62 0.18 25); }
 .icon-csv { color: oklch(0.68 0.16 148); }
@@ -403,10 +464,10 @@ kbd {
 .sidebar-chrome {
   background: linear-gradient(
     180deg,
-    var(--color-ironlore-slate) 0%,
-    oklch(from var(--color-ironlore-slate) calc(l - 0.02) c h) 100%
+    var(--il-slate) 0%,
+    oklch(from var(--il-slate) calc(l - 0.02) c h) 100%
   );
-  box-shadow: inset -1px 0 0 var(--color-border),
+  box-shadow: inset -1px 0 0 var(--il-border),
               2px 0 8px oklch(0 0 0 / 0.15);
 }
 
@@ -414,29 +475,29 @@ kbd {
 .sidebar-item-active {
   background: linear-gradient(
     135deg,
-    oklch(from var(--color-ironlore-blue) l c h / 0.15) 0%,
-    oklch(from var(--color-ironlore-blue) l c h / 0.08) 100%
+    oklch(from var(--il-blue) l c h / 0.15) 0%,
+    oklch(from var(--il-blue) l c h / 0.08) 100%
   );
-  box-shadow: inset 0 0 0 1px oklch(from var(--color-ironlore-blue) l c h / 0.2);
+  box-shadow: inset 0 0 0 1px oklch(from var(--il-blue) l c h / 0.2);
 }
 
 /* ─── Tab depth ─── */
 
 .tab-active {
-  background: var(--color-background-raised);
-  box-shadow: 0 -2px 0 var(--color-ironlore-blue) inset,
-              var(--shadow-sm);
+  background: var(--il-bg-raised);
+  box-shadow: 0 -2px 0 var(--il-blue) inset,
+              var(--il-shadow-sm);
 }
 
 .tab-inactive {
   background: transparent;
   opacity: 0.7;
-  transition: opacity 0.15s;
+  transition: opacity var(--motion-snap);
 }
 
 .tab-inactive:hover {
   opacity: 1;
-  background: oklch(from var(--color-ironlore-slate-hover) l c h / 0.5);
+  background: oklch(from var(--il-slate-hover) l c h / 0.5);
 }
 
 /* ─── Skip navigation (a11y) ─── */
@@ -447,7 +508,7 @@ kbd {
   left: 0;
   z-index: 100;
   padding: 0.5rem 1rem;
-  background: var(--color-ironlore-blue);
+  background: var(--il-blue);
   color: oklch(1 0 0);
 }
 
@@ -458,26 +519,29 @@ kbd {
 /* ─── Focus rings (a11y) ─── */
 
 :is(button, [role="button"], [role="treeitem"], [role="tab"], [role="option"], [role="menuitem"], a, input, select, textarea, summary):focus-visible {
-  outline: 2px solid var(--color-ironlore-blue);
+  outline: 2px solid var(--il-blue);
   outline-offset: 2px;
   border-radius: 3px;
-  box-shadow: var(--shadow-glow-blue);
+  box-shadow: var(--il-shadow-glow-blue);
 }
 
 /* ─── Inputs with depth ─── */
-
+/*
+ * Input focus uses --motion-snap because the box-shadow + border flip
+ * is immediate user feedback, not a sweeping state change.
+ */
 input:not([type="checkbox"]):not([type="radio"]),
 textarea,
 select {
-  box-shadow: var(--shadow-inner);
-  transition: box-shadow 0.15s, border-color 0.15s;
+  box-shadow: var(--il-shadow-inner);
+  transition: box-shadow var(--motion-snap), border-color var(--motion-snap);
 }
 
 input:not([type="checkbox"]):not([type="radio"]):focus,
 textarea:focus,
 select:focus {
-  box-shadow: var(--shadow-inner), var(--shadow-glow-blue);
-  border-color: var(--color-ironlore-blue) !important;
+  box-shadow: var(--il-shadow-inner), var(--il-shadow-glow-blue);
+  border-color: var(--il-blue) !important;
 }
 
 /* ─── Scrollbar styling ─── */
@@ -492,12 +556,12 @@ select:focus {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(from var(--color-secondary) l c h / 0.3);
+  background: oklch(from var(--il-text2) l c h / 0.3);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: oklch(from var(--color-secondary) l c h / 0.5);
+  background: oklch(from var(--il-text2) l c h / 0.5);
 }
 
 /* ─── Reduced motion ─── */
@@ -551,10 +615,10 @@ select:focus {
 /* ─── .docx-body ─── */
 
 .docx-body {
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.6;
-  color: var(--color-primary);
+  color: var(--il-text);
 }
 
 .docx-body h1 { font-size: 22px; font-weight: 600; margin: 1.4em 0 0.6em; }
@@ -565,28 +629,28 @@ select:focus {
 .docx-body li { margin: 0.2em 0; }
 
 .docx-body blockquote {
-  border-left: 3px solid var(--color-border);
+  border-left: 3px solid var(--il-border);
   padding-left: 1em;
-  color: var(--color-secondary);
+  color: var(--il-text2);
   margin: 0.8em 0;
 }
 
 .docx-body code {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
-  background: var(--color-ironlore-slate-hover);
+  background: var(--il-slate-hover);
   padding: 0.1em 0.3em;
   border-radius: 3px;
 }
 
 .docx-body table { border-collapse: collapse; margin: 0.8em 0; }
 .docx-body th, .docx-body td {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--il-border);
   padding: 0.4em 0.7em;
   text-align: left;
 }
 
 .docx-body a {
-  color: var(--color-ironlore-blue);
+  color: var(--il-blue);
   text-decoration: underline;
 }

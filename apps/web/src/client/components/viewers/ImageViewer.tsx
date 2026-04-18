@@ -103,7 +103,7 @@ export function ImageViewer({ path }: ImageViewerProps) {
             // readers announce a slash-delimited string that's noisy and
             // doesn't help users place the image in their workspace.
             alt={fileName}
-            className="transition-transform duration-150"
+            className="transition-transform duration-(--motion-transit)"
             style={{ transform: `scale(${scale}) rotate(${rotation}deg)` }}
             draggable={false}
             onError={() => setFailed(true)}

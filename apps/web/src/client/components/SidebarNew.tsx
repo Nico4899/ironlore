@@ -369,7 +369,7 @@ export function SidebarNew() {
       <div className="relative flex items-center gap-2 border-b border-border px-3 py-2.5">
         {/* Logo — visible when NOT hovered (or when expanded) */}
         <div
-          className={`flex h-6 w-6 shrink-0 items-center justify-center transition-opacity duration-150 ${
+          className={`flex h-6 w-6 shrink-0 items-center justify-center transition-opacity duration-(--motion-snap) ${
             collapsed && hovered ? "opacity-0" : "opacity-100"
           }`}
         >
@@ -383,7 +383,7 @@ export function SidebarNew() {
         <button
           type="button"
           onClick={() => useAppStore.getState().toggleSidebar()}
-          className={`absolute left-3 flex h-6 w-6 items-center justify-center rounded text-secondary transition-opacity duration-150 hover:bg-ironlore-slate-hover hover:text-primary ${
+          className={`absolute left-3 flex h-6 w-6 items-center justify-center rounded text-secondary transition-opacity duration-(--motion-snap) hover:bg-ironlore-slate-hover hover:text-primary ${
             collapsed ? (hovered ? "opacity-100" : "opacity-0") : "opacity-0 hover:opacity-100"
           }`}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -486,7 +486,7 @@ export function SidebarNew() {
       {!collapsed && sidebarTab === "home" && (
         // biome-ignore lint/a11y/noStaticElementInteractions: context menu on container
         <div
-          className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-150 ${
+          className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ${
             slideDir === "left"
               ? "-translate-x-full opacity-0"
               : slideDir === "right"
@@ -508,7 +508,7 @@ export function SidebarNew() {
               // biome-ignore lint/a11y/useSemanticElements: complex interactive row with context menu
               <div
                 key={item.path}
-                className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-100 ${
+                className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-(--motion-snap) ${
                   isActive
                     ? "sidebar-item-active text-primary"
                     : isDropTarget

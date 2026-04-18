@@ -35,7 +35,7 @@ export function DisplayNum({
     <span
       className={className}
       style={{
-        fontFamily: serif ? "var(--font-serif)" : "var(--font-sans)",
+        fontFamily: serif ? "var(--font-display)" : "var(--font-sans)",
         fontWeight: serif ? 400 : 600,
         fontStyle: serif && italic ? "italic" : "normal",
         fontSize: size,

@@ -157,7 +157,7 @@ function ProvenanceContent({ content, blockId }: { content: string; blockId: str
   // a simple string replacement on the unsanitized content.
   const markedHtml = html.replace(
     new RegExp(`(${blockId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "g"),
-    `<span id="provenance-${blockId}" class="transition-colors duration-1000"></span>$1`,
+    `<span id="provenance-${blockId}" class="transition-colors duration-(--motion-flash)"></span>$1`,
   );
 
   return (
