@@ -1,11 +1,12 @@
 import { Upload } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoSave } from "../hooks/useAutoSave.js";
 import type { ConflictResponse } from "../lib/api.js";
 import { fetchPage, fetchRaw, submitOnboarding, uploadFile } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
+import { Meta, Reuleaux, StatusPip } from "./primitives/index.js";
 import { AgentDetailPage } from "./AgentDetailPage.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
 import { HighlightToolbar } from "./editor/HighlightToolbar.js";
@@ -429,6 +430,58 @@ interface MarkdownContentProps {
   onSelectionChange: (selection: { from: number; to: number } | null) => void;
 }
 
+/**
+ * Count block IDs in the raw markdown (which still carries the
+ * `<!-- #blk_ULID -->` comments — ProseMirror strips them for render
+ * but the editor store holds the un-stripped text).
+ */
+const BLOCK_ID_RE = /<!-- #blk_[A-Z0-9]{26} -->/g;
+
+function countBlocks(markdown: string): number {
+  return markdown.match(BLOCK_ID_RE)?.length ?? 0;
+}
+
+/** Short relative-time label for the page metadata strip. */
+function formatRelative(ms: number, now: number): string {
+  const sec = Math.max(0, Math.floor((now - ms) / 1000));
+  if (sec < 5) return "just now";
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
+}
+
+/**
+ * Squeeze a full 16-char ETag into `<first-4>·<last-3>` — the canvas
+ * grammar from docs/09-ui-and-brand.md §Editor toolbar. Keeps the
+ * chip uniform width without leaking commit-hash-like meaning.
+ */
+function shortEtag(etag: string | null): string {
+  if (!etag) return "—";
+  const clean = etag.replace(/^W\//, "").replace(/^"|"$/g, "");
+  if (clean.length <= 7) return clean;
+  return `${clean.slice(0, 4)}·${clean.slice(-3)}`;
+}
+
+/** Map the editor's four-state save lifecycle to a StatusPip state. */
+function statusToPip(status: MarkdownContentProps["status"]): {
+  state: "healthy" | "warn" | "running" | "error";
+  label: string;
+} {
+  switch (status) {
+    case "clean":
+      return { state: "healthy", label: "clean" };
+    case "dirty":
+      return { state: "warn", label: "unsaved" };
+    case "syncing":
+      return { state: "running", label: "saving" };
+    case "conflict":
+      return { state: "error", label: "conflict" };
+  }
+}
+
 function MarkdownContent({
   markdown,
   mode,
@@ -436,10 +489,64 @@ function MarkdownContent({
   onChange,
   onSelectionChange,
 }: MarkdownContentProps) {
+  const filePath = useEditorStore((s) => s.filePath);
+  const etag = useEditorStore((s) => s.etag);
+  const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
+
+  // Tick once a minute so the "saved Xm ago" label stays approximately
+  //  fresh. Finer granularity is noise; coarser drops "just now" off
+  //  the clock.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  const blockCount = useMemo(() => countBlocks(markdown), [markdown]);
+  const savedLabel = lastSavedAt != null ? `saved ${formatRelative(lastSavedAt, now)}` : null;
+  const pip = statusToPip(status);
+
   return (
     <>
-      {/* Toolbar: mode toggle */}
-      <div className="flex items-center gap-2 border-b border-border px-4 py-1.5">
+      {/*
+       * Page metadata strip — canvas-grammar overline above the
+       * editor content per docs/09-ui-and-brand.md §Editor. Only
+       * renders for markdown pages (the other viewers have their
+       * own headers). Author attribution is omitted until per-file
+       * provenance lands in the backend.
+       */}
+      {filePath && (
+        <div
+          className="flex items-center gap-2 border-b border-border px-6 py-2 font-mono uppercase"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.06em",
+            color: "var(--il-text3)",
+          }}
+        >
+          <Reuleaux size={8} color="var(--il-blue)" aria-label="Page metadata" />
+          <span>page</span>
+          <span style={{ color: "var(--il-text4)" }}>/</span>
+          <span style={{ color: "var(--il-text2)" }}>
+            {blockCount} {blockCount === 1 ? "block" : "blocks"}
+          </span>
+          {savedLabel && (
+            <>
+              <span style={{ color: "var(--il-text4)" }}>/</span>
+              <span style={{ color: "var(--il-text2)" }}>{savedLabel}</span>
+            </>
+          )}
+        </div>
+      )}
+
+      {/*
+       * Toolbar — mode toggle on the left; Meta(etag) + StatusPip
+       * on the right. Replaces the previous bare "Unsaved | Saving…
+       * | Conflict" string with the canvas's mono-metadata + pip
+       * grammar so save state reads the same language as every
+       * other live surface in the product.
+       */}
+      <div className="flex items-center gap-3 border-b border-border px-4 py-1.5">
         <div className="flex rounded border border-border text-xs">
           <button
             type="button"
@@ -459,14 +566,13 @@ function MarkdownContent({
           </button>
         </div>
         <div className="flex-1" />
-        <span className="text-xs text-secondary" role="status" aria-live="polite">
-          {status === "dirty"
-            ? "Unsaved"
-            : status === "syncing"
-              ? "Saving..."
-              : status === "conflict"
-                ? "Conflict"
-                : ""}
+        <Meta k="etag" v={shortEtag(etag)} />
+        <span
+          aria-hidden="true"
+          style={{ width: 1, height: 14, background: "var(--il-border)" }}
+        />
+        <span role="status" aria-live="polite">
+          <StatusPip state={pip.state} label={pip.label} size={8} />
         </span>
       </div>
 
