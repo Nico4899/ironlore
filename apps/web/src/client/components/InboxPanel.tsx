@@ -1,5 +1,5 @@
 import { Check, GitBranch, Inbox, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { approveInboxEntry, fetchInbox, rejectInboxEntry } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { Reuleaux, SectionLabel } from "./primitives/index.js";
@@ -26,7 +26,6 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
   const [entries, setEntries] = useState<InboxEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusIdx, setFocusIdx] = useState(0);
-  const listRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,8 +66,17 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+  // Panel-scoped keyboard shortcuts. Mounting the listener at the
+  // window lets keystrokes fire without the user first focusing a
+  // non-interactive region (which Biome a11y lint correctly rejects).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Skip when the user is typing into any input/textarea/contenteditable.
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
+      }
       if (entries.length === 0) return;
       const entry = entries[focusIdx];
       switch (e.key) {
@@ -105,17 +113,10 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           break;
         }
       }
-    },
-    [entries, focusIdx, handleApprove, handleReject],
-  );
-
-  // Auto-focus the list when entries land so keyboard shortcuts work
-  // without a prior mouse click.
-  useEffect(() => {
-    if (!loading && entries.length > 0) {
-      listRef.current?.focus();
-    }
-  }, [loading, entries.length]);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [entries, focusIdx, handleApprove, handleReject]);
 
   return (
     <div className="flex h-full w-80 flex-col border-l border-border bg-ironlore-slate">
@@ -134,15 +135,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      <div
-        ref={listRef}
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-        className="flex-1 overflow-y-auto p-3 outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/40"
-        role="listbox"
-        aria-label="Pending inbox entries"
-        aria-activedescendant={entries[focusIdx] ? `inbox-entry-${entries[focusIdx].id}` : undefined}
-      >
+      <section className="flex-1 overflow-y-auto p-3" aria-label="Pending inbox entries">
         {!loading && (
           <SectionLabel
             index={1}
@@ -167,13 +160,8 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
             <div
               key={entry.id}
               id={`inbox-entry-${entry.id}`}
-              role="option"
-              aria-selected={focused}
-              onClick={() => setFocusIdx(idx)}
-              onKeyDown={() => {
-                /* outer listbox owns keys */
-              }}
-              className={`mb-2 cursor-pointer rounded-lg border p-3 text-xs transition-colors ${
+              aria-current={focused ? "true" : undefined}
+              className={`mb-2 rounded-lg border p-3 text-xs transition-colors ${
                 focused
                   ? "border-ironlore-blue/60 bg-ironlore-blue/10"
                   : "border-border bg-ironlore-slate-hover/50"
@@ -238,7 +226,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
             <kbd className="bg-ironlore-slate-hover px-1">↵</kbd> open
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

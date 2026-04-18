@@ -199,9 +199,7 @@ function AppearanceTab() {
             { value: "compact", label: "Compact" },
           ]}
           active={density}
-          onChange={(v) =>
-            useAppStore.getState().setDensity(v as "comfortable" | "compact")
-          }
+          onChange={(v) => useAppStore.getState().setDensity(v as "comfortable" | "compact")}
         />
       </SettingRow>
 
@@ -294,7 +292,6 @@ interface SegChoiceProps<V extends string> {
 function SegChoice<V extends string>({ options, active, onChange }: SegChoiceProps<V>) {
   return (
     <div
-      role="radiogroup"
       style={{
         display: "inline-flex",
         padding: 2,
@@ -309,8 +306,7 @@ function SegChoice<V extends string>({ options, active, onChange }: SegChoicePro
           <button
             key={o.value}
             type="button"
-            role="radio"
-            aria-checked={selected}
+            aria-pressed={selected}
             onClick={() => onChange(o.value)}
             style={{
               padding: "5px 12px",
@@ -351,9 +347,7 @@ function AccentHueControl({ hue }: { hue: number }) {
                 height: 22,
                 borderRadius: 4,
                 background: `oklch(0.68 0.17 ${h})`,
-                border: selected
-                  ? "2px solid var(--il-text)"
-                  : "1px solid var(--il-border)",
+                border: selected ? "2px solid var(--il-text)" : "1px solid var(--il-border)",
                 padding: 0,
                 cursor: "pointer",
               }}
