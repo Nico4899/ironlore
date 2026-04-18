@@ -656,10 +656,7 @@ function formatBudget(
  * follow in parens when present.
  */
 function formatScope(
-  scope:
-    | { pages: string[] | null; writableKinds: string[] | null }
-    | null
-    | undefined,
+  scope: { pages: string[] | null; writableKinds: string[] | null } | null | undefined,
 ): string {
   if (!scope) return "—";
   const pageParts: string[] = [];

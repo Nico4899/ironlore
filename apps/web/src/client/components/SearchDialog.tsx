@@ -3,13 +3,37 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
 import { fetchRecentEdits, type RecentEdit, type SearchResult, searchPages } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
-import { Key, Reuleaux } from "./primitives/index.js";
+import { Key, Meta, Reuleaux } from "./primitives/index.js";
 
 type Tab = "ALL" | "PAGES" | "BLOCKS" | "AGENTS";
 
 /** Auto-focus an input element via ref callback. */
 function focusRef(el: HTMLInputElement | null) {
   el?.focus();
+}
+
+/**
+ * 1px Ironlore-Blue vertical bar that blinks once per second. Purely
+ * decorative — sits next to the native <input> caret and gives the
+ * ⌘K dialog the canvas's "active query" feel. Lives outside the
+ * input because positioning a blinking element *after the typed text*
+ * inside a native <input> isn't possible without re-implementing the
+ * input itself.
+ */
+function SearchCaret() {
+  return (
+    <span
+      aria-hidden="true"
+      className="il-search-caret"
+      style={{
+        display: "inline-block",
+        width: 1.5,
+        height: 16,
+        background: "var(--il-blue)",
+        marginLeft: 2,
+      }}
+    />
+  );
 }
 
 /**
@@ -244,30 +268,34 @@ export function SearchDialog() {
           style={{ borderBottom: "1px solid var(--il-border-soft)" }}
         >
           <Reuleaux size={10} color="var(--il-blue)" aria-label="Search" />
-          <input
-            ref={focusRef}
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={messages.sidebarSearchPlaceholder}
-            className="flex-1 bg-transparent text-base text-primary outline-none placeholder:text-tertiary"
-            style={{
-              fontFamily: "var(--font-sans)",
-              letterSpacing: "-0.01em",
-            }}
-          />
-          {loading && (
-            <span
-              className="font-mono uppercase tracking-wider"
+          <div className="relative flex flex-1 items-center">
+            <input
+              ref={focusRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={messages.sidebarSearchPlaceholder}
+              className="w-full bg-transparent text-base text-primary outline-none placeholder:text-tertiary"
               style={{
-                fontSize: 10.5,
-                color: "var(--il-text3)",
-                letterSpacing: "0.04em",
+                fontFamily: "var(--font-sans)",
+                letterSpacing: "-0.01em",
               }}
-            >
-              fts5 · …
-            </span>
-          )}
+            />
+            {/*
+             * Blinking cursor per canvas — an Ironlore-Blue vertical
+             * bar trailing the query text. Only appears while the
+             * query is non-empty so the placeholder row stays clean.
+             * The <input> itself still shows a native caret; this
+             * decorative bar is the visual anchor the canvas uses.
+             */}
+            {query.length > 0 && <SearchCaret />}
+          </div>
+          {/*
+           * Timing chip — `fts5 · <state>`. `…` while in flight,
+           * `<N>ms` once the round trip completes, hidden when the
+           * query is empty.
+           */}
+          {query.length > 0 && <Meta k="fts5" v={loading || ftsMs === null ? "…" : `${ftsMs}ms`} />}
         </div>
 
         {/* Tab row */}

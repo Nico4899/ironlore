@@ -242,6 +242,19 @@ html.light {
   100% { background-color: transparent; }
 }
 
+/* Search-dialog caret — 2-step blink at 1s per cycle. Decorative
+ *  companion to the native <input> caret in the ⌘K dialog. */
+@keyframes ilBlink {
+  0%, 49%  { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.il-search-caret {
+  animation: ilBlink 1s steps(2) infinite;
+}
+html[data-motion="none"] .il-search-caret {
+  animation: none;
+}
+
 /*
  * The agent pulse is applied to a wrapping surface (usually the AI
  * panel composer or a live agent card). The surface must be
