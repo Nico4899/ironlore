@@ -70,6 +70,7 @@ interface AppStore {
   sidebarOpen: boolean;
   aiPanelOpen: boolean;
   searchDialogOpen: boolean;
+  settingsOpen: boolean;
   terminalOpen: boolean;
   activePath: string | null;
   /** Paths of files currently open as tabs, in tab order. */
@@ -95,6 +96,7 @@ interface AppStore {
   toggleSidebar: () => void;
   toggleAIPanel: () => void;
   toggleSearchDialog: () => void;
+  toggleSettings: () => void;
   toggleTerminal: () => void;
   setActivePath: (path: string | null) => void;
   closeTab: (path: string) => void;
@@ -153,6 +155,7 @@ export const useAppStore = create<AppStore>((set) => ({
   sidebarOpen: true,
   aiPanelOpen: false,
   searchDialogOpen: false,
+  settingsOpen: false,
   terminalOpen: false,
   activePath: null,
   openPaths: [],
@@ -169,6 +172,7 @@ export const useAppStore = create<AppStore>((set) => ({
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleAIPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
   toggleSearchDialog: () => set((s) => ({ searchDialogOpen: !s.searchDialogOpen })),
+  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
   toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
   setActivePath: (path) =>
     set((s) => {

@@ -240,6 +240,46 @@ html[data-density="compact"] {
   --il-row-pad: 6px;
 }
 
+/* ─── Accent hue slider ─── */
+/*
+ * Shared styling for the Settings → Appearance hue slider. The gradient
+ * track paints every hue at the seed lightness (0.68) + chroma (0.17),
+ * so the swatch lines up with the OKLCh value the store actually sets.
+ */
+.il-hue-slider {
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    oklch(0.68 0.17 0),
+    oklch(0.68 0.17 60),
+    oklch(0.68 0.17 120),
+    oklch(0.68 0.17 180),
+    oklch(0.68 0.17 240),
+    oklch(0.68 0.17 300),
+    oklch(0.68 0.17 360)
+  );
+  outline: none;
+}
+.il-hue-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 2px;
+  height: 14px;
+  background: var(--il-text);
+  border-radius: 1px;
+  border: none;
+  cursor: pointer;
+}
+.il-hue-slider::-moz-range-thumb {
+  width: 2px;
+  height: 14px;
+  background: var(--il-text);
+  border-radius: 1px;
+  border: none;
+  cursor: pointer;
+}
+
 /* ─── Base ─── */
 
 html {

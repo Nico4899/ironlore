@@ -10,6 +10,7 @@ import { OfflineBanner } from "./components/OfflineBanner.js";
 import { ProvenancePane } from "./components/ProvenancePane.js";
 import { RecoveryBanner } from "./components/RecoveryBanner.js";
 import { SearchDialog } from "./components/SearchDialog.js";
+import { SettingsDialog } from "./components/SettingsDialog.js";
 import { SidebarNew } from "./components/SidebarNew.js";
 import { useResponsiveLayout } from "./hooks/useResponsiveLayout.js";
 import { useThemeClass } from "./hooks/useThemeClass.js";
@@ -54,6 +55,7 @@ function AppShell() {
   const provenance = useAppStore((s) => s.provenance);
   const inboxOpen = useAppStore((s) => s.inboxOpen);
   const searchDialogOpen = useAppStore((s) => s.searchDialogOpen);
+  const settingsOpen = useAppStore((s) => s.settingsOpen);
   const terminalOpen = useAppStore((s) => s.terminalOpen);
 
   // Global keyboard shortcuts
@@ -124,6 +126,9 @@ function AppShell() {
 
       {/* Search dialog (Cmd+K) */}
       {searchDialogOpen && <SearchDialog />}
+
+      {/* Settings dialog */}
+      {settingsOpen && <SettingsDialog />}
 
       {/* Agent completion/failure toasts */}
       <AgentToastContainer />

@@ -6,6 +6,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  Settings as SettingsIcon,
   Sparkles,
   Sun,
   TerminalSquare,
@@ -124,6 +125,15 @@ export function Header() {
           title={aiPanelOpen ? "Hide AI panel (⌘⇧A)" : "Show AI panel (⌘⇧A)"}
         >
           <Sparkles className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          className={iconBtn}
+          onClick={() => useAppStore.getState().toggleSettings()}
+          aria-label="Settings"
+          title="Settings"
+        >
+          <SettingsIcon className="h-4 w-4" />
         </button>
         <div className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
         <button

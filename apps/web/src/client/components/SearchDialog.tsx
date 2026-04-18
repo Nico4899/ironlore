@@ -384,7 +384,7 @@ export function SearchDialog() {
                   cursor: "pointer",
                 }}
               >
-                <Reuleaux size={7} color="var(--il-text3)" aria-label="" />
+                <Reuleaux size={7} color="var(--il-text3)" />
                 <div style={{ minWidth: 0 }}>
                   <div className="flex items-baseline gap-2">
                     <span
