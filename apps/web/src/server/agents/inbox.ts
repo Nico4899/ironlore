@@ -30,6 +30,11 @@ export interface InboxEntry {
   status: "pending" | "approved" | "rejected" | "partial";
 }
 
+/** Per-file user decision captured during inbox review. */
+export type InboxFileDecision = "approved" | "rejected";
+/** Map of path → decision. Paths without an entry are undecided. */
+export type InboxFileDecisions = Record<string, InboxFileDecision>;
+
 export class AgentInbox {
   private db: Database.Database;
 

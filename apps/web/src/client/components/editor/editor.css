@@ -289,3 +289,55 @@
 .ProseMirror .il-blockref {
   user-select: all;
 }
+
+/* ─── Block drag handles ─── */
+/*
+ * Six-dot drag grip that appears on hover to the left of every
+ * block-level element, matching the canvas (screen-editor.jsx
+ * EditorBlock).
+ *
+ * This iteration is visual-only — the handle doesn't yet drag
+ * blocks. Implementing drag-to-reorder requires a ProseMirror
+ * decoration + drag-source plumbing that is its own change. Landing
+ * the canvas hover affordance first so the editor reads right in the
+ * design review pass; the drag wire-up follows.
+ *
+ * Gated by the `block-handles-*` data attribute so the ruleset stays
+ * easy to disable if it ever trips over a nested plugin view.
+ */
+.ProseMirror > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table) {
+  position: relative;
+}
+
+.ProseMirror > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table):hover::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 8px;
+  width: 14px;
+  height: 14px;
+  opacity: 0.35;
+  pointer-events: none;
+  /*
+   * Six dots rendered as a single background-image stack — layered
+   * radial gradients avoid needing a real <span> per dot or an SVG
+   * data URL. Each gradient paints one 2px dot at its background-
+   * position offset. Grid is 2 cols × 3 rows on a 14px square.
+   */
+  background-image: radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px);
+  background-position: 1px 1px, 7px 1px, 1px 7px, 7px 7px, 1px 13px, 7px 13px;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+  transition: opacity var(--motion-snap) ease-out;
+}
+
+/* Fade handles out on motion="none" — a blinking edge near the
+ *  selection is jarring for users who opted out of motion. */
+html[data-motion="none"] .ProseMirror > *:hover::before {
+  display: none;
+}
