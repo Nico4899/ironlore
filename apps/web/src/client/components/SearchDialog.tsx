@@ -64,6 +64,14 @@ export function SearchDialog() {
   const [recentEdits, setRecentEdits] = useState<RecentEdit[]>([]);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [loading, setLoading] = useState(false);
+  /**
+   * Round-trip latency of the most recent FTS5 query, in whole ms.
+   * Measured client-side (performance.now() delta around the fetch)
+   * so the "fts5 · Nms" chip reflects the user's observed latency —
+   * not a server-reported number that could diverge from reality.
+   * `null` until the first query lands; cleared when the query resets.
+   */
+  const [ftsMs, setFtsMs] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("ALL");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -84,17 +92,23 @@ export function SearchDialog() {
     if (!query.trim()) {
       setResults([]);
       setSelectedIdx(0);
+      setFtsMs(null);
       return;
     }
 
     setLoading(true);
     debounceRef.current = setTimeout(() => {
+      const t0 = performance.now();
       searchPages(query)
         .then((r) => {
           setResults(r);
           setSelectedIdx(0);
+          setFtsMs(Math.round(performance.now() - t0));
         })
-        .catch(() => setResults([]))
+        .catch(() => {
+          setResults([]);
+          setFtsMs(null);
+        })
         .finally(() => setLoading(false));
     }, 150);
 
@@ -108,6 +122,7 @@ export function SearchDialog() {
     setQuery("");
     setResults([]);
     setSelectedIdx(0);
+    setFtsMs(null);
     setTab("ALL");
   }, []);
 
