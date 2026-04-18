@@ -263,7 +263,6 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
           <SectionLabel index={3} title="Config" meta="" />
           <div className="mt-3 grid gap-3 text-xs">
             <ConfigRow k="slug" v={slug} />
-            <ConfigRow k="persona" v={`${AGENTS_DIR}/${slug}/persona.md`} mono />
             <ConfigRow
               k="state"
               v={
@@ -276,12 +275,18 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
                       : (state?.reason ?? "checking")
               }
             />
+            <ConfigRow k="schedule" v={formatHeartbeat(config?.persona?.heartbeat)} mono />
+            <ConfigRow k="review mode" v={config?.persona?.reviewMode ?? "—"} mono />
+            <ConfigRow k="tools" v={formatTools(config?.persona?.tools)} mono />
+            <ConfigRow k="budget" v={formatBudget(config?.persona?.budget)} mono />
+            <ConfigRow k="scope" v={formatScope(config?.persona?.scope)} mono />
             <ConfigRow
               k="rate caps"
               v={config ? `${config.maxRunsPerHour}/hour · ${config.maxRunsPerDay}/day` : "—"}
               mono
             />
             <ConfigRow k="failure streak" v={config ? `${config.failureStreak} / 3` : "—"} mono />
+            <ConfigRow k="persona" v={`${AGENTS_DIR}/${slug}/persona.md`} mono />
           </div>
 
           <div className="mt-6">
@@ -589,4 +594,82 @@ function formatDrift(seconds: number): string {
   if (seconds < 3_600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86_400) return `${Math.floor(seconds / 3_600)}h`;
   return `${Math.floor(seconds / 86_400)}d`;
+}
+
+/**
+ * Translate a small set of common cron patterns into prose the
+ * config rail can show alongside raw schedules that don't match.
+ * Falls back to the literal cron string so anything unrecognized
+ * still reads as "what persona.md says" rather than "—".
+ */
+function formatHeartbeat(cron: string | null | undefined): string {
+  if (!cron) return "—";
+  const trimmed = cron.trim();
+
+  // */N * * * *  →  every N minutes
+  const everyNMin = /^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/.exec(trimmed);
+  if (everyNMin?.[1]) return `every ${everyNMin[1]}m`;
+
+  // 0 */N * * *  →  every N hours
+  const everyNHr = /^0\s+\*\/(\d+)\s+\*\s+\*\s+\*$/.exec(trimmed);
+  if (everyNHr?.[1]) return `every ${everyNHr[1]}h`;
+
+  // 0 H * * 1-5 / M H * * 1-5  →  weekdays H:MM
+  const weekdays = /^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+1-5$/.exec(trimmed);
+  if (weekdays?.[1] && weekdays[2])
+    return `weekdays ${weekdays[2].padStart(2, "0")}:${weekdays[1].padStart(2, "0")}`;
+
+  return trimmed;
+}
+
+/**
+ * Tools joined as `a · b · c` with a "+N" tail once the list outgrows
+ * the rail. The rail is 320px — showing more than four tool names
+ * wraps awkwardly.
+ */
+function formatTools(tools: string[] | null | undefined): string {
+  if (!tools || tools.length === 0) return "—";
+  const shown = tools.slice(0, 4).join(" · ");
+  const extra = tools.length - 4;
+  return extra > 0 ? `${shown} · +${extra}` : shown;
+}
+
+/**
+ * Budget line — only shows the fields persona.md actually defines.
+ * Prefers `fsync_ms` when present because that's the canvas's
+ * canonical budget tagline ("4ms fsync").
+ */
+function formatBudget(
+  b: { tokens: number | null; toolCalls: number | null; fsyncMs: number | null } | null | undefined,
+): string {
+  if (!b) return "—";
+  const parts: string[] = [];
+  if (b.fsyncMs !== null) parts.push(`${b.fsyncMs}ms fsync`);
+  if (b.tokens !== null) parts.push(`${Math.round(b.tokens / 1000)}k tokens`);
+  if (b.toolCalls !== null) parts.push(`${b.toolCalls} calls`);
+  return parts.length > 0 ? parts.join(" · ") : "—";
+}
+
+/**
+ * Scope line — page globs + writable kinds. Show the first page
+ * glob prose-style; counts the rest ("+N more"). Writable kinds
+ * follow in parens when present.
+ */
+function formatScope(
+  scope:
+    | { pages: string[] | null; writableKinds: string[] | null }
+    | null
+    | undefined,
+): string {
+  if (!scope) return "—";
+  const pageParts: string[] = [];
+  if (scope.pages && scope.pages.length > 0) {
+    const first = scope.pages[0];
+    if (first) pageParts.push(first);
+    if (scope.pages.length > 1) pageParts.push(`+${scope.pages.length - 1} more`);
+  }
+  if (scope.writableKinds && scope.writableKinds.length > 0) {
+    pageParts.push(`writable: ${scope.writableKinds.join(", ")}`);
+  }
+  return pageParts.length > 0 ? pageParts.join(" · ") : "—";
 }

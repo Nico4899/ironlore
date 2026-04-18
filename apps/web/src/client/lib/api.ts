@@ -356,6 +356,14 @@ export interface AgentConfigResponse {
   failureStreak: number;
   personaPath: string | null;
   personaMtimeDriftSeconds: number | null;
+  /** Persona-frontmatter projection — null when file missing / malformed. */
+  persona: {
+    heartbeat: string | null;
+    reviewMode: "auto-commit" | "inbox" | null;
+    tools: string[] | null;
+    budget: { tokens: number | null; toolCalls: number | null; fsyncMs: number | null } | null;
+    scope: { pages: string[] | null; writableKinds: string[] | null } | null;
+  } | null;
 }
 
 /** Fetch the last N runs for an agent — newest first. */
