@@ -334,6 +334,13 @@ export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir:
     return c.json({ entries });
   });
 
+  api.get("/:entryId/files", (c) => {
+    const entryId = c.req.param("entryId") ?? "";
+    if (!entryId) return c.json({ error: "Entry id required" }, 400);
+    const files = inbox.getFileDiffStats(entryId, projectDir);
+    return c.json({ files });
+  });
+
   api.post("/:entryId/approve", (c) => {
     const entryId = c.req.param("entryId") ?? "";
     const result = inbox.approveAll(entryId, projectDir);

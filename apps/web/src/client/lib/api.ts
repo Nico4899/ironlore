@@ -381,6 +381,28 @@ export async function fetchAgentConfig(slug: string): Promise<AgentConfigRespons
   return res.json();
 }
 
+/** Per-file diff row for an inbox entry. */
+export interface InboxFileDiff {
+  path: string;
+  status: "A" | "D" | "M" | "R" | "?";
+  /** null when git reports `-` (binary file). */
+  added: number | null;
+  /** null when git reports `-` (binary file). */
+  removed: number | null;
+}
+
+/**
+ * Compute per-file diff stats for an inbox entry's staging branch
+ * vs. main. Used by the Inbox UI to render the `A/D/M path +N -M` row
+ * grammar per docs/09-ui-and-brand.md §Agent Inbox.
+ */
+export async function fetchInboxFiles(entryId: string): Promise<InboxFileDiff[]> {
+  const res = await apiFetch(`${BASE}/inbox/${entryId}/files`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { files: InboxFileDiff[] };
+  return data.files;
+}
+
 /** Approve an inbox entry (merge staging branch to main). */
 export async function approveInboxEntry(
   entryId: string,
