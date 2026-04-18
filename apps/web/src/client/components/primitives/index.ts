@@ -12,7 +12,15 @@
  * callers.
  */
 
-export { Reuleaux } from "./Reuleaux.js";
+export type { AgentPulseProps } from "./AgentPulse.js";
+export { AgentPulse } from "./AgentPulse.js";
+export type { BlockrefProps } from "./Blockref.js";
+export { Blockref } from "./Blockref.js";
+export type { ProvenanceStripProps, TrustState } from "./ProvenanceStrip.js";
+export { ProvenanceStrip } from "./ProvenanceStrip.js";
 export type { ReuleauxProps } from "./Reuleaux.js";
-export { StatusPip } from "./StatusPip.js";
+export { Reuleaux } from "./Reuleaux.js";
+export type { SectionLabelProps } from "./SectionLabel.js";
+export { SectionLabel } from "./SectionLabel.js";
 export type { PipState, StatusPipProps } from "./StatusPip.js";
+export { StatusPip } from "./StatusPip.js";
