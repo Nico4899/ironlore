@@ -17,7 +17,7 @@ import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
-import { AgentPulse, Blockref, StatusPip } from "./primitives/index.js";
+import { AgentPulse, Blockref, ProvenanceStrip, StatusPip } from "./primitives/index.js";
 
 /**
  * Storage key pattern for cost-estimate acknowledgement per agent slug.
@@ -184,8 +184,16 @@ export function AIPanel() {
         </div>
       )}
 
-      {/* Input */}
-      <div className="border-t border-border p-3">
+      {/*
+       * Composer — wrapped in AgentPulse so the 3.2s sweep runs across
+       * the input box while the agent streams. Per
+       * docs/09-ui-and-brand.md §Signature motifs / Agent pulse, the
+       * composer is the canonical "live surface" during streaming.
+       * `.il-pulse::before` is an absolute overlay so it needs a
+       * position-relative + overflow-hidden host — the pulse wrapper
+       * is that host, the border wrapper sits inside it unchanged.
+       */}
+      <AgentPulse active={isStreaming} className="border-t border-border p-3">
         <div className="relative flex items-end gap-2 rounded-lg border border-border bg-background px-2 py-1.5 focus-within:border-ironlore-blue">
           <button
             type="button"
@@ -223,7 +231,7 @@ export function AIPanel() {
             <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
           </button>
         </div>
-      </div>
+      </AgentPulse>
       {costDialogOpen && (
         <CostEstimateDialog
           agentSlug={activeAgent}
@@ -505,6 +513,13 @@ interface ContextChipProps {
 
 /**
  * Run-finalized card with optional Revert button.
+ *
+ * Renders a ProvenanceStrip above the card body — this is the one
+ * conversation message where we have all four inputs the strip needs:
+ * the agent slug, a landing moment (we treat receipt of the message
+ * as the timestamp), the list of changed files (as sources), and an
+ * implicit trust state (`stale` once reverted, `fresh` otherwise).
+ * Per docs/09-ui-and-brand.md §Signature motifs / Provenance strip.
  */
 function RunFinalizedCard({
   msg,
@@ -540,30 +555,46 @@ function RunFinalizedCard({
     }
   };
 
+  const sourceChips = msg.filesChanged.slice(0, 4).map((f) => {
+    // Show basename only — full paths push the trust badge off the strip.
+    const base = f.split("/").pop() ?? f;
+    return base;
+  });
+  const extraFiles = Math.max(0, msg.filesChanged.length - sourceChips.length);
+  if (extraFiles > 0) sourceChips.push(`+${extraFiles}`);
+
   return (
-    <div className="rounded-lg border border-border bg-ironlore-slate-hover px-3 py-2 text-xs">
-      <div className="flex items-center justify-between">
-        <div className="font-semibold text-primary">Run finalized · {msg.agentSlug}</div>
-        {!reverted && msg.commitShaStart && msg.commitShaEnd && (
-          <button
-            type="button"
-            disabled={reverting}
-            onClick={handleRevert}
-            className="rounded border border-border px-2 py-0.5 text-[10px] text-secondary hover:bg-ironlore-slate hover:text-primary disabled:opacity-50"
-          >
-            {reverting ? "Reverting\u2026" : "Revert this run"}
-          </button>
-        )}
+    <div className="overflow-hidden rounded-lg border border-border bg-ironlore-slate-hover text-xs">
+      <ProvenanceStrip
+        agent={msg.agentSlug}
+        timestamp="just now"
+        sources={sourceChips}
+        trust={reverted ? "stale" : "fresh"}
+      />
+      <div className="px-3 py-2">
+        <div className="flex items-center justify-between">
+          <div className="font-semibold text-primary">Run finalized</div>
+          {!reverted && msg.commitShaStart && msg.commitShaEnd && (
+            <button
+              type="button"
+              disabled={reverting}
+              onClick={handleRevert}
+              className="rounded border border-border px-2 py-0.5 text-[10px] text-secondary hover:bg-ironlore-slate hover:text-primary disabled:opacity-50"
+            >
+              {reverting ? "Reverting\u2026" : "Revert this run"}
+            </button>
+          )}
+        </div>
+        <div className="mt-0.5 text-secondary">
+          {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
+          {" \u00B7 "}
+          <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
+          {"\u2026"}
+          <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
+          {reverted && " \u00B7 reverted"}
+        </div>
+        {revertError && <div className="mt-1 text-signal-red">{revertError}</div>}
       </div>
-      <div className="mt-0.5 text-secondary">
-        {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
-        {" \u00B7 "}
-        <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
-        {"\u2026"}
-        <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
-        {reverted && " \u00B7 reverted"}
-      </div>
-      {revertError && <div className="mt-1 text-signal-red">{revertError}</div>}
     </div>
   );
 }
