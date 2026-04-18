@@ -13,7 +13,14 @@ import { Reuleaux } from "./Reuleaux.js";
  * Per docs/09-ui-and-brand.md §Reuleaux state table.
  */
 
-export type PipState = "idle" | "running" | "healthy" | "warn" | "error" | "paused";
+export type PipState =
+  | "idle"
+  | "running"
+  | "healthy"
+  | "warn"
+  | "error"
+  | "paused"
+  | "rate";
 
 export interface StatusPipProps {
   state?: PipState;
@@ -34,6 +41,7 @@ const STATE_COLOR: Record<PipState, string> = {
   warn: "var(--il-amber)",
   error: "var(--il-red)",
   paused: "var(--il-text3)",
+  rate: "var(--il-amber)",
 };
 
 export function StatusPip({

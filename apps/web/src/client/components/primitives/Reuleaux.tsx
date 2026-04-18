@@ -11,6 +11,7 @@
  */
 
 import type { CSSProperties } from "react";
+import { REULEAUX_PATH } from "./logo-geometry.js";
 
 export interface ReuleauxProps {
   /** Rendered pixel size. Spec recommends 7–10px for status pips. */
@@ -26,22 +27,6 @@ export interface ReuleauxProps {
   className?: string;
   style?: CSSProperties;
 }
-
-// Reuleaux path computed from the logo's canonical geometry so every
-// instance (pip, logo center, favicon) renders the same triangle.
-// Centers sit at cx, cy + off*√3/3 on the bottom, and cx, cy − 2·off/√3
-// on top; the arc curvature traces a constant-width Reuleaux triangle.
-const cx = 16;
-const cy = 16;
-const r = 6;
-const off = 4.2;
-const REULEAUX_D = [
-  `M ${cx},${cy - off / 2}`,
-  `A ${r},${r} 0 0 1 ${cx + off / 2},${cy + off * 0.289}`,
-  `A ${r},${r} 0 0 1 ${cx - off / 2},${cy + off * 0.289}`,
-  `A ${r},${r} 0 0 1 ${cx},${cy - off / 2}`,
-  "Z",
-].join(" ");
 
 export function Reuleaux({
   size = 10,
@@ -69,7 +54,7 @@ export function Reuleaux({
         ...style,
       }}
     >
-      <path d={REULEAUX_D} fill={color} />
+      <path d={REULEAUX_PATH} fill={color} />
     </svg>
   );
 }
