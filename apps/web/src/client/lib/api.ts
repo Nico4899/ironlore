@@ -302,6 +302,29 @@ export async function fetchInbox(): Promise<{
   return res.json();
 }
 
+/** Read an agent's rails state — whether it can enqueue a run + reason. */
+export async function fetchAgentState(
+  slug: string,
+): Promise<{ slug: string; canRun: boolean; reason: string | null }> {
+  const res = await apiFetch(`${BASE}/agents/${slug}/state`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** Pause / resume an agent via the rails state PATCH. */
+export async function setAgentPaused(
+  slug: string,
+  paused: boolean,
+): Promise<{ ok: boolean; paused: boolean }> {
+  const res = await apiFetch(`${BASE}/agents/${slug}/state`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paused }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
 /** Approve an inbox entry (merge staging branch to main). */
 export async function approveInboxEntry(
   entryId: string,

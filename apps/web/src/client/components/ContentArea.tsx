@@ -6,6 +6,7 @@ import { fetchPage, fetchRaw, submitOnboarding, uploadFile } from "../lib/api.js
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
+import { AgentDetailPage } from "./AgentDetailPage.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
 import { HighlightToolbar } from "./editor/HighlightToolbar.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
@@ -68,6 +69,7 @@ const RAW_TEXT_TYPES = new Set(["source-code", "csv", "mermaid", "text", "transc
 
 export function ContentArea() {
   const activePath = useAppStore((s) => s.activePath);
+  const activeAgentSlug = useAppStore((s) => s.activeAgentSlug);
   const filePath = useEditorStore((s) => s.filePath);
   const fileType = useEditorStore((s) => s.fileType);
   const markdown = useEditorStore((s) => s.markdown);
@@ -247,7 +249,10 @@ export function ContentArea() {
 
   const sidebarTab = useAppStore((s) => s.sidebarTab);
 
-  // No active file — show Home/Explore view or welcome screen
+  // No active file — show Home/Explore view or welcome screen. The
+  // agent detail page takes precedence: once a slug is set the editor
+  // stays out of the way so clicking the agent name in the AI panel
+  // reliably lands on its dashboard.
   if (!activePath || !filePath) {
     return (
       <main
@@ -258,7 +263,9 @@ export function ContentArea() {
         {...dropZoneProps}
       >
         <TabBar />
-        {!onboarded ? (
+        {activeAgentSlug ? (
+          <AgentDetailPage slug={activeAgentSlug} />
+        ) : !onboarded ? (
           <OnboardingWizard onComplete={handleOnboardingComplete} onSkip={handleOnboardingSkip} />
         ) : sidebarTab === "explore" ? (
           <div className="flex flex-1 items-center justify-center px-8">

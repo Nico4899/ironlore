@@ -162,7 +162,14 @@ export function AIPanel() {
               </span>
             )}
           </div>
-          <span className="text-xs font-medium text-secondary">{activeAgent}</span>
+          <button
+            type="button"
+            onClick={() => useAppStore.getState().setActiveAgentSlug(activeAgent)}
+            className="rounded border border-transparent px-1.5 py-0.5 text-xs font-medium text-secondary outline-none transition-colors hover:border-border hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            title={`Open ${activeAgent} detail page`}
+          >
+            {activeAgent}
+          </button>
         </div>
       </AgentPulse>
 

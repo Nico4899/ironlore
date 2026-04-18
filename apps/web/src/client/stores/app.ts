@@ -73,6 +73,13 @@ interface AppStore {
   settingsOpen: boolean;
   terminalOpen: boolean;
   activePath: string | null;
+  /**
+   * Slug of the agent whose detail page is currently open, or null.
+   * When non-null, the content area renders <AgentDetailPage /> instead
+   * of the editor. Set via the activeAgent chip in the AI panel header
+   * and cleared when the user selects any file path.
+   */
+  activeAgentSlug: string | null;
   /** Paths of files currently open as tabs, in tab order. */
   openPaths: string[];
   theme: "dark" | "light";
@@ -99,6 +106,8 @@ interface AppStore {
   toggleSettings: () => void;
   toggleTerminal: () => void;
   setActivePath: (path: string | null) => void;
+  /** Open an agent's detail page. Passing null clears it. */
+  setActiveAgentSlug: (slug: string | null) => void;
   closeTab: (path: string) => void;
   closeOtherTabs: (path: string) => void;
   closeAllTabs: () => void;
@@ -158,6 +167,7 @@ export const useAppStore = create<AppStore>((set) => ({
   settingsOpen: false,
   terminalOpen: false,
   activePath: null,
+  activeAgentSlug: null,
   openPaths: [],
   theme: loadTheme(),
   density: loadDensity(),
@@ -174,6 +184,11 @@ export const useAppStore = create<AppStore>((set) => ({
   toggleSearchDialog: () => set((s) => ({ searchDialogOpen: !s.searchDialogOpen })),
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
   toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
+  // Opening an agent detail page and opening a file are mutually
+  // exclusive surfaces in the content area — toggling one clears the
+  // other so the user never sees a half-rendered mash-up.
+  setActiveAgentSlug: (slug) =>
+    set((s) => ({ activeAgentSlug: slug, activePath: slug ? null : s.activePath })),
   setActivePath: (path) =>
     set((s) => {
       let openPaths = s.openPaths;
@@ -184,7 +199,7 @@ export const useAppStore = create<AppStore>((set) => ({
           openPaths = openPaths.slice(openPaths.length - 10);
         }
       }
-      return { activePath: path, openPaths };
+      return { activePath: path, openPaths, activeAgentSlug: path ? null : s.activeAgentSlug };
     }),
   closeTab: (path) =>
     set((s) => {
