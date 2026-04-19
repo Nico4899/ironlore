@@ -126,7 +126,12 @@ async function start() {
     api: authApi,
     middleware: authMiddleware,
     validateCookie,
-  } = createAuthApi(installRoot, sessionStore);
+  } = createAuthApi(installRoot, sessionStore, {
+    // Until Phase 5 multi-project lands there's exactly one project
+    //  dir — derive it here so the vault re-encryption in the
+    //  change-password handler picks it up.
+    getProjectDirs: () => [`${installRoot}/projects/${DEFAULT_PROJECT_ID}`],
+  });
   app.use("/api/auth/*", authRateLimiter());
   app.route("/api/auth", authApi);
 

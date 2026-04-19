@@ -266,9 +266,21 @@ function isRateLimited(key: string): boolean {
 // Auth API factory
 // ---------------------------------------------------------------------------
 
+export interface CreateAuthApiOptions {
+  /**
+   * Returns the list of project directories whose vaults should be
+   * re-encrypted when the admin password changes. The caller owns the
+   * multi-project discovery policy (today: just DEFAULT_PROJECT_ID,
+   * post-Phase-5: scan the projects/ root). Called fresh per password
+   * change so new projects are picked up without a server restart.
+   */
+  getProjectDirs?: () => string[];
+}
+
 export function createAuthApi(
   installRoot: string,
   store: SessionStore,
+  options: CreateAuthApiOptions = {},
 ): {
   api: Hono;
   middleware: (c: Context, next: Next) => Promise<Response | undefined>;
@@ -412,6 +424,43 @@ export function createAuthApi(
       return c.json({ error: "Current password is incorrect" }, 401);
     }
 
+    // Re-encrypt every project's API-key vault under the new password
+    //  BEFORE we flip the stored hash. If this step fails we want the
+    //  admin's current password to still work — so they can retry or
+    //  restart and boot against the `.enc.bak` rollback files that
+    //  writeVault retained.
+    //
+    //  Spec: docs/05-jobs-and-security.md §Vault re-encryption.
+    const projectDirs = options.getProjectDirs?.() ?? [];
+    let vaultSummary: Awaited<ReturnType<typeof reencryptVaults>> | undefined;
+    if (projectDirs.length > 0) {
+      try {
+        vaultSummary = await reencryptVaults({
+          projectDirs,
+          oldPassword: body.currentPassword,
+          newPassword: body.newPassword,
+          salt,
+        });
+        if (vaultSummary.failures.length > 0) {
+          return c.json(
+            {
+              error: "Vault re-encryption failed for one or more projects",
+              failures: vaultSummary.failures,
+            },
+            500,
+          );
+        }
+      } catch (err) {
+        return c.json(
+          {
+            error: "Vault re-encryption failed",
+            detail: err instanceof Error ? err.message : String(err),
+          },
+          500,
+        );
+      }
+    }
+
     // Hash and store new password
     const newHash = await hashPassword(body.newPassword, salt);
     store.updatePassword(user.id, newHash);
@@ -429,7 +478,15 @@ export function createAuthApi(
       }
     }
 
-    return c.json({ ok: true });
+    return c.json({
+      ok: true,
+      vault: vaultSummary
+        ? {
+            rewritten: vaultSummary.rewritten.length,
+            skipped: vaultSummary.skipped.length,
+          }
+        : undefined,
+    });
   });
 
   // ----------------------------------------------------------------
