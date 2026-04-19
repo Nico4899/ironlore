@@ -12,6 +12,7 @@ import Database from "better-sqlite3";
 import type { Context, Next } from "hono";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { reencryptVaults } from "./vault.js";
 
 // ---------------------------------------------------------------------------
 // Types
