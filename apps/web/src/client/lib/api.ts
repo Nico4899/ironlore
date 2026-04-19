@@ -553,6 +553,22 @@ export async function fetchMe(): Promise<AuthSession | null> {
   return res.json() as Promise<AuthSession>;
 }
 
+/** A project row as the switcher sees it (no credentials, no internals). */
+export interface ProjectListEntry {
+  id: string;
+  name: string;
+  preset: "main" | "research" | "sandbox";
+  createdAt: string;
+}
+
+/** List every installed project. Powers the Cmd+P switcher. */
+export async function fetchProjects(): Promise<ProjectListEntry[]> {
+  const res = await apiFetch("/api/projects");
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { projects: ProjectListEntry[] };
+  return data.projects;
+}
+
 /** Log in with username and password. Throws on bad creds (401) or rate limit (429). */
 export async function login(username: string, password: string): Promise<LoginResponse> {
   const res = await fetch("/api/auth/login", {

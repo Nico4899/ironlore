@@ -7,6 +7,7 @@ import { ContentArea } from "./components/ContentArea.js";
 import { InboxPanel } from "./components/InboxPanel.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OfflineBanner } from "./components/OfflineBanner.js";
+import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
 import { ProvenancePane } from "./components/ProvenancePane.js";
 import { RecoveryBanner } from "./components/RecoveryBanner.js";
 import { SearchDialog } from "./components/SearchDialog.js";
@@ -57,6 +58,7 @@ function AppShell() {
   const searchDialogOpen = useAppStore((s) => s.searchDialogOpen);
   const settingsOpen = useAppStore((s) => s.settingsOpen);
   const terminalOpen = useAppStore((s) => s.terminalOpen);
+  const projectSwitcherOpen = useAppStore((s) => s.projectSwitcherOpen);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -65,6 +67,12 @@ function AppShell() {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         useAppStore.getState().toggleSearchDialog();
+      }
+      // Cmd+P / Ctrl+P — toggle project switcher
+      //  (docs/08-projects-and-isolation.md §Project switcher UX).
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "p") {
+        e.preventDefault();
+        useAppStore.getState().toggleProjectSwitcher();
       }
       // Ctrl+` — toggle terminal
       if (e.ctrlKey && e.key === "`") {
@@ -126,6 +134,9 @@ function AppShell() {
 
       {/* Search dialog (Cmd+K) */}
       {searchDialogOpen && <SearchDialog />}
+
+      {/* Project switcher (Cmd+P) */}
+      {projectSwitcherOpen && <ProjectSwitcher />}
 
       {/* Settings dialog */}
       {settingsOpen && <SettingsDialog />}

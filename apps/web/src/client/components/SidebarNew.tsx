@@ -397,6 +397,7 @@ export function SidebarNew() {
         {!collapsed && (
           <>
             <span className="text-sm font-semibold tracking-tight text-primary">ironlore</span>
+            <ProjectChip />
             <div className="flex-1" />
             {/* Expand collapse visible on hover in expanded mode */}
             <button
@@ -734,6 +735,38 @@ function ContextMenuItem({
       }`}
     >
       {label}
+    </button>
+  );
+}
+
+/**
+ * Active-project chip in the sidebar header (docs/08-projects-and-
+ * isolation.md §Project switcher UX). Clicking it opens the Cmd+P
+ * palette. When only one project exists the chip renders as a
+ * non-interactive label — the switcher is hidden until a second
+ * project appears, matching the "multi-project is opt-in" spec.
+ */
+function ProjectChip() {
+  const currentProjectId = useAuthStore((s) => s.currentProjectId);
+  // We optimistically render what the auth store tells us, even before
+  //  `/api/projects` has loaded. The ProjectSwitcher fetches that list
+  //  itself when the user opens it — no extra HTTP for the chip.
+  if (!currentProjectId) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => useAppStore.getState().toggleProjectSwitcher()}
+      className="rounded border px-1.5 py-0.5 text-xs font-medium text-secondary outline-none transition-colors hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      style={{
+        borderColor: "var(--il-border-soft)",
+        fontFamily: "var(--font-mono)",
+        fontSize: 10.5,
+        letterSpacing: "0.04em",
+        marginLeft: 8,
+      }}
+      title="Switch project (Cmd+P)"
+    >
+      {currentProjectId}
     </button>
   );
 }

@@ -136,6 +136,8 @@ interface AppStore {
   searchDialogOpen: boolean;
   settingsOpen: boolean;
   terminalOpen: boolean;
+  /** Cmd+P project switcher palette visibility (Phase 9 Item 2). */
+  projectSwitcherOpen: boolean;
   activePath: string | null;
   /**
    * Slug of the agent whose detail page is currently open, or null.
@@ -173,6 +175,7 @@ interface AppStore {
   toggleSearchDialog: () => void;
   toggleSettings: () => void;
   toggleTerminal: () => void;
+  toggleProjectSwitcher: () => void;
   setActivePath: (path: string | null) => void;
   /** Open an agent's detail page. Passing null clears it. */
   setActiveAgentSlug: (slug: string | null) => void;
@@ -257,6 +260,7 @@ export const useAppStore = create<AppStore>((set) => ({
   searchDialogOpen: false,
   settingsOpen: false,
   terminalOpen: false,
+  projectSwitcherOpen: false,
   activePath: null,
   activeAgentSlug: null,
   openPaths: [],
@@ -277,6 +281,7 @@ export const useAppStore = create<AppStore>((set) => ({
   toggleSearchDialog: () => set((s) => ({ searchDialogOpen: !s.searchDialogOpen })),
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
   toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
+  toggleProjectSwitcher: () => set((s) => ({ projectSwitcherOpen: !s.projectSwitcherOpen })),
   // Opening an agent detail page and opening a file are mutually
   // exclusive surfaces in the content area — toggling one clears the
   // other so the user never sees a half-rendered mash-up.
