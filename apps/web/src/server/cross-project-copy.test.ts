@@ -94,8 +94,7 @@ describe("createCrossProjectCopyApi", () => {
     app.route(
       "/api/projects",
       createCrossProjectCopyApi({
-        resolveProject: (id) =>
-          id === "alpha" ? alpha : id === "beta" ? beta : null,
+        resolveProject: (id) => (id === "alpha" ? alpha : id === "beta" ? beta : null),
       }),
     );
   });

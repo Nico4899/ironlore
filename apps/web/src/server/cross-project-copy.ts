@@ -119,10 +119,7 @@ export function createCrossProjectCopyApi(options: CrossProjectCopyOptions): Hon
       };
       return c.json(resp);
     } catch (err) {
-      return c.json(
-        { error: err instanceof Error ? err.message : String(err) },
-        500,
-      );
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
     }
   });
 

@@ -20,7 +20,7 @@ packages/create-ironlore  Scaffolding CLI
 ## Commands
 
 ```sh
-pnpm test          # Vitest (1046 tests)
+pnpm test          # Vitest (1070 tests)
 pnpm typecheck     # tsc -b
 pnpm check         # Biome lint + format
 pnpm check:fix     # Biome auto-fix
@@ -95,4 +95,4 @@ projects/main/
   .git/           Per-project git repo
 ```
 
-`DEFAULT_PROJECT_ID = "main"` hardcoded until Phase 5 multi-project.
+Multi-project is shipped (Phase 9). `bootstrap()` seeds a default `main` project, but `projects.sqlite` (install-root) can hold any number of projects. `ironlore new-project <id> --preset main|research|sandbox` scaffolds the layout + `project.yaml`. Each project owns its own `StorageWriter`, `SearchIndex`, `LinksRegistry`, `GitWorker`, `FileWatcher`, and API-key vault — bundled in `ProjectServices`. Routes mount per project under `/api/projects/<id>/…`. The `Cmd+P` palette switches active project via `?project=<id>` + full reload. Cross-project copy via right-click → "Copy to project…" stamps `copied_from: <src>/<path>@<sha>` into the destination's frontmatter.

@@ -35,9 +35,7 @@ const VALID_PRESETS: Preset[] = ["main", "research", "sandbox"];
 export function newProject(idArg: string, options: NewProjectOptions): void {
   const id = String(idArg ?? "").trim();
   if (!id || !/^[a-z0-9][a-z0-9_-]*$/i.test(id)) {
-    console.error(
-      `Project id must match /^[a-z0-9][a-z0-9_-]*$/i — got ${JSON.stringify(id)}.`,
-    );
+    console.error(`Project id must match /^[a-z0-9][a-z0-9_-]*$/i — got ${JSON.stringify(id)}.`);
     process.exit(2);
   }
 
@@ -67,7 +65,7 @@ export function newProject(idArg: string, options: NewProjectOptions): void {
   writeFileSync(yamlPath, yaml, { mode: 0o644 });
 
   console.log(`Created project '${id}' (${options.preset}) at ${projectDir}`);
-  console.log("Restart the Ironlore server to mount /api/projects/" + id + "/…");
+  console.log(`Restart the Ironlore server to mount /api/projects/${id}/…`);
 }
 
 /**
@@ -115,12 +113,7 @@ export function buildProjectYaml(params: { id: string; name: string; preset: Pre
     ].join("\n");
   }
   // sandbox
-  return [
-    ...common,
-    "egress:",
-    "  policy: blocked",
-    "",
-  ].join("\n");
+  return [...common, "egress:", "  policy: blocked", ""].join("\n");
 }
 
 function yamlString(s: string): string {

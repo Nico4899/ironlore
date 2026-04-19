@@ -210,16 +210,12 @@ export function ProjectSwitcher() {
 
         <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
           {error && (
-            <div
-              style={{ padding: 14, color: "var(--il-red)", fontSize: 12.5 }}
-            >
+            <div style={{ padding: 14, color: "var(--il-red)", fontSize: 12.5 }}>
               Failed to load projects: {error}
             </div>
           )}
           {!error && projects === null && (
-            <div style={{ padding: 14, color: "var(--il-text3)", fontSize: 12.5 }}>
-              Loading…
-            </div>
+            <div style={{ padding: 14, color: "var(--il-text3)", fontSize: 12.5 }}>Loading…</div>
           )}
           {!error && projects && ordered.length === 0 && (
             <div style={{ padding: 14, color: "var(--il-text3)", fontSize: 12.5 }}>

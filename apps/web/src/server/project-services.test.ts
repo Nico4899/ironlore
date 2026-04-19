@@ -57,9 +57,7 @@ describe("ProjectServices.forProject", () => {
     const services = ProjectServices.forProject(install.installRoot, "alpha");
     try {
       expect(services.projectDir).toBe(join(install.installRoot, "projects", "alpha"));
-      expect(services.getDataRoot()).toBe(
-        join(install.installRoot, "projects", "alpha", "data"),
-      );
+      expect(services.getDataRoot()).toBe(join(install.installRoot, "projects", "alpha", "data"));
     } finally {
       services.stop();
     }
