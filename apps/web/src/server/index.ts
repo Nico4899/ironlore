@@ -139,6 +139,7 @@ async function start() {
     validateCookie,
   } = createAuthApi(installRoot, sessionStore, {
     getProjectDirs: () => Array.from(servicesById.values()).map((s) => s.projectDir),
+    isProjectValid: (projectId) => servicesById.has(projectId),
   });
   app.use("/api/auth/*", authRateLimiter());
   app.route("/api/auth", authApi);

@@ -275,6 +275,18 @@ export interface CreateAuthApiOptions {
    * change so new projects are picked up without a server restart.
    */
   getProjectDirs?: () => string[];
+
+  /**
+   * Returns true when the given projectId exists and the current
+   * install is permitted to route requests to it. Consulted by
+   * `PUT /session/project` and by the auth middleware when the
+   * `?project=<id>` query param is present on a request.
+   *
+   * Omitting this option turns project validation into a no-op — any
+   * string is accepted. The default index.ts wiring always provides
+   * it, backed by the `ProjectRegistry`.
+   */
+  isProjectValid?: (projectId: string) => boolean;
 }
 
 export function createAuthApi(
@@ -542,6 +554,10 @@ export function createAuthApi(
       return c.json({ error: "projectId required" }, 400);
     }
 
+    if (options.isProjectValid && !options.isProjectValid(body.projectId)) {
+      return c.json({ error: `Unknown project '${body.projectId}'` }, 404);
+    }
+
     store.updateSessionProject(sessionId, body.projectId);
     return c.json({ ok: true, currentProjectId: body.projectId });
   });
@@ -574,10 +590,26 @@ export function createAuthApi(
       }
     }
 
+    // Accept `?project=<id>` as a drive-by project switch (the
+    //  project switcher reloads the page with this query param per
+    //  docs/08-projects-and-isolation.md §Project switcher UX). We
+    //  validate the id before persisting so a malformed query can't
+    //  poison the session.
+    let currentProjectId = session.current_project_id;
+    const requestedProject = new URL(c.req.url).searchParams.get("project");
+    if (
+      requestedProject &&
+      requestedProject !== currentProjectId &&
+      (!options.isProjectValid || options.isProjectValid(requestedProject))
+    ) {
+      store.updateSessionProject(sessionId, requestedProject);
+      currentProjectId = requestedProject;
+    }
+
     store.touchSession(sessionId);
     c.set("userId", session.user_id);
     c.set("username", session.username);
-    c.set("currentProjectId", session.current_project_id);
+    c.set("currentProjectId", currentProjectId);
 
     await next();
   };
