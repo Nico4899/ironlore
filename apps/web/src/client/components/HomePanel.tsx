@@ -1,8 +1,14 @@
 import { FileText, FolderPlus, Inbox, Search, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
-import { fetchRecentEdits, type RecentEdit } from "../lib/api.js";
+import { useEffect, useMemo, useState } from "react";
+import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
+import {
+  type AgentHistogramResponse,
+  fetchAgentHistogram,
+  fetchRecentEdits,
+  type RecentEdit,
+} from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
-import { Key, Meta, Reuleaux, SectionLabel, Venn } from "./primitives/index.js";
+import { AgentPulse, Key, Meta, Reuleaux, SectionLabel, Venn } from "./primitives/index.js";
 
 /**
  * HomePanel — the canvas-grammar landing surface that replaces the
@@ -30,7 +36,9 @@ export function HomePanel() {
 
   const greeting = useGreeting();
   const today = useTodayLabel();
+  const activity = useWorkspaceActivity();
   const isEmpty = recent !== null && recent.length === 0;
+  const hasActivity = activity.runningCount > 0 || activity.inboxCount > 0;
 
   return (
     <div className="relative flex flex-1 flex-col overflow-y-auto">
@@ -63,8 +71,32 @@ export function HomePanel() {
             marginBottom: 10,
           }}
         >
-          <Reuleaux size={8} color="var(--il-blue)" />
+          <Reuleaux
+            size={8}
+            color={activity.runningCount > 0 ? "var(--il-blue)" : "var(--il-text3)"}
+            spin={activity.runningCount > 0}
+          />
           <span>{today}</span>
+          {hasActivity && (
+            <>
+              <span style={{ color: "var(--il-text4)" }}>/</span>
+              <span>
+                {activity.runningCount > 0 && (
+                  <>
+                    <span style={{ color: "var(--il-text)" }}>{activity.runningCount}</span>{" "}
+                    {activity.runningCount === 1 ? "agent" : "agents"} working
+                  </>
+                )}
+                {activity.runningCount > 0 && activity.inboxCount > 0 && ", "}
+                {activity.inboxCount > 0 && (
+                  <>
+                    <span style={{ color: "var(--il-text)" }}>{activity.inboxCount}</span>{" "}
+                    in inbox
+                  </>
+                )}
+              </span>
+            </>
+          )}
         </div>
         <h1
           style={{
