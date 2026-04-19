@@ -561,6 +561,23 @@ interface LoginResponse {
   mustChangePassword: boolean;
 }
 
+/**
+ * First-run hint — returns `"terminal"` while the install record is
+ * still on disk (fresh install, admin password was dumped to stdout),
+ * `null` otherwise. Consumed by the LoginPage so a brand-new user
+ * doesn't stare at a blank form wondering where the password lives.
+ */
+export async function fetchFirstRunHint(): Promise<"terminal" | null> {
+  try {
+    const res = await fetch("/api/auth/first-run-hint");
+    if (!res.ok) return null;
+    const data = (await res.json()) as { hint: "terminal" | null };
+    return data.hint;
+  } catch {
+    return null;
+  }
+}
+
 /** Probe session state. Returns null if not authenticated. */
 export async function fetchMe(): Promise<AuthSession | null> {
   const res = await fetch("/api/auth/me");
