@@ -39,8 +39,10 @@ export function HomePanel() {
   const greeting = useGreeting();
   const today = useTodayLabel();
   const activity = useWorkspaceActivity();
+  const typeDisplay = useAppStore((s) => s.typeDisplay);
   const isEmpty = recent !== null && recent.length === 0;
   const hasActivity = activity.runningCount > 0 || activity.inboxCount > 0;
+  const displaySerif = typeDisplay === "serif";
 
   return (
     <div className="relative flex flex-1 flex-col overflow-y-auto">
@@ -121,30 +123,57 @@ export function HomePanel() {
           )}
         </div>
         <h1
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 26,
-            fontWeight: 600,
-            letterSpacing: "-0.02em",
-            color: "var(--il-text)",
-            margin: 0,
-          }}
+          style={
+            displaySerif
+              ? {
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 48,
+                  fontWeight: 400,
+                  letterSpacing: "-0.025em",
+                  lineHeight: 1.05,
+                  color: "var(--il-text)",
+                  margin: 0,
+                }
+              : {
+                  fontFamily: "var(--font-sans)",
+                  fontSize: 26,
+                  fontWeight: 600,
+                  letterSpacing: "-0.02em",
+                  color: "var(--il-text)",
+                  margin: 0,
+                }
+          }
         >
           {greeting}
+          {displaySerif && (
+            <>
+              .
+              <br />
+              <span style={{ fontStyle: "italic", color: "var(--il-text2)" }}>
+                {isEmpty
+                  ? "An empty canvas is a contract."
+                  : hasActivity
+                    ? "Let's pick up where you left off."
+                    : "Pick up where you left off."}
+              </span>
+            </>
+          )}
         </h1>
-        <p
-          style={{
-            marginTop: 6,
-            fontSize: 14,
-            color: "var(--il-text2)",
-            maxWidth: 560,
-            lineHeight: 1.5,
-          }}
-        >
-          {isEmpty
-            ? "No pages yet. Create one from the sidebar, drop files to upload, or let an agent seed the workspace."
-            : "Pick up where you left off, or jump to a command."}
-        </p>
+        {!displaySerif && (
+          <p
+            style={{
+              marginTop: 6,
+              fontSize: 14,
+              color: "var(--il-text2)",
+              maxWidth: 560,
+              lineHeight: 1.5,
+            }}
+          >
+            {isEmpty
+              ? "No pages yet. Create one from the sidebar, drop files to upload, or let an agent seed the workspace."
+              : "Pick up where you left off, or jump to a command."}
+          </p>
+        )}
 
         {/* Body grid — Active runs + Run-rate on top row, Recent +
          *  Quick actions on the second. Collapses to a single column
