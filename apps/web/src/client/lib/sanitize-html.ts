@@ -72,11 +72,22 @@ function isSafeUrl(value: string): boolean {
 }
 
 function clean(node: Element): void {
-  const children = Array.from(node.children);
-  for (const child of children) {
+  // Walk children with a live cursor (not a snapshot): when we unwrap
+  //  a disallowed tag we expose its children at the same position and
+  //  must re-sanitize them. A snapshotted copy would let a payload
+  //  like `<svg><circle onerror=...></svg>` escape — the outer <svg>
+  //  would be unwrapped, but <circle> would never be inspected.
+  let child = node.firstElementChild;
+  while (child) {
+    const next = child.nextElementSibling;
     if (!ALLOWED_TAGS.has(child.tagName)) {
+      // Move the child's children into place, then drop the child.
+      //  The first moved node becomes the new cursor so we re-enter
+      //  sanitization on it (and every sibling that follows).
+      const firstMoved = child.firstChild as Element | null;
       while (child.firstChild) node.insertBefore(child.firstChild, child);
       node.removeChild(child);
+      child = (firstMoved as Element | null) ?? next;
       continue;
     }
     const allowed = ALLOWED_ATTRS[child.tagName] ?? new Set<string>();
@@ -90,6 +101,7 @@ function clean(node: Element): void {
       }
     }
     clean(child);
+    child = next;
   }
 }
 
