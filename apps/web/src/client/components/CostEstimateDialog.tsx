@@ -1,7 +1,7 @@
-import { DEFAULT_PROJECT_ID } from "@ironlore/core";
 import { DollarSign, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
+import { getApiProject } from "../lib/api.js";
 
 interface CostEstimate {
   model: string;
@@ -31,7 +31,7 @@ export function CostEstimateDialog({ agentSlug, onConfirm, onCancel }: CostEstim
   useFocusTrap(dialogRef, true);
 
   useEffect(() => {
-    fetch(`/api/projects/${DEFAULT_PROJECT_ID}/agents/${agentSlug}/cost-estimate`)
+    fetch(`/api/projects/${getApiProject()}/agents/${agentSlug}/cost-estimate`)
       .then((res) => res.json())
       .then((data) => setEstimate(data as CostEstimate))
       .catch(() => {
