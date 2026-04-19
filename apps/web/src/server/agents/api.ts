@@ -143,6 +143,25 @@ export function createAgentApi(
   });
 
   // -----------------------------------------------------------------------
+  // List all agents (slugs only). Consumers that want the full config
+  //  issue `GET /:slug/config` for each entry — keeps the list endpoint
+  //  cheap when the UI only needs to populate a dropdown / nav.
+  //
+  //  The Settings → Security tab (docs/06-implementation-roadmap.md
+  //  Phase 8) is the first consumer; it fetches this list and then one
+  //  config per slug so the user can review scopes, tools, and rate
+  //  caps across every installed agent.
+  // -----------------------------------------------------------------------
+  api.get("/", (c) => {
+    const rows = jobsDb
+      .prepare(
+        "SELECT slug, status FROM agent_state WHERE project_id = ? ORDER BY slug",
+      )
+      .all(projectId) as Array<{ slug: string; status: "active" | "paused" }>;
+    return c.json({ agents: rows });
+  });
+
+  // -----------------------------------------------------------------------
   // Onboarding: apply template variables to library personas
   // -----------------------------------------------------------------------
   api.post("/onboarding", async (c) => {

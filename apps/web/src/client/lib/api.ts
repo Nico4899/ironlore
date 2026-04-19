@@ -389,6 +389,19 @@ export async function fetchAgentConfig(slug: string): Promise<AgentConfigRespons
   return res.json();
 }
 
+export interface AgentListEntry {
+  slug: string;
+  status: "active" | "paused";
+}
+
+/** List every agent installed in the current project (slug + status only). */
+export async function fetchAgents(): Promise<AgentListEntry[]> {
+  const res = await apiFetch(`${BASE}/agents`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { agents: AgentListEntry[] };
+  return data.agents;
+}
+
 /** Per-file diff row for an inbox entry. */
 export interface InboxFileDiff {
   path: string;
