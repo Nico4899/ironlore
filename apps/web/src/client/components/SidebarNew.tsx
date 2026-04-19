@@ -1,6 +1,7 @@
 import type { PageType } from "@ironlore/core";
 import {
   BookOpen,
+  Boxes,
   Captions,
   ChevronLeft,
   ChevronRight,
@@ -22,6 +23,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  Settings as SettingsIcon,
   Sun,
   TerminalSquare,
   Video,
@@ -591,6 +593,18 @@ export function SidebarNew() {
           label="Terminal"
           collapsed={collapsed}
           onClick={() => useAppStore.getState().toggleTerminal()}
+        />
+        <SidebarBottomTab
+          icon={Boxes}
+          label="Switch project (⌘P)"
+          collapsed={collapsed}
+          onClick={() => useAppStore.getState().toggleProjectSwitcher()}
+        />
+        <SidebarBottomTab
+          icon={SettingsIcon}
+          label="Settings"
+          collapsed={collapsed}
+          onClick={() => useAppStore.getState().toggleSettings()}
         />
         <SidebarBottomTab
           icon={MessageSquare}
