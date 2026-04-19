@@ -1,5 +1,5 @@
 import { AGENTS_DIR } from "@ironlore/core";
-import { ExternalLink, Pause, Play, X } from "lucide-react";
+import { ExternalLink, Pause, Play, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   type AgentConfigResponse,
@@ -10,6 +10,7 @@ import {
   fetchAgentRuns,
   fetchAgentState,
   setAgentPaused,
+  startAutonomousRun,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { DisplayNum, Key, Meta, SectionLabel, StatusPip, Venn } from "./primitives/index.js";
@@ -82,6 +83,30 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
     };
   }, [slug]);
 
+  const [running, setRunning] = useState(false);
+
+  /**
+   * Enqueue an autonomous run — same endpoint that powers the Home
+   * §01 Active runs "Run now" CTA. Failures surface silently; the
+   * run will show up (or not) in the recent-runs table on the next
+   * poll.
+   */
+  const handleRunNow = useCallback(async () => {
+    if (running || paused) return;
+    setRunning(true);
+    try {
+      await startAutonomousRun(slug);
+      // Re-fetch runs so the new entry lands immediately instead of
+      //  waiting for the 10-second poll.
+      const r = await fetchAgentRuns(slug, 24);
+      setRuns(r);
+    } catch {
+      /* non-fatal; rails will re-report via the state endpoint */
+    } finally {
+      setRunning(false);
+    }
+  }, [running, paused, slug]);
+
   const handleTogglePause = useCallback(async () => {
     if (pausing || !state) return;
     setPausing(true);
@@ -107,6 +132,34 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
       setPausing(false);
     }
   }, [pausing, state, slug, paused]);
+
+  // Keyboard shortcuts for §04 Controls. Ignore keys when the user is
+  //  typing in any input or contenteditable — the detail page can sit
+  //  behind an open command palette or inline editor.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t) {
+        const tag = t.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
+      }
+      // ⌘R / Ctrl-R — Run now. Browser's reload binding wins on most
+      //  OSes, so this is a best-effort affordance; the button is the
+      //  durable path.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r" && !e.shiftKey) {
+        e.preventDefault();
+        void handleRunNow();
+        return;
+      }
+      // `P` (unmodified) — toggle pause.
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        void handleTogglePause();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleRunNow, handleTogglePause]);
 
   // Is the agent's most-recent run still running? The observability
   //  endpoint returns runs ordered desc by startedAt; status==="running"
@@ -314,25 +367,34 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
           <div className="mt-6">
             <SectionLabel index={4} title="Controls" meta="" />
             <div className="mt-3 grid gap-1.5">
+              {/* Pause / Resume — `P` (unmodified) toggles.
+                *  "Rotate branch" from the doc spec is intentionally
+                *  not rendered: no server endpoint exists for it and
+                *  the brand rule is to drop non-functional chrome. */}
               <ControlButton
                 icon={paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
                 label={paused ? "Resume" : "Pause"}
-                hint={paused ? "let the rails accept runs again" : "stop accepting new runs"}
+                shortcut="P"
                 disabled={!state || pausing}
                 onClick={handleTogglePause}
+              />
+              <ControlButton
+                icon={<Zap className="h-3.5 w-3.5" />}
+                label="Run now"
+                shortcut="⌘R"
+                disabled={running || paused || isLiveRun}
+                onClick={handleRunNow}
               />
               <ControlButton
                 icon={<ExternalLink className="h-3.5 w-3.5" />}
                 label="Open persona"
                 hint={`${AGENTS_DIR}/${slug}/persona.md`}
-                shortcut=""
                 onClick={() =>
                   useAppStore.getState().setActivePath(`${AGENTS_DIR}/${slug}/persona.md`)
                 }
               />
               <ControlButton
                 label="Talk to agent"
-                hint="open AI panel · select this agent"
                 shortcut="⌘⇧A"
                 onClick={() => useAppStore.getState().toggleAIPanel()}
               />
