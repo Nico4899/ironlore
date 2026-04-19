@@ -24,6 +24,8 @@ import { LinksRegistry } from "./links-registry.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
 import { createPagesApi, createRawApi } from "./pages-api.js";
+import { createUploadsApi } from "./uploads-api.js";
+import { sweepStagingOnBoot } from "./uploads.js";
 import { checkPermissions } from "./permissions.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import { authRateLimiter } from "./rate-limit.js";
@@ -271,8 +273,19 @@ async function start() {
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/pages`, pagesApi);
 
   // Mount raw file API (binary + CSV write)
-  const rawApi = createRawApi(writer);
+  const rawApi = createRawApi(writer, writer.getDataRoot());
   app.route(`/api/projects/${DEFAULT_PROJECT_ID}/raw`, rawApi);
+
+  // Mount Phase-8 upload pipeline (multipart with validation gates).
+  //  Legacy /raw/upload path still accepted; new clients should post
+  //  to /api/projects/:id/uploads with multipart/form-data.
+  const uploadsApi = createUploadsApi(writer, writer.getDataRoot());
+  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/uploads`, uploadsApi);
+
+  // Clean stale staging entries at boot — processUpload always
+  //  removes its own staging on completion, but a crash mid-write
+  //  could leak bytes under data/.uploads/staging/.
+  sweepStagingOnBoot(writer.getDataRoot());
 
   // Mount search API (FTS5, backlinks, recent edits)
   const searchProvider = providerRegistry.resolve();

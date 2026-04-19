@@ -35,7 +35,7 @@ function setup() {
 
   const app = new Hono();
   app.route("/pages", createPagesApi(writer, searchIndex, broadcast));
-  app.route("/raw", createRawApi(writer));
+  app.route("/raw", createRawApi(writer, writer.getDataRoot()));
 
   return { app, writer, searchIndex, events, projectDir };
 }
