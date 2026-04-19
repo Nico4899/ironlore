@@ -43,6 +43,13 @@ export function HomePanel() {
   const isEmpty = recent !== null && recent.length === 0;
   const hasActivity = activity.runningCount > 0 || activity.inboxCount > 0;
   const displaySerif = typeDisplay === "serif";
+  // "Fresh project" — zero recent pages AND zero installed agents.
+  //  This is the same trigger that gates the Venn watermark (§Home in
+  //  docs/09-ui-and-brand.md). On a fresh project we suppress §01
+  //  Active runs and §03 Run-rate headroom so the canvas doesn't
+  //  announce "nothing here" twice; the watermark + §02 + §04 carry
+  //  the rest state together.
+  const isFreshProject = isEmpty && activity.loaded && activity.agents.length === 0;
 
   return (
     <div className="relative flex flex-1 flex-col overflow-y-auto">
@@ -187,111 +194,125 @@ export function HomePanel() {
           }}
           className="il-home-grid"
         >
-          {/* 01 — Active runs */}
-          <div>
-            <SectionLabel
-              index={1}
-              title="Active runs"
-              meta={
-                activity.runningCount > 0 ? `${activity.runningCount} RUNNING` : "NOTHING RUNNING"
-              }
-            />
-            <div style={{ marginTop: 14 }}>
-              {!activity.loaded ? (
+          {/* LEFT column — 01 Active runs stacked above 02 Recent pages.
+           *  §01 suppresses on a fresh project; the Venn watermark
+           *  behind the hero carries the empty state so we don't
+           *  announce "nothing here" twice. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 28, minWidth: 0 }}>
+            {!isFreshProject && (
+              <div>
+                <SectionLabel
+                  index={1}
+                  title="Active runs"
+                  meta={
+                    activity.runningCount > 0
+                      ? `${activity.runningCount} RUNNING`
+                      : "NOTHING RUNNING"
+                  }
+                />
+                <div style={{ marginTop: 14 }}>
+                  {!activity.loaded ? (
+                    <div className="py-6 text-center text-xs text-secondary">Loading…</div>
+                  ) : activity.agents.length === 0 ? (
+                    <EmptyCard>
+                      No agents installed. Drop a persona into <code>.agents/</code> to start.
+                    </EmptyCard>
+                  ) : (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {orderedForHome(activity.agents).map((a) => (
+                        <ActiveAgentCard
+                          key={a.slug}
+                          slug={a.slug}
+                          running={a.running}
+                          paused={a.status === "paused"}
+                          stepLabel={a.stepLabel}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div>
+              <SectionLabel index={2} title="Recent pages" meta="LAST 7 DAYS" />
+              {recent === null ? (
                 <div className="py-6 text-center text-xs text-secondary">Loading…</div>
-              ) : activity.agents.length === 0 ? (
-                <EmptyCard>
-                  No agents installed. Drop a persona into <code>.agents/</code> to start.
-                </EmptyCard>
+              ) : recent.length === 0 ? (
+                <div
+                  className="rounded border py-8 text-center"
+                  style={{
+                    borderColor: "var(--il-border-soft)",
+                    borderStyle: "dashed",
+                    color: "var(--il-text3)",
+                    fontSize: 12.5,
+                    marginTop: 14,
+                  }}
+                >
+                  Nothing here yet.
+                </div>
               ) : (
-                <div style={{ display: "grid", gap: 8 }}>
-                  {orderedForHome(activity.agents).map((a) => (
-                    <ActiveAgentCard
-                      key={a.slug}
-                      slug={a.slug}
-                      running={a.running}
-                      paused={a.status === "paused"}
-                      stepLabel={a.stepLabel}
-                    />
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" style={{ marginTop: 14 }}>
+                  {recent.map((p) => (
+                    <RecentCard key={p.path} entry={p} />
                   ))}
                 </div>
               )}
             </div>
           </div>
 
-          {/* 02 — Run-rate headroom */}
-          <div>
-            <SectionLabel index={2} title="Run-rate headroom" meta="ROLLING 24H" />
-            <div style={{ marginTop: 14 }}>
-              <RunRateHeadroom agents={activity.agents} />
-            </div>
-          </div>
-
-          {/* 03 — Recent pages (full-width on the grid, spans both cols) */}
-          <div style={{ gridColumn: "1 / -1", marginTop: 6 }}>
-            <SectionLabel index={3} title="Recent pages" meta="LAST 7 DAYS" />
-            {recent === null ? (
-              <div className="py-6 text-center text-xs text-secondary">Loading…</div>
-            ) : recent.length === 0 ? (
-              <div
-                className="rounded border py-8 text-center"
-                style={{
-                  borderColor: "var(--il-border-soft)",
-                  borderStyle: "dashed",
-                  color: "var(--il-text3)",
-                  fontSize: 12.5,
-                  marginTop: 14,
-                }}
-              >
-                Nothing here yet.
-              </div>
-            ) : (
-              <div
-                className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
-                style={{ marginTop: 14 }}
-              >
-                {recent.map((p) => (
-                  <RecentCard key={p.path} entry={p} />
-                ))}
+          {/* RIGHT column — 03 Run-rate headroom stacked above 04 Quick
+           *  actions. §03 suppresses on a fresh project (there's no
+           *  activity to plot); §04 stays visible so the user always
+           *  has a next action. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 28, minWidth: 0 }}>
+            {!isFreshProject && (
+              <div>
+                <SectionLabel index={3} title="Run-rate headroom" meta="ROLLING 24H" />
+                <div style={{ marginTop: 14 }}>
+                  <RunRateHeadroom agents={activity.agents} />
+                </div>
               </div>
             )}
-          </div>
 
-          {/* 04 — Quick actions */}
-          <div style={{ gridColumn: "1 / -1", marginTop: 6 }}>
-            <SectionLabel index={4} title="Quick actions" meta="KEYBOARD" />
-            <div
-              className="grid gap-1.5"
-              style={{ marginTop: 14, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
-            >
-              <QuickAction
-                icon={<FileText className="h-3.5 w-3.5" />}
-                label="New page"
-                hint="Open the sidebar and use the + button."
-              />
-              <QuickAction
-                icon={<FolderPlus className="h-3.5 w-3.5" />}
-                label="New folder"
-                hint="Sidebar · New folder"
-              />
-              <QuickAction
-                icon={<Search className="h-3.5 w-3.5" />}
-                label="Search everything"
-                shortcut="⌘K"
-                onClick={() => useAppStore.getState().toggleSearchDialog()}
-              />
-              <QuickAction
-                icon={<Sparkles className="h-3.5 w-3.5" />}
-                label="Toggle AI panel"
-                shortcut="⌘⇧A"
-                onClick={() => useAppStore.getState().toggleAIPanel()}
-              />
-              <QuickAction
-                icon={<Inbox className="h-3.5 w-3.5" />}
-                label="Agent inbox"
-                hint="Pending agent runs"
-                onClick={() => useAppStore.getState().toggleInbox()}
-              />
+            <div>
+              <SectionLabel index={4} title="Quick actions" meta="KEYBOARD" />
+              <div
+                className="grid gap-1.5"
+                style={{
+                  marginTop: 14,
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                }}
+              >
+                <QuickAction
+                  icon={<FileText className="h-3.5 w-3.5" />}
+                  label="New page"
+                  hint="Open the sidebar and use the + button."
+                />
+                <QuickAction
+                  icon={<FolderPlus className="h-3.5 w-3.5" />}
+                  label="New folder"
+                  hint="Sidebar · New folder"
+                />
+                <QuickAction
+                  icon={<Search className="h-3.5 w-3.5" />}
+                  label="Search everything"
+                  shortcut="⌘K"
+                  onClick={() => useAppStore.getState().toggleSearchDialog()}
+                />
+                <QuickAction
+                  icon={<Sparkles className="h-3.5 w-3.5" />}
+                  label="Toggle AI panel"
+                  shortcut="⌘⇧A"
+                  onClick={() => useAppStore.getState().toggleAIPanel()}
+                />
+                <QuickAction
+                  icon={<Inbox className="h-3.5 w-3.5" />}
+                  label="Agent inbox"
+                  hint="Pending agent runs"
+                  onClick={() => useAppStore.getState().toggleInbox()}
+                />
+              </div>
             </div>
           </div>
         </div>

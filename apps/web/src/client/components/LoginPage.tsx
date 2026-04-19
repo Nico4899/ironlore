@@ -91,8 +91,8 @@ export function LoginPage() {
               </span>
               <span style={{ color: "var(--il-text4)" }}> · </span>
               <span>
-                your admin password was printed to the server's terminal log when
-                Ironlore started. You'll be asked to change it right after login.
+                your admin password was printed to the server's terminal log when Ironlore started.
+                You'll be asked to change it right after login.
               </span>
             </span>
           </div>
