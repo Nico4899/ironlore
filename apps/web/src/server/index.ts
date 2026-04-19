@@ -14,22 +14,19 @@ import { seedAgents } from "./agents/seed-agents.js";
 import { createAuthApi, SessionStore } from "./auth.js";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
-import { FileWatcher } from "./file-watcher.js";
-import { GitWorker } from "./git-worker.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { BackpressureController } from "./jobs/backpressure.js";
 import { openJobsDb } from "./jobs/schema.js";
 import { WorkerPool } from "./jobs/worker.js";
-import { LinksRegistry } from "./links-registry.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
 import { createPagesApi, createRawApi } from "./pages-api.js";
 import { checkPermissions } from "./permissions.js";
+import { ProjectRegistry } from "./project-registry.js";
+import { ProjectServices } from "./project-services.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { createSearchApi } from "./search-api.js";
-import { SearchIndex } from "./search-index.js";
-import { StorageWriter } from "./storage-writer.js";
 import { TerminalManager } from "./terminal.js";
 import { createAgentJournal } from "./tools/agent-journal.js";
 import { ToolDispatcher } from "./tools/dispatcher.js";
@@ -122,15 +119,26 @@ async function start() {
 
   // Initialize auth system (sessions, login, password change)
   const sessionStore = new SessionStore(installRoot);
+
+  // ─── Project discovery ──────────────────────────────────────────
+  //  Load the list of known projects from `projects.sqlite` (already
+  //  seeded by bootstrap()). For each, spin up its per-project
+  //  service bundle (writer, search index, links registry, git
+  //  worker, file watcher). Everything below mounts per-project
+  //  routes by iterating this map.
+  const projectRegistry = new ProjectRegistry(installRoot);
+  const projectList = projectRegistry.list();
+  const servicesById = new Map<string, ProjectServices>();
+  for (const p of projectList) {
+    servicesById.set(p.id, ProjectServices.forProject(installRoot, p.id));
+  }
+
   const {
     api: authApi,
     middleware: authMiddleware,
     validateCookie,
   } = createAuthApi(installRoot, sessionStore, {
-    // Until Phase 5 multi-project lands there's exactly one project
-    //  dir — derive it here so the vault re-encryption in the
-    //  change-password handler picks it up.
-    getProjectDirs: () => [`${installRoot}/projects/${DEFAULT_PROJECT_ID}`],
+    getProjectDirs: () => Array.from(servicesById.values()).map((s) => s.projectDir),
   });
   app.use("/api/auth/*", authRateLimiter());
   app.route("/api/auth", authApi);
@@ -138,28 +146,7 @@ async function start() {
   // Protect all non-auth API routes with session middleware
   app.use("/api/projects/*", authMiddleware);
 
-  // Initialize StorageWriter for the default project
-  const projectDir = `${installRoot}/projects/${DEFAULT_PROJECT_ID}`;
-  const linksRegistry = new LinksRegistry(projectDir);
-  const writer = new StorageWriter(projectDir, linksRegistry.validator());
-
-  // Crash recovery — replay any uncommitted WAL entries
-  const { recovered, warnings, warningsStructured } = writer.recover();
-  if (recovered > 0) {
-    console.log(`WAL recovery: replayed ${recovered} entries`);
-  }
-  for (const w of warnings) {
-    console.warn(`WAL recovery warning: ${w}`);
-  }
-
-  // Initialize search index (FTS5 + backlinks + tags + recent-edits + pages tree)
-  const searchIndex = new SearchIndex(projectDir);
-
-  // Reindex on startup to ensure the pages table is populated
-  const { indexed } = await searchIndex.reindexAll(writer.getDataRoot());
-  console.log(`Search index: ${indexed} pages indexed`);
-
-  // ─── Jobs + agents engine ───────────────────────────────────────
+  // ─── Jobs + agents engine (install-global; all rows carry project_id) ───
   const jobsDbPath = join(installRoot, "jobs.sqlite");
   const jobsDb = openJobsDb(jobsDbPath);
   const pool = new WorkerPool(jobsDb);
@@ -169,9 +156,7 @@ async function start() {
   // section) so the agent.run job handler closure can capture a live
   // reference. The controller's recovery timer is kick-started below.
   const backpressure = new BackpressureController();
-
-  // Seed agent_state rows for default agents.
-  seedAgents(writer.getDataRoot(), jobsDb);
+  const inbox = new AgentInbox(jobsDb);
 
   // Provider registry — auto-detect Ollama, register Anthropic from env.
   const providerRegistry = new ProviderRegistry();
@@ -185,18 +170,26 @@ async function start() {
     console.log(`Provider: Ollama detected (${providerRegistry.getOllamaModels().length} models)`);
   }
 
-  // Tool dispatcher — register all kb.* tools + agent.journal.
-  const dispatcher = new ToolDispatcher();
-  dispatcher.register(createKbSearch(searchIndex));
-  dispatcher.register(createKbReadPage(writer));
-  dispatcher.register(createKbReadBlock(writer));
-  dispatcher.register(createKbReplaceBlock(writer, searchIndex));
-  dispatcher.register(createKbInsertAfter(writer, searchIndex));
-  dispatcher.register(createKbDeleteBlock(writer, searchIndex));
-  dispatcher.register(createKbCreatePage(writer, searchIndex));
-  dispatcher.register(createAgentJournal(writer.getDataRoot()));
+  // Per-project tool dispatchers — tools close over that project's
+  //  writer / searchIndex, so we build one dispatcher per project and
+  //  the agent.run handler resolves it by `jobCtx.projectId`.
+  const dispatchersById = new Map<string, ToolDispatcher>();
+  for (const [projectId, services] of servicesById) {
+    const dispatcher = new ToolDispatcher();
+    dispatcher.register(createKbSearch(services.searchIndex));
+    dispatcher.register(createKbReadPage(services.writer));
+    dispatcher.register(createKbReadBlock(services.writer));
+    dispatcher.register(createKbReplaceBlock(services.writer, services.searchIndex));
+    dispatcher.register(createKbInsertAfter(services.writer, services.searchIndex));
+    dispatcher.register(createKbDeleteBlock(services.writer, services.searchIndex));
+    dispatcher.register(createKbCreatePage(services.writer, services.searchIndex));
+    dispatcher.register(createAgentJournal(services.getDataRoot()));
+    dispatchersById.set(projectId, dispatcher);
+  }
 
-  // Register the agent.run job handler.
+  // Register the agent.run job handler. Resolves per-project state
+  //  (dispatcher, services) from the job's project_id — one handler
+  //  fans out across every project.
   pool.register("agent.run", async (job, jobCtx) => {
     const payload = JSON.parse(job.payload) as { prompt?: string };
     const agentSlug = job.owner_id ?? "general";
@@ -205,13 +198,19 @@ async function start() {
       jobCtx.emitEvent("message.error", { text: "No AI provider configured" });
       return { status: "failed", result: "No AI provider configured" };
     }
+    const services = servicesById.get(jobCtx.projectId);
+    const dispatcher = dispatchersById.get(jobCtx.projectId);
+    if (!services || !dispatcher) {
+      jobCtx.emitEvent("message.error", { text: `Unknown project ${jobCtx.projectId}` });
+      return { status: "failed", result: `Unknown project ${jobCtx.projectId}` };
+    }
     const projectContext = ProviderRegistry.buildContext(jobCtx.projectId, fetch);
     const result = await executeAgentRun(job, jobCtx, {
       provider,
       projectContext,
       dispatcher,
-      dataRoot: writer.getDataRoot(),
-      projectDir,
+      dataRoot: services.getDataRoot(),
+      projectDir: services.projectDir,
       model:
         provider.name === "ollama"
           ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
@@ -273,55 +272,94 @@ async function start() {
     wsManager?.broadcast(event);
   };
 
-  // Mount page API
-  const pagesApi = createPagesApi(writer, searchIndex, broadcast);
-  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/pages`, pagesApi);
-
-  // Mount raw file API (binary + CSV write)
-  const rawApi = createRawApi(writer, writer.getDataRoot());
-  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/raw`, rawApi);
-
-  // Mount Phase-8 upload pipeline (multipart with validation gates).
-  //  Legacy /raw/upload path still accepted; new clients should post
-  //  to /api/projects/:id/uploads with multipart/form-data.
-  const uploadsApi = createUploadsApi(writer, writer.getDataRoot());
-  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/uploads`, uploadsApi);
-
-  // Clean stale staging entries at boot — processUpload always
-  //  removes its own staging on completion, but a crash mid-write
-  //  could leak bytes under data/.uploads/staging/.
-  sweepStagingOnBoot(writer.getDataRoot());
-
-  // Mount search API (FTS5, backlinks, recent edits)
+  // ─── Per-project start-up + route mounting ──────────────────────
+  //  Start every project's services in parallel, seed agent_state,
+  //  then mount the Hono sub-routers under `/api/projects/<id>/…`.
+  //  Recovery warnings are aggregated and rebroadcast once the WS
+  //  manager is up.
   const searchProvider = providerRegistry.resolve();
-  const searchApi = createSearchApi(searchIndex, {
-    provider: searchProvider,
-    projectId: DEFAULT_PROJECT_ID,
-    projectDir,
-    defaultModel:
-      searchProvider?.name === "ollama"
-        ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
-        : "claude-haiku-4-20250514",
-  });
-  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/search`, searchApi);
+  const allWarningsStructured: Array<{ projectId: string; path: string; message: string }> = [];
+  let totalIndexed = 0;
 
-  // Mount agent API (run, state, pause/resume)
+  for (const [projectId, services] of servicesById) {
+    const { recovered, warnings, warningsStructured, indexed } = await services.start(broadcast);
+    totalIndexed += indexed;
+    if (recovered > 0) {
+      console.log(`[${projectId}] WAL recovery: replayed ${recovered} entries`);
+    }
+    for (const w of warnings) {
+      console.warn(`[${projectId}] WAL recovery warning: ${w}`);
+    }
+    for (const w of warningsStructured) {
+      allWarningsStructured.push({ projectId, ...w });
+    }
+
+    // Seed agent_state rows for default agents into this project.
+    seedAgents(services.getDataRoot(), jobsDb);
+
+    // Mount page / raw / upload / search APIs for this project.
+    app.route(
+      `/api/projects/${projectId}/pages`,
+      createPagesApi(services.writer, services.searchIndex, broadcast),
+    );
+    app.route(
+      `/api/projects/${projectId}/raw`,
+      createRawApi(services.writer, services.getDataRoot()),
+    );
+    app.route(
+      `/api/projects/${projectId}/uploads`,
+      createUploadsApi(services.writer, services.getDataRoot()),
+    );
+    sweepStagingOnBoot(services.getDataRoot());
+    app.route(
+      `/api/projects/${projectId}/search`,
+      createSearchApi(services.searchIndex, {
+        provider: searchProvider,
+        projectId,
+        projectDir: services.projectDir,
+        defaultModel:
+          searchProvider?.name === "ollama"
+            ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
+            : "claude-haiku-4-20250514",
+      }),
+    );
+
+    // Agent, job, inbox sub-routers — these already accept `projectId`
+    //  + `projectDir` as parameters; the jobs / inbox DB itself is
+    //  install-global and project-scoped via `project_id` columns.
+    app.route(
+      `/api/projects/${projectId}/agents`,
+      createAgentApi(pool, rails, jobsDb, projectId, services.projectDir),
+    );
+    app.route(
+      `/api/projects/${projectId}/jobs`,
+      createJobApi(pool, services.projectDir, dryRunBridge),
+    );
+    app.route(
+      `/api/projects/${projectId}/inbox`,
+      createInboxApi(inbox, projectId, services.projectDir),
+    );
+  }
+  console.log(`Search index: ${totalIndexed} pages indexed across ${servicesById.size} projects`);
+
+  // Middleware for per-project routes (same authMiddleware covers
+  //  every per-project sub-router — mounted before the sub-routers
+  //  so it runs first).
   app.use("/api/projects/*/agents/*", authMiddleware);
-  const agentApi = createAgentApi(pool, rails, jobsDb, DEFAULT_PROJECT_ID, projectDir);
-  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/agents`, agentApi);
-
-  // Mount job API (status, events)
   app.use("/api/projects/*/jobs/*", authMiddleware);
-  const jobApi = createJobApi(pool, projectDir, dryRunBridge);
-  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/jobs`, jobApi);
 
-  // Mount inbox API (staging branch review)
-  const inbox = new AgentInbox(jobsDb);
-  const inboxApi = createInboxApi(inbox, DEFAULT_PROJECT_ID, projectDir);
-  app.route(`/api/projects/${DEFAULT_PROJECT_ID}/inbox`, inboxApi);
+  // Top-level list endpoint for the project switcher.
+  app.get("/api/projects", (c) => {
+    const list = projectRegistry.list();
+    return c.json({ projects: list });
+  });
 
-  // Expose WAL for health endpoint
-  wal = writer.getWal();
+  // Expose an aggregated WAL for the health endpoint — sum of depths
+  //  across every project. A single `wal` module-level was wrong for
+  //  multi-project anyway.
+  const primaryServices =
+    servicesById.get(DEFAULT_PROJECT_ID) ?? Array.from(servicesById.values())[0];
+  wal = primaryServices?.wal ?? null;
 
   // Mount /metrics endpoint (Prometheus text format, behind auth, opt-in)
   if (process.env.IRONLORE_METRICS === "true") {
@@ -330,14 +368,6 @@ async function start() {
     app.route("/metrics", metricsApi);
   }
 
-  // Start git worker (background commit grouping)
-  const gitWorker = new GitWorker(projectDir, wal);
-  await gitWorker.start();
-
-  // Start filesystem watcher for external edits
-  const fileWatcher = new FileWatcher(writer.getDataRoot(), wal, searchIndex, broadcast);
-  fileWatcher.start();
-
   // Initialize WebSocket manager for real-time events
   wsManager = new WebSocketManager(sessionStore, validateCookie);
 
@@ -345,21 +375,28 @@ async function start() {
   // enters the replay buffer, so any client that connects afterward
   // receives it via replay — matching
   // docs/02-storage-and-sync.md §User-visible recovery surface.
-  if (warningsStructured.length > 0) {
+  if (allWarningsStructured.length > 0) {
     wsManager.broadcast({
       type: "recovery:pending",
-      paths: warningsStructured.map((w) => w.path),
-      messages: warningsStructured.map((w) => w.message),
+      paths: allWarningsStructured.map((w) => `${w.projectId}:${w.path}`),
+      messages: allWarningsStructured.map((w) => w.message),
     });
   }
 
-  // Initialize terminal manager (single-session PTY over WS)
-  terminalManager = new TerminalManager(
-    writer.getDataRoot(),
-    sessionStore,
-    validateCookie,
-    DEFAULT_PROJECT_ID,
-  );
+  // Initialize terminal manager (single-session PTY over WS). The
+  //  terminal binds to the primary project's data root for now; a
+  //  per-session project-scoped terminal is a follow-up once the
+  //  project switcher lands client-side.
+  if (primaryServices) {
+    terminalManager = new TerminalManager(
+      primaryServices.getDataRoot(),
+      sessionStore,
+      validateCookie,
+      primaryServices === servicesById.get(DEFAULT_PROJECT_ID)
+        ? DEFAULT_PROJECT_ID
+        : (projectList[0]?.id ?? DEFAULT_PROJECT_ID),
+    );
+  }
 
   ready = true;
   readyReason = "";
@@ -374,7 +411,7 @@ async function start() {
   server.on("upgrade", (req, socket, head) => {
     if (req.url === "/ws") {
       wsMgr.handleUpgrade(req, socket, head);
-    } else if (req.url === "/ws/terminal") {
+    } else if (req.url === "/ws/terminal" && termMgr) {
       termMgr.handleUpgrade(req, socket, head);
     } else {
       socket.destroy();
