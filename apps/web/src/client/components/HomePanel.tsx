@@ -89,9 +89,30 @@ export function HomePanel() {
                 )}
                 {activity.runningCount > 0 && activity.inboxCount > 0 && ", "}
                 {activity.inboxCount > 0 && (
-                  <>
-                    <span style={{ color: "var(--il-text)" }}>{activity.inboxCount}</span> in inbox
-                  </>
+                  // Click the inline counter to open the Inbox panel —
+                  //  same action as the Header pill. Lives inline in
+                  //  the sentence so the mono overline keeps one
+                  //  visual line; the underline appears only on hover
+                  //  so the sentence reads as prose at rest.
+                  <button
+                    type="button"
+                    onClick={() => useAppStore.getState().toggleInbox()}
+                    className="il-hero-inbox-link inline-flex items-baseline gap-1 rounded-sm outline-none hover:underline focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      color: "inherit",
+                      cursor: "pointer",
+                      font: "inherit",
+                      letterSpacing: "inherit",
+                      padding: 0,
+                    }}
+                    aria-label={`Open inbox (${activity.inboxCount} pending)`}
+                    title="Open inbox"
+                  >
+                    <span style={{ color: "var(--il-text)" }}>{activity.inboxCount}</span>
+                    <span>in inbox</span>
+                  </button>
                 )}
               </span>
             </>
