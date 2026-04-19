@@ -20,7 +20,7 @@ packages/create-ironlore  Scaffolding CLI
 ## Commands
 
 ```sh
-pnpm test          # Vitest (856 tests)
+pnpm test          # Vitest (1046 tests)
 pnpm typecheck     # tsc -b
 pnpm check         # Biome lint + format
 pnpm check:fix     # Biome auto-fix
@@ -51,9 +51,10 @@ API server in dev: `cd apps/web && npx tsx watch src/server/index.ts`
 ## Server API
 
 - **`/api/projects/:id/pages/*`** — markdown CRUD with ETag concurrency
-- **`/api/projects/:id/raw/*`** — binary/text file serving + upload
+- **`/api/projects/:id/raw/*`** — binary/text file serving + legacy upload (single-file)
+- **`/api/projects/:id/uploads`** — Phase-8 multipart upload pipeline (busboy + `processUpload` gates: size cap, extension allow-list, MIME sniff via `file-type`, sharp re-encode for images, quarantine → atomic handoff, collision hex-suffix). Each rejected file returns `{ filename, code, message }`; bad files don't tank the batch
 - **`/api/projects/:id/search`** — FTS5 (page + chunk, RRF merge, query expansion, LLM reranking)
-- **`/api/projects/:id/agents/*`** — agent runs, state, pause/resume, cost estimate, onboarding. Phase-6 observability: `GET /:slug/runs` (recent-runs timeline), `GET /:slug/histogram` (rolling-24h buckets + cap), `GET /:slug/config` (rails state + persona-frontmatter projection with `heartbeat`, `reviewMode`, `tools`, `budget`, `scope`)
+- **`/api/projects/:id/agents/*`** — agent runs, state, pause/resume, cost estimate, onboarding. Phase-6 observability: `GET /:slug/runs` (recent-runs timeline), `GET /:slug/histogram` (rolling-24h buckets + cap), `GET /:slug/config` (rails state + persona-frontmatter projection with `heartbeat`, `reviewMode`, `tools`, `budget`, `scope`). `GET /agents` (Phase 8) returns every installed agent's `{ slug, status }` — the Settings → Security tab's list source
 - **`/api/projects/:id/jobs/*`** — job status, events (replay from seq), revert
 - **`/api/projects/:id/inbox`** — staging branch review (approve/reject + per-file decisions). `GET /:entryId/files` returns A/D/M diff stats + delta counts + per-file `decision`. `POST /:entryId/files/decision` with `{ path, decision: "approved"|"rejected"|null }` records the user's choice without touching git. `approveAll` cherry-picks only non-rejected files when any rejection exists (single commit, branch `-D`), falling back to `rejectAll` when everything is rejected
 - **`/ws`** — WebSocket events (tree changes, agent events). Ring buffer 1024, `?since=N` replay
@@ -72,6 +73,7 @@ API server in dev: `cd apps/web && npx tsx watch src/server/index.ts`
 - **Agent observability**: `agent_runs ⨝ jobs ⨝ agent_state` joins power the detail page. Histogram reuses `AgentRails.canEnqueue()`'s sliding-window query so the UI chart and the rate limiter can't disagree about "you're at cap." Persona frontmatter parsed live via `js-yaml` per request (`agents/observability.ts`); `agent_state` is the canonical mirror for rate caps + status
 - **Inbox file decisions**: `inbox_entries.file_decisions` JSON column (additive migration via `PRAGMA table_info`) holds per-path `"approved" | "rejected"` markers. UI optimistically toggles; server rollback on error. Partial-approve path uses `git checkout <branch> -- <path>` per non-rejected file + one commit + `branch -D` (entry status becomes `"partial"`)
 - **Providers**: Anthropic (SSE + prompt caching), Ollama (auto-detect + NDJSON). `ANTHROPIC_API_KEY` env or local Ollama
+- **API-key vault** (Phase 8): per-project `projects/<id>/.ironlore/api-keys.enc`, AES-256-GCM under an Argon2id-derived key (19 MiB / 2 iter / 1 parallelism / 32-byte output), versioned JSON envelope. `POST /api/auth/change-password` re-encrypts every project's vault inline; writeVault retains the prior ciphertext as `.enc.bak` for one restart cycle. `VaultKey.dispose()` zeros the buffer after use
 
 ## Testing
 
@@ -81,6 +83,7 @@ API server in dev: `cd apps/web && npx tsx watch src/server/index.ts`
 - 1000 concurrent writes consistency
 - 6 Tier-1 tool-protocol scenarios (stale ETag, hallucinated block ID, ENOENT, budget exhaustion)
 - 5000-page sidebar/search benchmark (<400ms / <200ms)
+- Phase-8 security corpora: 60 XSS payloads walked through a real DOM (happy-dom) against both `renderMarkdownSafe` and `sanitizeHtml`; 23 allowlist/blocked-policy egress bypass attempts; 26 path-traversal + cross-project escape attempts + 9 benign baseline paths against `resolveSafe`
 - Provider-mode smoke tests (no-AI, Ollama, BYOK)
 
 ## Data layout

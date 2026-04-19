@@ -22,7 +22,7 @@ pnpm install
 ```sh
 pnpm dev                                          # Vite dev server (port 5173)
 cd apps/web && npx tsx watch src/server/index.ts  # API server (port 3000, separate terminal)
-pnpm test                                         # unit + integration tests (856 tests)
+pnpm test                                         # unit + integration tests (1046 tests)
 pnpm test:e2e                                     # e2e tests (Playwright)
 pnpm check                                        # lint + format (Biome)
 pnpm typecheck                                    # tsc -b
