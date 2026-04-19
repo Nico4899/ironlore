@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { AgentToastContainer } from "./components/AgentToast.js";
 import { AIPanel } from "./components/AIPanel.js";
 import { AIPanelRail } from "./components/AIPanelRail.js";
@@ -9,6 +9,7 @@ import { Header } from "./components/Header.js";
 import { InboxPanel } from "./components/InboxPanel.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OfflineBanner } from "./components/OfflineBanner.js";
+import { OnboardingWizard } from "./components/OnboardingWizard.js";
 import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
 import { ProvenancePane } from "./components/ProvenancePane.js";
 import { RecoveryBanner } from "./components/RecoveryBanner.js";
@@ -19,17 +20,65 @@ import { StatusBar } from "./components/StatusBar.js";
 import { useResponsiveLayout } from "./hooks/useResponsiveLayout.js";
 import { useThemeClass } from "./hooks/useThemeClass.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
+import { submitOnboarding } from "./lib/api.js";
 import { useAppStore } from "./stores/app.js";
 import { useAuthStore } from "./stores/auth.js";
 
 const Terminal = lazy(() => import("./components/Terminal.js"));
 
+const ONBOARDED_KEY = "ironlore.onboarded";
+
+function readOnboarded(): boolean {
+  try {
+    return localStorage.getItem(ONBOARDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markOnboarded(): void {
+  try {
+    localStorage.setItem(ONBOARDED_KEY, "1");
+  } catch {
+    /* storage denied — non-fatal; user just re-sees the wizard next session */
+  }
+}
+
 export function App() {
   const authStatus = useAuthStore((s) => s.status);
+  // Onboarding gate sits above the app shell so the wizard can render
+  //  full-bleed — sidebar / header / status bar never compete with it
+  //  for attention. Per docs/09-ui-and-brand.md §Onboarding wizard,
+  //  this is "the only Ironlore surface that doesn't use the
+  //  three-panel shell."
+  const [onboarded, setOnboarded] = useState<boolean>(readOnboarded);
 
   // Check session on mount
   useEffect(() => {
     useAuthStore.getState().checkSession();
+  }, []);
+
+  const handleOnboardingComplete = useCallback(
+    async (answers: { role: string; company: string; goals: string }) => {
+      try {
+        await submitOnboarding({
+          company_name: answers.company,
+          company_description: answers.company,
+          goals: answers.goals,
+        });
+      } catch {
+        // Server-side template substitution is best-effort. A network
+        //  failure here shouldn't trap the user in the wizard.
+      }
+      markOnboarded();
+      setOnboarded(true);
+    },
+    [],
+  );
+
+  const handleOnboardingSkip = useCallback(() => {
+    markOnboarded();
+    setOnboarded(true);
   }, []);
 
   // Auth gate
@@ -45,6 +94,18 @@ export function App() {
   }
   if (authStatus === "must-change-password") {
     return <ChangePasswordPage />;
+  }
+
+  // Onboarding gate — full-bleed, no shell chrome.
+  if (!onboarded) {
+    return (
+      <div className="flex h-screen flex-col bg-ironlore-slate text-primary">
+        <OnboardingWizard
+          onComplete={handleOnboardingComplete}
+          onSkip={handleOnboardingSkip}
+        />
+      </div>
+    );
   }
 
   return <AppShell />;
