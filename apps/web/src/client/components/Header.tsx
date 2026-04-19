@@ -1,170 +1,193 @@
-import {
-  ChevronRight,
-  Inbox,
-  LogOut,
-  Moon,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Search,
-  Settings as SettingsIcon,
-  Sparkles,
-  Sun,
-  TerminalSquare,
-} from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 import { useCallback } from "react";
-import { logout } from "../lib/api.js";
+import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import { useAppStore } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
 import { Logo } from "./Logo.js";
-import { Key } from "./primitives/index.js";
+import { Key, Reuleaux } from "./primitives/index.js";
 
 /**
- * Header / toolbar — left: logo + wordmark (links to home). Center:
- * breadcrumb of the current active path. Right: search trigger,
- * theme toggle, AI panel toggle, logout.
+ * AppHeader — window-wide top bar (docs/09-ui-and-brand.md
+ * §Header / toolbar and shell.jsx).
  *
- * Minimal by design per docs/09-ui-and-brand.md §Header / toolbar.
+ * Deliberately minimal. Most chrome (terminal, theme, settings,
+ * logout, project switcher) lives in the sidebar's bottom rail —
+ * surfacing them twice would just clutter the header. What lives
+ * here is the *product* navigation surface:
+ *
+ *  · Left: logo + "ironlore" wordmark (click → home) + breadcrumb
+ *    prefixed by the current project id.
+ *  · Right: ⌘K search chip, an Inbox pill that renders **only** when
+ *    inboxCount > 0 (amber pulse, click → open inbox), and a user
+ *    avatar derived from the session username.
+ *  · A 1 px agent-pulse gradient sweeps the bottom hairline while at
+ *    least one agent is running — matching §Agent pulse "the header
+ *    bottom rule".
  */
 export function Header() {
   const activePath = useAppStore((s) => s.activePath);
-  const theme = useAppStore((s) => s.theme);
-  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
-  const aiPanelOpen = useAppStore((s) => s.aiPanelOpen);
-  const terminalOpen = useAppStore((s) => s.terminalOpen);
+  const currentProjectId = useAuthStore((s) => s.currentProjectId);
+  const username = useAuthStore((s) => s.username);
 
-  const handleLogout = useCallback(async () => {
-    await logout();
-    useAuthStore.getState().clearSession();
+  const activity = useWorkspaceActivity();
+  const streaming = activity.runningCount > 0;
+  const inboxCount = activity.inboxCount;
+
+  const goHome = useCallback(() => {
+    useAppStore.getState().setActivePath(null);
+    useAppStore.getState().setActiveAgentSlug(null);
   }, []);
 
-  const iconBtn =
-    "rounded p-1.5 text-secondary hover:bg-ironlore-slate-hover hover:text-primary aria-pressed:bg-ironlore-slate-hover aria-pressed:text-ironlore-blue";
-
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3">
+    <header
+      className="relative flex h-11 shrink-0 items-center gap-3 border-b border-border px-4"
+      style={{ background: "var(--il-bg)" }}
+    >
+      {/* Logo + wordmark — returns the user to Home. */}
       <button
         type="button"
-        className={iconBtn}
-        onClick={() => useAppStore.getState().toggleSidebar()}
-        aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        aria-pressed={sidebarOpen}
-        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-      >
-        {sidebarOpen ? (
-          <PanelLeftClose className="h-4 w-4" />
-        ) : (
-          <PanelLeftOpen className="h-4 w-4" />
-        )}
-      </button>
-
-      <a
-        href="/"
-        className="flex items-center gap-2 text-primary"
+        onClick={goHome}
+        className="flex items-center gap-2 rounded outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
         aria-label="Ironlore home"
-        onClick={(e) => {
-          // Home resets the active path; skip the real navigation so the
-          // SPA doesn't do a full reload.
-          e.preventDefault();
-          useAppStore.getState().setActivePath(null);
-        }}
       >
         <Logo size={20} />
-        <span className="text-sm lowercase" style={{ fontWeight: 500, letterSpacing: "-0.02em" }}>
+        <span
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontWeight: 500,
+            fontSize: 14,
+            letterSpacing: "-0.02em",
+            color: "var(--il-text)",
+          }}
+        >
           ironlore
         </span>
-      </a>
+      </button>
 
-      {activePath && <Breadcrumb path={activePath} />}
+      <span aria-hidden="true" className="h-4 w-px" style={{ background: "var(--il-border)" }} />
 
-      <div className="flex-1" />
+      <Breadcrumb projectId={currentProjectId} path={activePath} />
 
-      <nav aria-label="Application controls" className="flex items-center gap-1">
+      <span className="flex-1" />
+
+      {/* ⌘K search chip — the primary discoverability affordance for
+       *  search. Clicking opens the dialog; ⌘K also works. */}
+      <button
+        type="button"
+        onClick={() => useAppStore.getState().toggleSearchDialog()}
+        className="flex items-center gap-2 rounded-sm px-2 py-0.75 text-xs outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        style={{
+          background: "var(--il-slate)",
+          border: "1px solid var(--il-border-soft)",
+        }}
+        aria-label="Search (⌘K)"
+        title="Search (⌘K)"
+      >
+        <Search className="h-3.5 w-3.5" style={{ color: "var(--il-text3)" }} />
+        <span
+          className="font-mono uppercase"
+          style={{ fontSize: 10.5, letterSpacing: "0.04em", color: "var(--il-text3)" }}
+        >
+          search
+        </span>
+        <Key>⌘K</Key>
+      </button>
+
+      {/* Inbox pill — amber, conditional. Hides when there's nothing
+       *  pending, so its presence carries signal (pending review). */}
+      {inboxCount > 0 && (
         <button
           type="button"
-          className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-          onClick={() => useAppStore.getState().toggleSearchDialog()}
-          aria-label="Search pages"
-          title="Search (⌘K)"
+          onClick={() => useAppStore.getState().toggleInbox()}
+          className="flex items-center gap-1.5 rounded-[3px] px-2 py-0.75 outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          style={{
+            background: "color-mix(in oklch, var(--il-amber) 15%, transparent)",
+            border: "1px solid color-mix(in oklch, var(--il-amber) 40%, transparent)",
+            color: "var(--il-amber)",
+          }}
+          aria-label={`Agent inbox (${inboxCount} pending)`}
+          title={`Agent inbox (${inboxCount} pending)`}
         >
-          <Search className="h-3.5 w-3.5" />
-          <span className="hidden md:inline">
-            <Key>⌘K</Key>
+          <Reuleaux size={8} color="var(--il-amber)" />
+          <span
+            className="font-mono uppercase"
+            style={{ fontSize: 10.5, letterSpacing: "0.04em" }}
+          >
+            inbox · {inboxCount}
           </span>
         </button>
-        <button
-          type="button"
-          className={iconBtn}
-          onClick={() => useAppStore.getState().toggleTerminal()}
-          aria-label={terminalOpen ? "Close terminal" : "Open terminal"}
-          aria-pressed={terminalOpen}
-          title={terminalOpen ? "Close terminal (⌃`)" : "Open terminal (⌃`)"}
-        >
-          <TerminalSquare className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          className={iconBtn}
-          onClick={() => useAppStore.getState().toggleTheme()}
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-        >
-          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-        </button>
-        <button
-          type="button"
-          className={iconBtn}
-          onClick={() => useAppStore.getState().toggleInbox()}
-          aria-label="Agent inbox"
-          title="Agent inbox"
-        >
-          <Inbox className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          className={iconBtn}
-          onClick={() => useAppStore.getState().toggleAIPanel()}
-          aria-label={aiPanelOpen ? "Hide AI panel" : "Show AI panel"}
-          aria-pressed={aiPanelOpen}
-          title={aiPanelOpen ? "Hide AI panel (⌘⇧A)" : "Show AI panel (⌘⇧A)"}
-        >
-          <Sparkles className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          className={iconBtn}
-          onClick={() => useAppStore.getState().toggleSettings()}
-          aria-label="Settings"
-          title="Settings"
-        >
-          <SettingsIcon className="h-4 w-4" />
-        </button>
-        <div className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-        <button
-          type="button"
-          className={iconBtn}
-          onClick={handleLogout}
-          aria-label="Log out"
-          title="Log out"
-        >
-          <LogOut className="h-4 w-4" />
-        </button>
-      </nav>
+      )}
+
+      {/* User avatar — initial(s) of the session username. Tap to
+       *  jump to Settings (there's no user-profile surface yet;
+       *  Settings is the closest personal-scope surface). */}
+      <UserAvatar username={username} />
+
+      {/* Agent-pulse 1px gradient at the bottom rule while any agent
+       *  is streaming. Matches §Agent pulse "the header bottom rule"
+       *  clause. Positioned absolutely so it doesn't shift layout. */}
+      {streaming && (
+        <span
+          aria-hidden="true"
+          className="il-header-pulse"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: -1,
+            height: 1,
+            background:
+              "linear-gradient(90deg, transparent, var(--il-blue) 50%, transparent)",
+            opacity: 0.8,
+            pointerEvents: "none",
+          }}
+        />
+      )}
     </header>
   );
 }
 
-function Breadcrumb({ path }: { path: string }) {
-  const segments = path.split("/").filter(Boolean);
+function Breadcrumb({
+  projectId,
+  path,
+}: {
+  projectId: string | null;
+  path: string | null;
+}) {
+  const segments = path ? path.split("/").filter(Boolean) : [];
+  const nothing = !projectId && segments.length === 0;
+  if (nothing) return null;
   return (
-    <nav aria-label="Current page path" className="flex min-w-0 items-center gap-1 text-xs">
+    <nav
+      aria-label="Current location"
+      className="flex min-w-0 items-center gap-1"
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 11.5,
+        letterSpacing: "0.01em",
+        color: "var(--il-text3)",
+      }}
+    >
+      {projectId && (
+        <span
+          className="truncate"
+          style={{ color: segments.length === 0 ? "var(--il-text)" : "var(--il-text3)" }}
+        >
+          {projectId}
+        </span>
+      )}
       {segments.map((seg, i) => {
         const isLast = i === segments.length - 1;
         return (
-          // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional by nature
+          // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
           <span key={i} className="flex items-center gap-1 truncate">
-            {i > 0 && <ChevronRight className="h-3 w-3 shrink-0 text-secondary" />}
+            <ChevronRight className="h-3 w-3 shrink-0" style={{ color: "var(--il-text4)" }} />
             <span
-              className={isLast ? "truncate font-medium text-primary" : "truncate text-secondary"}
+              className="truncate"
+              style={{
+                color: isLast ? "var(--il-text)" : "var(--il-text3)",
+                fontWeight: isLast ? 500 : 400,
+              }}
             >
               {seg}
             </span>
@@ -173,4 +196,47 @@ function Breadcrumb({ path }: { path: string }) {
       })}
     </nav>
   );
+}
+
+/**
+ * User avatar — a 22×22 slate chip with the uppercase initials of the
+ * current session's username. Click opens Settings. No dropdown yet;
+ * the sidebar bottom rail carries Log out, so a menu would be
+ * redundant chrome.
+ */
+function UserAvatar({ username }: { username: string | null }) {
+  const initials = deriveInitials(username);
+  return (
+    <button
+      type="button"
+      onClick={() => useAppStore.getState().toggleSettings()}
+      className="flex items-center justify-center rounded-full outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      style={{
+        width: 22,
+        height: 22,
+        background: "var(--il-slate-elev)",
+        border: "1px solid var(--il-border)",
+        fontFamily: "var(--font-mono)",
+        fontSize: 10,
+        color: "var(--il-text2)",
+      }}
+      aria-label={`Account — ${username ?? "you"} (open settings)`}
+      title={username ? `Signed in as ${username}` : "Signed in"}
+    >
+      {initials}
+    </button>
+  );
+}
+
+function deriveInitials(username: string | null): string {
+  if (!username) return "·";
+  const trimmed = username.trim();
+  if (!trimmed) return "·";
+  const parts = trimmed.split(/[\s._-]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    const first = parts[0]?.[0] ?? "";
+    const last = parts[parts.length - 1]?.[0] ?? "";
+    return `${first}${last}`.toLowerCase();
+  }
+  return trimmed.slice(0, 2).toLowerCase();
 }
