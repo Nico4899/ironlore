@@ -109,10 +109,7 @@ export function Header() {
           title={`Agent inbox (${inboxCount} pending)`}
         >
           <Reuleaux size={8} color="var(--il-amber)" />
-          <span
-            className="font-mono uppercase"
-            style={{ fontSize: 10.5, letterSpacing: "0.04em" }}
-          >
+          <span className="font-mono uppercase" style={{ fontSize: 10.5, letterSpacing: "0.04em" }}>
             inbox · {inboxCount}
           </span>
         </button>
@@ -136,8 +133,7 @@ export function Header() {
             right: 0,
             bottom: -1,
             height: 1,
-            background:
-              "linear-gradient(90deg, transparent, var(--il-blue) 50%, transparent)",
+            background: "linear-gradient(90deg, transparent, var(--il-blue) 50%, transparent)",
             opacity: 0.8,
             pointerEvents: "none",
           }}
@@ -147,13 +143,7 @@ export function Header() {
   );
 }
 
-function Breadcrumb({
-  projectId,
-  path,
-}: {
-  projectId: string | null;
-  path: string | null;
-}) {
+function Breadcrumb({ projectId, path }: { projectId: string | null; path: string | null }) {
   const segments = path ? path.split("/").filter(Boolean) : [];
   const nothing = !projectId && segments.length === 0;
   if (nothing) return null;
