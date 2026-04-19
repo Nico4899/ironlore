@@ -376,6 +376,70 @@ html[data-motif-provenance="off"] .il-provenance-strip {
   color: var(--il-blue);
 }
 
+/*
+ * Provenance target block — framed block inside the provenance pane
+ * that corresponds to the `[[Page#blk_…]]` citation the user clicked.
+ * Rendered by ProvenancePane's useEffect after sanitized HTML mounts:
+ *   · the nearest block-level ancestor of `#provenance-<blockId>` gets
+ *     `.il-provenance-target`
+ *   · a `target · blk_<id> · flashed 1.5s` overline is appended inside
+ *     the same block.
+ * The brief 1.5 s Signal-Amber flash is handled by the parent effect
+ * on the anchor span; the framing below is the persistent cue that
+ * survives after the flash fades.
+ */
+.il-provenance-target {
+  position: relative;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in oklch, var(--il-amber) 40%, transparent);
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--il-amber) 12%, transparent);
+}
+
+.il-provenance-target::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: -1px;
+  width: 2px;
+  background: var(--il-amber);
+  border-radius: 2px 0 0 2px;
+}
+
+.il-provenance-target-overline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--il-amber);
+}
+
+.il-provenance-target-overline::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--il-amber);
+}
+
+/*
+ * Provenance anchor — invisible marker inserted by ProvenancePane's
+ * regex so the post-mount effect can locate the cited block. The
+ * surrounding block gets framed via `.il-provenance-target` (above);
+ * the anchor itself stays zero-width so text reflow is untouched.
+ */
+.il-provenance-anchor {
+  display: inline;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .il-pulse::before {
     animation: none;

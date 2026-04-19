@@ -103,7 +103,26 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
       }}
     >
       <PaneHeader pagePath={pagePath} onClose={onClose} />
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{
+          padding: "18px 18px",
+          background: "var(--il-bg-raised, var(--il-bg))",
+        }}
+      >
+        {/* Full path as a muted mono overline, per screen-editor.jsx. */}
+        <div
+          className="font-mono truncate"
+          style={{
+            fontSize: 10,
+            color: "var(--il-text4)",
+            letterSpacing: "0.06em",
+            marginBottom: 6,
+          }}
+          title={pagePath}
+        >
+          {pagePath}
+        </div>
         {content === null ? (
           <p className="text-sm text-secondary">Loading…</p>
         ) : (
@@ -160,25 +179,70 @@ function PaneHeader({
   );
 }
 
-function ProvenanceContent({ content, blockId }: { content: string; blockId: string }) {
-  // Render the full page but wrap each block-ID match in a target span.
-  // The block we're looking for gets an ID for scrolling + the flash.
-  const html = renderMarkdownSafe(content);
+const BLOCK_TAGS = new Set([
+  "P",
+  "H1",
+  "H2",
+  "H3",
+  "H4",
+  "H5",
+  "H6",
+  "UL",
+  "OL",
+  "LI",
+  "BLOCKQUOTE",
+  "PRE",
+  "DIV",
+  "TABLE",
+]);
 
-  // Inject an anchor before the target block ID comment so the scroll
-  // target exists in the rendered DOM. Since block IDs are HTML comments
-  // and get stripped by the sanitizer, we insert a visible marker via
-  // a simple string replacement on the unsanitized content.
-  const markedHtml = html.replace(
+function ProvenanceContent({ content, blockId }: { content: string; blockId: string }) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
+  // Rendered markdown — the block-ID HTML comments get stripped by
+  //  the sanitizer, so we substitute a visible anchor before the
+  //  sanitizer sees them. The anchor's id lets us scroll + locate
+  //  the target block in a `useEffect` below.
+  const html = renderMarkdownSafe(content).replace(
     new RegExp(`(${blockId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "g"),
-    `<span id="provenance-${blockId}" class="transition-colors duration-(--motion-flash)"></span>$1`,
+    `<span id="provenance-${blockId}" class="il-provenance-anchor"></span>$1`,
   );
+
+  // After the HTML mounts, locate the nearest block ancestor of the
+  //  anchor and frame it in amber with a 2 px left rail. Append a
+  //  mono `target · blk_<id> · flashed 1.5s` overline as a sibling
+  //  inside the block so the cue is persistent (the transient flash
+  //  is handled by the parent effect).
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const anchor = host.querySelector(`#provenance-${CSS.escape(blockId)}`);
+    if (!anchor) return;
+
+    let block: HTMLElement | null = anchor.parentElement;
+    while (block && block !== host && !BLOCK_TAGS.has(block.tagName)) {
+      block = block.parentElement;
+    }
+    if (!block || block === host) return;
+
+    block.classList.add("il-provenance-target");
+    const overline = document.createElement("div");
+    overline.className = "il-provenance-target-overline";
+    overline.textContent = `target · ${blockId} · flashed ${MOTION.flash / 1000}s`;
+    block.appendChild(overline);
+
+    return () => {
+      block?.classList.remove("il-provenance-target");
+      overline.remove();
+    };
+  }, [blockId, html]);
 
   return (
     <div
+      ref={hostRef}
       className="prose prose-sm max-w-none text-primary"
       // biome-ignore lint/security/noDangerouslySetInnerHtml: output passes through renderMarkdownSafe
-      dangerouslySetInnerHTML={{ __html: markedHtml }}
+      dangerouslySetInnerHTML={{ __html: html }}
     />
   );
 }
