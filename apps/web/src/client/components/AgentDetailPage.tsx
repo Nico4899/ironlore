@@ -406,12 +406,13 @@ function RecentRunsTable({ runs }: { runs: AgentRunRecord[] | null }) {
           key={r.jobId}
           className="grid items-center gap-3 rounded"
           style={{
-            gridTemplateColumns: "64px 16px 60px minmax(0, 1fr) auto",
+            gridTemplateColumns: "64px 16px 68px minmax(0, 1fr) auto",
             padding: "6px 10px",
             background:
               idx === 0 ? "color-mix(in oklch, var(--il-blue) 8%, transparent)" : "transparent",
             borderLeft: `2px solid ${idx === 0 ? "var(--il-blue)" : "transparent"}`,
           }}
+          title={`Job ${r.jobId}${r.commitShaEnd ? ` · ${r.commitShaEnd.slice(0, 7)}` : ""}`}
         >
           <span className="font-mono" style={{ fontSize: 11, color: "var(--il-text3)" }}>
             {formatClockTime(r.startedAt)}
@@ -421,17 +422,17 @@ function RecentRunsTable({ runs }: { runs: AgentRunRecord[] | null }) {
             className="font-mono"
             style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.04em" }}
           >
-            {String(r.stepCount).padStart(2, "0")} steps
+            step {String(r.stepCount).padStart(2, "0")}
           </span>
           <span className="truncate" style={{ fontSize: 12.5, color: "var(--il-text)" }}>
             {r.note ?? "—"}
           </span>
-          <span
-            className="font-mono"
-            style={{ fontSize: 10, color: "var(--il-text4)" }}
-            title={`Job ${r.jobId}`}
-          >
-            {r.commitShaEnd ? r.commitShaEnd.slice(0, 7) : ""}
+          {/* Right-most column is a mono arrow per the JSX spec — the
+           *  commit SHA moves to the row's title tooltip so hover still
+           *  reveals the endpoint, but the column itself stays a clean
+           *  directional cue rather than a hash. */}
+          <span className="font-mono" style={{ fontSize: 11, color: "var(--il-text4)" }}>
+            →
           </span>
         </div>
       ))}
