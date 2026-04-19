@@ -70,9 +70,7 @@ export function useWorkspaceActivity(): WorkspaceActivity {
         //  is N tiny queries rather than one aggregate; the server
         //  joins agent_runs ⨝ jobs via an index so each is fast.
         const runs = await Promise.all(
-          agentList.map((a) =>
-            fetchAgentRuns(a.slug, 1).catch(() => [] as AgentRunRecord[]),
-          ),
+          agentList.map((a) => fetchAgentRuns(a.slug, 1).catch(() => [] as AgentRunRecord[])),
         );
 
         if (cancelled) return;

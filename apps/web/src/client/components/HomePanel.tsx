@@ -90,8 +90,7 @@ export function HomePanel() {
                 {activity.runningCount > 0 && activity.inboxCount > 0 && ", "}
                 {activity.inboxCount > 0 && (
                   <>
-                    <span style={{ color: "var(--il-text)" }}>{activity.inboxCount}</span>{" "}
-                    in inbox
+                    <span style={{ color: "var(--il-text)" }}>{activity.inboxCount}</span> in inbox
                   </>
                 )}
               </span>
@@ -142,9 +141,7 @@ export function HomePanel() {
               index={1}
               title="Active runs"
               meta={
-                activity.runningCount > 0
-                  ? `${activity.runningCount} RUNNING`
-                  : "NOTHING RUNNING"
+                activity.runningCount > 0 ? `${activity.runningCount} RUNNING` : "NOTHING RUNNING"
               }
             />
             <div style={{ marginTop: 14 }}>
@@ -257,11 +254,10 @@ export function HomePanel() {
  * follows the server's alphabetical list — deterministic across
  * renders, no churn on a poll.
  */
-function orderedForHome(agents: ReturnType<typeof useWorkspaceActivity>["agents"]): ReturnType<
-  typeof useWorkspaceActivity
->["agents"] {
-  const rank = (a: (typeof agents)[number]) =>
-    a.running ? 0 : a.status === "paused" ? 2 : 1;
+function orderedForHome(
+  agents: ReturnType<typeof useWorkspaceActivity>["agents"],
+): ReturnType<typeof useWorkspaceActivity>["agents"] {
+  const rank = (a: (typeof agents)[number]) => (a.running ? 0 : a.status === "paused" ? 2 : 1);
   return [...agents].sort((a, b) => rank(a) - rank(b));
 }
 
@@ -339,11 +335,7 @@ function ActiveAgentCard({
           className="font-mono uppercase"
           style={{
             fontSize: 10,
-            color: running
-              ? "var(--il-blue)"
-              : paused
-                ? "var(--il-amber)"
-                : "var(--il-text3)",
+            color: running ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)",
             letterSpacing: "0.06em",
           }}
         >
@@ -373,26 +365,28 @@ function RunRateHeadroom({
 }) {
   const [series, setSeries] = useState<AgentHistogramResponse[] | null>(null);
 
-  // Stable key so we only refetch when the agent list actually changes.
-  const agentsKey = useMemo(() => agents.map((a) => a.slug).sort().join("|"), [agents]);
+  // Stable slug list + primitive key. `agents` is a new array
+  //  reference on every poll tick, so depending on it directly would
+  //  refetch the histogram every 10s; we only want to refetch when
+  //  the *set* of slugs actually changes.
+  const slugs = useMemo(() => agents.map((a) => a.slug).sort(), [agents]);
+  const slugsKey = slugs.join("|");
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: slugsKey captures the only dependency that matters — refetching on every `slugs` reference change would negate the memoization.
   useEffect(() => {
     let cancelled = false;
-    if (agents.length === 0) {
+    if (slugs.length === 0) {
       setSeries([]);
       return;
     }
-    Promise.all(
-      agents.map((a) => fetchAgentHistogram(a.slug).catch(() => null)),
-    ).then((rows) => {
+    Promise.all(slugs.map((slug) => fetchAgentHistogram(slug).catch(() => null))).then((rows) => {
       if (cancelled) return;
       setSeries(rows.filter((r): r is AgentHistogramResponse => r !== null));
     });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentsKey]);
+  }, [slugsKey]);
 
   if (series === null) {
     return <div className="py-6 text-center text-xs text-secondary">Loading…</div>;

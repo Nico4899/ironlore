@@ -30,9 +30,8 @@ import {
   Video,
   Workflow,
 } from "lucide-react";
-import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
-import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
   createFolder,
   createPage,
@@ -45,6 +44,7 @@ import {
 import { useAppStore } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
+import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 
 // ---------------------------------------------------------------------------
 // File icon — each type gets its own color
@@ -845,9 +845,7 @@ function ProjectTile({ collapsed }: { collapsed: boolean }) {
             flexShrink: 0,
           }}
         />
-        <span
-          style={{ flex: 1, lineHeight: 1.2, minWidth: 0, display: "block" }}
-        >
+        <span style={{ flex: 1, lineHeight: 1.2, minWidth: 0, display: "block" }}>
           <span
             className="block truncate"
             style={{ fontSize: 12.5, fontWeight: 500, color: "var(--il-text)" }}
@@ -922,10 +920,7 @@ function ActiveAgentsStrip({ collapsed }: { collapsed: boolean }) {
             className="flex items-center gap-2 rounded-[3px] px-1 py-0.5 text-left outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
           >
             <ReuleauxIcon size={7} color="var(--il-blue)" />
-            <span
-              className="flex-1 truncate"
-              style={{ fontSize: 12, color: "var(--il-text2)" }}
-            >
+            <span className="flex-1 truncate" style={{ fontSize: 12, color: "var(--il-text2)" }}>
               {a.slug}
             </span>
             {a.stepLabel && (
