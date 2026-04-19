@@ -6,6 +6,7 @@ import { evalCommand } from "./commands/eval.js";
 import { flush } from "./commands/flush.js";
 import { lint } from "./commands/lint.js";
 import { migrate } from "./commands/migrate.js";
+import { newProject } from "./commands/new-project.js";
 import { reindex } from "./commands/reindex.js";
 import { repair } from "./commands/repair.js";
 import { restore } from "./commands/restore.js";
@@ -79,6 +80,16 @@ program
       perfOnly: opts.perfOnly ?? false,
       qualityOnly: opts.qualityOnly ?? false,
     }),
+  );
+
+program
+  .command("new-project")
+  .description("Scaffold a new project under projects/<id>/ (restart server to mount)")
+  .argument("<id>", "Project id (filesystem-safe slug)")
+  .option("--name <name>", "Human-readable name (defaults to id)")
+  .option("--preset <preset>", "Preset: main | research | sandbox", "main")
+  .action((id, opts: { name?: string; preset: "main" | "research" | "sandbox" }) =>
+    newProject(id, opts),
   );
 
 program.parse();
