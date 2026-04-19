@@ -12,12 +12,20 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
+import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import { getApiProject, revertJob, submitDryRunVerdict } from "../lib/api.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
-import { AgentPulse, Blockref, ProvenanceStrip, StatusPip } from "./primitives/index.js";
+import {
+  AgentPulse,
+  Blockref,
+  Key,
+  Meta,
+  ProvenanceStrip,
+  StatusPip,
+} from "./primitives/index.js";
 
 /**
  * Storage key pattern for cost-estimate acknowledgement per agent slug.
@@ -136,6 +144,13 @@ export function AIPanel() {
 
   const canSend = inputDraft.trim().length > 0 || contexts.length > 0;
 
+  // Pull the step label for the active agent from the shared workspace
+  //  poller so the header counter tracks the same "step NN" value the
+  //  sidebar and Home's Active runs see. `stepLabel` is null when the
+  //  agent isn't running — we only render the Meta cluster then.
+  const { agents } = useWorkspaceActivity();
+  const stepLabel = agents.find((a) => a.slug === activeAgent)?.stepLabel ?? null;
+
   return (
     <aside
       className="flex shrink-0 flex-col border-l border-border bg-ironlore-slate-elevated"
@@ -145,31 +160,32 @@ export function AIPanel() {
       }}
       aria-label="AI panel"
     >
-      {/* Header.
-       *  Agent pulse: per spec the pulse sweeps the bottom rule of the
-       *  header (1px line, the building's heartbeat). We wrap the whole
-       *  header in AgentPulse and let the ::before rail run over the
-       *  border. Reuleaux pip replaces the Sparkles icon — Reuleaux is
-       *  the one shape we use for any form of agent-active state. */}
+      {/* Header — matches screen-editor.jsx AI panel header:
+       *   · StatusPip (Reuleaux inside) for running/idle state
+       *   · agent slug as a button → opens detail page
+       *   · Meta k="step" v="NN" while streaming, pulled from
+       *     useWorkspaceActivity so it matches sidebar + Home counters
+       *   · right-aligned ⌘⇧A Key chip as the discoverability hint for
+       *     the global AI-panel toggle shortcut
+       * Wrapped in AgentPulse so the 3.2 s sweep rides the bottom rule
+       * while the agent streams. */}
       <AgentPulse active={isStreaming}>
-        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <StatusPip state={isStreaming ? "running" : "idle"} size={11} />
-            <span className="text-sm font-semibold tracking-tight">AI</span>
-            {isStreaming && (
-              <span className="font-mono text-[10px] uppercase tracking-wider text-ironlore-blue">
-                streaming
-              </span>
-            )}
-          </div>
+        <div
+          className="flex items-center gap-2 border-b border-border"
+          style={{ height: 36, padding: "0 14px" }}
+        >
+          <StatusPip state={isStreaming ? "running" : "idle"} size={11} />
           <button
             type="button"
             onClick={() => useAppStore.getState().setActiveAgentSlug(activeAgent)}
-            className="rounded border border-transparent px-1.5 py-0.5 text-xs font-medium text-secondary outline-none transition-colors hover:border-border hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            className="il-ai-slug rounded border border-transparent px-1 py-0.5 outline-none transition-colors hover:border-border hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
             title={`Open ${activeAgent} detail page`}
           >
             {activeAgent}
           </button>
+          {stepLabel && <Meta k="step" v={stepLabel.replace(/^step\s+/, "")} />}
+          <span className="flex-1" />
+          <Key>⌘⇧A</Key>
         </div>
       </AgentPulse>
 

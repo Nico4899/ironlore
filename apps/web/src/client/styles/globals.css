@@ -377,6 +377,29 @@ html[data-motif-provenance="off"] .il-provenance-strip {
 }
 
 /*
+ * AI panel header — agent slug button. Safe variant is Inter 600 / 13
+ * matching the inline labels that anchor the rest of the editor
+ * chrome. The serif display variant swaps in Instrument Serif italic
+ * at 16 so the header echoes the editor h1 treatment under the same
+ * `data-type-display="serif"` attribute.
+ */
+.il-ai-slug {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--il-text);
+}
+
+html[data-type-display="serif"] .il-ai-slug {
+  font-family: "Instrument Serif", "GT Sectra", "Times New Roman", serif;
+  font-size: 16px;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: 0;
+}
+
+/*
  * Provenance target block — framed block inside the provenance pane
  * that corresponds to the `[[Page#blk_…]]` citation the user clicked.
  * Rendered by ProvenancePane's useEffect after sanitized HTML mounts:
