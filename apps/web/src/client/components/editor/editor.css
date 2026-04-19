@@ -25,6 +25,37 @@ html[data-type-display="serif"] .il-editor-scroll {
   padding: 36px 56px;
 }
 
+/* Metadata strip sits above the editor scroll container. The strip is
+ *  a sibling (not a child) because ProseMirror owns the scroll content
+ *  wholesale, but its left/right padding must align with the scroll
+ *  container so the Reuleaux + mono counters hang in the same column
+ *  as the title and blocks below. */
+.il-editor-meta {
+  padding-left: 44px;
+  padding-right: 44px;
+}
+
+html[data-type-display="serif"] .il-editor-meta {
+  padding-left: 56px;
+  padding-right: 56px;
+}
+
+/* When the metadata strip renders above, the scroll container should
+ *  zero its own top padding so the rhythm is metadata (pt-6) → 14 px
+ *  to title (h1 margin-bottom collapses). Editor keeps 28 px padding
+ *  for the no-metadata (binary-viewer, raw) path by default; the
+ *  combined selector below only applies when the strip is present. */
+.il-editor-meta + div .il-editor-scroll,
+.il-editor-meta ~ div.il-editor-scroll,
+.il-editor-meta + div > .il-editor-scroll {
+  padding-top: 14px;
+}
+html[data-type-display="serif"] .il-editor-meta + div .il-editor-scroll,
+html[data-type-display="serif"] .il-editor-meta ~ div.il-editor-scroll,
+html[data-type-display="serif"] .il-editor-meta + div > .il-editor-scroll {
+  padding-top: 18px;
+}
+
 /* ─── Base ─── */
 
 .ProseMirror {

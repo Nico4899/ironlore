@@ -515,6 +515,39 @@ function MarkdownContent({
         </span>
       </div>
 
+      {/*
+       * Page metadata strip — mono overline inside the editor's gutter
+       * (x-aligned to the title below) per screen-editor.jsx. The
+       * horizontal padding matches `.il-editor-scroll` so the blue
+       * Reuleaux hangs in the same column as the h1 that follows.
+       * Author attribution is omitted until per-file provenance lands
+       * in the backend; the strip drops quietly when there's nothing
+       * real to say (no file open).
+       */}
+      {filePath && (
+        <div
+          className="il-editor-meta flex items-center gap-2 pt-6 font-mono uppercase"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.06em",
+            color: "var(--il-text3)",
+          }}
+        >
+          <Reuleaux size={8} color="var(--il-blue)" aria-label="Page metadata" />
+          <span>page</span>
+          <span style={{ color: "var(--il-text4)" }}>/</span>
+          <span style={{ color: "var(--il-text2)" }}>
+            {blockCount} {blockCount === 1 ? "block" : "blocks"}
+          </span>
+          {savedLabel && (
+            <>
+              <span style={{ color: "var(--il-text4)" }}>/</span>
+              <span style={{ color: "var(--il-text2)" }}>{savedLabel}</span>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Editor */}
       {mode === "wysiwyg" ? (
         <MarkdownEditor
