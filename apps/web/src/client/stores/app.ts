@@ -12,6 +12,7 @@ const DENSITY_KEY = "ironlore.density";
 const ACCENT_HUE_KEY = "ironlore.accentHue";
 const MOTION_KEY = "ironlore.motion";
 const MOTIFS_KEY = "ironlore.motifs";
+const TYPE_DISPLAY_KEY = "ironlore.typeDisplay";
 
 /**
  * Motion intensity. `full` runs all animations; `reduced` mirrors
@@ -20,6 +21,20 @@ const MOTIFS_KEY = "ironlore.motifs";
  * lives in globals.css via `html[data-motion="..."]` selectors.
  */
 export type MotionSetting = "full" | "reduced" | "none";
+
+/**
+ * Display-type variant. `sans` (default) keeps every display surface
+ * — Home greeting, Agent detail hero slug, Onboarding copy — in Inter.
+ * `serif` opts those specific surfaces into Instrument Serif, matching
+ * the display-variant silhouette the JSX mockups describe. A few
+ * surfaces (AI panel header agent-slug and Agent-detail hero slug)
+ * also flip to serif-italic when this is `serif`.
+ *
+ * Mirrored to `html[data-type-display="sans|serif"]` via
+ * `useThemeClass` so CSS can gate variant-only styling off the
+ * attribute, and persists under `ironlore.typeDisplay`.
+ */
+export type TypeDisplaySetting = "sans" | "serif";
 
 /**
  * Five toggleable decorative motifs. Two (`provenance`, `agentPulse`)
@@ -107,6 +122,24 @@ function loadMotion(): MotionSetting {
   return "full";
 }
 
+function loadTypeDisplay(): TypeDisplaySetting {
+  try {
+    const raw = window.localStorage.getItem(TYPE_DISPLAY_KEY);
+    if (raw === "sans" || raw === "serif") return raw;
+  } catch {
+    /* storage denied */
+  }
+  return "sans";
+}
+
+function persistTypeDisplay(value: TypeDisplaySetting): void {
+  try {
+    window.localStorage.setItem(TYPE_DISPLAY_KEY, value);
+  } catch {
+    /* storage denied */
+  }
+}
+
 /**
  * Load motif toggles, tolerating partial / corrupt payloads. Any
  * missing key falls back to `DEFAULT_MOTIFS[key] === true` so a
@@ -161,6 +194,8 @@ interface AppStore {
   accentHue: number;
   /** Motion intensity — gates the keyframe animations in globals.css. */
   motion: MotionSetting;
+  /** Display-type variant — `sans` (Inter everywhere) vs `serif` (hero + greeting in Instrument Serif). */
+  typeDisplay: TypeDisplaySetting;
   /** Decorative motif visibility toggles — see `MotifSettings` docs. */
   motifs: MotifSettings;
   wsConnected: boolean;
@@ -192,6 +227,7 @@ interface AppStore {
   toggleDensity: () => void;
   setAccentHue: (hue: number) => void;
   setMotion: (motion: MotionSetting) => void;
+  setTypeDisplay: (value: TypeDisplaySetting) => void;
   /**
    * Toggle one motif key. Using per-key setter (vs. a whole-object
    * setter) means the Settings UI re-renders minimally and
@@ -273,6 +309,7 @@ export const useAppStore = create<AppStore>((set) => ({
   density: loadDensity(),
   accentHue: loadAccentHue(),
   motion: loadMotion(),
+  typeDisplay: loadTypeDisplay(),
   motifs: loadMotifs(),
   wsConnected: false,
   wsReconnecting: false,
@@ -352,6 +389,10 @@ export const useAppStore = create<AppStore>((set) => ({
   setMotion: (motion) => {
     persistMotion(motion);
     set({ motion });
+  },
+  setTypeDisplay: (value) => {
+    persistTypeDisplay(value);
+    set({ typeDisplay: value });
   },
   setMotif: (key, value) =>
     set((s) => {

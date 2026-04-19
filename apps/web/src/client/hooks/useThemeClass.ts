@@ -17,6 +17,9 @@ import { useAppStore } from "../stores/app.js";
  *   - `motion` → `data-motion="full" | "reduced" | "none"`. Gates the
  *     `ilPulse` + `ilSpin` keyframes in globals.css without touching
  *     the components that use them.
+ *   - `typeDisplay` → `data-type-display="sans" | "serif"`. Opts
+ *     display surfaces (Home hero, Agent-detail hero, Onboarding
+ *     copy) into Instrument Serif when `serif`; Inter otherwise.
  *   - `motifs` → one `data-motif-<key>="on" | "off"` attr each. The
  *     two motifs with live plumbing (`provenance`, `agentPulse`) are
  *     CSS-gated. The other two persist in the attribute for future
@@ -27,6 +30,7 @@ export function useThemeClass(): void {
   const density = useAppStore((s) => s.density);
   const accentHue = useAppStore((s) => s.accentHue);
   const motion = useAppStore((s) => s.motion);
+  const typeDisplay = useAppStore((s) => s.typeDisplay);
   const motifs = useAppStore((s) => s.motifs);
 
   useEffect(() => {
@@ -37,9 +41,10 @@ export function useThemeClass(): void {
     root.dataset.density = density;
     root.style.setProperty("--il-accent-hue", String(accentHue));
     root.dataset.motion = motion;
+    root.dataset.typeDisplay = typeDisplay;
     root.dataset.motifProvenance = motifs.provenance ? "on" : "off";
     root.dataset.motifAgentPulse = motifs.agentPulse ? "on" : "off";
     root.dataset.motifBlockrefPreview = motifs.blockrefPreview ? "on" : "off";
     root.dataset.motifReuleauxPips = motifs.reuleauxPips ? "on" : "off";
-  }, [theme, density, accentHue, motion, motifs]);
+  }, [theme, density, accentHue, motion, typeDisplay, motifs]);
 }

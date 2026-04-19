@@ -11,6 +11,7 @@ import {
   DEFAULT_ACCENT_HUE,
   type MotifSettings,
   type MotionSetting,
+  type TypeDisplaySetting,
   useAppStore,
 } from "../stores/app.js";
 
@@ -168,6 +169,7 @@ function AppearanceTab() {
   const density = useAppStore((s) => s.density);
   const accentHue = useAppStore((s) => s.accentHue);
   const motion = useAppStore((s) => s.motion);
+  const typeDisplay = useAppStore((s) => s.typeDisplay);
   const motifs = useAppStore((s) => s.motifs);
 
   return (
@@ -244,6 +246,21 @@ function AppearanceTab() {
 
       <SettingRow
         n="05"
+        label="Display type"
+        sub="Sans keeps every heading in Inter. Serif opts the Home greeting, Agent-detail hero slug, and Onboarding copy into Instrument Serif — the display silhouette in the brand spec."
+      >
+        <SegChoice
+          options={[
+            { value: "sans", label: "Sans" },
+            { value: "serif", label: "Serif" },
+          ]}
+          active={typeDisplay}
+          onChange={(v) => useAppStore.getState().setTypeDisplay(v as TypeDisplaySetting)}
+        />
+      </SettingRow>
+
+      <SettingRow
+        n="06"
         label="Motif visibility"
         sub="Persisted per device. Two motifs have live plumbing today; the other two save state for future features."
       >
