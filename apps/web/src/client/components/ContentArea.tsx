@@ -2,7 +2,7 @@ import { Upload } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAutoSave } from "../hooks/useAutoSave.js";
 import type { ConflictResponse } from "../lib/api.js";
-import { fetchPage, fetchRaw, submitOnboarding, uploadFile } from "../lib/api.js";
+import { fetchPage, fetchRaw, uploadFile } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
@@ -13,7 +13,6 @@ import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
 import { HomePanel } from "./HomePanel.js";
-import { OnboardingWizard } from "./OnboardingWizard.js";
 import { Meta, Reuleaux, StatusPip } from "./primitives/index.js";
 import { SplitPane } from "./SplitPane.js";
 import { TabBar } from "./TabBar.js";
@@ -209,44 +208,10 @@ export function ContentArea() {
     onDrop: handleDrop,
   };
 
-  // Onboarding state — show wizard on first visit
-  const [onboarded, setOnboarded] = useState(() => {
-    try {
-      return localStorage.getItem("ironlore.onboarded") === "1";
-    } catch {
-      return false;
-    }
-  });
-
-  const handleOnboardingComplete = useCallback(
-    async (answers: { role: string; company: string; goals: string }) => {
-      try {
-        await submitOnboarding({
-          company_name: answers.company,
-          company_description: answers.company,
-          goals: answers.goals,
-        });
-      } catch {
-        // Non-fatal — substitution is best-effort
-      }
-      try {
-        localStorage.setItem("ironlore.onboarded", "1");
-      } catch {
-        /* storage denied */
-      }
-      setOnboarded(true);
-    },
-    [],
-  );
-
-  const handleOnboardingSkip = useCallback(() => {
-    try {
-      localStorage.setItem("ironlore.onboarded", "1");
-    } catch {
-      /* storage denied */
-    }
-    setOnboarded(true);
-  }, []);
+  // Onboarding lives above AppShell in App.tsx now (full-bleed
+  //  surface per docs/09-ui-and-brand.md §Onboarding wizard). By the
+  //  time ContentArea renders the user has already completed or
+  //  skipped the wizard.
 
   const sidebarTab = useAppStore((s) => s.sidebarTab);
 
@@ -266,8 +231,6 @@ export function ContentArea() {
         <TabBar />
         {activeAgentSlug ? (
           <AgentDetailPage slug={activeAgentSlug} />
-        ) : !onboarded ? (
-          <OnboardingWizard onComplete={handleOnboardingComplete} onSkip={handleOnboardingSkip} />
         ) : sidebarTab === "explore" ? (
           <div className="flex flex-1 items-center justify-center px-8">
             <div className="max-w-md text-center">

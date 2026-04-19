@@ -100,10 +100,7 @@ export function App() {
   if (!onboarded) {
     return (
       <div className="flex h-screen flex-col bg-ironlore-slate text-primary">
-        <OnboardingWizard
-          onComplete={handleOnboardingComplete}
-          onSkip={handleOnboardingSkip}
-        />
+        <OnboardingWizard onComplete={handleOnboardingComplete} onSkip={handleOnboardingSkip} />
       </div>
     );
   }
