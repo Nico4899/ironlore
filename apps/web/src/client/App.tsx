@@ -5,6 +5,7 @@ import { AIPanelRail } from "./components/AIPanelRail.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { CopyToProjectDialog } from "./components/CopyToProjectDialog.js";
+import { Header } from "./components/Header.js";
 import { InboxPanel } from "./components/InboxPanel.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OfflineBanner } from "./components/OfflineBanner.js";
@@ -14,6 +15,7 @@ import { RecoveryBanner } from "./components/RecoveryBanner.js";
 import { SearchDialog } from "./components/SearchDialog.js";
 import { SettingsDialog } from "./components/SettingsDialog.js";
 import { SidebarNew } from "./components/SidebarNew.js";
+import { StatusBar } from "./components/StatusBar.js";
 import { useResponsiveLayout } from "./hooks/useResponsiveLayout.js";
 import { useThemeClass } from "./hooks/useThemeClass.js";
 import { useWebSocket } from "./hooks/useWebSocket.js";
@@ -97,42 +99,52 @@ function AppShell() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-ironlore-slate text-primary">
+    <div className="flex h-screen flex-col bg-ironlore-slate text-primary">
       {/* Skip navigation (a11y) */}
       <a href="#main-content" className="skip-nav">
         Skip to content
       </a>
 
-      {/* Sidebar (always rendered — collapsed state handled internally) */}
-      <SidebarNew />
+      {/* App header — logo, breadcrumb, search chip, inbox pill, avatar.
+       *  Spans the full window width; per shell.jsx the header sits
+       *  above both the sidebar and the content. */}
+      <Header />
 
-      {/* Main content area */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Banners */}
-        <OfflineBanner />
-        <RecoveryBanner />
+      {/* Shell body — sidebar on the left, content + panels on the right. */}
+      <div className="flex min-h-0 flex-1">
+        <SidebarNew />
 
-        {/* Content + panels */}
-        <div className="flex flex-1 overflow-hidden">
-          <ContentArea />
-          {inboxOpen && <InboxPanel onClose={() => useAppStore.getState().toggleInbox()} />}
-          {aiPanelOpen ? <AIPanel /> : <AIPanelRail />}
-          {provenance && (
-            <ProvenancePane
-              pagePath={provenance.pagePath}
-              blockId={provenance.blockId}
-              onClose={() => useAppStore.getState().closeProvenance()}
-            />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Banners */}
+          <OfflineBanner />
+          <RecoveryBanner />
+
+          {/* Content + panels */}
+          <div className="flex flex-1 overflow-hidden">
+            <ContentArea />
+            {inboxOpen && <InboxPanel onClose={() => useAppStore.getState().toggleInbox()} />}
+            {aiPanelOpen ? <AIPanel /> : <AIPanelRail />}
+            {provenance && (
+              <ProvenancePane
+                pagePath={provenance.pagePath}
+                blockId={provenance.blockId}
+                onClose={() => useAppStore.getState().closeProvenance()}
+              />
+            )}
+          </div>
+
+          {/* Terminal panel (Ctrl+`) */}
+          {terminalOpen && (
+            <Suspense fallback={<div className="h-64 border-t border-border" />}>
+              <Terminal />
+            </Suspense>
           )}
         </div>
-
-        {/* Terminal panel (Ctrl+`) */}
-        {terminalOpen && (
-          <Suspense fallback={<div className="h-64 border-t border-border" />}>
-            <Terminal />
-          </Suspense>
-        )}
       </div>
+
+      {/* Status bar — path · branch · saved · agents · WS. Spans the
+       *  full window width at the bottom. */}
+      <StatusBar />
 
       {/* Search dialog (Cmd+K) */}
       {searchDialogOpen && <SearchDialog />}
