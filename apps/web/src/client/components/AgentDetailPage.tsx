@@ -108,13 +108,38 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
     }
   }, [pausing, state, slug, paused]);
 
+  // Is the agent's most-recent run still running? The observability
+  //  endpoint returns runs ordered desc by startedAt; status==="running"
+  //  on the top row means the executor is currently streaming against
+  //  this agent. Used for the hero `running · step NN` label and to
+  //  disable the "Run now" control.
+  const latestRun = runs?.[0] ?? null;
+  const isLiveRun = latestRun?.status === "running";
+
   const pipState: "running" | "paused" | "idle" | "warn" = paused
     ? "paused"
-    : state?.canRun
-      ? "idle"
-      : state
-        ? "warn"
-        : "idle";
+    : isLiveRun
+      ? "running"
+      : state?.canRun
+        ? "idle"
+        : state
+          ? "warn"
+          : "idle";
+
+  /**
+   * Hero pip label — always mono uppercase, one of:
+   *   · `running · step NN` while a run is in flight
+   *   · `paused · <reason>` when the rails say stop
+   *   · `idle` otherwise
+   * Never Inter; never a raw error string. Matches the same state
+   * grammar used on the sidebar, Home Active runs, and AI panel
+   * header so the user reads one vocabulary across the product.
+   */
+  const pipLabel = isLiveRun
+    ? `running · step ${String(latestRun?.stepCount ?? 0).padStart(2, "0")}`
+    : paused
+      ? `paused · ${(config?.pauseReason ?? state?.reason ?? "user").toLowerCase()}`
+      : "idle";
 
   // Hero stats — all derived from the two data endpoints. `runs · 24h`
   //  sums the 24 histogram buckets; `avg duration` medians the recent
@@ -147,10 +172,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
 
         <div className="min-w-0 flex-1">
           <div className="mb-1.5">
-            <StatusPip
-              state={pipState}
-              label={paused ? "paused" : state?.canRun ? "ready" : (state?.reason ?? "checking")}
-            />
+            <StatusPip state={pipState} label={pipLabel} />
           </div>
           <h1
             style={{
