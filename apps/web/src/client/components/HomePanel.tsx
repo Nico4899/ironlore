@@ -124,66 +124,434 @@ export function HomePanel() {
             : "Pick up where you left off, or jump to a command."}
         </p>
 
-        {/* Recent pages */}
-        <div style={{ marginTop: 28 }}>
-          <SectionLabel index={1} title="Recent pages" meta="LAST 7 DAYS" />
-          {recent === null ? (
-            <div className="py-6 text-center text-xs text-secondary">Loading…</div>
-          ) : recent.length === 0 ? (
-            <div
-              className="rounded border py-8 text-center"
-              style={{
-                borderColor: "var(--il-border-soft)",
-                borderStyle: "dashed",
-                color: "var(--il-text3)",
-                fontSize: 12.5,
-              }}
-            >
-              Nothing here yet.
+        {/* Body grid — Active runs + Run-rate on top row, Recent +
+         *  Quick actions on the second. Collapses to a single column
+         *  under 880px so narrow windows stay readable. */}
+        <div
+          style={{
+            marginTop: 28,
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)",
+            gap: 32,
+          }}
+          className="il-home-grid"
+        >
+          {/* 01 — Active runs */}
+          <div>
+            <SectionLabel
+              index={1}
+              title="Active runs"
+              meta={
+                activity.runningCount > 0
+                  ? `${activity.runningCount} RUNNING`
+                  : "NOTHING RUNNING"
+              }
+            />
+            <div style={{ marginTop: 14 }}>
+              {!activity.loaded ? (
+                <div className="py-6 text-center text-xs text-secondary">Loading…</div>
+              ) : activity.agents.length === 0 ? (
+                <EmptyCard>
+                  No agents installed. Drop a persona into <code>.agents/</code> to start.
+                </EmptyCard>
+              ) : (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {orderedForHome(activity.agents).map((a) => (
+                    <ActiveAgentCard
+                      key={a.slug}
+                      slug={a.slug}
+                      running={a.running}
+                      paused={a.status === "paused"}
+                      stepLabel={a.stepLabel}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {recent.map((p) => (
-                <RecentCard key={p.path} entry={p} />
-              ))}
-            </div>
-          )}
-        </div>
+          </div>
 
-        {/* Quick actions */}
-        <div style={{ marginTop: 28 }}>
-          <SectionLabel index={2} title="Quick actions" meta="KEYBOARD" />
-          <div className="grid gap-1.5">
-            <QuickAction
-              icon={<FileText className="h-3.5 w-3.5" />}
-              label="New page"
-              hint="Open the sidebar and use the + button."
-            />
-            <QuickAction
-              icon={<FolderPlus className="h-3.5 w-3.5" />}
-              label="New folder"
-              hint="Sidebar · New folder"
-            />
-            <QuickAction
-              icon={<Search className="h-3.5 w-3.5" />}
-              label="Search everything"
-              shortcut="⌘K"
-              onClick={() => useAppStore.getState().toggleSearchDialog()}
-            />
-            <QuickAction
-              icon={<Sparkles className="h-3.5 w-3.5" />}
-              label="Toggle AI panel"
-              shortcut="⌘⇧A"
-              onClick={() => useAppStore.getState().toggleAIPanel()}
-            />
-            <QuickAction
-              icon={<Inbox className="h-3.5 w-3.5" />}
-              label="Agent inbox"
-              hint="Pending agent runs"
-              onClick={() => useAppStore.getState().toggleInbox()}
-            />
+          {/* 02 — Run-rate headroom */}
+          <div>
+            <SectionLabel index={2} title="Run-rate headroom" meta="ROLLING 24H" />
+            <div style={{ marginTop: 14 }}>
+              <RunRateHeadroom agents={activity.agents} />
+            </div>
+          </div>
+
+          {/* 03 — Recent pages (full-width on the grid, spans both cols) */}
+          <div style={{ gridColumn: "1 / -1", marginTop: 6 }}>
+            <SectionLabel index={3} title="Recent pages" meta="LAST 7 DAYS" />
+            {recent === null ? (
+              <div className="py-6 text-center text-xs text-secondary">Loading…</div>
+            ) : recent.length === 0 ? (
+              <div
+                className="rounded border py-8 text-center"
+                style={{
+                  borderColor: "var(--il-border-soft)",
+                  borderStyle: "dashed",
+                  color: "var(--il-text3)",
+                  fontSize: 12.5,
+                  marginTop: 14,
+                }}
+              >
+                Nothing here yet.
+              </div>
+            ) : (
+              <div
+                className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
+                style={{ marginTop: 14 }}
+              >
+                {recent.map((p) => (
+                  <RecentCard key={p.path} entry={p} />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 04 — Quick actions */}
+          <div style={{ gridColumn: "1 / -1", marginTop: 6 }}>
+            <SectionLabel index={4} title="Quick actions" meta="KEYBOARD" />
+            <div
+              className="grid gap-1.5"
+              style={{ marginTop: 14, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}
+            >
+              <QuickAction
+                icon={<FileText className="h-3.5 w-3.5" />}
+                label="New page"
+                hint="Open the sidebar and use the + button."
+              />
+              <QuickAction
+                icon={<FolderPlus className="h-3.5 w-3.5" />}
+                label="New folder"
+                hint="Sidebar · New folder"
+              />
+              <QuickAction
+                icon={<Search className="h-3.5 w-3.5" />}
+                label="Search everything"
+                shortcut="⌘K"
+                onClick={() => useAppStore.getState().toggleSearchDialog()}
+              />
+              <QuickAction
+                icon={<Sparkles className="h-3.5 w-3.5" />}
+                label="Toggle AI panel"
+                shortcut="⌘⇧A"
+                onClick={() => useAppStore.getState().toggleAIPanel()}
+              />
+              <QuickAction
+                icon={<Inbox className="h-3.5 w-3.5" />}
+                label="Agent inbox"
+                hint="Pending agent runs"
+                onClick={() => useAppStore.getState().toggleInbox()}
+              />
+            </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Sort active agents for the Home screen: running first, then
+ * non-paused, then paused at the bottom. Within each group the order
+ * follows the server's alphabetical list — deterministic across
+ * renders, no churn on a poll.
+ */
+function orderedForHome(agents: ReturnType<typeof useWorkspaceActivity>["agents"]): ReturnType<
+  typeof useWorkspaceActivity
+>["agents"] {
+  const rank = (a: (typeof agents)[number]) =>
+    a.running ? 0 : a.status === "paused" ? 2 : 1;
+  return [...agents].sort((a, b) => rank(a) - rank(b));
+}
+
+function EmptyCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="rounded border py-6 text-center"
+      style={{
+        borderColor: "var(--il-border-soft)",
+        borderStyle: "dashed",
+        color: "var(--il-text3)",
+        fontSize: 12.5,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Active-agent card matching the design-system AgentRunCard:
+ *  · Reuleaux pip on the left (spinning when running)
+ *  · Agent slug + status label
+ *  · Mono "step N" tag on the right
+ *  · Blue accent bar on the left rail while live
+ *  · AgentPulse wrapping the row when running
+ */
+function ActiveAgentCard({
+  slug,
+  running,
+  paused,
+  stepLabel,
+}: {
+  slug: string;
+  running: boolean;
+  paused: boolean;
+  stepLabel: string | null;
+}) {
+  const onOpen = () => useAppStore.getState().setActiveAgentSlug(slug);
+  const statusLabel = running ? "running" : paused ? "paused" : "idle";
+  return (
+    <AgentPulse
+      active={running}
+      style={{
+        background: "var(--il-slate)",
+        border: "1px solid var(--il-border-soft)",
+        borderLeft: `2px solid ${running ? "var(--il-blue)" : "var(--il-border)"}`,
+        borderRadius: 4,
+        padding: "12px 14px",
+      }}
+    >
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex w-full items-baseline gap-3 text-left outline-none"
+        style={{ background: "transparent", border: "none", cursor: "pointer" }}
+      >
+        <Reuleaux
+          size={9}
+          color={running ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)"}
+          spin={running}
+        />
+        <span
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 13.5,
+            fontWeight: 600,
+            letterSpacing: "-0.01em",
+            color: "var(--il-text)",
+          }}
+        >
+          {slug}
+        </span>
+        <span
+          className="font-mono uppercase"
+          style={{
+            fontSize: 10,
+            color: running
+              ? "var(--il-blue)"
+              : paused
+                ? "var(--il-amber)"
+                : "var(--il-text3)",
+            letterSpacing: "0.06em",
+          }}
+        >
+          {statusLabel}
+        </span>
+        <span style={{ flex: 1 }} />
+        <Meta
+          k="step"
+          v={stepLabel ?? "—"}
+          color={running ? "var(--il-blue)" : "var(--il-text3)"}
+        />
+      </button>
+    </AgentPulse>
+  );
+}
+
+/**
+ * Compact 24-bar histogram aggregated across every installed agent
+ * plus a dashed cap line at the combined `perDay` ceiling. Fetches
+ * each agent's histogram in parallel (small N — personas directory is
+ * tens at most) and sums the buckets.
+ */
+function RunRateHeadroom({
+  agents,
+}: {
+  agents: ReturnType<typeof useWorkspaceActivity>["agents"];
+}) {
+  const [series, setSeries] = useState<AgentHistogramResponse[] | null>(null);
+
+  // Stable key so we only refetch when the agent list actually changes.
+  const agentsKey = useMemo(() => agents.map((a) => a.slug).sort().join("|"), [agents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (agents.length === 0) {
+      setSeries([]);
+      return;
+    }
+    Promise.all(
+      agents.map((a) => fetchAgentHistogram(a.slug).catch(() => null)),
+    ).then((rows) => {
+      if (cancelled) return;
+      setSeries(rows.filter((r): r is AgentHistogramResponse => r !== null));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentsKey]);
+
+  if (series === null) {
+    return <div className="py-6 text-center text-xs text-secondary">Loading…</div>;
+  }
+  if (series.length === 0) {
+    return <EmptyCard>No activity data yet.</EmptyCard>;
+  }
+
+  const bucketCount = 24;
+  const buckets = new Array<number>(bucketCount).fill(0);
+  let capPerDay = 0;
+  let capPerHour = 0;
+  for (const s of series) {
+    capPerDay += s.cap.perDay;
+    capPerHour = Math.max(capPerHour, s.cap.perHour);
+    for (let i = 0; i < Math.min(bucketCount, s.buckets.length); i++) {
+      buckets[i] = (buckets[i] ?? 0) + (s.buckets[i] ?? 0);
+    }
+  }
+  const total24h = buckets.reduce((a, b) => a + b, 0);
+  const headroom = Math.max(0, capPerDay - total24h);
+  const maxValue = Math.max(capPerHour, ...buckets, 1);
+  const capRatio = capPerHour > 0 ? capPerHour / maxValue : 1;
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 16,
+          marginBottom: 14,
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "var(--font-serif)",
+            fontSize: 44,
+            lineHeight: 0.9,
+            letterSpacing: "-0.02em",
+            fontVariantNumeric: "tabular-nums",
+            color: "var(--il-text)",
+          }}
+        >
+          {total24h}
+        </span>
+        <div>
+          <div
+            className="font-mono uppercase"
+            style={{
+              fontSize: 10.5,
+              color: "var(--il-text3)",
+              letterSpacing: "0.06em",
+            }}
+          >
+            runs / 24h
+          </div>
+          <div style={{ fontSize: 12, color: "var(--il-text2)", marginTop: 2 }}>
+            across {series.length} {series.length === 1 ? "agent" : "agents"}
+          </div>
+        </div>
+        <span style={{ flex: 1 }} />
+        <div style={{ textAlign: "right" }}>
+          <div
+            className="font-mono uppercase"
+            style={{
+              fontSize: 10.5,
+              color: "var(--il-text3)",
+              letterSpacing: "0.06em",
+            }}
+          >
+            headroom
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: headroom > 0 ? "var(--il-amber)" : "var(--il-red)",
+              marginTop: 2,
+            }}
+          >
+            {headroom} / day remaining
+          </div>
+        </div>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          gap: 2,
+          height: 64,
+          padding: "0 2px",
+          borderBottom: "1px dashed var(--il-border)",
+          position: "relative",
+        }}
+      >
+        {buckets.map((v, i) => {
+          const h = (v / maxValue) * 100;
+          const warn = capPerHour > 0 && v >= capPerHour * 0.75;
+          const recent = i >= 20;
+          return (
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: stable hour slot
+              key={i}
+              style={{
+                flex: 1,
+                height: `${Math.max(h, v > 0 ? 3 : 0)}%`,
+                background: warn ? "var(--il-amber)" : "var(--il-blue)",
+                opacity: recent ? 1 : 0.55,
+                boxShadow: recent ? "0 0 8px var(--il-blue-glow)" : "none",
+                borderRadius: 1,
+                minHeight: v > 0 ? 1 : 0,
+              }}
+            />
+          );
+        })}
+        {capPerHour > 0 && (
+          <>
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: `${capRatio * 100}%`,
+                borderTop: "1px dashed var(--il-amber)",
+                opacity: 0.5,
+              }}
+            />
+            <span
+              className="font-mono uppercase"
+              style={{
+                position: "absolute",
+                right: 0,
+                bottom: `calc(${capRatio * 100}% + 2px)`,
+                fontSize: 9.5,
+                color: "var(--il-amber)",
+                letterSpacing: "0.04em",
+              }}
+            >
+              cap · {capPerHour}/h
+            </span>
+          </>
+        )}
+      </div>
+      <div
+        className="font-mono"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginTop: 6,
+          fontSize: 9.5,
+          color: "var(--il-text4)",
+          letterSpacing: "0.06em",
+        }}
+      >
+        <span>−24h</span>
+        <span>−18h</span>
+        <span>−12h</span>
+        <span>−6h</span>
+        <span>NOW</span>
       </div>
     </div>
   );

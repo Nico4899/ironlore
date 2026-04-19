@@ -5,6 +5,7 @@ import {
   Captions,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
   Compass,
   FileCode,
   FileSpreadsheet,
@@ -29,6 +30,8 @@ import {
   Video,
   Workflow,
 } from "lucide-react";
+import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
+import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createFolder,
@@ -399,7 +402,6 @@ export function SidebarNew() {
         {!collapsed && (
           <>
             <span className="text-sm font-semibold tracking-tight text-primary">ironlore</span>
-            <ProjectChip />
             <div className="flex-1" />
             {/* Expand collapse visible on hover in expanded mode */}
             <button
@@ -414,6 +416,12 @@ export function SidebarNew() {
           </>
         )}
       </div>
+
+      {/* ─── Project switcher tile ───
+       *  Full tile per docs/08 §Project switcher UX. Clickable
+       *  surface mirrors the Cmd+P palette. Collapsed sidebar renders
+       *  a compact square with just the gradient mark + pulse. */}
+      <ProjectTile collapsed={collapsed} />
 
       {/* ─── Vertical tabs: Home / Search / Explore ─── */}
       <div
@@ -575,6 +583,9 @@ export function SidebarNew() {
 
       {/* Explore/Search placeholders only visible in expanded non-home tabs */}
       {!collapsed && sidebarTab !== "home" && <div className="flex-1" />}
+
+      {/* ─── Active-agents strip (only renders when agents are running) ─── */}
+      <ActiveAgentsStrip collapsed={collapsed} />
 
       {/* ─── Divider ─── */}
       <div className="border-t border-border" />
@@ -764,33 +775,174 @@ function ContextMenuItem({
 }
 
 /**
- * Active-project chip in the sidebar header (docs/08-projects-and-
- * isolation.md §Project switcher UX). Clicking it opens the Cmd+P
- * palette. When only one project exists the chip renders as a
- * non-interactive label — the switcher is hidden until a second
- * project appears, matching the "multi-project is opt-in" spec.
+ * Project-switcher tile in the sidebar. Matches the design-system
+ * mockup: gradient mark (blue → violet) + project name + "· N
+ * projects" subline + chevron. Clicking opens the Cmd+P palette so
+ * there's exactly one switching code path.
+ *
+ * Collapsed sidebar collapses the tile to a 24×24 gradient square with
+ * a pulse when agents are working — the full name is hidden behind the
+ * expand affordance.
  */
-function ProjectChip() {
+function ProjectTile({ collapsed }: { collapsed: boolean }) {
   const currentProjectId = useAuthStore((s) => s.currentProjectId);
-  // We optimistically render what the auth store tells us, even before
-  //  `/api/projects` has loaded. The ProjectSwitcher fetches that list
-  //  itself when the user opens it — no extra HTTP for the chip.
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    // Lazy one-shot — the switcher itself keeps the list fresh, so
+    //  the tile only needs the count once per session. Fails silently
+    //  (the tile still renders the project id if this errors out).
+    void import("../lib/api.js").then(async (mod) => {
+      try {
+        const list = await mod.fetchProjects();
+        setCount(list.length);
+      } catch {
+        setCount(null);
+      }
+    });
+  }, []);
+
   if (!currentProjectId) return null;
+  const onClick = () => useAppStore.getState().toggleProjectSwitcher();
+
+  if (collapsed) {
+    return (
+      <div className="flex items-center justify-center border-b border-border px-2 py-2">
+        <button
+          type="button"
+          onClick={onClick}
+          title={`${currentProjectId} — switch project (⌘P)`}
+          aria-label="Switch project"
+          className="h-6 w-6 rounded-[3px] outline-none transition-opacity hover:opacity-80 focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          style={{
+            background:
+              "linear-gradient(135deg, var(--il-blue), var(--il-violet, oklch(0.70 0.17 300)))",
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={() => useAppStore.getState().toggleProjectSwitcher()}
-      className="rounded border px-1.5 py-0.5 text-xs font-medium text-secondary outline-none transition-colors hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-      style={{
-        borderColor: "var(--il-border-soft)",
-        fontFamily: "var(--font-mono)",
-        fontSize: 10.5,
-        letterSpacing: "0.04em",
-        marginLeft: 8,
-      }}
-      title="Switch project (Cmd+P)"
-    >
-      {currentProjectId}
-    </button>
+    <div className="border-b border-border px-2 py-2">
+      <button
+        type="button"
+        onClick={onClick}
+        title="Switch project (⌘P)"
+        className="flex w-full items-center gap-2 rounded-[3px] border px-2 py-1.5 text-left outline-none transition-colors hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        style={{
+          borderColor: "var(--il-border-soft)",
+          background: "var(--il-slate-elev)",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: 3,
+            background:
+              "linear-gradient(135deg, var(--il-blue), var(--il-violet, oklch(0.70 0.17 300)))",
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{ flex: 1, lineHeight: 1.2, minWidth: 0, display: "block" }}
+        >
+          <span
+            className="block truncate"
+            style={{ fontSize: 12.5, fontWeight: 500, color: "var(--il-text)" }}
+          >
+            {currentProjectId}
+          </span>
+          <span
+            className="font-mono"
+            style={{
+              fontSize: 10,
+              color: "var(--il-text3)",
+              letterSpacing: "0.04em",
+            }}
+          >
+            {count === null ? "· switch project" : `${count} project${count === 1 ? "" : "s"}`}
+          </span>
+        </span>
+        <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-secondary" />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Active-agents strip — surfaces the live workspace activity above the
+ * bottom rail. Matches the design-system mockup: mono overline with
+ * Reuleaux pulse + count, then a compact per-agent row with pip,
+ * slug, and step label. Only renders when at least one agent is
+ * running (the rest of the agents already have a home on the Home
+ * screen). Clicking a row opens that agent's detail page.
+ */
+function ActiveAgentsStrip({ collapsed }: { collapsed: boolean }) {
+  const activity = useWorkspaceActivity();
+  const running = activity.agents.filter((a) => a.running);
+  if (running.length === 0) return null;
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={() => useAppStore.getState().setActiveAgentSlug(running[0]?.slug ?? null)}
+        className="mx-2 my-2 flex items-center justify-center rounded-[3px] py-1 outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        title={`${running.length} running`}
+        style={{ background: "color-mix(in oklch, var(--il-blue) 10%, transparent)" }}
+      >
+        <ReuleauxIcon size={9} color="var(--il-blue)" spin />
+      </button>
+    );
+  }
+
+  return (
+    <div className="border-t border-border px-3 py-2.5">
+      <div
+        className="mb-2 flex items-center gap-2 font-mono uppercase"
+        style={{
+          fontSize: 10,
+          color: "var(--il-text3)",
+          letterSpacing: "0.08em",
+        }}
+      >
+        <ReuleauxIcon size={8} color="var(--il-blue)" spin />
+        <span>
+          {running.length} agent{running.length === 1 ? "" : "s"} running
+        </span>
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {running.slice(0, 3).map((a) => (
+          <button
+            key={a.slug}
+            type="button"
+            onClick={() => useAppStore.getState().setActiveAgentSlug(a.slug)}
+            className="flex items-center gap-2 rounded-[3px] px-1 py-0.5 text-left outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          >
+            <ReuleauxIcon size={7} color="var(--il-blue)" />
+            <span
+              className="flex-1 truncate"
+              style={{ fontSize: 12, color: "var(--il-text2)" }}
+            >
+              {a.slug}
+            </span>
+            {a.stepLabel && (
+              <span
+                className="font-mono"
+                style={{
+                  fontSize: 10,
+                  color: "var(--il-text3)",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                {a.stepLabel}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
