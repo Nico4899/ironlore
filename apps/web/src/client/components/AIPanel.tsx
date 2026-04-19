@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
-import { revertJob, submitDryRunVerdict } from "../lib/api.js";
+import { getApiProject, revertJob, submitDryRunVerdict } from "../lib/api.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { CostEstimateDialog } from "./CostEstimateDialog.js";
@@ -267,7 +267,7 @@ function AgentPauseBanner({ slug }: { slug: string }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: isStreaming is the trigger, not a value read inside
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/projects/main/agents/${slug}/state`)
+    fetch(`/api/projects/${getApiProject()}/agents/${slug}/state`)
       .then((r) => r.json())
       .then((data: { canRun: boolean; reason: string | null }) => {
         if (cancelled) return;
@@ -289,7 +289,7 @@ function AgentPauseBanner({ slug }: { slug: string }) {
     if (resuming) return;
     setResuming(true);
     try {
-      const res = await fetch(`/api/projects/main/agents/${slug}/state`, {
+      const res = await fetch(`/api/projects/${getApiProject()}/agents/${slug}/state`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paused: false }),

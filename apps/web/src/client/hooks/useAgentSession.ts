@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { pushAgentToast } from "../components/AgentToast.js";
+import { getApiProject } from "../lib/api.js";
 import { useAIPanelStore } from "../stores/ai-panel.js";
 
-const BASE = "/api/projects/main";
+const BASE = (): string => `/api/projects/${getApiProject()}`;
 
 /**
  * Hook that manages the AI panel's agent session lifecycle.
@@ -34,7 +35,7 @@ export function useAgentSession() {
       }
 
       try {
-        const res = await fetch(`${BASE}/jobs/${jobId}/events?since=${store.lastSeq}`);
+        const res = await fetch(`${BASE()}/jobs/${jobId}/events?since=${store.lastSeq}`);
         if (!res.ok) return;
 
         const { events, jobStatus } = (await res.json()) as {
@@ -71,7 +72,7 @@ export function useAgentSession() {
       store.setIsStreaming(true);
 
       try {
-        const res = await fetch(`${BASE}/agents/${slug}/run`, {
+        const res = await fetch(`${BASE()}/agents/${slug}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: text, mode: "interactive" }),
