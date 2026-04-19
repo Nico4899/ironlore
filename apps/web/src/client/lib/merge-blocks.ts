@@ -81,25 +81,29 @@ export function diffBlocks(localMd: string, remoteMd: string): MergeSegment[] {
   let ri = 0;
 
   while (li < local.length || ri < remote.length) {
-    const lb = local[li];
-    const rb = remote[ri];
-
     // Emit purely-local-added blocks before the next common anchor.
-    while (lb && !inLcs.has(lb.id)) {
+    // Re-reads `local[li]` on every iteration — the pre-fix version
+    // captured `lb` once at the top of the outer loop and reused it,
+    // which caused the same block to be emitted repeatedly while
+    // `li` advanced underneath. A single-paragraph-before-shared
+    // layout (local=[L, S], remote=[S]) used to emit [L, L] instead
+    // of [L, common(S)].
+    while (li < local.length) {
+      const cur = local[li];
+      if (!cur || inLcs.has(cur.id)) break;
       segments.push({
         kind: "only-local",
-        id: lb.id,
-        local: lb.text,
-        blockType: lb.type,
+        id: cur.id,
+        local: cur.text,
+        blockType: cur.type,
       });
       li++;
-      if (li >= local.length) break;
     }
 
     // Emit purely-remote-added blocks before the next common anchor.
-    while (rb && !inLcs.has(rb.id)) {
+    while (ri < remote.length) {
       const cur = remote[ri];
-      if (!cur) break;
+      if (!cur || inLcs.has(cur.id)) break;
       segments.push({
         kind: "only-remote",
         id: cur.id,

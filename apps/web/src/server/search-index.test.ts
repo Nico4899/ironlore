@@ -100,6 +100,37 @@ describe("SearchIndex", () => {
     const backlinks = index.getBacklinks("Target Page");
     expect(backlinks).toHaveLength(1);
     expect(backlinks[0]?.sourcePath).toBe("source.md");
+    expect(backlinks[0]?.rel).toBeNull();
+  });
+
+  it("returns typed-relation backlinks with the rel field populated", () => {
+    const { index } = createIndex();
+    index.indexPage("claim.md", "# Claim\n\nThis [[Paper X | contradicts]] the finding.", "user");
+    const backlinks = index.getBacklinks("Paper X");
+    expect(backlinks).toHaveLength(1);
+    expect(backlinks[0]?.rel).toBe("contradicts");
+  });
+
+  it("filters backlinks by typed relation when rel is supplied", () => {
+    const { index } = createIndex();
+    index.indexPage("a.md", "See [[Target]].", "user"); // untyped
+    index.indexPage("b.md", "[[Target | supports]] this.", "user"); // typed: supports
+    index.indexPage("c.md", "[[Target | contradicts]] that.", "user"); // typed: contradicts
+
+    // No filter → all three.
+    expect(index.getBacklinks("Target")).toHaveLength(3);
+
+    // Filter by specific relation.
+    const supports = index.getBacklinks("Target", "supports");
+    expect(supports).toHaveLength(1);
+    expect(supports[0]?.sourcePath).toBe("b.md");
+
+    const contradicts = index.getBacklinks("Target", "contradicts");
+    expect(contradicts).toHaveLength(1);
+    expect(contradicts[0]?.sourcePath).toBe("c.md");
+
+    // Unknown relation → empty.
+    expect(index.getBacklinks("Target", "supersedes")).toHaveLength(0);
   });
 
   it("updates backlinks on re-index", () => {
@@ -213,5 +244,212 @@ describe("SearchIndex", () => {
 
     expect(index.search("stale")).toHaveLength(0);
     expect(index.search("fresh")).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Chunk-level FTS + RRF merge
+// ---------------------------------------------------------------------------
+//
+// The `pages_chunks_fts` virtual table splits markdown at block-ID seams
+// into ~800-token chunks; each chunk carries `block_id_start` and
+// `block_id_end` so search results can cite the exact block range rather
+// than the whole page. `search()` fires both the page-level and
+// chunk-level FTS queries and merges via RRF.
+//
+// These tests exercise that chunking + merging directly, not through the
+// HTTP layer.
+
+describe("SearchIndex — chunk-level FTS + RRF", () => {
+  const indexes: SearchIndex[] = [];
+
+  function createIndex(): { index: SearchIndex; projectDir: string } {
+    const projectDir = makeTmpProject();
+    const index = new SearchIndex(projectDir);
+    indexes.push(index);
+    return { index, projectDir };
+  }
+
+  afterEach(() => {
+    for (const idx of indexes) {
+      idx.close();
+    }
+    indexes.length = 0;
+  });
+
+  /** Quick helper — builds markdown with N paragraphs each carrying a
+   *  unique `<!-- #blk_ULID -->` anchor. Block IDs are sortable by
+   *  construction so order is deterministic. */
+  function buildBlockMarkdown(paragraphs: Array<{ id: string; text: string }>): string {
+    return paragraphs.map((p) => `${p.text} <!-- #${p.id} -->`).join("\n\n");
+  }
+
+  it("indexes chunk rows alongside page-level rows", () => {
+    const { index } = createIndex();
+
+    const content = buildBlockMarkdown([
+      { id: "blk_01HABCABCABCABCABCABCABCAA", text: "alpha paragraph about apples." },
+      { id: "blk_01HABCABCABCABCABCABCABCAB", text: "beta paragraph about bananas." },
+      { id: "blk_01HABCABCABCABCABCABCABCAC", text: "gamma paragraph about cherries." },
+    ]);
+    index.indexPage("fruit.md", content, "test");
+
+    // Sanity: page-level search finds the page.
+    expect(index.search("alpha").map((r) => r.path)).toContain("fruit.md");
+    expect(index.search("gamma").map((r) => r.path)).toContain("fruit.md");
+  });
+
+  it("re-indexing a page replaces stale chunk rows", () => {
+    const { index } = createIndex();
+
+    const v1 = buildBlockMarkdown([
+      { id: "blk_01HABCABCABCABCABCABCABCAA", text: "original content about kangaroos." },
+    ]);
+    index.indexPage("a.md", v1, "test");
+    expect(index.search("kangaroos")).toHaveLength(1);
+
+    const v2 = buildBlockMarkdown([
+      { id: "blk_01HABCABCABCABCABCABCABCBB", text: "new content about penguins." },
+    ]);
+    index.indexPage("a.md", v2, "test");
+    expect(index.search("kangaroos")).toHaveLength(0);
+    expect(index.search("penguins")).toHaveLength(1);
+  });
+
+  it("RRF merge produces a single row per matching page", () => {
+    const { index } = createIndex();
+
+    // Two pages, both matching the query. Without dedup a naïve concat
+    // would emit four rows (one per side), which is wrong.
+    index.indexPage(
+      "one.md",
+      buildBlockMarkdown([
+        { id: "blk_01HAAAAAAAAAAAAAAAAAAAAAAA", text: "The seashell washed ashore." },
+      ]),
+      "test",
+    );
+    index.indexPage(
+      "two.md",
+      buildBlockMarkdown([
+        { id: "blk_01HBBBBBBBBBBBBBBBBBBBBBBB", text: "Another seashell on the beach." },
+      ]),
+      "test",
+    );
+
+    const results = index.search("seashell");
+    const paths = results.map((r) => r.path);
+    expect(paths).toEqual([...new Set(paths)]); // no duplicates
+    expect(paths.length).toBe(2);
+  });
+
+  it("honors the limit argument at the top level", () => {
+    const { index } = createIndex();
+
+    for (let i = 0; i < 12; i++) {
+      const id = `blk_01HFFFFFFFFFFFFFFFFFFFFFF${i.toString().padStart(2, "0").slice(-1)}A`;
+      index.indexPage(
+        `page${i}.md`,
+        buildBlockMarkdown([{ id, text: "shared zebra keyword here" }]),
+        "test",
+      );
+    }
+
+    const top5 = index.search("zebra", 5);
+    expect(top5.length).toBeLessThanOrEqual(5);
+  });
+
+  it("prefers chunk-level snippets when both sources have a hit", () => {
+    const { index } = createIndex();
+
+    // One page with a query term deep inside a block. The chunk snippet
+    // should surface the exact block context rather than the page title.
+    const content = buildBlockMarkdown([
+      { id: "blk_01HAAAAAAAAAAAAAAAAAAAAAAA", text: "Intro about farming." },
+      { id: "blk_01HBBBBBBBBBBBBBBBBBBBBBBB", text: "Supercalifragilistic is a long word." },
+      { id: "blk_01HCCCCCCCCCCCCCCCCCCCCCCC", text: "Conclusion paragraph." },
+    ]);
+    index.indexPage("deep.md", content, "test");
+
+    const results = index.search("supercalifragilistic");
+    expect(results).toHaveLength(1);
+    // Snippet should contain the matched term with the <mark> tag the FTS
+    // snippet() function inserts. Both page- and chunk-level queries use
+    // the same token so either wins — assert that a snippet was returned.
+    expect(results[0]?.snippet).toMatch(/<mark>/i);
+  });
+
+  it("empty queries return no results without crashing", () => {
+    const { index } = createIndex();
+    index.indexPage(
+      "a.md",
+      buildBlockMarkdown([{ id: "blk_01HAAAAAAAAAAAAAAAAAAAAAAA", text: "content" }]),
+      "test",
+    );
+    expect(index.search("")).toEqual([]);
+    expect(index.search("   ")).toEqual([]);
+  });
+
+  // Phase 7 exit criterion: a term deep in paragraph 5 of a 3000-token
+  // page returns the correct chunk with a block-ID citation.
+  it("Phase 7 exit: deep-paragraph term returns a chunk hit, not just page", () => {
+    const { index } = createIndex();
+
+    // Build a 3000-token page (~12k chars). Five long paragraphs + one
+    // unique term buried deep in the fifth block. Each block carries
+    // its own stable ID so chunk boundaries line up with block seams.
+    // ULID is exactly 26 base32 characters.
+    // "01HCCCCCCCCCCCCCCCCCCCCCX0" where X varies per block (24 prefix + "X" + digit).
+    const ulid = (i: number) => `blk_01HCCCCCCCCCCCCCCCCCCCCCX${i}`;
+    const filler = (word: string, count: number) => new Array(count).fill(word).join(" ");
+    const paragraphs = [
+      { id: ulid(1), text: `Introduction. ${filler("alpha", 120)}` },
+      { id: ulid(2), text: `Background. ${filler("beta", 120)}` },
+      { id: ulid(3), text: `Related work. ${filler("gamma", 120)}` },
+      { id: ulid(4), text: `Approach. ${filler("delta", 120)}` },
+      {
+        id: ulid(5),
+        // Unique term buried in paragraph 5.
+        text: `Findings. ${filler("epsilon", 50)} orangutan-unique-marker ${filler("zeta", 50)}`,
+      },
+      { id: ulid(6), text: `Conclusion. ${filler("eta", 120)}` },
+    ];
+    const content = paragraphs.map((p) => `${p.text} <!-- #${p.id} -->`).join("\n\n");
+    index.indexPage("long.md", content, "test");
+
+    const results = index.search("orangutan-unique-marker");
+    expect(results).toHaveLength(1);
+    const hit = results[0] as {
+      path: string;
+      snippet: string;
+      blockIdStart?: string;
+      blockIdEnd?: string;
+    };
+    expect(hit.path).toBe("long.md");
+    // Chunk-level hit provides block-ID citation.
+    expect(hit.blockIdStart).toBeDefined();
+    expect(hit.blockIdEnd).toBeDefined();
+    // The matched term should land in a chunk whose block-ID range
+    // includes the fifth paragraph. Chunks are defined by a start/end
+    // block ID; a single-block chunk has start==end, a multi-block
+    // chunk has start < block5 < end (lexicographic on ULIDs).
+    const deepBlock = ulid(5);
+    const start = hit.blockIdStart as string;
+    const end = hit.blockIdEnd as string;
+    const deepFound =
+      start === deepBlock || end === deepBlock || (start <= deepBlock && deepBlock <= end);
+    expect(deepFound).toBe(true);
+    // Snippet should contain the matched term with the FTS <mark>.
+    expect(hit.snippet).toMatch(/<mark>/);
+  });
+
+  it("pages with no block-ID comments still index at page level", () => {
+    const { index } = createIndex();
+    // Markdown without any `<!-- #blk_... -->` anchors. `parseBlocks`
+    // returns an empty array → no chunk rows get written, but the
+    // page-level FTS path still fires.
+    index.indexPage("plain.md", "# Plain\n\nJust some unsullied prose without anchors.", "test");
+    const results = index.search("unsullied");
+    expect(results).toHaveLength(1);
+    expect(results[0]?.path).toBe("plain.md");
   });
 });

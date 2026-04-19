@@ -55,45 +55,88 @@ function splitFrontmatter(markdown: string): { frontmatter: string; body: string
  * Returns the cleaned markdown and a map of line numbers → block IDs
  * for reinsertion on save.
  */
-function stripBlockIds(markdown: string): {
+/**
+ * Strip block-ID comments, recording each ID alongside the cleaned line
+ * text it used to live on. Reinsertion below uses the text as a
+ * fingerprint so block IDs stick to their content even if ProseMirror
+ * shifts lines around (inserts a new paragraph, reorders blocks, etc).
+ *
+ * A pure line-index map (the pre-fix behavior) silently attached IDs
+ * to the wrong blocks when the line count changed — the server's
+ * `assignBlockIds` then preserved those wrong assignments because its
+ * contract is "don't overwrite existing IDs". Using a content-based
+ * ledger is strictly more robust: unmatched entries are discarded
+ * rather than ending up on an arbitrary line.
+ */
+export function stripBlockIds(markdown: string): {
   cleaned: string;
-  blockIds: Map<number, string>;
+  entries: Array<{ id: string; text: string }>;
 } {
-  const blockIds = new Map<number, string>();
+  const entries: Array<{ id: string; text: string }> = [];
   const lines = markdown.split("\n");
   const cleaned: string[] = [];
 
   for (const line of lines) {
     const match = line.match(/<!-- #(blk_[A-Z0-9]{26}) -->/);
     if (match?.[1]) {
-      blockIds.set(cleaned.length, match[1]);
       const stripped = line.replace(BLOCK_ID_RE, "").trimEnd();
+      entries.push({ id: match[1], text: stripped });
       cleaned.push(stripped);
     } else {
       cleaned.push(line);
     }
   }
 
-  return { cleaned: cleaned.join("\n"), blockIds };
+  return { cleaned: cleaned.join("\n"), entries };
 }
 
 /**
  * Reinsert block IDs into markdown after ProseMirror serialization.
- * Uses the saved line → blockId map from `stripBlockIds`. New blocks
- * (lines that didn't previously have an ID) are left for the server's
- * `assignBlockIds()` to handle on PUT.
+ *
+ * Content-based: for each output line, try to find an unused entry
+ * whose stored text matches exactly. Once matched, the entry is
+ * consumed so a later duplicate line can't steal the same ID.
+ * Entries that never find a match (block was deleted or substantially
+ * edited) drop silently. Lines with no match stay plain — the server's
+ * `assignBlockIds()` on PUT will stamp a fresh ULID on them.
+ *
+ * Exported for the block-id-preservation test suite.
  */
-function reinsertBlockIds(markdown: string, blockIds: Map<number, string>): string {
-  if (blockIds.size === 0) return markdown;
+export function reinsertBlockIds(
+  markdown: string,
+  entries: Array<{ id: string; text: string }>,
+): string {
+  if (entries.length === 0) return markdown;
 
   const lines = markdown.split("\n");
   const result: string[] = [];
+  const consumed = new Set<number>();
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const blockId = blockIds.get(i);
-    if (blockId && !line.includes(`<!-- #${blockId} -->`)) {
-      result.push(`${line} <!-- #${blockId} -->`);
+  for (const line of lines) {
+    // If the line already carries a block ID, leave it alone — it
+    // came back through the roundtrip intact.
+    if (BLOCK_ID_RE.test(line)) {
+      result.push(line);
+      continue;
+    }
+    // Blank lines don't anchor block IDs.
+    if (line.trim() === "") {
+      result.push(line);
+      continue;
+    }
+    // Find the first unused entry whose text matches.
+    let matchedIdx = -1;
+    for (let i = 0; i < entries.length; i++) {
+      if (consumed.has(i)) continue;
+      if (entries[i]?.text === line) {
+        matchedIdx = i;
+        break;
+      }
+    }
+    if (matchedIdx >= 0) {
+      consumed.add(matchedIdx);
+      const id = entries[matchedIdx]?.id;
+      result.push(`${line} <!-- #${id} -->`);
     } else {
       result.push(line);
     }
@@ -142,7 +185,7 @@ interface SlashMenuState {
 export function MarkdownEditor({ markdown, onChange, onSelectionChange }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const blockIdsRef = useRef<Map<number, string>>(new Map());
+  const blockIdsRef = useRef<Array<{ id: string; text: string }>>([]);
   const frontmatterRef = useRef<string>("");
   const onChangeRef = useRef(onChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
@@ -177,8 +220,8 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
   const createView = useCallback((container: HTMLDivElement) => {
     const { frontmatter, body } = splitFrontmatter(markdown);
     frontmatterRef.current = frontmatter;
-    const { cleaned, blockIds } = stripBlockIds(body);
-    blockIdsRef.current = blockIds;
+    const { cleaned, entries } = stripBlockIds(body);
+    blockIdsRef.current = entries;
 
     const schema = wikiMarkdownParser.schema;
     const doc = wikiMarkdownParser.parse(cleaned);
@@ -260,21 +303,39 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
       },
       nodeViews: {
         wikilink: (node) => {
+          // Render the chip as a plain <span> (not <button>) so it
+          // stays an inline atom inside the editor's text flow;
+          // ProseMirror handles selection and caret placement.
           const dom = document.createElement("span");
           const { target, display } = node.attrs as { target: string; display: string | null };
-          dom.className = "ir-wikilink";
+          const hashIdx = target.indexOf("#");
+          const pagePart = hashIdx === -1 ? target : target.slice(0, hashIdx);
+          const blockRaw = hashIdx === -1 ? null : target.slice(hashIdx + 1);
+          const shortBlock = blockRaw == null ? null : blockRaw.replace(/^blk_/, "").slice(-4);
+
+          // Match the Blockref primitive's visual contract. The legacy
+          //  `ir-wikilink` class is retained as a data hook for tests.
+          dom.className = "il-blockref ir-wikilink";
           dom.dataset.wikilink = target;
-          dom.textContent = display ?? target;
+          const label = document.createElement("span");
+          label.textContent = display ?? pagePart;
+          dom.appendChild(label);
+          if (shortBlock) {
+            const idNode = document.createElement("span");
+            idNode.className = "il-blockref__id";
+            idNode.textContent = `#${shortBlock}`;
+            dom.appendChild(idNode);
+          }
+
           dom.addEventListener("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            // Strip any `#blk_…` anchor for navigation; anchor handling is
-            // polish (scroll-to-block) and not required for Phase 2.
-            const hashIdx = target.indexOf("#");
-            const pagePath = hashIdx === -1 ? target : target.slice(0, hashIdx);
-            if (pagePath) {
-              const withExt = pagePath.endsWith(".md") ? pagePath : `${pagePath}.md`;
-              useAppStore.getState().setActivePath(withExt);
+            if (!pagePart) return;
+            const withExt = pagePart.endsWith(".md") ? pagePart : `${pagePart}.md`;
+            useAppStore.getState().setActivePath(withExt);
+            // Cmd/Ctrl-click opens the provenance pane instead of navigating.
+            if ((e.metaKey || e.ctrlKey) && blockRaw) {
+              useAppStore.getState().openProvenance(withExt, blockRaw);
             }
           });
           return { dom };
@@ -346,13 +407,13 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
 
     const { frontmatter, body } = splitFrontmatter(markdown);
     frontmatterRef.current = frontmatter;
-    const { cleaned, blockIds } = stripBlockIds(body);
+    const { cleaned, entries } = stripBlockIds(body);
     const currentSerialized = wikiMarkdownSerializer.serialize(view.state.doc);
 
     // Don't replace if content matches — avoids cursor jumps
     if (currentSerialized === cleaned) return;
 
-    blockIdsRef.current = blockIds;
+    blockIdsRef.current = entries;
     const doc = wikiMarkdownParser.parse(cleaned);
     if (!doc) return;
 

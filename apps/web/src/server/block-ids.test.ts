@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { assignBlockIds, parseBlocks } from "./block-ids.js";
+import { randomBytes } from "node:crypto";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { assignBlockIds, parseBlocks, readBlocksSidecar, writeBlocksSidecar } from "./block-ids.js";
 
 describe("parseBlocks", () => {
   it("detects headings", () => {
@@ -111,5 +115,103 @@ describe("assignBlockIds", () => {
     expect(firstIds.length).toBe(secondIds.length);
     // Same IDs preserved
     expect(firstIds).toEqual(secondIds);
+  });
+});
+
+describe("writeBlocksSidecar and readBlocksSidecar", () => {
+  const tmpDirs: string[] = [];
+
+  afterEach(() => {
+    for (const d of tmpDirs) {
+      try {
+        rmSync(d, { recursive: true, force: true });
+      } catch {
+        /* */
+      }
+    }
+    tmpDirs.length = 0;
+  });
+
+  function makeTmpDir(): string {
+    const dir = join(tmpdir(), `blocks-sidecar-${randomBytes(4).toString("hex")}`);
+    mkdirSync(dir, { recursive: true });
+    tmpDirs.push(dir);
+    return dir;
+  }
+
+  it("writes a .blocks.json sidecar next to a .md file", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+    writeFileSync(mdPath, "# Hello\n");
+    const { blocks } = assignBlockIds("# Hello\n");
+    writeBlocksSidecar(mdPath, blocks);
+
+    const sidecarPath = join(dir, "page.blocks.json");
+    const raw = readFileSync(sidecarPath, "utf-8");
+    const parsed = JSON.parse(raw) as {
+      version: number;
+      blocks: Array<{ id: string; type: string }>;
+    };
+    expect(parsed.version).toBe(1);
+    expect(parsed.blocks.length).toBeGreaterThan(0);
+    expect(parsed.blocks[0]?.id).toMatch(/^blk_/);
+  });
+
+  it("reads back a sidecar it just wrote", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+    const { blocks } = assignBlockIds("# T\n\nP1\n\nP2\n");
+    writeBlocksSidecar(mdPath, blocks);
+
+    const loaded = readBlocksSidecar(mdPath);
+    expect(loaded).not.toBeNull();
+    expect(loaded?.version).toBe(1);
+    expect(loaded?.blocks).toHaveLength(blocks.length);
+    for (let i = 0; i < blocks.length; i++) {
+      expect(loaded?.blocks[i]?.id).toBe(blocks[i]?.id);
+      expect(loaded?.blocks[i]?.type).toBe(blocks[i]?.type);
+    }
+  });
+
+  it("readBlocksSidecar returns null when sidecar is missing", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+    expect(readBlocksSidecar(mdPath)).toBeNull();
+  });
+
+  it("readBlocksSidecar returns null for malformed JSON", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+    writeFileSync(join(dir, "page.blocks.json"), "{not-json");
+    expect(readBlocksSidecar(mdPath)).toBeNull();
+  });
+
+  it("sidecar includes start/end offsets per block", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+    const { blocks } = assignBlockIds("# h1\n\npara 1\n\npara 2\n");
+    writeBlocksSidecar(mdPath, blocks);
+    const loaded = readBlocksSidecar(mdPath);
+    expect(loaded?.blocks[0]).toMatchObject({
+      id: expect.any(String),
+      type: expect.any(String),
+      start: expect.any(Number),
+      end: expect.any(Number),
+    });
+    // offsets monotonically increase
+    if (loaded && loaded.blocks.length > 1) {
+      expect(loaded.blocks[0]?.end ?? 0).toBeLessThanOrEqual(loaded.blocks[1]?.start ?? 0);
+    }
+  });
+
+  it("sidecar round-trips a page with existing block IDs", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+    // Pre-existing block ID on the heading.
+    const src = "# T <!-- #blk_01HY7Z8Q9EXISTING00000AAAA -->\n\nBody.\n";
+    const { blocks } = assignBlockIds(src);
+    writeBlocksSidecar(mdPath, blocks);
+    const loaded = readBlocksSidecar(mdPath);
+    expect(loaded?.blocks[0]?.id).toBe("blk_01HY7Z8Q9EXISTING00000AAAA");
   });
 });

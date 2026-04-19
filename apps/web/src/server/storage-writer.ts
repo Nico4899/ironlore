@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -52,7 +53,14 @@ export class StorageWriter {
   private linkedPathValidator?: LinkedPathValidator;
 
   constructor(projectDir: string, linkedPathValidator?: LinkedPathValidator) {
-    this.dataRoot = join(projectDir, "data");
+    // Realpath-normalize the data root so `relative(dataRoot, absPath)`
+    // produces clean paths. `resolveSafe` realpaths the leaf — without
+    // normalizing the root, macOS's /tmp → /private/tmp symlink (and
+    // any other symlinked install parent) makes `relative` return
+    // "../../private/..." paths that the git worker can't use.
+    const rawDataRoot = join(projectDir, "data");
+    mkdirSync(rawDataRoot, { recursive: true });
+    this.dataRoot = realpathSync(rawDataRoot);
     this.wal = new Wal(projectDir);
     this.mutex = new PathMutex(join(projectDir, ".ironlore", "locks"));
     this.linkedPathValidator = linkedPathValidator;
@@ -393,16 +401,18 @@ export class StorageWriter {
   }
 
   /**
-   * Check if a path exists within the data root.
+   * Check if a file or directory exists within the data root.
+   *
+   * Returns `false` for missing paths and `true` for existing files or
+   * directories. Path-traversal attempts (resolveSafe throwing
+   * ForbiddenError) re-throw so callers do not silently treat a blocked
+   * path as "missing."
    */
   exists(pagePath: string): boolean {
-    try {
-      resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator);
-      readFileSync(resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator));
-      return true;
-    } catch {
-      return false;
-    }
+    // Validate the path. ForbiddenError is not an existence question —
+    // propagate it so callers cannot confuse "blocked" with "missing".
+    const absPath = resolveSafe(this.dataRoot, pagePath, this.linkedPathValidator);
+    return existsSync(absPath);
   }
 
   /**

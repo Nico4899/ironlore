@@ -96,7 +96,9 @@
         "apps/web/src/server/spawn-safe.ts",
         "apps/web/src/server/fetch-for-project.ts",
         "apps/web/src/server/agents/revert-run.ts",
+        "apps/web/src/server/agents/revert-run.test.ts",
         "apps/web/src/server/agents/inbox.ts",
+        "apps/web/src/server/agents/inbox.test.ts",
         "apps/web/src/server/agents/executor.ts"
       ],
       "linter": {
@@ -110,7 +112,6 @@
     {
       "includes": [
         "apps/web/src/client/components/editor/MarkdownPreview.tsx",
-        "apps/web/src/client/components/SearchDialog.tsx",
         "apps/web/src/client/components/viewers/DocxViewer.tsx",
         "apps/web/src/client/components/viewers/NotebookViewer.tsx"
       ],

@@ -65,11 +65,15 @@ export function AgentToastContainer() {
         <div
           key={t.id}
           role="alert"
-          className={`flex items-center gap-2 rounded-lg border px-4 py-2.5 text-xs shadow-lg backdrop-blur ${
-            t.status === "done"
-              ? "border-signal-green/30 bg-signal-green/10 text-signal-green"
-              : "border-signal-red/30 bg-signal-red/10 text-signal-red"
+          className={`surface-glass flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs ${
+            t.status === "done" ? "text-signal-green" : "text-signal-red"
           }`}
+          style={{
+            boxShadow:
+              t.status === "done"
+                ? "var(--shadow-lg), 0 0 12px oklch(0.72 0.17 148 / 0.2)"
+                : "var(--shadow-lg), var(--shadow-glow-red)",
+          }}
           onClick={() => {
             useAppStore.getState().toggleAIPanel();
             dismiss(t.id);

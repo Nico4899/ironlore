@@ -449,7 +449,7 @@ export function createPagesApi(
  *   GET  /raw/*path → raw file bytes with correct Content-Type
  *   PUT  /raw/*path ← raw text body (CSV only) → 200 { etag } | 409
  */
-export function createRawApi(writer: StorageWriter): Hono {
+export function createRawApi(writer: StorageWriter, dataRoot: string): Hono {
   const api = new Hono();
 
   // -----------------------------------------------------------------------
@@ -530,6 +530,10 @@ export function createRawApi(writer: StorageWriter): Hono {
 
   // -----------------------------------------------------------------------
   // Upload binary files (docx, xlsx, pdf, images, etc.)
+  // Legacy single-file endpoint: takes raw body at POST /raw/upload/:path.
+  // Newly routed through the Phase-8 pipeline so it gets size limits,
+  // MIME sniffing, extension allowlist, and image re-encoding. Callers
+  // should migrate to POST /api/projects/:id/uploads (multipart).
   // -----------------------------------------------------------------------
   api.post("/upload/:path{.+}", async (c) => {
     const filePath = c.req.param("path") ?? "";
@@ -542,10 +546,32 @@ export function createRawApi(writer: StorageWriter): Hono {
       return c.json({ error: "Empty body" }, 400);
     }
 
+    const { processUpload, UploadRejectedError } = await import("./uploads.js");
+    const { basename: pathBasename, dirname: pathDirname } = await import("node:path");
+    const normalizedPath = filePath.replace(/^\/+/, "");
+    const filename = pathBasename(normalizedPath);
+    const targetDir = pathDirname(normalizedPath);
+    const declaredMime = c.req.header("content-type") ?? "application/octet-stream";
+
     try {
-      const { etag } = await writer.writeBinary(filePath, new Uint8Array(body));
-      return c.json({ ok: true, path: filePath, etag });
+      const result = await processUpload(
+        filename,
+        declaredMime,
+        Buffer.from(body),
+        writer,
+        dataRoot,
+        { targetDir: targetDir === "." ? "" : targetDir },
+      );
+      return c.json({
+        ok: true,
+        path: result.path,
+        etag: result.etag,
+        reencoded: result.reencoded,
+      });
     } catch (err) {
+      if (err instanceof UploadRejectedError) {
+        return c.json({ error: err.message, code: err.code }, err.httpStatus as 400 | 413);
+      }
       if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);
       }

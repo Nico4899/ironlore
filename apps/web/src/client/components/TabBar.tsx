@@ -9,11 +9,13 @@ import {
   Image,
   Mail,
   Music,
+  Plus,
   Video,
   Workflow,
   X,
 } from "lucide-react";
 import { type KeyboardEvent, type MouseEvent, useCallback } from "react";
+import { createPage } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 
 /**
@@ -165,7 +167,37 @@ export function TabBar() {
     [openPaths],
   );
 
-  if (openPaths.length === 0) return null;
+  const handleNewFile = useCallback(async () => {
+    const name = "Untitled";
+    const path = `${name}.md`;
+    try {
+      await createPage(path, `# ${name}\n`);
+      useAppStore.getState().setActivePath(path);
+    } catch {
+      /* */
+    }
+  }, []);
+
+  if (openPaths.length === 0) {
+    // Show just the + tab when nothing is open
+    return (
+      <div
+        role="tablist"
+        aria-label="Open files"
+        className="flex shrink-0 items-stretch border-b border-border bg-ironlore-slate"
+      >
+        <button
+          type="button"
+          onClick={handleNewFile}
+          className="flex items-center justify-center px-3 py-1.5 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+          title="New page"
+          aria-label="New page"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    );
+  }
 
   const labels = disambiguateTabLabels(openPaths);
 
@@ -220,6 +252,16 @@ export function TabBar() {
           </div>
         );
       })}
+      {/* New file tab — always rightmost */}
+      <button
+        type="button"
+        onClick={handleNewFile}
+        className="flex items-center justify-center px-3 py-1.5 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+        title="New page"
+        aria-label="New page"
+      >
+        <Plus className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

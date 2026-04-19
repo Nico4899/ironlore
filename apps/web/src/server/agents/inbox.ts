@@ -30,6 +30,11 @@ export interface InboxEntry {
   status: "pending" | "approved" | "rejected" | "partial";
 }
 
+/** Per-file user decision captured during inbox review. */
+export type InboxFileDecision = "approved" | "rejected";
+/** Map of path → decision. Paths without an entry are undecided. */
+export type InboxFileDecisions = Record<string, InboxFileDecision>;
+
 export class AgentInbox {
   private db: Database.Database;
 
@@ -57,6 +62,19 @@ export class AgentInbox {
       CREATE INDEX IF NOT EXISTS idx_inbox_project
       ON inbox_entries(project_id, status)
     `);
+
+    // Additive migration: `file_decisions` JSON column holds per-file
+    //  approve/reject decisions the user makes during review. Older
+    //  rows get '{}' as the default. Use PRAGMA to detect the column
+    //  rather than swallowing errors from a redundant ALTER.
+    const cols = this.db.prepare("PRAGMA table_info(inbox_entries)").all() as Array<{
+      name: string;
+    }>;
+    if (!cols.some((c) => c.name === "file_decisions")) {
+      this.db.exec(
+        "ALTER TABLE inbox_entries ADD COLUMN file_decisions TEXT NOT NULL DEFAULT '{}'",
+      );
+    }
   }
 
   /**
@@ -104,54 +122,127 @@ export class AgentInbox {
   }
 
   /**
-   * Approve all — fast-forward the staging branch onto main.
+   * Approve all — merge the staging branch into main.
+   *
+   * Tries a fast-forward merge first (clean when main hasn't moved
+   * since the branch was created). Falls back to a non-ff merge
+   * commit when main has diverged but the branches compose cleanly.
+   * Aborts on conflict so the repo stays clean for the next run.
+   *
+   * The pre-fix version tried `git rebase <branch>` as a fallback,
+   * which rebases main ONTO the staging branch (backwards direction
+   * — staging's commits vanish from view, main's commits get
+   * replayed on top of staging's). Replaced with a proper merge
+   * fallback that actually lands the agent's work on main.
    */
   approveAll(entryId: string, projectDir: string): { success: boolean; error?: string } {
     const entry = this.getEntry(entryId);
     if (!entry) return { success: false, error: "Entry not found" };
 
     const gitDir = join(projectDir, ".git");
-    try {
-      // Try fast-forward merge first.
-      execSync(
-        `git --git-dir="${gitDir}" --work-tree="${projectDir}" merge --ff-only ${entry.branch}`,
-        { encoding: "utf-8", stdio: "pipe" },
-      );
-      // Delete the staging branch.
-      execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -d ${entry.branch}`, {
-        encoding: "utf-8",
-        stdio: "pipe",
-      });
-      this.setStatus(entryId, "approved");
-      return { success: true };
-    } catch (_err) {
-      // Fast-forward failed — try rebase.
+    const decisions = this.getFileDecisions(entryId);
+    const rejected = Object.entries(decisions)
+      .filter(([, d]) => d === "rejected")
+      .map(([p]) => p);
+
+    // Fast path: no rejections → merge the whole branch (fast-forward,
+    //  then a merge commit if main has diverged). This is the shape
+    //  the original approveAll shipped with.
+    if (rejected.length === 0) {
       try {
-        execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" rebase ${entry.branch}`, {
-          encoding: "utf-8",
-          stdio: "pipe",
-        });
+        execSync(
+          `git --git-dir="${gitDir}" --work-tree="${projectDir}" merge --ff-only ${entry.branch}`,
+          { encoding: "utf-8", stdio: "pipe" },
+        );
         execSync(
           `git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -d ${entry.branch}`,
           { encoding: "utf-8", stdio: "pipe" },
         );
         this.setStatus(entryId, "approved");
         return { success: true };
-      } catch (rebaseErr) {
-        // Abort failed rebase.
+      } catch {
+        // Fast-forward failed (main diverged). Fall back to a merge
+        // commit that lands the agent work without rewriting history.
         try {
-          execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" rebase --abort`, {
+          execSync(
+            `git --git-dir="${gitDir}" --work-tree="${projectDir}" merge --no-ff --no-edit ${entry.branch}`,
+            { encoding: "utf-8", stdio: "pipe" },
+          );
+          execSync(
+            `git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -d ${entry.branch}`,
+            { encoding: "utf-8", stdio: "pipe" },
+          );
+          this.setStatus(entryId, "approved");
+          return { success: true };
+        } catch (mergeErr) {
+          // Conflict — abort so the repo is clean and the user can
+          // resolve manually (or retry later once main stabilizes).
+          try {
+            execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" merge --abort`, {
+              encoding: "utf-8",
+              stdio: "pipe",
+            });
+          } catch {
+            /* already clean */
+          }
+          return {
+            success: false,
+            error: mergeErr instanceof Error ? mergeErr.message : String(mergeErr),
+          };
+        }
+      }
+    }
+
+    // Partial approve: the user marked ≥1 file as rejected, so we
+    //  can't do a plain branch merge. Checkout each non-rejected
+    //  changed file from the staging branch into main's working tree,
+    //  stage it, commit once. Files not mentioned at all in the diff
+    //  are left alone. Rejected files keep main's current version.
+    const rejectedSet = new Set(rejected);
+    const diff = this.getFileDiffStats(entryId, projectDir);
+    const toApply = diff.filter((f) => !rejectedSet.has(f.path));
+
+    if (toApply.length === 0) {
+      // Everything was rejected — same net outcome as rejectAll.
+      return this.rejectAll(entryId, projectDir);
+    }
+
+    const gitCmd = `git --git-dir="${gitDir}" --work-tree="${projectDir}"`;
+    try {
+      for (const f of toApply) {
+        if (f.status === "D") {
+          // The agent deleted the file on its branch; replay that
+          //  deletion on main. `git rm` handles both staging the
+          //  removal and clearing the working tree.
+          execSync(`${gitCmd} rm --ignore-unmatch -- "${f.path}"`, {
             encoding: "utf-8",
             stdio: "pipe",
           });
-        } catch {
-          /* already clean */
+        } else {
+          execSync(`${gitCmd} checkout ${entry.branch} -- "${f.path}"`, {
+            encoding: "utf-8",
+            stdio: "pipe",
+          });
+          execSync(`${gitCmd} add -- "${f.path}"`, { encoding: "utf-8", stdio: "pipe" });
         }
-        return {
-          success: false,
-          error: rebaseErr instanceof Error ? rebaseErr.message : String(rebaseErr),
-        };
       }
+      const msg = `Approve ${toApply.length}/${diff.length} from ${entry.branch}`;
+      execSync(`${gitCmd} commit --no-verify -m "${msg}"`, {
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
+      // Branch may still be around for archaeology — delete with -D
+      //  because the user didn't full-merge it and -d would refuse.
+      execSync(`${gitCmd} branch -D ${entry.branch}`, { encoding: "utf-8", stdio: "pipe" });
+      this.setStatus(entryId, "partial");
+      return { success: true };
+    } catch (cherryErr) {
+      // Leave the working tree in whatever state the loop produced;
+      //  the user can inspect and either retry or reset manually.
+      return {
+        success: false,
+        error: cherryErr instanceof Error ? cherryErr.message : String(cherryErr),
+      };
     }
   }
 
@@ -176,6 +267,164 @@ export class AgentInbox {
         error: err instanceof Error ? err.message : String(err),
       };
     }
+  }
+
+  /**
+   * Per-file diff stats for the entry's staging branch vs. the current
+   * merge base with main. Returns one row per touched file with its
+   * status (`A`dded / `D`eleted / `M`odified / `R`enamed) plus
+   * line-delta counts and the user's review decision (if any).
+   * Consumed by the Inbox UI's per-file row grammar
+   * (docs/09-ui-and-brand.md §Agent Inbox: `A  engineering/arch.md  +3 -2`).
+   *
+   * Runs two git calls because `--name-status` and `--numstat` each
+   * give half the answer; merging on file path yields the full row.
+   * The diff is computed live — staging branches can move under the
+   * entry (the agent keeps writing), so a snapshot stored at
+   * finalization would go stale.
+   *
+   * Binary files report `-` counts from numstat; we surface those as
+   * `null` rather than zero so the UI can render "binary" rather
+   * than a misleading "+0 -0".
+   */
+  getFileDiffStats(
+    entryId: string,
+    projectDir: string,
+  ): Array<{
+    path: string;
+    status: "A" | "D" | "M" | "R" | "?";
+    added: number | null;
+    removed: number | null;
+    decision: InboxFileDecision | null;
+  }> {
+    const entry = this.getEntry(entryId);
+    if (!entry) return [];
+
+    const gitDir = join(projectDir, ".git");
+    const rangeArg = `main...${entry.branch}`;
+
+    type Row = {
+      path: string;
+      status: "A" | "D" | "M" | "R" | "?";
+      added: number | null;
+      removed: number | null;
+      decision: InboxFileDecision | null;
+    };
+    const byPath = new Map<string, Row>();
+    const decisions = this.getFileDecisions(entryId);
+
+    // Name-status: first column is the letter, second is the path.
+    // Rename records emit an extra "new path" column we preserve as the
+    // canonical row path.
+    try {
+      const nameStatus = execSync(
+        `git --git-dir="${gitDir}" --work-tree="${projectDir}" diff --name-status ${rangeArg}`,
+        { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+      for (const line of nameStatus.split("\n")) {
+        if (!line.trim()) continue;
+        const parts = line.split("\t");
+        const raw = parts[0] ?? "";
+        // Rename statuses look like "R090" — normalize to just "R".
+        const letter = raw.startsWith("R")
+          ? "R"
+          : raw === "A" || raw === "D" || raw === "M"
+            ? raw
+            : "?";
+        const path = (parts.length === 3 ? parts[2] : parts[1]) ?? "";
+        if (!path) continue;
+        byPath.set(path, {
+          path,
+          status: letter as Row["status"],
+          added: 0,
+          removed: 0,
+          decision: decisions[path] ?? null,
+        });
+      }
+    } catch {
+      // Branch missing or git failure — return an empty list rather
+      // than a partial one so the UI shows the honest "no data" state.
+      return [];
+    }
+
+    try {
+      const numStat = execSync(
+        `git --git-dir="${gitDir}" --work-tree="${projectDir}" diff --numstat ${rangeArg}`,
+        { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] },
+      );
+      for (const line of numStat.split("\n")) {
+        if (!line.trim()) continue;
+        const [addedRaw, removedRaw, path] = line.split("\t");
+        if (!path) continue;
+        const existing: Row = byPath.get(path) ?? {
+          path,
+          status: "M" as Row["status"],
+          added: 0,
+          removed: 0,
+          decision: decisions[path] ?? null,
+        };
+        existing.added = addedRaw === "-" ? null : Number.parseInt(addedRaw ?? "0", 10);
+        existing.removed = removedRaw === "-" ? null : Number.parseInt(removedRaw ?? "0", 10);
+        byPath.set(path, existing);
+      }
+    } catch {
+      // Numstat failed — keep whatever name-status returned with zero
+      // deltas. Callers will render "?" instead of "+N -M".
+    }
+
+    return Array.from(byPath.values());
+  }
+
+  /**
+   * Read the per-file decision map for an entry. Empty object when
+   * the entry is missing or the JSON column is corrupt (never
+   * throws — the UI treats an empty map as "all pending").
+   */
+  getFileDecisions(entryId: string): InboxFileDecisions {
+    const row = this.db
+      .prepare("SELECT file_decisions FROM inbox_entries WHERE id = ?")
+      .get(entryId) as { file_decisions: string } | undefined;
+    if (!row) return {};
+    try {
+      const parsed = JSON.parse(row.file_decisions) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const out: InboxFileDecisions = {};
+        for (const [path, decision] of Object.entries(parsed as Record<string, unknown>)) {
+          if (decision === "approved" || decision === "rejected") out[path] = decision;
+        }
+        return out;
+      }
+    } catch {
+      /* fall through to {} */
+    }
+    return {};
+  }
+
+  /**
+   * Record (or clear) a per-file decision. `null` removes the row's
+   * path from the decision map so the file falls back to the bulk
+   * approve/reject behavior when the user commits.
+   */
+  setFileDecision(
+    entryId: string,
+    path: string,
+    decision: InboxFileDecision | null,
+  ): { success: boolean; error?: string } {
+    const row = this.db
+      .prepare("SELECT file_decisions FROM inbox_entries WHERE id = ?")
+      .get(entryId) as { file_decisions: string } | undefined;
+    if (!row) return { success: false, error: "Entry not found" };
+
+    const decisions = this.getFileDecisions(entryId);
+    if (decision === null) {
+      delete decisions[path];
+    } else {
+      decisions[path] = decision;
+    }
+    this.db
+      .prepare("UPDATE inbox_entries SET file_decisions = ? WHERE id = ?")
+      .run(JSON.stringify(decisions), entryId);
+    return { success: true };
   }
 
   private getEntry(id: string): InboxEntry | null {

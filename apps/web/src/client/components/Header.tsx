@@ -6,6 +6,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  Settings as SettingsIcon,
   Sparkles,
   Sun,
   TerminalSquare,
@@ -15,6 +16,7 @@ import { logout } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
 import { Logo } from "./Logo.js";
+import { Key } from "./primitives/index.js";
 
 /**
  * Header / toolbar — left: logo + wordmark (links to home). Center:
@@ -85,7 +87,9 @@ export function Header() {
           title="Search (⌘K)"
         >
           <Search className="h-3.5 w-3.5" />
-          <kbd className="hidden font-mono text-[10px] text-secondary md:inline">⌘K</kbd>
+          <span className="hidden md:inline">
+            <Key>⌘K</Key>
+          </span>
         </button>
         <button
           type="button"
@@ -124,6 +128,15 @@ export function Header() {
           title={aiPanelOpen ? "Hide AI panel (⌘⇧A)" : "Show AI panel (⌘⇧A)"}
         >
           <Sparkles className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          className={iconBtn}
+          onClick={() => useAppStore.getState().toggleSettings()}
+          aria-label="Settings"
+          title="Settings"
+        >
+          <SettingsIcon className="h-4 w-4" />
         </button>
         <div className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
         <button

@@ -1,7 +1,7 @@
-import { DEFAULT_PROJECT_ID } from "@ironlore/core";
 import { DollarSign, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
+import { getApiProject } from "../lib/api.js";
 
 interface CostEstimate {
   model: string;
@@ -31,7 +31,7 @@ export function CostEstimateDialog({ agentSlug, onConfirm, onCancel }: CostEstim
   useFocusTrap(dialogRef, true);
 
   useEffect(() => {
-    fetch(`/api/projects/${DEFAULT_PROJECT_ID}/agents/${agentSlug}/cost-estimate`)
+    fetch(`/api/projects/${getApiProject()}/agents/${agentSlug}/cost-estimate`)
       .then((res) => res.json())
       .then((data) => setEstimate(data as CostEstimate))
       .catch(() => {
@@ -53,7 +53,7 @@ export function CostEstimateDialog({ agentSlug, onConfirm, onCancel }: CostEstim
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div
         ref={dialogRef}
-        className="w-96 rounded-xl border border-border bg-ironlore-slate p-5 shadow-2xl"
+        className="surface-glass w-96 rounded-xl p-5"
         role="dialog"
         aria-label="Cost estimate"
       >

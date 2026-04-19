@@ -12,6 +12,7 @@ import Database from "better-sqlite3";
 import type { Context, Next } from "hono";
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { reencryptVaults } from "./vault.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -265,9 +266,33 @@ function isRateLimited(key: string): boolean {
 // Auth API factory
 // ---------------------------------------------------------------------------
 
+export interface CreateAuthApiOptions {
+  /**
+   * Returns the list of project directories whose vaults should be
+   * re-encrypted when the admin password changes. The caller owns the
+   * multi-project discovery policy (today: just DEFAULT_PROJECT_ID,
+   * post-Phase-5: scan the projects/ root). Called fresh per password
+   * change so new projects are picked up without a server restart.
+   */
+  getProjectDirs?: () => string[];
+
+  /**
+   * Returns true when the given projectId exists and the current
+   * install is permitted to route requests to it. Consulted by
+   * `PUT /session/project` and by the auth middleware when the
+   * `?project=<id>` query param is present on a request.
+   *
+   * Omitting this option turns project validation into a no-op — any
+   * string is accepted. The default index.ts wiring always provides
+   * it, backed by the `ProjectRegistry`.
+   */
+  isProjectValid?: (projectId: string) => boolean;
+}
+
 export function createAuthApi(
   installRoot: string,
   store: SessionStore,
+  options: CreateAuthApiOptions = {},
 ): {
   api: Hono;
   middleware: (c: Context, next: Next) => Promise<Response | undefined>;
@@ -411,6 +436,43 @@ export function createAuthApi(
       return c.json({ error: "Current password is incorrect" }, 401);
     }
 
+    // Re-encrypt every project's API-key vault under the new password
+    //  BEFORE we flip the stored hash. If this step fails we want the
+    //  admin's current password to still work — so they can retry or
+    //  restart and boot against the `.enc.bak` rollback files that
+    //  writeVault retained.
+    //
+    //  Spec: docs/05-jobs-and-security.md §Vault re-encryption.
+    const projectDirs = options.getProjectDirs?.() ?? [];
+    let vaultSummary: Awaited<ReturnType<typeof reencryptVaults>> | undefined;
+    if (projectDirs.length > 0) {
+      try {
+        vaultSummary = await reencryptVaults({
+          projectDirs,
+          oldPassword: body.currentPassword,
+          newPassword: body.newPassword,
+          salt,
+        });
+        if (vaultSummary.failures.length > 0) {
+          return c.json(
+            {
+              error: "Vault re-encryption failed for one or more projects",
+              failures: vaultSummary.failures,
+            },
+            500,
+          );
+        }
+      } catch (err) {
+        return c.json(
+          {
+            error: "Vault re-encryption failed",
+            detail: err instanceof Error ? err.message : String(err),
+          },
+          500,
+        );
+      }
+    }
+
     // Hash and store new password
     const newHash = await hashPassword(body.newPassword, salt);
     store.updatePassword(user.id, newHash);
@@ -428,7 +490,15 @@ export function createAuthApi(
       }
     }
 
-    return c.json({ ok: true });
+    return c.json({
+      ok: true,
+      vault: vaultSummary
+        ? {
+            rewritten: vaultSummary.rewritten.length,
+            skipped: vaultSummary.skipped.length,
+          }
+        : undefined,
+    });
   });
 
   // ----------------------------------------------------------------
@@ -484,6 +554,10 @@ export function createAuthApi(
       return c.json({ error: "projectId required" }, 400);
     }
 
+    if (options.isProjectValid && !options.isProjectValid(body.projectId)) {
+      return c.json({ error: `Unknown project '${body.projectId}'` }, 404);
+    }
+
     store.updateSessionProject(sessionId, body.projectId);
     return c.json({ ok: true, currentProjectId: body.projectId });
   });
@@ -516,10 +590,26 @@ export function createAuthApi(
       }
     }
 
+    // Accept `?project=<id>` as a drive-by project switch (the
+    //  project switcher reloads the page with this query param per
+    //  docs/08-projects-and-isolation.md §Project switcher UX). We
+    //  validate the id before persisting so a malformed query can't
+    //  poison the session.
+    let currentProjectId = session.current_project_id;
+    const requestedProject = new URL(c.req.url).searchParams.get("project");
+    if (
+      requestedProject &&
+      requestedProject !== currentProjectId &&
+      (!options.isProjectValid || options.isProjectValid(requestedProject))
+    ) {
+      store.updateSessionProject(sessionId, requestedProject);
+      currentProjectId = requestedProject;
+    }
+
     store.touchSession(sessionId);
     c.set("userId", session.user_id);
     c.set("username", session.username);
-    c.set("currentProjectId", session.current_project_id);
+    c.set("currentProjectId", currentProjectId);
 
     await next();
   };

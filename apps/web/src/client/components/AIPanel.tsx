@@ -12,10 +12,20 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
-import { revertJob } from "../lib/api.js";
+import { getApiProject, revertJob, submitDryRunVerdict } from "../lib/api.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
+import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
+import { AgentPulse, Blockref, ProvenanceStrip, StatusPip } from "./primitives/index.js";
+
+/**
+ * Storage key pattern for cost-estimate acknowledgement per agent slug.
+ * Once the user confirms the estimate for an agent, the dialog skips
+ * for the rest of the session — the intent is a heads-up on first
+ * use, not a ceremony on every message.
+ */
+const COST_ACK_KEY = (slug: string) => `ironlore.costEstimate.acknowledged.${slug}`;
 
 export function AIPanel() {
   const messages = useAIPanelStore((s) => s.messages);
@@ -50,6 +60,23 @@ export function AIPanel() {
 
   const { sendMessage } = useAgentSession();
 
+  // Cost-estimate dialog state. The first user send of each session
+  // for a given agent gates through this dialog; subsequent sends
+  // skip it. sessionStorage clears on tab close, so reopening the
+  // app re-shows the estimate — intentional since pricing could
+  // change between sessions.
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  const [costDialogOpen, setCostDialogOpen] = useState(false);
+
+  const doSend = useCallback(
+    (fullPrompt: string) => {
+      sendMessage(fullPrompt);
+      setInputDraft("");
+      useAIPanelStore.getState().clearContexts();
+    },
+    [sendMessage, setInputDraft],
+  );
+
   const handleSend = useCallback(() => {
     const draft = inputDraft.trim();
     if (!draft && contexts.length === 0) return;
@@ -59,10 +86,43 @@ export function AIPanel() {
         ? `${contexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n")}\n\n`
         : "";
     const fullPrompt = contextBlock + draft;
-    sendMessage(fullPrompt);
-    setInputDraft("");
-    useAIPanelStore.getState().clearContexts();
-  }, [inputDraft, contexts, setInputDraft, sendMessage]);
+
+    // Cost-estimate gate: show on the first send per agent per
+    // session. Any read/write failure of sessionStorage just skips
+    // the dialog — estimate is informational, not a safety rail.
+    let alreadyAcknowledged = false;
+    try {
+      alreadyAcknowledged = window.sessionStorage.getItem(COST_ACK_KEY(activeAgent)) === "1";
+    } catch {
+      alreadyAcknowledged = true;
+    }
+
+    if (!alreadyAcknowledged) {
+      setPendingPrompt(fullPrompt);
+      setCostDialogOpen(true);
+      return;
+    }
+
+    doSend(fullPrompt);
+  }, [inputDraft, contexts, activeAgent, doSend]);
+
+  const handleCostConfirm = useCallback(() => {
+    try {
+      window.sessionStorage.setItem(COST_ACK_KEY(activeAgent), "1");
+    } catch {
+      /* storage denied — don't block the send */
+    }
+    setCostDialogOpen(false);
+    if (pendingPrompt !== null) {
+      doSend(pendingPrompt);
+      setPendingPrompt(null);
+    }
+  }, [activeAgent, pendingPrompt, doSend]);
+
+  const handleCostCancel = useCallback(() => {
+    setCostDialogOpen(false);
+    setPendingPrompt(null);
+  }, []);
 
   const onPromptKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -78,23 +138,40 @@ export function AIPanel() {
 
   return (
     <aside
-      className="flex shrink-0 flex-col border-l border-border bg-ironlore-slate"
-      style={{ width: "380px" }}
+      className="flex shrink-0 flex-col border-l border-border bg-ironlore-slate-elevated"
+      style={{
+        width: "380px",
+        boxShadow: "inset 1px 0 0 var(--color-border), -4px 0 12px oklch(0 0 0 / 0.15)",
+      }}
       aria-label="AI panel"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <Sparkles
-            className={`h-4 w-4 ${isStreaming ? "animate-pulse text-ironlore-blue-strong" : "text-ironlore-blue"}`}
-          />
-          <span className="text-sm font-semibold tracking-tight">AI</span>
-          {isStreaming && (
-            <span className="text-[10px] font-medium text-ironlore-blue">thinking…</span>
-          )}
+      {/* Header.
+       *  Agent pulse: per spec the pulse sweeps the bottom rule of the
+       *  header (1px line, the building's heartbeat). We wrap the whole
+       *  header in AgentPulse and let the ::before rail run over the
+       *  border. Reuleaux pip replaces the Sparkles icon — Reuleaux is
+       *  the one shape we use for any form of agent-active state. */}
+      <AgentPulse active={isStreaming}>
+        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <StatusPip state={isStreaming ? "running" : "idle"} size={11} />
+            <span className="text-sm font-semibold tracking-tight">AI</span>
+            {isStreaming && (
+              <span className="font-mono text-[10px] uppercase tracking-wider text-ironlore-blue">
+                streaming
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => useAppStore.getState().setActiveAgentSlug(activeAgent)}
+            className="rounded border border-transparent px-1.5 py-0.5 text-xs font-medium text-secondary outline-none transition-colors hover:border-border hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            title={`Open ${activeAgent} detail page`}
+          >
+            {activeAgent}
+          </button>
         </div>
-        <span className="text-xs font-medium text-secondary">{activeAgent}</span>
-      </div>
+      </AgentPulse>
 
       {/* Auto-pause banner */}
       <AgentPauseBanner slug={activeAgent} />
@@ -114,8 +191,16 @@ export function AIPanel() {
         </div>
       )}
 
-      {/* Input */}
-      <div className="border-t border-border p-3">
+      {/*
+       * Composer — wrapped in AgentPulse so the 3.2s sweep runs across
+       * the input box while the agent streams. Per
+       * docs/09-ui-and-brand.md §Signature motifs / Agent pulse, the
+       * composer is the canonical "live surface" during streaming.
+       * `.il-pulse::before` is an absolute overlay so it needs a
+       * position-relative + overflow-hidden host — the pulse wrapper
+       * is that host, the border wrapper sits inside it unchanged.
+       */}
+      <AgentPulse active={isStreaming} className="border-t border-border p-3">
         <div className="relative flex items-end gap-2 rounded-lg border border-border bg-background px-2 py-1.5 focus-within:border-ironlore-blue">
           <button
             type="button"
@@ -153,7 +238,14 @@ export function AIPanel() {
             <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
           </button>
         </div>
-      </div>
+      </AgentPulse>
+      {costDialogOpen && (
+        <CostEstimateDialog
+          agentSlug={activeAgent}
+          onConfirm={handleCostConfirm}
+          onCancel={handleCostCancel}
+        />
+      )}
     </aside>
   );
 }
@@ -165,20 +257,53 @@ export function AIPanel() {
 function AgentPauseBanner({ slug }: { slug: string }) {
   const [paused, setPaused] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(false);
+  // Re-check whenever a run ends — a fresh failure streak may have
+  // tripped the pause rail mid-session. The original version only
+  // fetched on mount, so users saw a stale "active" banner until
+  // they refreshed.
+  const isStreaming = useAIPanelStore((s) => s.isStreaming);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: isStreaming is the trigger, not a value read inside
   useEffect(() => {
-    fetch(`/api/projects/main/agents/${slug}/state`)
+    let cancelled = false;
+    fetch(`/api/projects/${getApiProject()}/agents/${slug}/state`)
       .then((r) => r.json())
       .then((data: { canRun: boolean; reason: string | null }) => {
+        if (cancelled) return;
         if (!data.canRun) {
           setPaused(true);
           setReason(data.reason);
         } else {
           setPaused(false);
+          setReason(null);
         }
       })
       .catch(() => {});
-  }, [slug]);
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, isStreaming]);
+
+  const handleResume = useCallback(async () => {
+    if (resuming) return;
+    setResuming(true);
+    try {
+      const res = await fetch(`/api/projects/${getApiProject()}/agents/${slug}/state`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paused: false }),
+      });
+      if (res.ok) {
+        setPaused(false);
+        setReason(null);
+      }
+    } catch {
+      // Resume failed — keep the banner visible, user can retry.
+    } finally {
+      setResuming(false);
+    }
+  }, [slug, resuming]);
 
   if (!paused) return null;
 
@@ -186,6 +311,14 @@ function AgentPauseBanner({ slug }: { slug: string }) {
     <div className="flex items-center gap-2 border-b border-signal-amber/30 bg-signal-amber/10 px-4 py-2 text-xs text-signal-amber">
       <span className="font-semibold">Agent paused</span>
       {reason && <span className="text-secondary">— {reason}</span>}
+      <button
+        type="button"
+        onClick={handleResume}
+        disabled={resuming}
+        className="ml-auto rounded border border-signal-amber/50 px-2 py-0.5 text-[10px] font-medium text-signal-amber hover:bg-signal-amber/15 disabled:opacity-50"
+      >
+        {resuming ? "Resuming\u2026" : "Resume"}
+      </button>
     </div>
   );
 }
@@ -282,20 +415,32 @@ function MessageList() {
               diff={msg.diff}
               approved={msg.approved}
               onApprove={() => {
+                const jobId = useAIPanelStore.getState().jobId;
+                if (!jobId || !msg.toolCallId) return;
+                // Mark locally before the round-trip so the buttons
+                // hide immediately; the server call is best-effort,
+                // because if the bridge has already timed out there's
+                // nothing the user can do to un-timeout it.
                 const msgs = useAIPanelStore.getState().messages;
                 const target = msgs[i];
                 if (target?.type === "diff_preview") {
                   (target as { approved: boolean | null }).approved = true;
                   useAIPanelStore.setState({ messages: [...msgs] });
                 }
+                void submitDryRunVerdict(jobId, msg.toolCallId, "approve").catch(() => {
+                  // Swallow — the verdict is a best-effort unblock.
+                });
               }}
               onReject={() => {
+                const jobId = useAIPanelStore.getState().jobId;
+                if (!jobId || !msg.toolCallId) return;
                 const msgs = useAIPanelStore.getState().messages;
                 const target = msgs[i];
                 if (target?.type === "diff_preview") {
                   (target as { approved: boolean | null }).approved = false;
                   useAIPanelStore.setState({ messages: [...msgs] });
                 }
+                void submitDryRunVerdict(jobId, msg.toolCallId, "reject").catch(() => {});
               }}
             />
           )}
@@ -375,6 +520,13 @@ interface ContextChipProps {
 
 /**
  * Run-finalized card with optional Revert button.
+ *
+ * Renders a ProvenanceStrip above the card body — this is the one
+ * conversation message where we have all four inputs the strip needs:
+ * the agent slug, a landing moment (we treat receipt of the message
+ * as the timestamp), the list of changed files (as sources), and an
+ * implicit trust state (`stale` once reverted, `fresh` otherwise).
+ * Per docs/09-ui-and-brand.md §Signature motifs / Provenance strip.
  */
 function RunFinalizedCard({
   msg,
@@ -410,30 +562,46 @@ function RunFinalizedCard({
     }
   };
 
+  const sourceChips = msg.filesChanged.slice(0, 4).map((f) => {
+    // Show basename only — full paths push the trust badge off the strip.
+    const base = f.split("/").pop() ?? f;
+    return base;
+  });
+  const extraFiles = Math.max(0, msg.filesChanged.length - sourceChips.length);
+  if (extraFiles > 0) sourceChips.push(`+${extraFiles}`);
+
   return (
-    <div className="rounded-lg border border-border bg-ironlore-slate-hover px-3 py-2 text-xs">
-      <div className="flex items-center justify-between">
-        <div className="font-semibold text-primary">Run finalized · {msg.agentSlug}</div>
-        {!reverted && msg.commitShaStart && msg.commitShaEnd && (
-          <button
-            type="button"
-            disabled={reverting}
-            onClick={handleRevert}
-            className="rounded border border-border px-2 py-0.5 text-[10px] text-secondary hover:bg-ironlore-slate hover:text-primary disabled:opacity-50"
-          >
-            {reverting ? "Reverting\u2026" : "Revert this run"}
-          </button>
-        )}
+    <div className="overflow-hidden rounded-lg border border-border bg-ironlore-slate-hover text-xs">
+      <ProvenanceStrip
+        agent={msg.agentSlug}
+        timestamp="just now"
+        sources={sourceChips}
+        trust={reverted ? "stale" : "fresh"}
+      />
+      <div className="px-3 py-2">
+        <div className="flex items-center justify-between">
+          <div className="font-semibold text-primary">Run finalized</div>
+          {!reverted && msg.commitShaStart && msg.commitShaEnd && (
+            <button
+              type="button"
+              disabled={reverting}
+              onClick={handleRevert}
+              className="rounded border border-border px-2 py-0.5 text-[10px] text-secondary hover:bg-ironlore-slate hover:text-primary disabled:opacity-50"
+            >
+              {reverting ? "Reverting\u2026" : "Revert this run"}
+            </button>
+          )}
+        </div>
+        <div className="mt-0.5 text-secondary">
+          {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
+          {" \u00B7 "}
+          <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
+          {"\u2026"}
+          <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
+          {reverted && " \u00B7 reverted"}
+        </div>
+        {revertError && <div className="mt-1 text-signal-red">{revertError}</div>}
       </div>
-      <div className="mt-0.5 text-secondary">
-        {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
-        {" \u00B7 "}
-        <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
-        {"\u2026"}
-        <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
-        {reverted && " \u00B7 reverted"}
-      </div>
-      {revertError && <div className="mt-1 text-signal-red">{revertError}</div>}
     </div>
   );
 }
@@ -472,17 +640,18 @@ function CitationText({ text }: { text: string }) {
           // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
           <span key={i}>{p.value}</span>
         ) : (
-          <button
+          <span
             // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
             key={i}
-            type="button"
-            className="mx-0.5 inline rounded bg-ironlore-blue/15 px-1 py-0.5 text-xs font-medium text-ironlore-blue hover:bg-ironlore-blue/25"
-            onClick={() => useAppStore.getState().openProvenance(p.page, p.blockId)}
-            title={`Open ${p.page}${p.blockId ? `#${p.blockId}` : ""}`}
+            className="mx-0.5 inline-flex"
           >
-            {p.page}
-            {p.blockId ? `#${p.blockId.slice(0, 10)}…` : ""}
-          </button>
+            <Blockref
+              page={p.page}
+              block={p.blockId || undefined}
+              onClick={() => useAppStore.getState().openProvenance(p.page, p.blockId)}
+              title={`Open ${p.page}${p.blockId ? `#${p.blockId}` : ""}`}
+            />
+          </span>
         ),
       )}
     </>

@@ -1,7 +1,7 @@
-import { AlertTriangle, CircleDot, Loader2, RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
+import { Reuleaux, StatusPip } from "./primitives/index.js";
 
 /**
  * Format "Saved <N>s ago" relative to the current clock. Updates on a
@@ -71,7 +71,7 @@ function EditorStatusPill({
   if (status === "dirty") {
     return (
       <span role="status" aria-live="polite" className="flex items-center gap-1 text-secondary">
-        <CircleDot className="h-3 w-3" aria-hidden="true" />
+        <Reuleaux size={7} color="var(--il-amber)" aria-label="Unsaved changes" />
         Unsaved
       </span>
     );
@@ -79,7 +79,7 @@ function EditorStatusPill({
   if (status === "syncing") {
     return (
       <span role="status" aria-live="polite" className="flex items-center gap-1 text-secondary">
-        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+        <Reuleaux size={7} color="var(--il-blue)" spin aria-label="Saving" />
         Saving…
       </span>
     );
@@ -91,7 +91,7 @@ function EditorStatusPill({
         aria-live="assertive"
         className="flex items-center gap-1 text-signal-amber"
       >
-        <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+        <Reuleaux size={7} color="var(--il-amber)" aria-label="Conflict" />
         Conflict
       </span>
     );
@@ -105,8 +105,11 @@ function EditorStatusPill({
 }
 
 /**
- * WebSocket connection pill. Text + icon so greyscale users still see
- * the status. Uses Wifi / WifiOff to mirror the OfflineBanner chrome.
+ * WebSocket connection pill. Per docs/09-ui-and-brand.md §Status bar,
+ * the indicator is a Reuleaux pip — green when connected, red when
+ * not — with a mono uppercase label beside it. No Wifi / WifiOff
+ * Lucide icon; state is load-bearing and needs the one shape the
+ * product uses for state.
  */
 function ConnectionPill({
   connected,
@@ -115,30 +118,22 @@ function ConnectionPill({
   connected: boolean;
   reconnecting: boolean;
 }) {
-  const label = connected ? "Live" : reconnecting ? "Reconnecting\u2026" : "Offline";
-
+  const label = connected ? "LIVE" : reconnecting ? "RECONNECTING" : "OFFLINE";
+  const state = connected ? "healthy" : reconnecting ? "running" : "error";
   const color = connected
     ? "text-signal-green"
     : reconnecting
       ? "text-signal-amber"
       : "text-signal-red";
 
-  const icon = connected ? (
-    <Wifi className="h-3 w-3" aria-hidden="true" />
-  ) : reconnecting ? (
-    <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
-  ) : (
-    <WifiOff className="h-3 w-3" aria-hidden="true" />
-  );
-
   return (
     <span
       role="status"
       aria-live="polite"
       aria-label={label}
-      className={`flex items-center gap-1 ${color}`}
+      className={`flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider ${color}`}
     >
-      {icon}
+      <StatusPip state={state} size={9} aria-label={label} />
       {label}
     </span>
   );

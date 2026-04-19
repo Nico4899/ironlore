@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { pushAgentToast } from "../components/AgentToast.js";
+import { getApiProject } from "../lib/api.js";
 import { useAIPanelStore } from "../stores/ai-panel.js";
 
-const BASE = "/api/projects/main";
+const BASE = (): string => `/api/projects/${getApiProject()}`;
 
 /**
  * Hook that manages the AI panel's agent session lifecycle.
@@ -34,7 +35,7 @@ export function useAgentSession() {
       }
 
       try {
-        const res = await fetch(`${BASE}/jobs/${jobId}/events?since=${store.lastSeq}`);
+        const res = await fetch(`${BASE()}/jobs/${jobId}/events?since=${store.lastSeq}`);
         if (!res.ok) return;
 
         const { events, jobStatus } = (await res.json()) as {
@@ -71,7 +72,7 @@ export function useAgentSession() {
       store.setIsStreaming(true);
 
       try {
-        const res = await fetch(`${BASE}/agents/${slug}/run`, {
+        const res = await fetch(`${BASE()}/agents/${slug}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: text, mode: "interactive" }),
@@ -214,5 +215,42 @@ function processJobEvent(event: { seq: number; kind: string; data: string }): vo
     case "session.paused":
       // Interactive session paused (client disconnected).
       break;
+
+    case "diff_preview": {
+      // Server is pausing on a destructive tool call pending the
+      // user's verdict. Render the diff with approve/reject controls.
+      store.addMessage({
+        type: "diff_preview",
+        toolCallId: (data.toolCallId as string) ?? "",
+        tool: (data.tool as string) ?? "unknown",
+        pageId: (data.pageId as string) ?? "",
+        diff: (data.diff as string) ?? "",
+        approved: null,
+      });
+      break;
+    }
+
+    case "run.finalized": {
+      // Server emits this at the end of an autonomous run with the
+      // commit range + file list. We surface it as a finalized card
+      // so the user can eyeball the commit range or hit Revert.
+      const runId = (data.runId as string) ?? "";
+      const agentSlug = (data.agentSlug as string) ?? store.activeAgent;
+      const commitShaStart = (data.commitShaStart as string) ?? "";
+      const commitShaEnd = (data.commitShaEnd as string) ?? "";
+      const filesChanged = Array.isArray(data.filesChanged) ? (data.filesChanged as string[]) : [];
+      if (commitShaStart && commitShaEnd) {
+        store.addMessage({
+          type: "run_finalized",
+          runId,
+          agentSlug,
+          commitShaStart,
+          commitShaEnd,
+          filesChanged,
+          revertedAt: null,
+        });
+      }
+      break;
+    }
   }
 }

@@ -1,7 +1,7 @@
 import { messages } from "@ironlore/core/messages";
 import { useMemo, useState } from "react";
 import type { ConflictResponse } from "../../lib/api.js";
-import { fetchPage } from "../../lib/api.js";
+import { fetchPage, getApiProject } from "../../lib/api.js";
 import {
   applyResolutions,
   type ConflictChoice,
@@ -55,7 +55,7 @@ export function ConflictBanner({ conflict, onResolved }: ConflictBannerProps) {
     const { markdown, hasUnresolvedConflicts } = applyResolutions(segments, resolutions);
     if (hasUnresolvedConflicts) return;
 
-    const res = await fetch(`/api/projects/main/pages/${filePath}`, {
+    const res = await fetch(`/api/projects/${getApiProject()}/pages/${filePath}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -77,7 +77,7 @@ export function ConflictBanner({ conflict, onResolved }: ConflictBannerProps) {
     const { filePath, markdown, setEtag, setStatus } = useEditorStore.getState();
     if (!filePath) return;
 
-    const res = await fetch(`/api/projects/main/pages/${filePath}`, {
+    const res = await fetch(`/api/projects/${getApiProject()}/pages/${filePath}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",

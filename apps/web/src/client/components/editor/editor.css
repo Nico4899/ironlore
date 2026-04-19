@@ -27,6 +27,13 @@
   outline: none;
 }
 
+/* Keyboard focus specifically — mirrors :focus so the editor never
+ * draws a blue ring around itself (ProseMirror handles its own caret
+ * + selection styling internally). */
+.ProseMirror:focus-visible {
+  outline: none;
+}
+
 /* ─── Headings ─── */
 
 .ProseMirror h1,
@@ -271,15 +278,66 @@
 }
 
 /* ─── Wiki-links ─── */
-
-.ProseMirror .ir-wikilink {
-  color: var(--color-ironlore-blue);
-  text-decoration: none;
-  border-bottom: 1px dashed var(--color-ironlore-blue);
-  cursor: pointer;
-  padding: 0 1px;
+/*
+ * Wiki-link chips render as `.il-blockref` (defined in globals.css)
+ * so the editor's live citation shape matches every other Blockref in
+ * the product. The editor only overrides the inline behaviors that
+ * conflict with caret interaction: keep the chip inline-baseline,
+ * prevent it from swallowing selection, and let ProseMirror handle
+ * atomic-node caret movement.
+ */
+.ProseMirror .il-blockref {
+  user-select: all;
 }
 
-.ProseMirror .ir-wikilink:hover {
-  background-color: oklch(0.35 0.05 255 / 0.2);
+/* ─── Block drag handles ─── */
+/*
+ * Six-dot drag grip that appears on hover to the left of every
+ * block-level element, matching the canvas (screen-editor.jsx
+ * EditorBlock).
+ *
+ * This iteration is visual-only — the handle doesn't yet drag
+ * blocks. Implementing drag-to-reorder requires a ProseMirror
+ * decoration + drag-source plumbing that is its own change. Landing
+ * the canvas hover affordance first so the editor reads right in the
+ * design review pass; the drag wire-up follows.
+ *
+ * Gated by the `block-handles-*` data attribute so the ruleset stays
+ * easy to disable if it ever trips over a nested plugin view.
+ */
+.ProseMirror > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table) {
+  position: relative;
+}
+
+.ProseMirror > :is(p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table):hover::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 8px;
+  width: 14px;
+  height: 14px;
+  opacity: 0.35;
+  pointer-events: none;
+  /*
+   * Six dots rendered as a single background-image stack — layered
+   * radial gradients avoid needing a real <span> per dot or an SVG
+   * data URL. Each gradient paints one 2px dot at its background-
+   * position offset. Grid is 2 cols × 3 rows on a 14px square.
+   */
+  background-image: radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px),
+    radial-gradient(circle, var(--il-text4) 1px, transparent 1.5px);
+  background-position: 1px 1px, 7px 1px, 1px 7px, 7px 7px, 1px 13px, 7px 13px;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+  transition: opacity var(--motion-snap) ease-out;
+}
+
+/* Fade handles out on motion="none" — a blinking edge near the
+ *  selection is jarring for users who opted out of motion. */
+html[data-motion="none"] .ProseMirror > *:hover::before {
+  display: none;
 }

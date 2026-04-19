@@ -1,77 +1,450 @@
 @import "tailwindcss";
 
-/* ─── OKLCh Color System ─── */
+/*
+ * Self-hosted fonts. See `main.tsx` for the @fontsource imports that
+ * ship the actual WOFF2 files through Vite's asset pipeline — no
+ * Google/Adobe CDN is loaded at runtime, per docs/09-ui-and-brand.md
+ * §Typography ("load all three … with font-display: swap").
+ */
 
-/* Dark mode is the default (spec §Dark / light toggle). The `light`
- * custom variant activates when `.light` is on an ancestor of the
- * element; `useThemeClass` toggles it on <html> when the user picks
- * light mode. */
+/* ─── OKLCh Color System — canonical --il-* tokens ─── */
+/*
+ * Single source of truth per docs/09-ui-and-brand.md §Color. Every
+ * color in the product is one of these OKLCh values or a
+ * `color-mix(in oklch, …)` over one. Hex values are banned — start
+ * from commit 1; the no-hex rule is enforced by grep in review.
+ *
+ * Dark mode is default. Light mode overrides the subset of tokens
+ * that change in the `html.light` block below.
+ */
 @custom-variant light (&:is(.light *));
 
-@theme inline {
-  /* Ironlore palette — bolder, more committed. The previous tokens sat
-   * mid-lightness and read timid; these punch harder while staying in
-   * OKLCh so contrast stays verifiable. */
-  --color-ironlore-blue: oklch(0.65 0.18 258);
-  --color-ironlore-blue-strong: oklch(0.72 0.20 258);
-  --color-ironlore-slate: oklch(0.22 0.015 260);
-  --color-ironlore-slate-hover: oklch(0.28 0.015 260);
-  /* Editor / workspace canvas — deeper than slate so panels read as
-   * "stage" against the chrome "apron". */
-  --color-background: oklch(0.16 0.01 260);
+:root {
+  /*
+   * Brand-blue hue is user-tweakable via Appearance settings. The
+   * OKLCh tokens below pull their `h` channel from this var, so
+   * lightness + chroma stay pinned while the hue slides. This keeps
+   * contrast ratios stable across personalizations. Default 258.
+   */
+  --il-accent-hue: 258;
 
-  --color-signal-amber: oklch(0.82 0.17 80);
-  --color-signal-red: oklch(0.62 0.22 25);
-  --color-signal-green: oklch(0.72 0.17 148);
+  /* Canvas + surface tokens (dark) */
+  --il-bg: oklch(0.13 0.008 265);
+  --il-bg-raised: oklch(0.17 0.010 265);
+  --il-slate: oklch(0.20 0.012 265);
+  --il-slate-hover: oklch(0.24 0.014 265);
+  --il-slate-elev: oklch(0.22 0.013 265);
 
-  /* Accent — a deliberate warm contrast to the blue, used only for AI
-   * surfaces (sparkles, Ask AI, example-prompt card). Stays muted so
-   * it doesn't fight the blue. */
-  --color-accent-violet: oklch(0.68 0.17 300);
-  /* Highlight tones for the Highlight & Ask pop-up. Four deliberate
-   * marker colors that read at 0.4 alpha on both light and dark. */
-  --color-highlight-yellow: oklch(0.90 0.17 95);
-  --color-highlight-green: oklch(0.78 0.17 150);
-  --color-highlight-blue: oklch(0.78 0.14 230);
-  --color-highlight-pink: oklch(0.75 0.17 0);
+  /* Brand (dark) — hue driven by --il-accent-hue */
+  --il-blue: oklch(0.68 0.17 var(--il-accent-hue, 258));
+  --il-blue-strong: oklch(0.72 0.20 var(--il-accent-hue, 258));
+  --il-blue-dim: oklch(0.45 0.12 var(--il-accent-hue, 258));
+  --il-blue-glow: oklch(0.68 0.17 var(--il-accent-hue, 258) / 0.28);
 
-  --color-primary: oklch(0.96 0.005 260);
-  --color-secondary: oklch(0.68 0.015 260);
-  --color-border: oklch(0.32 0.01 260);
-  --color-border-strong: oklch(0.52 0.020 260);
+  /* Signal (dark) */
+  --il-amber: oklch(0.82 0.17 80);
+  --il-red: oklch(0.64 0.22 25);
+  --il-green: oklch(0.74 0.16 148);
+
+  /* Secondary accent — reserved for secondary agent identity only */
+  --il-violet: oklch(0.70 0.17 300);
+
+  /* Text (dark) */
+  --il-text: oklch(0.95 0.005 260);
+  --il-text2: oklch(0.68 0.012 260);
+  --il-text3: oklch(0.48 0.012 260);
+  --il-text4: oklch(0.36 0.010 260);
+
+  /* Borders (dark) */
+  --il-border: oklch(0.28 0.012 265);
+  --il-border-soft: oklch(0.22 0.010 265);
+  --il-border-strong: oklch(0.42 0.015 265);
+
+  /* Highlights (dark) — for user text highlight chips; intentionally
+   *  outside the signal palette. */
+  --il-highlight-yellow: oklch(0.90 0.17 95);
+  --il-highlight-green: oklch(0.78 0.17 150);
+  --il-highlight-blue: oklch(0.78 0.14 230);
+  --il-highlight-pink: oklch(0.75 0.17 0);
+
+  /* Accent auxiliaries (dark) — non-brand accents reserved for
+   *  per-type file icons, not for primary surfaces. */
+  --il-accent-teal: oklch(0.70 0.14 185);
+  --il-accent-rose: oklch(0.68 0.16 10);
+
+  /* Shadows — derived from OKLCh zero so they stay warm-neutral */
+  --il-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3), 0 1px 3px oklch(0 0 0 / 0.2);
+  --il-shadow-md: 0 4px 6px oklch(0 0 0 / 0.3), 0 2px 4px oklch(0 0 0 / 0.2);
+  --il-shadow-lg: 0 10px 25px oklch(0 0 0 / 0.4), 0 4px 10px oklch(0 0 0 / 0.3);
+  --il-shadow-glow-blue: 0 0 12px var(--il-blue-glow), 0 0 4px var(--il-blue-glow);
+  --il-shadow-glow-amber: 0 0 12px oklch(0.82 0.17 80 / 0.2);
+  --il-shadow-glow-red: 0 0 12px oklch(0.64 0.22 25 / 0.2);
+  --il-shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.25);
+
+  /*
+   * Type system — self-hosted by `@fontsource`. Inter, Instrument
+   * Serif, JetBrains Mono are loaded as WOFF2 through the bundler;
+   * `system-ui` fallbacks cover the brief moment before swap.
+   *
+   * `--font-display` (was `--font-serif`) names the editorial role
+   * directly — the family happens to be Instrument Serif.
+   */
+  --font-display: "Instrument Serif", "GT Sectra", "Times New Roman", serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Menlo", monospace;
+
+  /*
+   * Motion durations — exactly four values, zero others per
+   * docs/09-ui-and-brand.md §Motion language. Every transition,
+   * animation, and timed fade in the product references one of
+   * these four tokens. Drift is caught in review by searching for
+   * literal `ms` or `duration-<N>` outside this file.
+   *
+   *   snap    (80ms)    hover / focus feedback
+   *   transit (180ms)   panel open, tab switch, drawer
+   *   flash   (1500ms)  attention flash (provenance target)
+   *   pulse   (3200ms)  ambient agent-running sweep
+   */
+  --motion-snap: 80ms;
+  --motion-transit: 180ms;
+  --motion-flash: 1500ms;
+  --motion-pulse: 3200ms;
 }
 
 /* ─── Light mode overrides ─── */
+/*
+ * Only the tokens that genuinely change between modes. Brand hue
+ * stays driven by `--il-accent-hue` so slider tweaks survive a theme
+ * toggle.
+ */
+html.light {
+  --il-bg: oklch(0.96 0.004 265);
+  --il-bg-raised: oklch(0.99 0.003 265);
+  --il-slate: oklch(0.94 0.006 265);
+  --il-slate-hover: oklch(0.90 0.008 265);
+  --il-slate-elev: oklch(0.98 0.004 265);
 
-@variant light {
-  @theme inline {
-    --color-ironlore-blue: oklch(0.55 0.20 258);
-    --color-ironlore-blue-strong: oklch(0.48 0.22 258);
-    --color-ironlore-slate: oklch(0.95 0.008 260);
-    --color-ironlore-slate-hover: oklch(0.90 0.010 260);
-    --color-background: oklch(0.99 0.003 260);
+  --il-blue: oklch(0.52 0.20 var(--il-accent-hue, 258));
+  --il-blue-strong: oklch(0.45 0.22 var(--il-accent-hue, 258));
+  --il-blue-dim: oklch(0.72 0.10 var(--il-accent-hue, 258));
+  --il-blue-glow: oklch(0.52 0.20 var(--il-accent-hue, 258) / 0.18);
 
-    --color-signal-amber: oklch(0.68 0.17 75);
-    --color-signal-red: oklch(0.55 0.22 25);
-    --color-signal-green: oklch(0.56 0.17 148);
+  --il-amber: oklch(0.68 0.17 75);
+  --il-red: oklch(0.55 0.22 25);
+  --il-green: oklch(0.56 0.17 148);
 
-    --color-accent-violet: oklch(0.55 0.20 300);
-    --color-highlight-yellow: oklch(0.90 0.17 95);
-    --color-highlight-green: oklch(0.82 0.15 150);
-    --color-highlight-blue: oklch(0.82 0.12 230);
-    --color-highlight-pink: oklch(0.80 0.15 0);
+  --il-violet: oklch(0.55 0.20 300);
 
-    --color-primary: oklch(0.18 0.01 260);
-    --color-secondary: oklch(0.42 0.012 260);
-    --color-border: oklch(0.82 0.010 260);
-    --color-border-strong: oklch(0.72 0.015 260);
+  --il-text: oklch(0.18 0.012 260);
+  --il-text2: oklch(0.42 0.012 260);
+  --il-text3: oklch(0.58 0.010 260);
+  --il-text4: oklch(0.72 0.008 260);
+
+  --il-border: oklch(0.86 0.008 265);
+  --il-border-soft: oklch(0.92 0.006 265);
+  --il-border-strong: oklch(0.72 0.012 265);
+
+  --il-highlight-yellow: oklch(0.90 0.17 95);
+  --il-highlight-green: oklch(0.82 0.15 150);
+  --il-highlight-blue: oklch(0.82 0.12 230);
+  --il-highlight-pink: oklch(0.80 0.15 0);
+
+  --il-accent-teal: oklch(0.50 0.14 185);
+  --il-accent-rose: oklch(0.55 0.16 10);
+
+  --il-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04);
+  --il-shadow-md: 0 4px 6px oklch(0 0 0 / 0.08), 0 2px 4px oklch(0 0 0 / 0.04);
+  --il-shadow-lg: 0 10px 25px oklch(0 0 0 / 0.1), 0 4px 10px oklch(0 0 0 / 0.06);
+  --il-shadow-glow-amber: 0 0 12px oklch(0.68 0.17 75 / 0.12);
+  --il-shadow-glow-red: 0 0 12px oklch(0.55 0.22 25 / 0.12);
+  --il-shadow-inner: inset 0 1px 3px oklch(0 0 0 / 0.06);
+}
+
+/* ─── Tailwind v4 theme bridge ─── */
+/*
+ * Tailwind utilities like `bg-ironlore-blue`, `text-primary`, etc. map
+ * to `--color-*` names under `@theme inline`. We keep the existing
+ * namespace for backwards compatibility with the hundreds of
+ * existing classnames, but the *values* come from `--il-*` above so
+ * there is only one source of truth. `@theme inline` emits raw
+ * `var(--il-*)` references instead of inlining a frozen computed
+ * color, which means the accent-hue slider and light-mode toggle
+ * still cascade through.
+ */
+@theme inline {
+  --color-ironlore-blue: var(--il-blue);
+  --color-ironlore-blue-strong: var(--il-blue-strong);
+  --color-ironlore-blue-dim: var(--il-blue-dim);
+  --color-ironlore-slate: var(--il-slate);
+  --color-ironlore-slate-hover: var(--il-slate-hover);
+  --color-ironlore-slate-elevated: var(--il-slate-elev);
+  --color-background: var(--il-bg);
+  --color-background-raised: var(--il-bg-raised);
+
+  --color-signal-amber: var(--il-amber);
+  --color-signal-red: var(--il-red);
+  --color-signal-green: var(--il-green);
+
+  --color-accent-violet: var(--il-violet);
+  --color-accent-teal: var(--il-accent-teal);
+  --color-accent-rose: var(--il-accent-rose);
+
+  --color-highlight-yellow: var(--il-highlight-yellow);
+  --color-highlight-green: var(--il-highlight-green);
+  --color-highlight-blue: var(--il-highlight-blue);
+  --color-highlight-pink: var(--il-highlight-pink);
+
+  --color-primary: var(--il-text);
+  --color-secondary: var(--il-text2);
+  --color-tertiary: var(--il-text3);
+  --color-quaternary: var(--il-text4);
+
+  --color-border: var(--il-border);
+  --color-border-soft: var(--il-border-soft);
+  --color-border-strong: var(--il-border-strong);
+  --color-border-glow: var(--il-blue-glow);
+
+  --shadow-sm: var(--il-shadow-sm);
+  --shadow-md: var(--il-shadow-md);
+  --shadow-lg: var(--il-shadow-lg);
+  --shadow-glow-blue: var(--il-shadow-glow-blue);
+  --shadow-glow-amber: var(--il-shadow-glow-amber);
+  --shadow-glow-red: var(--il-shadow-glow-red);
+  --shadow-inner: var(--il-shadow-inner);
+
+  /* Type stacks mirrored into Tailwind's namespace so `font-sans`
+   *  etc. keep working while primitives quote `--font-display`. */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-serif: "Instrument Serif", "GT Sectra", "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Menlo", monospace;
+}
+
+/* ─── Ironlore keyframes + utility classes ─── */
+
+/* Agent pulse — subtle horizontal gradient sweep on live surfaces.
+ * 3.2s deliberately (long enough to feel ambient, not anxious). */
+@keyframes ilPulse {
+  0%, 100% { transform: translateX(-100%); }
+  50%      { transform: translateX(100%); }
+}
+
+/* Reuleaux rotation — used on the running-state status pip.
+ * 2s linear, direction left-to-right so it tracks reading order. */
+@keyframes ilSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Provenance target flash — 1.5s Signal-Amber fade-out on the block
+ * the user just navigated to via a citation click. */
+@keyframes ilFlash {
+  0%   { background-color: oklch(from var(--il-amber) l c h / 0.25); }
+  100% { background-color: transparent; }
+}
+
+/* Search-dialog caret — 2-step blink at 1s per cycle. Decorative
+ *  companion to the native <input> caret in the ⌘K dialog. */
+@keyframes ilBlink {
+  0%, 49%  { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.il-search-caret {
+  animation: ilBlink 1s steps(2) infinite;
+}
+html[data-motion="none"] .il-search-caret {
+  animation: none;
+}
+
+/*
+ * The agent pulse is applied to a wrapping surface (usually the AI
+ * panel composer or a live agent card). The surface must be
+ * `position: relative` + `overflow: hidden`; the ::before rail sweeps
+ * across it and auto-hides underneath content.
+ */
+.il-pulse {
+  position: relative;
+  overflow: hidden;
+}
+.il-pulse::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 20%, var(--il-blue-glow) 50%, transparent 80%);
+  animation: ilPulse var(--motion-pulse) ease-in-out infinite;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.il-spin {
+  animation: ilSpin 2s linear infinite;
+  transform-origin: center;
+}
+
+/* ─── Motion + motif settings gates ─── */
+/*
+ * User-controlled overrides from Settings → Appearance. The OS
+ * `prefers-reduced-motion` media query below still applies at the
+ * system level; these attribute selectors let the user narrow from
+ * there (e.g. "reduced on a platform that reports no preference"
+ * or "none regardless of what the OS says"). Per
+ * docs/09-ui-and-brand.md §Motion language.
+ */
+html[data-motion="reduced"] .il-pulse::before {
+  animation: none;
+  opacity: 0.3;
+}
+html[data-motion="reduced"] .il-spin {
+  animation: none;
+}
+html[data-motion="none"] .il-pulse::before,
+html[data-motion="none"] .il-spin {
+  animation: none;
+}
+html[data-motion="none"] .il-pulse::before {
+  /* Kill the glow overlay entirely when the user opts all-off. */
+  display: none;
+}
+
+/*
+ * Motif-visibility gates. Two motifs are CSS-reachable today:
+ *   · agent-pulse — hides the animated overlay on live surfaces.
+ *   · provenance — hides the `.il-provenance-strip` root so cited
+ *     blocks render naked.
+ * The other two (`blockref-preview`, `reuleaux-pips`) are persisted
+ * via `data-motif-*` attributes for future features to read.
+ */
+html[data-motif-agent-pulse="off"] .il-pulse::before {
+  display: none;
+}
+html[data-motif-provenance="off"] .il-provenance-strip {
+  display: none;
+}
+
+/*
+ * Blockref chip — the bespoke citation primitive from
+ * docs/09-ui-and-brand.md §Signature motifs / Blockref. Lives in CSS
+ * (not inline-styled) so both the React `<Blockref />` component and
+ * the ProseMirror wiki-link nodeView render the same shape. Changing
+ * a value here propagates to every citation in the product.
+ */
+.il-blockref {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0 5px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--il-text);
+  background: color-mix(in oklch, var(--il-blue) 10%, transparent);
+  border-left: 2px solid var(--il-blue);
+  border-radius: 0 2px 2px 0;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--motion-snap) ease-out;
+  vertical-align: baseline;
+  /* Button reset — the React Blockref renders as <button>. */
+  appearance: none;
+  font-weight: inherit;
+}
+
+.il-blockref:hover {
+  background: var(--il-blue-glow);
+  border-left-width: 3px;
+}
+
+.il-blockref-stale {
+  border-left-style: dashed;
+}
+.il-blockref-stale:hover {
+  border-left-style: dashed;
+}
+
+.il-blockref:focus-visible {
+  outline: 2px solid var(--il-blue);
+  outline-offset: 2px;
+}
+
+.il-blockref__id {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--il-text3);
+  letter-spacing: 0.02em;
+}
+
+.il-blockref:hover .il-blockref__id {
+  color: var(--il-blue);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .il-pulse::before {
+    animation: none;
+    opacity: 0.3;
   }
+  .il-spin {
+    animation: none;
+  }
+}
+
+/* ─── Density ─── */
+/*
+ * Two tiers per spec §Density. `useThemeClass` mirrors the store
+ * value onto `<html data-density="…">` and cascades these variables
+ * outward. Components opt in by referencing `var(--il-row-pad)` etc.
+ * — most components inherit comfortable and stay unchanged.
+ */
+html {
+  --il-body-size: 13.5px;
+  --il-row-pad: 12px;
+}
+
+html[data-density="compact"] {
+  --il-body-size: 12.5px;
+  --il-row-pad: 6px;
+}
+
+/* ─── Accent hue slider ─── */
+/*
+ * Shared styling for the Settings → Appearance hue slider. The gradient
+ * track paints every hue at the seed lightness (0.68) + chroma (0.17),
+ * so the swatch lines up with the OKLCh value the store actually sets.
+ */
+.il-hue-slider {
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    oklch(0.68 0.17 0),
+    oklch(0.68 0.17 60),
+    oklch(0.68 0.17 120),
+    oklch(0.68 0.17 180),
+    oklch(0.68 0.17 240),
+    oklch(0.68 0.17 300),
+    oklch(0.68 0.17 360)
+  );
+  outline: none;
+}
+.il-hue-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 2px;
+  height: 14px;
+  background: var(--il-text);
+  border-radius: 1px;
+  border: none;
+  cursor: pointer;
+}
+.il-hue-slider::-moz-range-thumb {
+  width: 2px;
+  height: 14px;
+  background: var(--il-text);
+  border-radius: 1px;
+  border: none;
+  cursor: pointer;
 }
 
 /* ─── Base ─── */
 
-/* Dark is the default. `useThemeClass` overrides `color-scheme` at
- * runtime when the user picks light mode. */
 html {
   color-scheme: dark;
 }
@@ -81,12 +454,12 @@ html.light {
 }
 
 body {
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
   margin: 0;
-  background-color: var(--color-background);
-  color: var(--color-primary);
+  background-color: var(--il-bg);
+  color: var(--il-text);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "ss01", "cv11";
@@ -96,16 +469,144 @@ body {
 code,
 pre,
 kbd {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
-/* Text selection — primary tint, slightly darker than the background so
- * the selected span reads as an elevated surface rather than a bright
- * blue rectangle. Applies everywhere outside CodeMirror/ProseMirror
- * (those have their own selection rules). */
 ::selection {
-  background-color: oklch(from var(--color-ironlore-blue) l c h / 0.35);
-  color: var(--color-primary);
+  background-color: oklch(from var(--il-blue) l c h / 0.35);
+  color: var(--il-text);
+}
+
+/* ─── Depth utilities ─── */
+
+/* Elevated surface — used for cards, panels, floating UI */
+.surface-elevated {
+  background-color: var(--il-slate-elev);
+  box-shadow: var(--il-shadow-sm);
+  border: 1px solid var(--il-border);
+}
+
+/* Raised surface — subtle lift for active states */
+.surface-raised {
+  background-color: var(--il-bg-raised);
+  box-shadow: var(--il-shadow-md);
+}
+
+/* Glass effect — for overlays, dialogs, floating menus */
+.surface-glass {
+  background: oklch(from var(--il-slate) l c h / 0.85);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border: 1px solid oklch(from var(--il-border) l c h / 0.6);
+  box-shadow: var(--il-shadow-lg);
+}
+
+/* Inset surface — for inputs, wells, embedded content */
+.surface-inset {
+  background-color: var(--il-bg);
+  box-shadow: var(--il-shadow-inner);
+  border: 1px solid var(--il-border);
+}
+
+/* Glow focus ring — for primary interactive elements */
+.glow-focus:focus-visible {
+  outline: 2px solid var(--il-blue);
+  outline-offset: 2px;
+  box-shadow: var(--il-shadow-glow-blue);
+}
+
+/* Button depth — elevated button with hover lift.
+ * Snap-fast feedback: the hover lift is immediate, not a drawn-out
+ * state transition, so both channels share --motion-snap. */
+.btn-depth {
+  box-shadow: var(--il-shadow-sm);
+  transition: box-shadow var(--motion-snap), transform var(--motion-snap);
+}
+.btn-depth:hover {
+  box-shadow: var(--il-shadow-md);
+  transform: translateY(-0.5px);
+}
+.btn-depth:active {
+  box-shadow: var(--il-shadow-inner);
+  transform: translateY(0.5px);
+}
+
+/* Gradient border — subtle color shift on borders */
+.border-gradient {
+  border-image: linear-gradient(
+    to bottom,
+    oklch(from var(--il-border) calc(l + 0.08) c h),
+    var(--il-border),
+    oklch(from var(--il-border) calc(l - 0.04) c h)
+  ) 1;
+}
+
+/* Badge glow — notification badges */
+.badge-glow {
+  box-shadow: 0 0 6px oklch(0.62 0.22 25 / 0.5);
+}
+
+/* ─── File type icon colors ─── */
+/*
+ * Per-type file-tree glyph colors. Deliberately outside the brand
+ * palette so a PDF icon can't be mistaken for primary UI; values
+ * stay inside the OKLCh safe range (lightness 0.58–0.72, chroma
+ * ≤ 0.18).
+ */
+.icon-markdown { color: oklch(0.72 0.12 258); }
+.icon-pdf { color: oklch(0.62 0.18 25); }
+.icon-csv { color: oklch(0.68 0.16 148); }
+.icon-image { color: oklch(0.72 0.14 80); }
+.icon-video { color: oklch(0.68 0.16 300); }
+.icon-audio { color: oklch(0.72 0.14 185); }
+.icon-code { color: oklch(0.68 0.14 148); }
+.icon-mermaid { color: oklch(0.72 0.14 185); }
+.icon-text { color: oklch(0.58 0.015 260); }
+.icon-word { color: oklch(0.58 0.18 258); }
+.icon-excel { color: oklch(0.62 0.18 148); }
+.icon-email { color: oklch(0.68 0.14 80); }
+.icon-notebook { color: oklch(0.72 0.16 38); }
+.icon-folder { color: oklch(0.72 0.14 80); }
+
+/* ─── Sidebar depth ─── */
+
+.sidebar-chrome {
+  background: linear-gradient(
+    180deg,
+    var(--il-slate) 0%,
+    oklch(from var(--il-slate) calc(l - 0.02) c h) 100%
+  );
+  box-shadow: inset -1px 0 0 var(--il-border),
+              2px 0 8px oklch(0 0 0 / 0.15);
+}
+
+/* Active sidebar item — subtle glow */
+.sidebar-item-active {
+  background: linear-gradient(
+    135deg,
+    oklch(from var(--il-blue) l c h / 0.15) 0%,
+    oklch(from var(--il-blue) l c h / 0.08) 100%
+  );
+  box-shadow: inset 0 0 0 1px oklch(from var(--il-blue) l c h / 0.2);
+}
+
+/* ─── Tab depth ─── */
+
+.tab-active {
+  background: var(--il-bg-raised);
+  box-shadow: 0 -2px 0 var(--il-blue) inset,
+              var(--il-shadow-sm);
+}
+
+.tab-inactive {
+  background: transparent;
+  opacity: 0.7;
+  transition: opacity var(--motion-snap);
+}
+
+.tab-inactive:hover {
+  opacity: 1;
+  background: oklch(from var(--il-slate-hover) l c h / 0.5);
 }
 
 /* ─── Skip navigation (a11y) ─── */
@@ -116,7 +617,7 @@ kbd {
   left: 0;
   z-index: 100;
   padding: 0.5rem 1rem;
-  background: var(--color-ironlore-blue);
+  background: var(--il-blue);
   color: oklch(1 0 0);
 }
 
@@ -124,17 +625,69 @@ kbd {
   top: 0;
 }
 
-/* ─── PDF text layer (Phase 2.5 §PDF text selection) ─────────────────
- *
- * pdfjs-dist emits invisible positioned spans on top of each page
- * canvas so the user can drag-select text, the OS find-in-page works,
- * and screen readers announce semantic content. The browser's selection
- * styling (set globally above) carries through to highlighted spans.
- *
- * Class names live under the `ir-pdf-` namespace so we don't conflict
- * with the upstream PDF.js viewer styles in case anyone imports them
- * later. Keep this CSS minimal — PDF.js itself only needs
- * absolute-positioned, transparent, line-height-1 spans to work. */
+/* ─── Focus rings (a11y) ─── */
+
+:is(button, [role="button"], [role="treeitem"], [role="tab"], [role="option"], [role="menuitem"], a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--il-blue);
+  outline-offset: 2px;
+  border-radius: 3px;
+  box-shadow: var(--il-shadow-glow-blue);
+}
+
+/* ─── Inputs with depth ─── */
+/*
+ * Input focus uses --motion-snap because the box-shadow + border flip
+ * is immediate user feedback, not a sweeping state change.
+ */
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  box-shadow: var(--il-shadow-inner);
+  transition: box-shadow var(--motion-snap), border-color var(--motion-snap);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+textarea:focus,
+select:focus {
+  box-shadow: var(--il-shadow-inner), var(--il-shadow-glow-blue);
+  border-color: var(--il-blue) !important;
+}
+
+/* ─── Scrollbar styling ─── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(from var(--il-text2) l c h / 0.3);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(from var(--il-text2) l c h / 0.5);
+}
+
+/* ─── Reduced motion ─── */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── PDF text layer ─── */
+
 .ir-pdf-page {
   position: relative;
   display: block;
@@ -159,7 +712,6 @@ kbd {
   transform-origin: 0% 0%;
 }
 
-/* PDF.js uses `endOfContent` as a tail marker; keep it invisible. */
 .ir-pdf-textLayer .endOfContent {
   display: block;
   position: absolute;
@@ -169,106 +721,45 @@ kbd {
   user-select: none;
 }
 
-/* ─── Focus rings (a11y) ─── */
-
-/*
- * Many interactive elements use Tailwind's `outline-none` to kill the
- * default browser ring. Restore a visible ring for keyboard-only focus so
- * keyboard users always see where they are. Mouse clicks don't trigger
- * :focus-visible in modern browsers, so pointer users aren't affected.
- */
-:is(button, [role="button"], [role="treeitem"], [role="tab"], [role="option"], [role="menuitem"], a, input, select, textarea, summary):focus-visible {
-  outline: 2px solid var(--color-ironlore-blue);
-  outline-offset: 2px;
-  border-radius: 3px;
-}
-
-.ProseMirror:focus-visible {
-  outline: none;
-}
-
-/* ─── Reduced motion ─── */
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-/* ─── .docx-body (mammoth-rendered Word output) ─── */
+/* ─── .docx-body ─── */
 
 .docx-body {
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.6;
-  color: var(--color-primary);
+  color: var(--il-text);
 }
 
-.docx-body h1 {
-  font-size: 22px;
-  font-weight: 600;
-  margin: 1.4em 0 0.6em;
-}
-
-.docx-body h2 {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 1.2em 0 0.5em;
-}
-
-.docx-body h3 {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 1em 0 0.4em;
-}
-
-.docx-body p {
-  margin: 0.6em 0;
-}
-
-.docx-body ul,
-.docx-body ol {
-  padding-left: 1.5em;
-  margin: 0.6em 0;
-}
-
-.docx-body li {
-  margin: 0.2em 0;
-}
+.docx-body h1 { font-size: 22px; font-weight: 600; margin: 1.4em 0 0.6em; }
+.docx-body h2 { font-size: 18px; font-weight: 600; margin: 1.2em 0 0.5em; }
+.docx-body h3 { font-size: 15px; font-weight: 600; margin: 1em 0 0.4em; }
+.docx-body p { margin: 0.6em 0; }
+.docx-body ul, .docx-body ol { padding-left: 1.5em; margin: 0.6em 0; }
+.docx-body li { margin: 0.2em 0; }
 
 .docx-body blockquote {
-  border-left: 3px solid var(--color-border);
+  border-left: 3px solid var(--il-border);
   padding-left: 1em;
-  color: var(--color-secondary);
+  color: var(--il-text2);
   margin: 0.8em 0;
 }
 
 .docx-body code {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
-  background: var(--color-ironlore-slate-hover);
+  background: var(--il-slate-hover);
   padding: 0.1em 0.3em;
   border-radius: 3px;
 }
 
-.docx-body table {
-  border-collapse: collapse;
-  margin: 0.8em 0;
-}
-
-.docx-body th,
-.docx-body td {
-  border: 1px solid var(--color-border);
+.docx-body table { border-collapse: collapse; margin: 0.8em 0; }
+.docx-body th, .docx-body td {
+  border: 1px solid var(--il-border);
   padding: 0.4em 0.7em;
   text-align: left;
 }
 
 .docx-body a {
-  color: var(--color-ironlore-blue);
+  color: var(--il-blue);
   text-decoration: underline;
 }

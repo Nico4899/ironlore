@@ -2,6 +2,8 @@ import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { fetchPage } from "../lib/api.js";
 import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
+import { MOTION } from "../styles/motion.js";
+import { Reuleaux } from "./primitives/index.js";
 
 /**
  * Provenance pane — opened by clicking a `[[Page#blk_…]]` citation
@@ -55,7 +57,7 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
       if (el) {
         el.scrollIntoView({ block: "center" });
         el.classList.add("bg-signal-amber/20");
-        setTimeout(() => el.classList.remove("bg-signal-amber/20"), 1500);
+        setTimeout(() => el.classList.remove("bg-signal-amber/20"), MOTION.flash);
       }
     }, 100);
     return () => clearTimeout(timer);
@@ -122,10 +124,16 @@ function PaneHeader({
   onClose: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div className="flex items-center gap-3 border-b border-border px-4 py-2">
+      {/* Blue Reuleaux anchors the header — this is a provenance surface,
+       *  so the universal pip + JetBrains Mono metadata undercurrent do
+       *  the talking. No "Provenance" label needed. */}
+      <Reuleaux size={10} color="var(--il-blue)" aria-label="Source of citation" />
       <div className="flex-1 min-w-0">
         <div className="truncate text-xs font-medium text-primary">{pagePath.split("/").pop()}</div>
-        <div className="truncate font-mono text-[10px] text-secondary">{blockId}</div>
+        <div className="truncate font-mono text-[10px] uppercase tracking-wider text-tertiary">
+          {blockId}
+        </div>
       </div>
       <button
         type="button"
@@ -150,7 +158,7 @@ function ProvenanceContent({ content, blockId }: { content: string; blockId: str
   // a simple string replacement on the unsanitized content.
   const markedHtml = html.replace(
     new RegExp(`(${blockId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "g"),
-    `<span id="provenance-${blockId}" class="transition-colors duration-1000"></span>$1`,
+    `<span id="provenance-${blockId}" class="transition-colors duration-(--motion-flash)"></span>$1`,
   );
 
   return (

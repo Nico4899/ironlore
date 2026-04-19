@@ -134,3 +134,131 @@ describe("applyResolutions", () => {
     expect(markdown).not.toContain("Beta");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Reading-order invariants
+// ---------------------------------------------------------------------------
+// docs/06-implementation-roadmap.md §Phase 2: "one-sided additions
+// interleave at their original position". A merge that preserves block
+// IDs but rearranges paragraphs is useless — these tests pin the
+// ordering so LCS regressions (or a future rewrite) can't slip through.
+
+describe("diffBlocks — reading-order invariants", () => {
+  const idS1 = "blk_01HZZZZZZZZZZZZZZZZZZZZZZS";
+  const idS2 = "blk_01HZZZZZZZZZZZZZZZZZZZZZZT";
+  const idLocalOnly = "blk_01HZZZZZZZZZZZZZZZZZZZZZZL";
+  const idRemoteOnly = "blk_01HZZZZZZZZZZZZZZZZZZZZZZR";
+
+  it("handles a local-only addition before a shared block", () => {
+    const local = `${withId("L-before.", idLocalOnly)}\n\n${withId("Shared.", idS1)}`;
+    const remote = withId("Shared.", idS1);
+
+    const segments = diffBlocks(local, remote);
+    const kinds = segments.map((s) => s.kind);
+    // Expect: only-local, then common.
+    expect(kinds).toEqual(["only-local", "common"]);
+  });
+
+  it("handles a remote-only addition after a shared block", () => {
+    const local = withId("Shared.", idS1);
+    const remote = `${withId("Shared.", idS1)}\n\n${withId("R-after.", idRemoteOnly)}`;
+
+    const segments = diffBlocks(local, remote);
+    const kinds = segments.map((s) => s.kind);
+    expect(kinds).toEqual(["common", "only-remote"]);
+  });
+
+  it("interleaves alternating one-sided additions around two shared anchors", () => {
+    // local:   L1, shared1, shared2
+    // remote:  shared1, R1, shared2, R2
+    // Expected order after merge: L1, shared1, R1, shared2, R2
+    // (Local adds land where they appeared in local; remote adds where
+    //  they appeared in remote; shared anchors provide the interleave
+    //  points.)
+    const local = [
+      withId("L1", idLocalOnly),
+      withId("Shared1", idS1),
+      withId("Shared2", idS2),
+    ].join("\n\n");
+    const idRemote2 = "blk_01HZZZZZZZZZZZZZZZZZZZZZZU";
+    const remote = [
+      withId("Shared1", idS1),
+      withId("R1", idRemoteOnly),
+      withId("Shared2", idS2),
+      withId("R2", idRemote2),
+    ].join("\n\n");
+
+    const segments = diffBlocks(local, remote);
+    const order = segments.map((s) => ({ kind: s.kind, id: s.id }));
+
+    // Invariants: L1 appears before shared1; R1 appears after shared1
+    // and before shared2; R2 appears after shared2.
+    const idxL1 = order.findIndex((s) => s.id === idLocalOnly);
+    const idxS1 = order.findIndex((s) => s.id === idS1);
+    const idxR1 = order.findIndex((s) => s.id === idRemoteOnly);
+    const idxS2 = order.findIndex((s) => s.id === idS2);
+    const idxR2 = order.findIndex((s) => s.id === idRemote2);
+
+    expect(idxL1).toBeLessThan(idxS1);
+    expect(idxS1).toBeLessThan(idxR1);
+    expect(idxR1).toBeLessThan(idxS2);
+    expect(idxS2).toBeLessThan(idxR2);
+  });
+
+  it("handles entirely disjoint inputs (no shared IDs)", () => {
+    const local = withId("Local only", "blk_01HZZZZZZZZZZZZZZZZZZZZZA1");
+    const remote = withId("Remote only", "blk_01HZZZZZZZZZZZZZZZZZZZZZA2");
+
+    const segments = diffBlocks(local, remote);
+    // One-sided on each side, no conflicts.
+    expect(segments.some((s) => s.kind === "only-local")).toBe(true);
+    expect(segments.some((s) => s.kind === "only-remote")).toBe(true);
+    expect(segments.some((s) => s.kind === "conflict")).toBe(false);
+  });
+
+  it("handles an empty local (first-sync case)", () => {
+    const local = "";
+    const remote = withId("Remote.", idS1);
+
+    const segments = diffBlocks(local, remote);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.kind).toBe("only-remote");
+    expect(segments[0]?.id).toBe(idS1);
+  });
+
+  it("handles an empty remote (page deleted upstream)", () => {
+    const local = withId("Local.", idS1);
+    const remote = "";
+
+    const segments = diffBlocks(local, remote);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.kind).toBe("only-local");
+  });
+
+  it("handles identical inputs (no-op merge)", () => {
+    const md = [withId("Header", idS1), withId("Body", idS2)].join("\n\n");
+    const segments = diffBlocks(md, md);
+    expect(segments.every((s) => s.kind === "common")).toBe(true);
+
+    const { markdown, hasUnresolvedConflicts } = applyResolutions(segments, new Map());
+    expect(hasUnresolvedConflicts).toBe(false);
+    expect(markdown).toContain("Header");
+    expect(markdown).toContain("Body");
+  });
+
+  it("a reordered shared block (same ID, different position) merges without dropping content", () => {
+    // Local: A, B. Remote: B, A. LCS picks one as the common anchor;
+    // the other surfaces as one-sided on the side that keeps it.
+    const idA = "blk_01HZZZZZZZZZZZZZZZZZZZZZAA";
+    const idB = "blk_01HZZZZZZZZZZZZZZZZZZZZZAB";
+    const local = [withId("A", idA), withId("B", idB)].join("\n\n");
+    const remote = [withId("B", idB), withId("A", idA)].join("\n\n");
+
+    const segments = diffBlocks(local, remote);
+    const { markdown, hasUnresolvedConflicts } = applyResolutions(segments, new Map());
+    // No text-level conflicts; both IDs keep their content somewhere.
+    expect(hasUnresolvedConflicts).toBe(false);
+    expect(markdown).toContain("A");
+    expect(markdown).toContain("B");
+  });
+});

@@ -57,29 +57,37 @@ export class GitWorker {
   /**
    * Drain all committed WAL entries and produce git commits.
    * Can be called manually for "commit now" / `ironlore flush`.
+   *
+   * Loops until the WAL is empty so a single `drain()` call doesn't
+   * leave work behind when the WAL's page size is smaller than the
+   * burst size.
    */
   async drain(): Promise<number> {
     if (this.running) return 0;
     this.running = true;
 
     try {
-      const entries = this.wal.getCommittedPending();
-      if (entries.length === 0) return 0;
+      const BATCH_SIZE = 500;
+      let totalCommitted = 0;
 
-      // Group entries by author and time window
-      const groups = this.groupEntries(entries);
-      let committed = 0;
+      while (true) {
+        const entries = this.wal.getCommittedPending(BATCH_SIZE);
+        if (entries.length === 0) break;
 
-      for (const group of groups) {
-        try {
-          await this.commitGroup(group);
-          committed += group.entries.length;
-        } catch (err) {
-          console.error(`Git commit failed for author "${group.author}":`, err);
+        const groups = this.groupEntries(entries);
+        for (const group of groups) {
+          try {
+            await this.commitGroup(group);
+            totalCommitted += group.entries.length;
+          } catch (err) {
+            console.error(`Git commit failed for author "${group.author}":`, err);
+            // Bail out on error — next drain picks up where we left off.
+            return totalCommitted;
+          }
         }
       }
 
-      return committed;
+      return totalCommitted;
     } finally {
       this.running = false;
     }

@@ -1,7 +1,10 @@
+import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { estimateRunCost } from "./cost-estimate.js";
+import type { DryRunBridge } from "./dry-run-bridge.js";
 import type { AgentInbox } from "./inbox.js";
+import { getAgentConfig, getHourlyHistogram, getRecentRuns } from "./observability.js";
 import type { AgentRails } from "./rails.js";
 import { revertAgentRun } from "./revert-run.js";
 
@@ -22,6 +25,7 @@ import { revertAgentRun } from "./revert-run.js";
 export function createAgentApi(
   pool: WorkerPool,
   rails: AgentRails,
+  jobsDb: Database.Database,
   projectId: string,
   projectDir?: string,
 ): Hono {
@@ -102,6 +106,60 @@ export function createAgentApi(
   });
 
   // -----------------------------------------------------------------------
+  // Agent observability — recent runs, hourly histogram, config.
+  // See docs/04-ai-and-agents.md §§Run history and activity histogram
+  // and §§Exposing persona frontmatter.
+  // -----------------------------------------------------------------------
+  api.get("/:slug/runs", (c) => {
+    const slug = c.req.param("slug") ?? "";
+    if (!slug) return c.json({ error: "Agent slug required" }, 400);
+
+    // Clamp `limit` here too so bogus query strings don't reach SQLite.
+    const rawLimit = Number.parseInt(c.req.query("limit") ?? "24", 10);
+    const limit = Number.isFinite(rawLimit) ? rawLimit : 24;
+
+    const runs = getRecentRuns(jobsDb, projectId, slug, limit);
+    return c.json({ runs });
+  });
+
+  api.get("/:slug/histogram", (c) => {
+    const slug = c.req.param("slug") ?? "";
+    if (!slug) return c.json({ error: "Agent slug required" }, 400);
+
+    // Ensure a state row so the cap falls back to defaults rather than
+    //  returning 10/50 with no corresponding row downstream.
+    rails.ensureState(projectId, slug);
+    return c.json(getHourlyHistogram(jobsDb, projectId, slug));
+  });
+
+  api.get("/:slug/config", (c) => {
+    const slug = c.req.param("slug") ?? "";
+    if (!slug) return c.json({ error: "Agent slug required" }, 400);
+
+    rails.ensureState(projectId, slug);
+    const config = getAgentConfig(jobsDb, projectId, slug, projectDir ?? null);
+    if (!config) return c.json({ error: "Agent not found" }, 404);
+    return c.json(config);
+  });
+
+  // -----------------------------------------------------------------------
+  // List all agents (slugs only). Consumers that want the full config
+  //  issue `GET /:slug/config` for each entry — keeps the list endpoint
+  //  cheap when the UI only needs to populate a dropdown / nav.
+  //
+  //  The Settings → Security tab (docs/06-implementation-roadmap.md
+  //  Phase 8) is the first consumer; it fetches this list and then one
+  //  config per slug so the user can review scopes, tools, and rate
+  //  caps across every installed agent.
+  // -----------------------------------------------------------------------
+  api.get("/", (c) => {
+    const rows = jobsDb
+      .prepare("SELECT slug, status FROM agent_state WHERE project_id = ? ORDER BY slug")
+      .all(projectId) as Array<{ slug: string; status: "active" | "paused" }>;
+    return c.json({ agents: rows });
+  });
+
+  // -----------------------------------------------------------------------
   // Onboarding: apply template variables to library personas
   // -----------------------------------------------------------------------
   api.post("/onboarding", async (c) => {
@@ -112,7 +170,12 @@ export function createAgentApi(
     }>();
 
     // Read all library personas and replace {{...}} template variables.
-    const { existsSync, readFileSync, writeFileSync, readdirSync } = await import("node:fs");
+    // Templates are seeded as `.library/<slug>/persona.md`, so walk the
+    // tree rather than reading a flat directory — the pre-fix version
+    // globbed top-level `.md` files only and never matched anything.
+    const { existsSync, readFileSync, writeFileSync, readdirSync, statSync } = await import(
+      "node:fs"
+    );
     const { join } = await import("node:path");
 
     if (!projectDir) return c.json({ ok: false, error: "No project dir" }, 500);
@@ -121,10 +184,26 @@ export function createAgentApi(
       return c.json({ ok: true, updated: 0 });
     }
 
+    function collectMarkdownFiles(dir: string): string[] {
+      const out: string[] = [];
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        try {
+          const stat = statSync(full);
+          if (stat.isDirectory()) {
+            out.push(...collectMarkdownFiles(full));
+          } else if (entry.endsWith(".md")) {
+            out.push(full);
+          }
+        } catch {
+          // Skip unreadable entries — don't fail the whole substitution pass.
+        }
+      }
+      return out;
+    }
+
     let updated = 0;
-    for (const file of readdirSync(libDir)) {
-      if (!file.endsWith(".md")) continue;
-      const filePath = join(libDir, file);
+    for (const filePath of collectMarkdownFiles(libDir)) {
       let content = readFileSync(filePath, "utf-8");
       let changed = false;
 
@@ -163,7 +242,11 @@ export function createAgentApi(
  *
  * Mounted at `/api/projects/:id/jobs`.
  */
-export function createJobApi(pool: WorkerPool, projectDir: string): Hono {
+export function createJobApi(
+  pool: WorkerPool,
+  projectDir: string,
+  dryRunBridge?: DryRunBridge,
+): Hono {
   const api = new Hono();
 
   // -----------------------------------------------------------------------
@@ -221,6 +304,37 @@ export function createJobApi(pool: WorkerPool, projectDir: string): Hono {
     return c.json(result);
   });
 
+  // -----------------------------------------------------------------------
+  // Submit a dry-run verdict for a pending tool call
+  // -----------------------------------------------------------------------
+  // When an agent runs under `review_mode: dry_run`, every destructive
+  // tool call emits `diff_preview` and waits on the DryRunBridge. The
+  // AI panel's DiffPreview component posts here when the user hits
+  // approve or reject; a `true` response means the verdict routed back
+  // to the pending dispatcher call.
+  api.post("/:id/approve", async (c) => {
+    if (!dryRunBridge) {
+      return c.json({ error: "Dry-run bridge not configured" }, 501);
+    }
+    const jobId = c.req.param("id") ?? "";
+    const job = pool.getJob(jobId);
+    if (!job) return c.json({ error: "Job not found" }, 404);
+
+    const body = await c.req.json<{ toolCallId?: string; verdict?: "approve" | "reject" }>();
+    if (!body.toolCallId || (body.verdict !== "approve" && body.verdict !== "reject")) {
+      return c.json(
+        { error: "Body must include toolCallId + verdict ('approve' | 'reject')" },
+        400,
+      );
+    }
+
+    const delivered = dryRunBridge.submitVerdict(body.toolCallId, body.verdict);
+    if (!delivered) {
+      return c.json({ error: "No pending verdict for that tool call" }, 404);
+    }
+    return c.json({ ok: true });
+  });
+
   return api;
 }
 
@@ -235,6 +349,25 @@ export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir:
   api.get("/", (c) => {
     const entries = inbox.getPending(projectId);
     return c.json({ entries });
+  });
+
+  api.get("/:entryId/files", (c) => {
+    const entryId = c.req.param("entryId") ?? "";
+    if (!entryId) return c.json({ error: "Entry id required" }, 400);
+    const files = inbox.getFileDiffStats(entryId, projectDir);
+    return c.json({ files });
+  });
+
+  api.post("/:entryId/files/decision", async (c) => {
+    const entryId = c.req.param("entryId") ?? "";
+    if (!entryId) return c.json({ error: "Entry id required" }, 400);
+    const body = await c.req.json<{ path?: string; decision?: string | null }>();
+    if (!body.path || typeof body.path !== "string") {
+      return c.json({ error: "Body must include a file path" }, 400);
+    }
+    const decision =
+      body.decision === "approved" || body.decision === "rejected" ? body.decision : null;
+    return c.json(inbox.setFileDecision(entryId, body.path, decision));
   });
 
   api.post("/:entryId/approve", (c) => {

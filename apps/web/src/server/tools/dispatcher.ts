@@ -37,6 +37,13 @@ export class ToolDispatcher {
     args: unknown,
     ctx: ToolCallContext,
     budget: RunBudget,
+    /**
+     * Tool-call ID from the provider's tool_use event. Used to route
+     * dry-run verdicts back to the right pending dispatcher call.
+     * When omitted, a synthetic ID is generated — tests and one-shot
+     * invocations don't need to wire the provider's ID through.
+     */
+    toolCallId?: string,
   ): Promise<{ result: string; isError: boolean }> {
     // Budget gate.
     if (budget.usedToolCalls >= budget.maxToolCalls) {
@@ -56,6 +63,43 @@ export class ToolDispatcher {
 
     // Log the call before execution.
     ctx.emitEvent("tool.call", { tool: name, args });
+
+    // Dry-run gate: if the tool opts in (via `computeDiff`) and the
+    // agent is running under `review_mode: dry_run`, show the user
+    // the diff and wait for approval before executing.
+    if (ctx.dryRunBridge && tool.computeDiff) {
+      const diffId = toolCallId ?? `dryrun-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      try {
+        const diff = await tool.computeDiff(args, ctx);
+        if (diff) {
+          ctx.emitEvent("diff_preview", {
+            toolCallId: diffId,
+            tool: name,
+            pageId: diff.pageId,
+            diff: diff.diff,
+          });
+          const verdict = await ctx.dryRunBridge.awaitVerdict(diffId);
+          if (verdict === "reject" || verdict === "timeout") {
+            const reason =
+              verdict === "timeout" ? "no response within review window" : "user rejected change";
+            const resultPayload = JSON.stringify({
+              ok: false,
+              skipped: true,
+              reason,
+            });
+            ctx.emitEvent("tool.result", { tool: name, result: resultPayload });
+            return { result: resultPayload, isError: false };
+          }
+          // verdict === "approve" → fall through to execute normally.
+        }
+      } catch (err) {
+        // computeDiff failed — surface as a tool error and skip execute
+        // so the agent sees a structured response instead of a hang.
+        const message = err instanceof Error ? err.message : String(err);
+        ctx.emitEvent("tool.error", { tool: name, error: message });
+        return { result: `Tool error: ${message}`, isError: true };
+      }
+    }
 
     try {
       const result = await tool.execute(args, ctx);

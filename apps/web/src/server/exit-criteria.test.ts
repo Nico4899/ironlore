@@ -11,7 +11,9 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { computeEtag, resolveSafe } from "@ironlore/core/server";
+import { simpleGit } from "simple-git";
 import { afterEach, describe, expect, it } from "vitest";
+import { GitWorker } from "./git-worker.js";
 import { StorageWriter } from "./storage-writer.js";
 
 // ---------------------------------------------------------------------------
@@ -146,6 +148,36 @@ describe("exit criteria: 1000 concurrent writes", () => {
     expect(etag).toBe(currentEtag);
     expect(content).toMatch(/^v\d+$/);
   }, 30_000);
+
+  it("1000 writes by one author drain into one git commit (batched)", async () => {
+    const projectDir = makeTmpProject();
+    const writer = new StorageWriter(projectDir);
+    writers.push(writer);
+
+    const worker = new GitWorker(projectDir, writer.getWal());
+    await worker.start();
+    worker.stop(); // prevent periodic drain during the write burst
+
+    const git = simpleGit(projectDir);
+    await git.addConfig("user.email", "alice@ironlore.local");
+    await git.addConfig("user.name", "alice");
+
+    const N = 1000;
+    const promises: Promise<{ etag: string }>[] = [];
+    for (let i = 0; i < N; i++) {
+      promises.push(writer.write("stress.md", `# Version ${i}\n`, null, "alice"));
+    }
+    await Promise.all(promises);
+
+    // Drain — all N entries are by author "alice" inside the 30s commit
+    // window, so they collapse into one commit.
+    const committed = await worker.drain();
+    expect(committed).toBe(N);
+
+    const log = await git.log();
+    expect(log.all).toHaveLength(1);
+    expect(log.all[0]?.author_name).toBe("alice");
+  }, 60_000);
 });
 
 // ---------------------------------------------------------------------------

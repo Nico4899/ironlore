@@ -119,6 +119,16 @@ export class WorkerPool {
 
   private poll(): void {
     if (this.stopped) return;
+
+    // Reclaim expired leases every poll cycle. In single-process
+    // deployments a crash is handled by the startup-time reclaim,
+    // but a worker that simply falls over mid-run (OOM, killed
+    // child process, bug that escapes the handler promise) can
+    // leave a job stuck in `status='running'` forever without
+    // this periodic sweep. The query is cheap — no rows match
+    // most of the time.
+    this.reclaimExpiredLeases();
+
     if (this.activeJobs.size >= this.maxParallel) return;
 
     const now = Date.now();

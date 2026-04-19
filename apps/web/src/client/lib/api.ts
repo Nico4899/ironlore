@@ -34,9 +34,31 @@ export interface TreeEntry {
 // API client
 // ---------------------------------------------------------------------------
 
-const BASE = `/api/projects/${DEFAULT_PROJECT_ID}`;
-const PAGES_BASE = `${BASE}/pages`;
-const RAW_BASE = `${BASE}/raw`;
+/**
+ * The active project ID. Initially `main`; updated by `setApiProject()`
+ * as soon as the auth store learns the real value from `/api/auth/me`
+ * (see ../stores/auth.ts). All BASE helpers below read this at call
+ * time so a mid-session project switch is picked up without reloading
+ * the module.
+ *
+ * Per docs/08-projects-and-isolation.md §Project switcher UX, the
+ * switcher itself triggers a full `window.location.reload()` on
+ * switch, but every API call still re-reads the value defensively so
+ * the header chip and any mid-flight request after login agree.
+ */
+let currentProjectId: string = DEFAULT_PROJECT_ID;
+
+export function setApiProject(projectId: string): void {
+  currentProjectId = projectId;
+}
+
+export function getApiProject(): string {
+  return currentProjectId;
+}
+
+const base = (): string => `/api/projects/${currentProjectId}`;
+const pagesBase = (): string => `${base()}/pages`;
+const rawBase = (): string => `${base()}/raw`;
 
 /**
  * Fetch wrapper that intercepts 401 responses and clears the auth session.
@@ -53,7 +75,7 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
 }
 
 export async function fetchPage(pagePath: string): Promise<PageResponse> {
-  const res = await apiFetch(`${PAGES_BASE}/${pagePath}`);
+  const res = await apiFetch(`${pagesBase()}/${pagePath}`);
   if (!res.ok) {
     throw new ApiError(res.status, await res.text());
   }
@@ -72,7 +94,7 @@ export async function savePage(
     headers["If-Match"] = etag;
   }
 
-  const res = await apiFetch(`${PAGES_BASE}/${pagePath}`, {
+  const res = await apiFetch(`${pagesBase()}/${pagePath}`, {
     method: "PUT",
     headers,
     body: JSON.stringify({ markdown }),
@@ -90,7 +112,7 @@ export async function savePage(
 }
 
 export async function fetchTree(): Promise<{ pages: TreeEntry[] }> {
-  const res = await apiFetch(PAGES_BASE);
+  const res = await apiFetch(pagesBase());
   if (!res.ok) {
     throw new ApiError(res.status, await res.text());
   }
@@ -103,12 +125,12 @@ export async function fetchTree(): Promise<{ pages: TreeEntry[] }> {
 
 /** Build the URL for raw file access (for <img>, <video>, <audio> src). */
 export function fetchRawUrl(pagePath: string): string {
-  return `${RAW_BASE}/${pagePath}`;
+  return `${rawBase()}/${pagePath}`;
 }
 
 /** Fetch raw file content as a Response (for text-based viewers). */
 export async function fetchRaw(pagePath: string): Promise<Response> {
-  const res = await apiFetch(`${RAW_BASE}/${pagePath}`);
+  const res = await apiFetch(`${rawBase()}/${pagePath}`);
   if (!res.ok) {
     throw new ApiError(res.status, await res.text());
   }
@@ -120,7 +142,7 @@ export async function fetchRaw(pagePath: string): Promise<Response> {
  * file creation from the sidebar (e.g. `.py`, `.csv`, `.mermaid`).
  */
 export async function createRawFile(pagePath: string, content: string): Promise<void> {
-  const res = await apiFetch(`${RAW_BASE}/${pagePath}`, {
+  const res = await apiFetch(`${rawBase()}/${pagePath}`, {
     method: "PUT",
     headers: { "Content-Type": "text/plain" },
     body: content,
@@ -141,7 +163,7 @@ export async function saveCsv(
     headers["If-Match"] = etag;
   }
 
-  const res = await apiFetch(`${RAW_BASE}/${pagePath}`, {
+  const res = await apiFetch(`${rawBase()}/${pagePath}`, {
     method: "PUT",
     headers,
     body: content,
@@ -162,7 +184,7 @@ export async function saveCsv(
 // Search API
 // ---------------------------------------------------------------------------
 
-const SEARCH_BASE = `${BASE}/search`;
+const searchBase = (): string => `${base()}/search`;
 
 export interface SearchResult {
   path: string;
@@ -185,7 +207,7 @@ export interface RecentEdit {
 /** Full-text search via FTS5. */
 export async function searchPages(query: string, limit = 20): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
-  const res = await apiFetch(`${SEARCH_BASE}/search?${params}`);
+  const res = await apiFetch(`${searchBase()}/search?${params}`);
   if (!res.ok) throw new ApiError(res.status, await res.text());
   const data = (await res.json()) as { results: SearchResult[] };
   return data.results;
@@ -194,7 +216,7 @@ export async function searchPages(query: string, limit = 20): Promise<SearchResu
 /** Get pages that link to the given path. */
 export async function fetchBacklinks(path: string): Promise<BacklinkEntry[]> {
   const params = new URLSearchParams({ path });
-  const res = await apiFetch(`${SEARCH_BASE}/backlinks?${params}`);
+  const res = await apiFetch(`${searchBase()}/backlinks?${params}`);
   if (!res.ok) throw new ApiError(res.status, await res.text());
   const data = (await res.json()) as { backlinks: BacklinkEntry[] };
   return data.backlinks;
@@ -203,7 +225,7 @@ export async function fetchBacklinks(path: string): Promise<BacklinkEntry[]> {
 /** Get recently edited pages. */
 export async function fetchRecentEdits(limit = 20): Promise<RecentEdit[]> {
   const params = new URLSearchParams({ limit: String(limit) });
-  const res = await apiFetch(`${SEARCH_BASE}/recent?${params}`);
+  const res = await apiFetch(`${searchBase()}/recent?${params}`);
   if (!res.ok) throw new ApiError(res.status, await res.text());
   const data = (await res.json()) as { pages: RecentEdit[] };
   return data.pages;
@@ -211,7 +233,7 @@ export async function fetchRecentEdits(limit = 20): Promise<RecentEdit[]> {
 
 /** Create a new page (PUT with no If-Match). */
 export async function createPage(pagePath: string, content: string): Promise<SaveResponse> {
-  const res = await apiFetch(`${PAGES_BASE}/${pagePath}`, {
+  const res = await apiFetch(`${pagesBase()}/${pagePath}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ markdown: content }),
@@ -222,7 +244,7 @@ export async function createPage(pagePath: string, content: string): Promise<Sav
 
 /** Move a page to a new path. */
 export async function movePage(sourcePath: string, destination: string): Promise<SaveResponse> {
-  const res = await apiFetch(`${PAGES_BASE}/${sourcePath}/move`, {
+  const res = await apiFetch(`${pagesBase()}/${sourcePath}/move`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ destination }),
@@ -239,7 +261,7 @@ export async function movePage(sourcePath: string, destination: string): Promise
 export async function deletePage(pagePath: string, etag?: string | null): Promise<void> {
   const headers: Record<string, string> = {};
   if (etag) headers["If-Match"] = etag;
-  const res = await apiFetch(`${PAGES_BASE}/${pagePath}`, {
+  const res = await apiFetch(`${pagesBase()}/${pagePath}`, {
     method: "DELETE",
     headers,
   });
@@ -250,7 +272,7 @@ export async function deletePage(pagePath: string, etag?: string | null): Promis
 
 /** Create an empty folder. */
 export async function createFolder(dirPath: string): Promise<void> {
-  const res = await apiFetch(`${PAGES_BASE}/folders/${dirPath}`, {
+  const res = await apiFetch(`${pagesBase()}/folders/${dirPath}`, {
     method: "POST",
   });
   if (!res.ok) throw new ApiError(res.status, await res.text());
@@ -258,7 +280,7 @@ export async function createFolder(dirPath: string): Promise<void> {
 
 /** Recursively delete a folder and its contents. */
 export async function deleteFolder(dirPath: string): Promise<void> {
-  const res = await apiFetch(`${PAGES_BASE}/folders/${dirPath}`, {
+  const res = await apiFetch(`${pagesBase()}/folders/${dirPath}`, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 204) {
@@ -271,7 +293,7 @@ export async function uploadFile(
   filePath: string,
   data: ArrayBuffer,
 ): Promise<{ path: string; etag: string }> {
-  const res = await apiFetch(`${RAW_BASE}/upload/${filePath}`, {
+  const res = await apiFetch(`${rawBase()}/upload/${filePath}`, {
     method: "POST",
     body: data,
   });
@@ -283,7 +305,7 @@ export async function uploadFile(
 // Jobs / Agent API
 // ---------------------------------------------------------------------------
 
-const JOBS_BASE = `${BASE}/jobs`;
+const jobsBase = (): string => `${base()}/jobs`;
 
 /** Fetch pending inbox entries. */
 export async function fetchInbox(): Promise<{
@@ -297,16 +319,159 @@ export async function fetchInbox(): Promise<{
     status: string;
   }>;
 }> {
-  const res = await apiFetch(`${BASE}/inbox`);
+  const res = await apiFetch(`${base()}/inbox`);
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json();
+}
+
+/** Read an agent's rails state — whether it can enqueue a run + reason. */
+export async function fetchAgentState(
+  slug: string,
+): Promise<{ slug: string; canRun: boolean; reason: string | null }> {
+  const res = await apiFetch(`${base()}/agents/${slug}/state`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** Pause / resume an agent via the rails state PATCH. */
+export async function setAgentPaused(
+  slug: string,
+  paused: boolean,
+): Promise<{ ok: boolean; paused: boolean }> {
+  const res = await apiFetch(`${base()}/agents/${slug}/state`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paused }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** One row from the agent detail page's recent-runs table. */
+export interface AgentRunRecord {
+  jobId: string;
+  startedAt: number;
+  finishedAt: number | null;
+  status: "running" | "healthy" | "warn" | "error";
+  stepCount: number;
+  note: string | null;
+  commitShaStart: string | null;
+  commitShaEnd: string | null;
+}
+
+/** Rolling-24h activity histogram payload. */
+export interface AgentHistogramResponse {
+  windowStart: number;
+  windowEnd: number;
+  bucketHours: number;
+  buckets: number[];
+  cap: { perHour: number; perDay: number };
+}
+
+/** Read-only projection of the agent's rails state + persona paths. */
+export interface AgentConfigResponse {
+  slug: string;
+  status: "active" | "paused";
+  pauseReason: string | null;
+  maxRunsPerHour: number;
+  maxRunsPerDay: number;
+  failureStreak: number;
+  personaPath: string | null;
+  personaMtimeDriftSeconds: number | null;
+  /** Persona-frontmatter projection — null when file missing / malformed. */
+  persona: {
+    heartbeat: string | null;
+    reviewMode: "auto-commit" | "inbox" | null;
+    tools: string[] | null;
+    budget: { tokens: number | null; toolCalls: number | null; fsyncMs: number | null } | null;
+    scope: { pages: string[] | null; writableKinds: string[] | null } | null;
+  } | null;
+}
+
+/** Fetch the last N runs for an agent — newest first. */
+export async function fetchAgentRuns(slug: string, limit = 24): Promise<AgentRunRecord[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await apiFetch(`${base()}/agents/${slug}/runs?${params}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { runs: AgentRunRecord[] };
+  return data.runs;
+}
+
+/** Fetch the 24h activity histogram for an agent. */
+export async function fetchAgentHistogram(slug: string): Promise<AgentHistogramResponse> {
+  const res = await apiFetch(`${base()}/agents/${slug}/histogram`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** Fetch the agent's rails config projection. */
+export async function fetchAgentConfig(slug: string): Promise<AgentConfigResponse> {
+  const res = await apiFetch(`${base()}/agents/${slug}/config`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+export interface AgentListEntry {
+  slug: string;
+  status: "active" | "paused";
+}
+
+/** List every agent installed in the current project (slug + status only). */
+export async function fetchAgents(): Promise<AgentListEntry[]> {
+  const res = await apiFetch(`${base()}/agents`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { agents: AgentListEntry[] };
+  return data.agents;
+}
+
+/** Per-file diff row for an inbox entry. */
+export interface InboxFileDiff {
+  path: string;
+  status: "A" | "D" | "M" | "R" | "?";
+  /** null when git reports `-` (binary file). */
+  added: number | null;
+  /** null when git reports `-` (binary file). */
+  removed: number | null;
+  /** User decision captured during review; null = undecided. */
+  decision: "approved" | "rejected" | null;
+}
+
+/**
+ * Set (or clear) the user's per-file decision for an inbox entry.
+ * Passing `null` clears the row, restoring default-accept at the
+ * next `approveInboxEntry`.
+ */
+export async function setInboxFileDecision(
+  entryId: string,
+  path: string,
+  decision: "approved" | "rejected" | null,
+): Promise<{ success: boolean; error?: string }> {
+  const res = await apiFetch(`${base()}/inbox/${entryId}/files/decision`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, decision }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/**
+ * Compute per-file diff stats for an inbox entry's staging branch
+ * vs. main. Used by the Inbox UI to render the `A/D/M path +N -M` row
+ * grammar per docs/09-ui-and-brand.md §Agent Inbox.
+ */
+export async function fetchInboxFiles(entryId: string): Promise<InboxFileDiff[]> {
+  const res = await apiFetch(`${base()}/inbox/${entryId}/files`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { files: InboxFileDiff[] };
+  return data.files;
 }
 
 /** Approve an inbox entry (merge staging branch to main). */
 export async function approveInboxEntry(
   entryId: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const res = await apiFetch(`${BASE}/inbox/${entryId}/approve`, { method: "POST" });
+  const res = await apiFetch(`${base()}/inbox/${entryId}/approve`, { method: "POST" });
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json();
 }
@@ -315,7 +480,7 @@ export async function approveInboxEntry(
 export async function rejectInboxEntry(
   entryId: string,
 ): Promise<{ success: boolean; error?: string }> {
-  const res = await apiFetch(`${BASE}/inbox/${entryId}/reject`, { method: "POST" });
+  const res = await apiFetch(`${base()}/inbox/${entryId}/reject`, { method: "POST" });
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json();
 }
@@ -326,7 +491,7 @@ export async function submitOnboarding(answers: {
   company_description: string;
   goals: string;
 }): Promise<{ ok: boolean; updated: number }> {
-  const res = await apiFetch(`${BASE}/agents/onboarding`, {
+  const res = await apiFetch(`${base()}/agents/onboarding`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(answers),
@@ -339,7 +504,27 @@ export async function submitOnboarding(answers: {
 export async function revertJob(
   jobId: string,
 ): Promise<{ success: boolean; revertedCommits: string[]; conflicts: string[]; error?: string }> {
-  const res = await apiFetch(`${JOBS_BASE}/${jobId}/revert`, { method: "POST" });
+  const res = await apiFetch(`${jobsBase()}/${jobId}/revert`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/**
+ * Submit a dry-run verdict for a pending destructive tool call. The
+ * server resolves the DryRunBridge handshake and the dispatcher either
+ * proceeds with the mutation (`approve`) or returns a skipped result
+ * (`reject`).
+ */
+export async function submitDryRunVerdict(
+  jobId: string,
+  toolCallId: string,
+  verdict: "approve" | "reject",
+): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`${jobsBase()}/${jobId}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ toolCallId, verdict }),
+  });
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json();
 }
@@ -366,6 +551,59 @@ export async function fetchMe(): Promise<AuthSession | null> {
   if (res.status === 401) return null;
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json() as Promise<AuthSession>;
+}
+
+/** A project row as the switcher sees it (no credentials, no internals). */
+export interface ProjectListEntry {
+  id: string;
+  name: string;
+  preset: "main" | "research" | "sandbox";
+  createdAt: string;
+}
+
+/** List every installed project. Powers the Cmd+P switcher. */
+export async function fetchProjects(): Promise<ProjectListEntry[]> {
+  const res = await apiFetch("/api/projects");
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { projects: ProjectListEntry[] };
+  return data.projects;
+}
+
+export interface CopyPageResponse {
+  targetProjectId: string;
+  targetPath: string;
+  etag: string;
+  renamed: boolean;
+}
+
+/**
+ * Copy a page from the current project to another project. Per
+ * docs/08-projects-and-isolation.md §Cross-project copy workflow —
+ * the server stamps `copied_from` frontmatter and writes through the
+ * target project's StorageWriter. `onConflict` defaults to "rename",
+ * which appends `-copy` / `-copy-2` until a free slot is found.
+ */
+export async function copyPageToProject(params: {
+  srcProjectId: string;
+  srcPath: string;
+  targetProjectId: string;
+  targetPath?: string;
+  onConflict?: "rename" | "overwrite";
+}): Promise<CopyPageResponse> {
+  const res = await apiFetch(
+    `/api/projects/${params.srcProjectId}/pages/${params.srcPath}/copy-to`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        targetProjectId: params.targetProjectId,
+        targetPath: params.targetPath,
+        onConflict: params.onConflict ?? "rename",
+      }),
+    },
+  );
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<CopyPageResponse>;
 }
 
 /** Log in with username and password. Throws on bad creds (401) or rate limit (429). */
