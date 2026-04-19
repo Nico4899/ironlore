@@ -24,8 +24,6 @@ import { LinksRegistry } from "./links-registry.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
 import { createPagesApi, createRawApi } from "./pages-api.js";
-import { createUploadsApi } from "./uploads-api.js";
-import { sweepStagingOnBoot } from "./uploads.js";
 import { checkPermissions } from "./permissions.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import { authRateLimiter } from "./rate-limit.js";
@@ -42,6 +40,8 @@ import { createKbReadBlock } from "./tools/kb-read-block.js";
 import { createKbReadPage } from "./tools/kb-read-page.js";
 import { createKbReplaceBlock } from "./tools/kb-replace-block.js";
 import { createKbSearch } from "./tools/kb-search.js";
+import { sweepStagingOnBoot } from "./uploads.js";
+import { createUploadsApi } from "./uploads-api.js";
 import type { Wal } from "./wal.js";
 import { WebSocketManager } from "./ws.js";
 

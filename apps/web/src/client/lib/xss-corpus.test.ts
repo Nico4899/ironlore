@@ -122,7 +122,7 @@ const MARKDOWN_XSS_CORPUS: string[] = [
   "<img src=x onerror=alert(1)>",
   "<IMG SRC=\"javascript:alert('XSS');\">",
   "<IMG SRC=javascript:alert('XSS')>",
-  "<img src=\"x\" onerror=\"alert`1`\">",
+  '<img src="x" onerror="alert`1`">',
   "<img/onerror=alert(1) src=x>",
 
   // SVG/MathML injectors.
@@ -192,7 +192,7 @@ const MARKDOWN_XSS_CORPUS: string[] = [
 
   // Polyglot that tries to survive markdown escaping.
   "``</code><script>alert(1)</script>``",
-  "[legit](https://example.com \"</a><script>alert(1)</script>\")",
+  '[legit](https://example.com "</a><script>alert(1)</script>")',
 ];
 
 describe("XSS corpus — renderMarkdownSafe", () => {
@@ -227,7 +227,7 @@ describe("XSS corpus — renderMarkdownSafe", () => {
 
 const HTML_XSS_CORPUS: string[] = [
   "<p>safe<script>alert(1)</script>bar</p>",
-  "<p onclick=\"alert(1)\">x</p>",
+  '<p onclick="alert(1)">x</p>',
   "<a href='javascript:alert(1)'>x</a>",
   "<a href='JAVASCRIPT:alert(1)'>x</a>",
   "<a href='vbscript:msgbox(1)'>x</a>",

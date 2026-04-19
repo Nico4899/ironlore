@@ -8,8 +8,8 @@ import {
   decryptVault,
   deriveVaultKey,
   encryptVault,
-  reencryptVaults,
   readVault,
+  reencryptVaults,
   VaultError,
   vaultBackupPath,
   vaultExists,
@@ -139,7 +139,7 @@ describe("encryptVault / decryptVault", () => {
     const envelope = JSON.parse(encryptVault({ a: "b" }, key));
     // Flip one bit of the tag.
     const tag = Buffer.from(envelope.tag, "base64");
-    tag[0] = tag[0]! ^ 0x01;
+    tag[0] = (tag[0] ?? 0) ^ 0x01;
     envelope.tag = tag.toString("base64");
     expect(() => decryptVault(JSON.stringify(envelope), key)).toThrow(
       expect.objectContaining({ code: "decrypt_failed" }),
@@ -217,8 +217,8 @@ describe("reencryptVaults", () => {
 
     // Seed each project with a distinct vault under the old password.
     const oldKey = await deriveVaultKey("old-pw", salt);
-    for (let i = 0; i < projectDirs.length; i++) {
-      writeVault(projectDirs[i]!, { anthropic: `sk-${i}` }, oldKey);
+    for (const [i, dir] of projectDirs.entries()) {
+      writeVault(dir, { anthropic: `sk-${i}` }, oldKey);
     }
     oldKey.dispose();
 
@@ -234,8 +234,8 @@ describe("reencryptVaults", () => {
 
     // Each vault now decrypts under the new key with the right contents.
     const newKey = await deriveVaultKey("new-pw", salt);
-    for (let i = 0; i < projectDirs.length; i++) {
-      expect(readVault(projectDirs[i]!, newKey)).toEqual({ anthropic: `sk-${i}` });
+    for (const [i, dir] of projectDirs.entries()) {
+      expect(readVault(dir, newKey)).toEqual({ anthropic: `sk-${i}` });
     }
     newKey.dispose();
 
@@ -246,10 +246,11 @@ describe("reencryptVaults", () => {
     const salt = randomBytes(16);
     const { projectDirs, cleanup } = makeProjects(2);
 
+    const [dirA, dirB] = projectDirs as [string, string];
     const oldKey = await deriveVaultKey("old-pw", salt);
-    writeVault(projectDirs[0]!, { a: "x" }, oldKey);
+    writeVault(dirA, { a: "x" }, oldKey);
     oldKey.dispose();
-    // projectDirs[1] has no vault file.
+    // dirB has no vault file.
 
     const summary = await reencryptVaults({
       projectDirs,
@@ -257,8 +258,8 @@ describe("reencryptVaults", () => {
       newPassword: "new-pw",
       salt,
     });
-    expect(summary.rewritten).toEqual([projectDirs[0]]);
-    expect(summary.skipped).toEqual([projectDirs[1]]);
+    expect(summary.rewritten).toEqual([dirA]);
+    expect(summary.skipped).toEqual([dirB]);
     expect(summary.failures).toHaveLength(0);
 
     cleanup();
@@ -267,15 +268,16 @@ describe("reencryptVaults", () => {
   it("records failures per-project without aborting the loop", async () => {
     const salt = randomBytes(16);
     const { projectDirs, cleanup } = makeProjects(2);
+    const [dirA, dirB] = projectDirs as [string, string];
 
     const oldKey = await deriveVaultKey("right-old-pw", salt);
-    writeVault(projectDirs[0]!, { a: "x" }, oldKey);
+    writeVault(dirA, { a: "x" }, oldKey);
     oldKey.dispose();
 
     // Seed project[1] with a vault encrypted under a different password
     //  so the "old-pw" we pass to reencryptVaults fails to decrypt it.
     const strangerKey = await deriveVaultKey("stranger-pw", salt);
-    writeVault(projectDirs[1]!, { a: "y" }, strangerKey);
+    writeVault(dirB, { a: "y" }, strangerKey);
     strangerKey.dispose();
 
     const summary = await reencryptVaults({
@@ -284,9 +286,9 @@ describe("reencryptVaults", () => {
       newPassword: "new-pw",
       salt,
     });
-    expect(summary.rewritten).toEqual([projectDirs[0]]);
+    expect(summary.rewritten).toEqual([dirA]);
     expect(summary.failures).toHaveLength(1);
-    expect(summary.failures[0]!.projectDir).toBe(projectDirs[1]);
+    expect(summary.failures[0]?.projectDir).toBe(dirB);
 
     cleanup();
   });

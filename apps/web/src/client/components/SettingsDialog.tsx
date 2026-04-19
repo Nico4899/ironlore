@@ -411,9 +411,7 @@ function AgentSecurityCard({
         <StatusChip status={listEntry.status} pauseReason={cfg?.pauseReason ?? null} />
       </div>
 
-      {loading && (
-        <div style={{ color: "var(--il-text3)", fontSize: 12 }}>Loading config…</div>
-      )}
+      {loading && <div style={{ color: "var(--il-text3)", fontSize: 12 }}>Loading config…</div>}
       {errored && (
         <div style={{ color: "var(--il-red)", fontSize: 12 }}>
           Failed to load this agent's config.
@@ -421,7 +419,9 @@ function AgentSecurityCard({
       )}
 
       {cfg && (
-        <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", rowGap: 6, columnGap: 20 }}>
+        <div
+          style={{ display: "grid", gridTemplateColumns: "150px 1fr", rowGap: 6, columnGap: 20 }}
+        >
           <FieldLabel>Scope · pages</FieldLabel>
           <ScopeGlobs globs={pages} />
 
@@ -470,7 +470,10 @@ function FieldValue({ children }: { children: ReactNode }) {
 function ScopeGlobs({ globs }: { globs: string[] | null }) {
   if (!globs || globs.length === 0) {
     return (
-      <span style={{ fontSize: 12.5, color: "var(--il-text3)" }} title="Not declared in persona frontmatter">
+      <span
+        style={{ fontSize: 12.5, color: "var(--il-text3)" }}
+        title="Not declared in persona frontmatter"
+      >
         —
       </span>
     );

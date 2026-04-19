@@ -115,7 +115,7 @@ describe("egress corpus — allowlist bypass attempts", () => {
       //  Acceptable only for payloads like "API.anthropic.com" where
       //  the normalized hostname equals "api.anthropic.com".
       if (fakeFetch.mock.calls.length === 1) {
-        const callUrl = fakeFetch.mock.calls[0]![0] as URL;
+        const callUrl = fakeFetch.mock.calls[0]?.[0] as URL;
         expect(callUrl.hostname.toLowerCase()).toBe("api.anthropic.com");
       } else {
         throw new Error(`bypass '${label}' succeeded without blocking: ${url}`);
@@ -182,11 +182,7 @@ describe("egress corpus — allowlist bypass attempts", () => {
   // ---------------------------------------------------------------------------
 
   it("missing egress config fails closed", async () => {
-    writeFileSync(
-      join(projectDir, "project.yaml"),
-      "preset: main\nname: Main\n",
-      "utf-8",
-    );
+    writeFileSync(join(projectDir, "project.yaml"), "preset: main\nname: Main\n", "utf-8");
     const mod = await loadModule();
     const fakeFetch = vi.fn().mockResolvedValue(new Response("ok"));
     vi.stubGlobal("fetch", fakeFetch);

@@ -1,13 +1,5 @@
 import { randomBytes } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 import { isSupportedExtension } from "@ironlore/core";
 import { fileTypeFromBuffer } from "file-type";
@@ -178,10 +170,7 @@ export async function processUpload(
     const sniff = await fileTypeFromBuffer(buffer.subarray(0, 4096));
     sniffedMime = sniff?.mime ?? null;
     if (!sniffedMime) {
-      throw new UploadRejectedError(
-        "mime_unknown",
-        `Unable to identify MIME type for ${baseRaw}`,
-      );
+      throw new UploadRejectedError("mime_unknown", `Unable to identify MIME type for ${baseRaw}`);
     }
     // If the client declared a type, it must match the sniffed type.
     //  An empty declaration is tolerated — some clients don't set it.

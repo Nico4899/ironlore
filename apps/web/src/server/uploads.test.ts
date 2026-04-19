@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -138,13 +138,25 @@ describe("processUpload — gate rejections", () => {
 
   it("rejects hard-banned extensions (.exe)", async () => {
     await expect(
-      processUpload("tool.exe", "application/octet-stream", Buffer.from("MZ"), writer, ctx.dataRoot),
+      processUpload(
+        "tool.exe",
+        "application/octet-stream",
+        Buffer.from("MZ"),
+        writer,
+        ctx.dataRoot,
+      ),
     ).rejects.toMatchObject({ code: "banned_extension" });
   });
 
   it("rejects unknown extensions with no page-type mapping (.xyz)", async () => {
     await expect(
-      processUpload("blob.xyz", "application/octet-stream", Buffer.from("abc"), writer, ctx.dataRoot),
+      processUpload(
+        "blob.xyz",
+        "application/octet-stream",
+        Buffer.from("abc"),
+        writer,
+        ctx.dataRoot,
+      ),
     ).rejects.toMatchObject({ code: "unsupported_extension" });
   });
 

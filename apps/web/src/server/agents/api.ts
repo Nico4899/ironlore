@@ -154,9 +154,7 @@ export function createAgentApi(
   // -----------------------------------------------------------------------
   api.get("/", (c) => {
     const rows = jobsDb
-      .prepare(
-        "SELECT slug, status FROM agent_state WHERE project_id = ? ORDER BY slug",
-      )
+      .prepare("SELECT slug, status FROM agent_state WHERE project_id = ? ORDER BY slug")
       .all(projectId) as Array<{ slug: string; status: "active" | "paused" }>;
     return c.json({ agents: rows });
   });

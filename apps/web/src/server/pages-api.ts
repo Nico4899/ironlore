@@ -562,7 +562,12 @@ export function createRawApi(writer: StorageWriter, dataRoot: string): Hono {
         dataRoot,
         { targetDir: targetDir === "." ? "" : targetDir },
       );
-      return c.json({ ok: true, path: result.path, etag: result.etag, reencoded: result.reencoded });
+      return c.json({
+        ok: true,
+        path: result.path,
+        etag: result.etag,
+        reencoded: result.reencoded,
+      });
     } catch (err) {
       if (err instanceof UploadRejectedError) {
         return c.json({ error: err.message, code: err.code }, err.httpStatus as 400 | 413);

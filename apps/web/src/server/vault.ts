@@ -1,8 +1,14 @@
 import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
-import { mkdirSync } from "node:fs";
 import { hashRaw } from "@node-rs/argon2";
 
 // `Algorithm` from @node-rs/argon2 is a `const enum`, which TypeScript's

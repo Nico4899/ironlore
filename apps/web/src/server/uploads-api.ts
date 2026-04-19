@@ -1,5 +1,5 @@
-import busboy from "busboy";
 import { ForbiddenError } from "@ironlore/core/server";
+import busboy from "busboy";
 import { Hono } from "hono";
 import type { StorageWriter } from "./storage-writer.js";
 import {
@@ -119,7 +119,9 @@ export function createUploadsApi(writer: StorageWriter, dataRoot: string): Hono 
         });
 
         bb.on("close", () => {
-          Promise.all(inflight).then(() => resolve()).catch(reject);
+          Promise.all(inflight)
+            .then(() => resolve())
+            .catch(reject);
         });
         bb.on("error", (err: Error) => reject(err));
 
@@ -146,10 +148,7 @@ export function createUploadsApi(writer: StorageWriter, dataRoot: string): Hono 
         })();
       });
     } catch (err) {
-      return c.json(
-        { error: err instanceof Error ? err.message : "Upload parse failed" },
-        400,
-      );
+      return c.json({ error: err instanceof Error ? err.message : "Upload parse failed" }, 400);
     }
 
     return c.json({ accepted, rejected });
