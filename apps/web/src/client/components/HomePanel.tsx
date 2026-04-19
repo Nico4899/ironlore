@@ -1,11 +1,13 @@
 import { FileText, FolderPlus, Inbox, Search, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
   type AgentHistogramResponse,
+  ApiError,
   fetchAgentHistogram,
   fetchRecentEdits,
   type RecentEdit,
+  startAutonomousRun,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { AgentPulse, Key, Meta, Reuleaux, SectionLabel, Venn } from "./primitives/index.js";
@@ -305,6 +307,9 @@ function EmptyCard({ children }: { children: React.ReactNode }) {
  *  · Mono "step N" tag on the right
  *  · Blue accent bar on the left rail while live
  *  · AgentPulse wrapping the row when running
+ *  · "Run now" CTA in the idle state — posts autonomously so the user
+ *    can start a scheduled agent without opening its detail page.
+ *    Matches the §01 Active runs punch-list item from the UX review.
  */
 function ActiveAgentCard({
   slug,
@@ -317,58 +322,165 @@ function ActiveAgentCard({
   paused: boolean;
   stepLabel: string | null;
 }) {
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const onOpen = () => useAppStore.getState().setActiveAgentSlug(slug);
-  const statusLabel = running ? "running" : paused ? "paused" : "idle";
+
+  // "Run now" — start an autonomous run. `starting` latches true from
+  //  click to the first poll tick that surfaces this agent as running.
+  //  If the poll doesn't flip within 20 s the latch auto-clears so a
+  //  failed-to-enqueue run doesn't leave the button dead. Rate-limit
+  //  errors (429) and forbidden states (403) surface inline; network
+  //  or server errors also surface so the user sees why nothing
+  //  happened.
+  const onRunNow = useCallback(async () => {
+    if (starting || running) return;
+    setStarting(true);
+    setError(null);
+    try {
+      await startAutonomousRun(slug);
+    } catch (err) {
+      setStarting(false);
+      if (err instanceof ApiError) {
+        if (err.status === 429) {
+          setError("rate-limited · try again later");
+        } else {
+          setError(err.body.slice(0, 60) || `error ${err.status}`);
+        }
+      } else {
+        setError("failed to start");
+      }
+    }
+  }, [slug, running, starting]);
+
+  // Clear the latch once the poll reflects the new running state or
+  //  after a 20 s watchdog.
+  useEffect(() => {
+    if (!starting) return;
+    if (running) {
+      setStarting(false);
+      return;
+    }
+    const id = window.setTimeout(() => setStarting(false), 20_000);
+    return () => window.clearTimeout(id);
+  }, [starting, running]);
+
+  let statusLabel: string;
+  if (starting) statusLabel = "starting";
+  else if (running) statusLabel = "running";
+  else if (paused) statusLabel = "paused";
+  else statusLabel = "idle";
+  const showRunNow = !running && !paused;
+
   return (
     <AgentPulse
-      active={running}
+      active={running || starting}
       style={{
         background: "var(--il-slate)",
         border: "1px solid var(--il-border-soft)",
-        borderLeft: `2px solid ${running ? "var(--il-blue)" : "var(--il-border)"}`,
+        borderLeft: `2px solid ${running || starting ? "var(--il-blue)" : "var(--il-border)"}`,
         borderRadius: 4,
         padding: "12px 14px",
       }}
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex w-full items-baseline gap-3 text-left outline-none"
-        style={{ background: "transparent", border: "none", cursor: "pointer" }}
-      >
-        <Reuleaux
-          size={9}
-          color={running ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)"}
-          spin={running}
-        />
-        <span
+      <div className="flex w-full items-baseline gap-3">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex flex-1 items-baseline gap-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          style={{ background: "transparent", border: "none", cursor: "pointer", minWidth: 0 }}
+          aria-label={`Open ${slug} detail page`}
+        >
+          <Reuleaux
+            size={9}
+            color={
+              running || starting
+                ? "var(--il-blue)"
+                : paused
+                  ? "var(--il-amber)"
+                  : "var(--il-text3)"
+            }
+            spin={running || starting}
+          />
+          <span
+            className="truncate"
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13.5,
+              fontWeight: 600,
+              letterSpacing: "-0.01em",
+              color: "var(--il-text)",
+            }}
+          >
+            {slug}
+          </span>
+          <span
+            className="font-mono uppercase"
+            style={{
+              fontSize: 10,
+              color:
+                running || starting
+                  ? "var(--il-blue)"
+                  : paused
+                    ? "var(--il-amber)"
+                    : "var(--il-text3)",
+              letterSpacing: "0.06em",
+            }}
+          >
+            {statusLabel}
+          </span>
+          <span style={{ flex: 1 }} />
+          <Meta
+            k="step"
+            v={stepLabel ?? "—"}
+            color={running || starting ? "var(--il-blue)" : "var(--il-text3)"}
+          />
+        </button>
+
+        {showRunNow && (
+          <button
+            type="button"
+            onClick={onRunNow}
+            disabled={starting}
+            className="flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-0.75 text-xs outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 disabled:opacity-50"
+            style={{
+              background: "var(--il-slate-elev)",
+              border: "1px solid var(--il-border-soft)",
+              color: "var(--il-text)",
+              cursor: starting ? "progress" : "pointer",
+            }}
+            aria-label={`Run ${slug} now`}
+            title="Start an autonomous run for this agent"
+          >
+            <span
+              className="font-mono uppercase"
+              style={{
+                fontSize: 10.5,
+                letterSpacing: "0.04em",
+                color: starting ? "var(--il-text3)" : "var(--il-text2)",
+              }}
+            >
+              {starting ? "starting…" : "run now"}
+            </span>
+            {!starting && <Key>⌘R</Key>}
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div
+          className="font-mono"
           style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 13.5,
-            fontWeight: 600,
-            letterSpacing: "-0.01em",
-            color: "var(--il-text)",
+            marginTop: 6,
+            fontSize: 10.5,
+            color: "var(--il-red)",
+            letterSpacing: "0.02em",
           }}
         >
-          {slug}
-        </span>
-        <span
-          className="font-mono uppercase"
-          style={{
-            fontSize: 10,
-            color: running ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)",
-            letterSpacing: "0.06em",
-          }}
-        >
-          {statusLabel}
-        </span>
-        <span style={{ flex: 1 }} />
-        <Meta
-          k="step"
-          v={stepLabel ?? "—"}
-          color={running ? "var(--il-blue)" : "var(--il-text3)"}
-        />
-      </button>
+          {error}
+        </div>
+      )}
     </AgentPulse>
   );
 }

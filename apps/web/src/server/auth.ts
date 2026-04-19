@@ -314,6 +314,25 @@ export function createAuthApi(
   }
 
   // ----------------------------------------------------------------
+  // GET /api/auth/first-run-hint
+  //
+  // Returns `{ hint: "terminal" }` while `.ironlore-install.json` is
+  // still on disk — i.e. the initial admin password has not yet been
+  // consumed via the first login + password change. Returns
+  // `{ hint: null }` afterwards. The endpoint deliberately never
+  // exposes the password itself; it just tells the UI *where* the
+  // password was printed so a fresh user doesn't stare at a blank
+  // login form with no hint it was emitted to stdout.
+  //
+  // Public — this runs before authentication by design.
+  // ----------------------------------------------------------------
+  api.get("/first-run-hint", (c) => {
+    const installJsonPath = join(installRoot, INSTALL_JSON);
+    const hint = existsSync(installJsonPath) ? "terminal" : null;
+    return c.json({ hint });
+  });
+
+  // ----------------------------------------------------------------
   // POST /api/auth/login
   // ----------------------------------------------------------------
   api.post("/login", async (c) => {
