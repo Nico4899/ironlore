@@ -117,7 +117,6 @@ export function SidebarNew() {
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
   const [slideDir, setSlideDir] = useState<"left" | "right" | null>(null);
-  const [hovered, setHovered] = useState(false);
   // DnD state — the string is either a folder path (drop-into), or one of
   // the sentinels "__root__" / "__up__" for breadcrumb targets.
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -367,31 +366,19 @@ export function SidebarNew() {
       className={`sidebar-chrome flex h-full shrink-0 flex-col transition-all ${
         collapsed ? "w-14" : "w-64"
       }`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
-      {/* ─── Top: Logo / collapse toggle ─── */}
-      <div className="relative flex items-center gap-2 border-b border-border px-3 py-2.5">
-        {/* Logo — visible when NOT hovered (or when expanded) */}
-        <div
-          className={`flex h-6 w-6 shrink-0 items-center justify-center transition-opacity duration-(--motion-snap) ${
-            collapsed && hovered ? "opacity-0" : "opacity-100"
-          }`}
-        >
-          <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-            <circle cx="9" cy="10" r="6" fill="oklch(0.65 0.18 250)" opacity="0.7" />
-            <circle cx="15" cy="10" r="6" fill="oklch(0.65 0.15 160)" opacity="0.7" />
-            <circle cx="12" cy="15" r="6" fill="oklch(0.70 0.15 80)" opacity="0.7" />
-          </svg>
-        </div>
-        {/* Collapse/expand — overlays the logo position, visible on hover */}
+      {/* ─── Top: collapse toggle ───
+       *  The Ironlore logo + wordmark now live in the app-wide Header.
+       *  The sidebar's top row only carries the expand/collapse
+       *  affordance; the primary identity surface for the sidebar is
+       *  the ProjectTile below. */}
+      <div className="relative flex h-10 items-center gap-2 border-b border-border px-2">
         <button
           type="button"
           onClick={() => useAppStore.getState().toggleSidebar()}
-          className={`absolute left-3 flex h-6 w-6 items-center justify-center rounded text-secondary transition-opacity duration-(--motion-snap) hover:bg-ironlore-slate-hover hover:text-primary ${
-            collapsed ? (hovered ? "opacity-100" : "opacity-0") : "opacity-0 hover:opacity-100"
-          }`}
+          className="flex h-7 w-7 items-center justify-center rounded text-secondary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar (⌘B)" : "Collapse sidebar (⌘B)"}
         >
           {collapsed ? (
             <PanelLeftOpen className="h-4 w-4" />
@@ -400,20 +387,16 @@ export function SidebarNew() {
           )}
         </button>
         {!collapsed && (
-          <>
-            <span className="text-sm font-semibold tracking-tight text-primary">ironlore</span>
-            <div className="flex-1" />
-            {/* Expand collapse visible on hover in expanded mode */}
-            <button
-              type="button"
-              onClick={() => useAppStore.getState().toggleSidebar()}
-              className="rounded p-1 text-secondary opacity-0 transition-opacity hover:bg-ironlore-slate-hover hover:text-primary group-hover:opacity-100"
-              style={{ opacity: hovered ? 1 : 0 }}
-              aria-label="Collapse sidebar"
-            >
-              <PanelLeftClose className="h-3.5 w-3.5" />
-            </button>
-          </>
+          <span
+            className="font-mono uppercase"
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.08em",
+              color: "var(--il-text4)",
+            }}
+          >
+            files
+          </span>
         )}
       </div>
 
