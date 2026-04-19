@@ -368,9 +368,9 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
             <SectionLabel index={4} title="Controls" meta="" />
             <div className="mt-3 grid gap-1.5">
               {/* Pause / Resume — `P` (unmodified) toggles.
-                *  "Rotate branch" from the doc spec is intentionally
-                *  not rendered: no server endpoint exists for it and
-                *  the brand rule is to drop non-functional chrome. */}
+               *  "Rotate branch" from the doc spec is intentionally
+               *  not rendered: no server endpoint exists for it and
+               *  the brand rule is to drop non-functional chrome. */}
               <ControlButton
                 icon={paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
                 label={paused ? "Resume" : "Pause"}

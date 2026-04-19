@@ -91,20 +91,27 @@ export function SettingsDialog() {
           >
             settings
           </div>
+          {/* Category order mirrors docs/09-ui-and-brand.md §Settings →
+           *  Appearance: General · Projects · Agents · Security · Storage
+           *  · Appearance. Unwired rows render at 50% opacity so the
+           *  roadmap is visible at a glance. */}
           {(
             [
               ["general", "General", false],
-              ["appearance", "Appearance", true],
+              ["projects", "Projects", false],
+              ["agents", "Agents", false],
               ["security", "Security", true],
-            ] as Array<[Tab, string, boolean]>
+              ["storage", "Storage", false],
+              ["appearance", "Appearance", true],
+            ] as Array<[Tab | "projects" | "agents" | "storage" | "general", string, boolean]>
           ).map(([key, label, wired]) => {
-            const active = key === activeTab;
+            const active = (key as string) === (activeTab as string);
             return (
               <button
                 key={key}
                 type="button"
                 disabled={!wired}
-                onClick={() => wired && setActiveTab(key)}
+                onClick={() => wired && setActiveTab(key as Tab)}
                 className="text-left outline-none"
                 style={{
                   padding: "6px 10px",
