@@ -347,6 +347,22 @@ export async function setAgentPaused(
   return res.json();
 }
 
+/**
+ * Start an autonomous agent run — no prompt, uses the persona's
+ * default objective. Used by the Home §01 Active runs "Run now" CTA
+ * and the Agent detail page's §04 Controls. Interactive runs (with a
+ * user prompt) go through `useAgentSession.sendMessage` instead.
+ */
+export async function startAutonomousRun(slug: string): Promise<{ jobId: string }> {
+  const res = await apiFetch(`${base()}/agents/${slug}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "autonomous" }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<{ jobId: string }>;
+}
+
 /** One row from the agent detail page's recent-runs table. */
 export interface AgentRunRecord {
   jobId: string;
