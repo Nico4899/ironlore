@@ -35,6 +35,13 @@ export interface ActiveAgent {
    * emits one, so this surfaces as a plain "step N" for now.
    */
   stepLabel: string | null;
+  /**
+   * One-line note from the most-recent run (`jobs.result.outcome` /
+   * last `agent.journal`). `null` when the agent has no runs yet.
+   * Home's §01 Active runs surfaces this as the card's action line;
+   * the Agent-detail page surfaces it per-row in §01 Recent runs.
+   */
+  lastNote: string | null;
 }
 
 export interface WorkspaceActivity {
@@ -82,6 +89,7 @@ export function useWorkspaceActivity(): WorkspaceActivity {
             status: a.status,
             running,
             stepLabel: running && last ? `step ${last.stepCount}` : null,
+            lastNote: last?.note ?? null,
           };
         });
         const runningCount = agents.filter((a) => a.running).length;

@@ -1,4 +1,4 @@
-import { FileText, FolderPlus, Inbox, Search, Sparkles } from "lucide-react";
+import { Inbox, LayoutGrid, Search, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
@@ -13,19 +13,25 @@ import { useAppStore } from "../stores/app.js";
 import { AgentPulse, Key, Meta, Reuleaux, SectionLabel, Venn } from "./primitives/index.js";
 
 /**
- * HomePanel — the canvas-grammar landing surface that replaces the
- * bare "Welcome to Ironlore" centered block.
+ * HomePanel — the §Home canvas-grammar landing surface.
  *
- * Per docs/09-ui-and-brand.md §Home grammar:
- *   · Mono overline with date + live-agent hint
- *   · Inter/display greeting (no fake persona — we don't know the user)
- *   · SectionLabel 01 Recent pages — real data from `fetchRecentEdits`
- *   · SectionLabel 02 Quick actions — keyboard-jumpable shortcuts
- *   · Dim Venn watermark behind the hero when the workspace is empty,
- *     so the canvas reads as a deliberate rest state rather than blank
+ * Matches `screen-home.jsx` (JSX source-of-truth) + rev-5 §Home in
+ * `docs/09-ui-and-brand.md`:
  *
- * The grid sits in the default content area; callers render this any
- * time `activePath` is null on the Home tab.
+ *  · Full-width hero with mono overline (date + live counter) and an
+ *    Inter-or-Serif greeting; a 1 px hairline separates hero from body.
+ *  · 1.3fr / 1fr body grid, each column padded + independently
+ *    scrollable, LEFT column carries a 1 px right-edge rule — the
+ *    schematic two-pane split the JSX prescribes.
+ *  · LEFT: §01 Active runs + §02 Recent pages.
+ *  · RIGHT: §03 Run-rate headroom + §04 Quick actions.
+ *  · On a fresh project (zero pages AND zero agents), §01 and §03
+ *    suppress and a dim Venn watermark carries the rest state.
+ *
+ * Elements without a data-backed signal were intentionally dropped:
+ * no mock trend arrow on run-rate, no target path / progress bar on
+ * AgentRunCard (we don't have a total-steps feed yet). Every visible
+ * chip maps to a real field.
  */
 export function HomePanel() {
   const [recent, setRecent] = useState<RecentEdit[] | null>(null);
@@ -40,26 +46,33 @@ export function HomePanel() {
   const today = useTodayLabel();
   const activity = useWorkspaceActivity();
   const typeDisplay = useAppStore((s) => s.typeDisplay);
-  const isEmpty = recent !== null && recent.length === 0;
-  const hasActivity = activity.runningCount > 0 || activity.inboxCount > 0;
   const displaySerif = typeDisplay === "serif";
+
+  const hasActivity = activity.runningCount > 0 || activity.inboxCount > 0;
   // "Fresh project" — zero recent pages AND zero installed agents.
-  //  This is the same trigger that gates the Venn watermark (§Home in
-  //  docs/09-ui-and-brand.md). On a fresh project we suppress §01
-  //  Active runs and §03 Run-rate headroom so the canvas doesn't
-  //  announce "nothing here" twice; the watermark + §02 + §04 carry
-  //  the rest state together.
-  const isFreshProject = isEmpty && activity.loaded && activity.agents.length === 0;
+  //  This is the exact trigger for the Venn watermark (§Home in
+  //  docs/09-ui-and-brand.md). On a fresh project §01 Active runs and
+  //  §03 Run-rate headroom suppress so the canvas doesn't announce
+  //  "nothing here" twice; the Venn + §02 Recent pages + §04 Quick
+  //  actions carry the rest state together.
+  const isFreshProject =
+    recent !== null && recent.length === 0 && activity.loaded && activity.agents.length === 0;
+
+  const idleCount = activity.agents.filter((a) => !a.running && a.status === "active").length;
+  const pausedCount = activity.agents.filter((a) => a.status === "paused").length;
+  const activeRunsMeta = formatActiveRunsMeta(activity.runningCount, idleCount, pausedCount);
 
   return (
-    <div className="relative flex flex-1 flex-col overflow-y-auto">
-      {/* Venn watermark for the empty workspace — sits behind content so
-       *  it reads as contemplative rest, not decoration. */}
-      {isEmpty && (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* Venn watermark — contemplative rest when nothing exists yet.
+       *  Sized + positioned like screen-home.jsx's bold-variant hero
+       *  accent but trigger-gated to fresh projects so it never fights
+       *  populated canvases. */}
+      {isFreshProject && (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute"
-          style={{ top: "12%", right: "8%", opacity: 0.35 }}
+          style={{ top: 60, right: 48, opacity: 0.35 }}
         >
           <Venn
             size={220}
@@ -71,22 +84,24 @@ export function HomePanel() {
         </div>
       )}
 
-      <div className="relative z-10 mx-auto w-full max-w-4xl px-8 py-10">
-        {/* Hero — mono overline + Inter greeting */}
+      {/* ─── Hero ─── */}
+      <div
+        style={{
+          position: "relative",
+          padding: displaySerif ? "40px 48px 28px" : "28px 36px 18px",
+          borderBottom: "1px solid var(--il-border-soft)",
+        }}
+      >
         <div
           className="flex items-center gap-2 font-mono uppercase"
           style={{
             fontSize: 10.5,
-            letterSpacing: "0.08em",
+            letterSpacing: "0.12em",
             color: "var(--il-text3)",
             marginBottom: 10,
           }}
         >
-          <Reuleaux
-            size={8}
-            color={activity.runningCount > 0 ? "var(--il-blue)" : "var(--il-text3)"}
-            spin={activity.runningCount > 0}
-          />
+          <Reuleaux size={8} color="var(--il-blue)" />
           <span>{today}</span>
           {hasActivity && (
             <>
@@ -100,15 +115,10 @@ export function HomePanel() {
                 )}
                 {activity.runningCount > 0 && activity.inboxCount > 0 && ", "}
                 {activity.inboxCount > 0 && (
-                  // Click the inline counter to open the Inbox panel —
-                  //  same action as the Header pill. Lives inline in
-                  //  the sentence so the mono overline keeps one
-                  //  visual line; the underline appears only on hover
-                  //  so the sentence reads as prose at rest.
                   <button
                     type="button"
                     onClick={() => useAppStore.getState().toggleInbox()}
-                    className="il-hero-inbox-link inline-flex items-baseline gap-1 rounded-sm outline-none hover:underline focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+                    className="inline-flex items-baseline gap-1 rounded-sm outline-none hover:underline focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
                     style={{
                       background: "transparent",
                       border: "none",
@@ -140,14 +150,17 @@ export function HomePanel() {
                   lineHeight: 1.05,
                   color: "var(--il-text)",
                   margin: 0,
+                  maxWidth: 680,
                 }
               : {
                   fontFamily: "var(--font-sans)",
                   fontSize: 26,
                   fontWeight: 600,
                   letterSpacing: "-0.02em",
+                  lineHeight: 1.05,
                   color: "var(--il-text)",
                   margin: 0,
+                  maxWidth: 680,
                 }
           }
         >
@@ -157,7 +170,7 @@ export function HomePanel() {
               .
               <br />
               <span style={{ fontStyle: "italic", color: "var(--il-text2)" }}>
-                {isEmpty
+                {isFreshProject
                   ? "An empty canvas is a contract."
                   : hasActivity
                     ? "Let's pick up where you left off."
@@ -166,155 +179,138 @@ export function HomePanel() {
             </>
           )}
         </h1>
-        {!displaySerif && (
-          <p
+        {isFreshProject && !displaySerif && (
+          <div
             style={{
-              marginTop: 6,
-              fontSize: 14,
               color: "var(--il-text2)",
-              maxWidth: 560,
+              fontSize: 14,
+              marginTop: 8,
+              maxWidth: 600,
               lineHeight: 1.5,
             }}
           >
-            {isEmpty
-              ? "No pages yet. Create one from the sidebar, drop files to upload, or let an agent seed the workspace."
-              : "Pick up where you left off, or jump to a command."}
-          </p>
+            Create a page from the sidebar, drop files to upload, or install a persona into{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 12.5,
+                color: "var(--il-text)",
+              }}
+            >
+              .agents/
+            </code>{" "}
+            to get started.
+          </div>
         )}
+      </div>
 
-        {/* Body grid — Active runs + Run-rate on top row, Recent +
-         *  Quick actions on the second. Collapses to a single column
-         *  under 880px so narrow windows stay readable. */}
+      {/* ─── Body grid ─── */}
+      <div
+        style={{
+          flex: 1,
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)",
+          minHeight: 0,
+        }}
+      >
+        {/* LEFT column */}
         <div
           style={{
-            marginTop: 28,
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1.3fr) minmax(0, 1fr)",
-            gap: 32,
+            display: "flex",
+            flexDirection: "column",
+            gap: 26,
+            padding: "20px 28px",
+            borderRight: "1px solid var(--il-border-soft)",
+            overflowY: "auto",
+            minWidth: 0,
           }}
-          className="il-home-grid"
         >
-          {/* LEFT column — 01 Active runs stacked above 02 Recent pages.
-           *  §01 suppresses on a fresh project; the Venn watermark
-           *  behind the hero carries the empty state so we don't
-           *  announce "nothing here" twice. */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 28, minWidth: 0 }}>
-            {!isFreshProject && (
-              <div>
-                <SectionLabel
-                  index={1}
-                  title="Active runs"
-                  meta={
-                    activity.runningCount > 0
-                      ? `${activity.runningCount} RUNNING`
-                      : "NOTHING RUNNING"
-                  }
-                />
-                <div style={{ marginTop: 14 }}>
-                  {!activity.loaded ? (
-                    <div className="py-6 text-center text-xs text-secondary">Loading…</div>
-                  ) : activity.agents.length === 0 ? (
-                    <EmptyCard>
-                      No agents installed. Drop a persona into <code>.agents/</code> to start.
-                    </EmptyCard>
-                  ) : (
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {orderedForHome(activity.agents).map((a) => (
-                        <ActiveAgentCard
-                          key={a.slug}
-                          slug={a.slug}
-                          running={a.running}
-                          paused={a.status === "paused"}
-                          stepLabel={a.stepLabel}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
+          {!isFreshProject && (
+            <section>
+              <SectionLabel index={1} title="Active runs" meta={activeRunsMeta} />
+              <div style={{ display: "grid", gap: 10 }}>
+                {!activity.loaded ? (
+                  <LoadingRow />
+                ) : activity.agents.length === 0 ? (
+                  <EmptyCard>No agents installed yet.</EmptyCard>
+                ) : (
+                  orderedForHome(activity.agents).map((a) => (
+                    <ActiveAgentCard
+                      key={a.slug}
+                      slug={a.slug}
+                      running={a.running}
+                      paused={a.status === "paused"}
+                      stepLabel={a.stepLabel}
+                      note={a.lastNote}
+                    />
+                  ))
+                )}
+              </div>
+            </section>
+          )}
+
+          <section>
+            <SectionLabel index={2} title="Recent pages" meta="LAST 7 DAYS" />
+            {recent === null ? (
+              <LoadingRow />
+            ) : recent.length === 0 ? (
+              <EmptyCard>Nothing here yet.</EmptyCard>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" style={{ minWidth: 0 }}>
+                {recent.map((p) => (
+                  <RecentCard key={p.path} entry={p} />
+                ))}
               </div>
             )}
+          </section>
+        </div>
 
-            <div>
-              <SectionLabel index={2} title="Recent pages" meta="LAST 7 DAYS" />
-              {recent === null ? (
-                <div className="py-6 text-center text-xs text-secondary">Loading…</div>
-              ) : recent.length === 0 ? (
-                <div
-                  className="rounded border py-8 text-center"
-                  style={{
-                    borderColor: "var(--il-border-soft)",
-                    borderStyle: "dashed",
-                    color: "var(--il-text3)",
-                    fontSize: 12.5,
-                    marginTop: 14,
-                  }}
-                >
-                  Nothing here yet.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" style={{ marginTop: 14 }}>
-                  {recent.map((p) => (
-                    <RecentCard key={p.path} entry={p} />
-                  ))}
-                </div>
-              )}
+        {/* RIGHT column */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 22,
+            padding: "20px 28px",
+            overflowY: "auto",
+            minWidth: 0,
+          }}
+        >
+          {!isFreshProject && (
+            <section>
+              <SectionLabel index={3} title="Run-rate headroom" meta="ROLLING 24H" />
+              <RunRateHeadroom agents={activity.agents} />
+            </section>
+          )}
+
+          <section>
+            <SectionLabel index={4} title="Quick actions" meta="⌘-JUMPABLE" />
+            <div style={{ display: "grid", gap: 6 }}>
+              <QuickAction
+                icon={<Search className="h-3.5 w-3.5" />}
+                label="Search everything"
+                shortcut="⌘K"
+                onClick={() => useAppStore.getState().toggleSearchDialog()}
+              />
+              <QuickAction
+                icon={<Sparkles className="h-3.5 w-3.5" />}
+                label="Toggle AI panel"
+                shortcut="⌘⇧A"
+                onClick={() => useAppStore.getState().toggleAIPanel()}
+              />
+              <QuickAction
+                icon={<LayoutGrid className="h-3.5 w-3.5" />}
+                label="Switch project"
+                shortcut="⌘P"
+                onClick={() => useAppStore.getState().toggleProjectSwitcher()}
+              />
+              <QuickAction
+                icon={<Inbox className="h-3.5 w-3.5" />}
+                label="Open inbox"
+                onClick={() => useAppStore.getState().toggleInbox()}
+              />
             </div>
-          </div>
-
-          {/* RIGHT column — 03 Run-rate headroom stacked above 04 Quick
-           *  actions. §03 suppresses on a fresh project (there's no
-           *  activity to plot); §04 stays visible so the user always
-           *  has a next action. */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 28, minWidth: 0 }}>
-            {!isFreshProject && (
-              <div>
-                <SectionLabel index={3} title="Run-rate headroom" meta="ROLLING 24H" />
-                <div style={{ marginTop: 14 }}>
-                  <RunRateHeadroom agents={activity.agents} />
-                </div>
-              </div>
-            )}
-
-            <div>
-              <SectionLabel index={4} title="Quick actions" meta="KEYBOARD" />
-              <div
-                className="grid gap-1.5"
-                style={{
-                  marginTop: 14,
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                }}
-              >
-                <QuickAction
-                  icon={<FileText className="h-3.5 w-3.5" />}
-                  label="New page"
-                  hint="Open the sidebar and use the + button."
-                />
-                <QuickAction
-                  icon={<FolderPlus className="h-3.5 w-3.5" />}
-                  label="New folder"
-                  hint="Sidebar · New folder"
-                />
-                <QuickAction
-                  icon={<Search className="h-3.5 w-3.5" />}
-                  label="Search everything"
-                  shortcut="⌘K"
-                  onClick={() => useAppStore.getState().toggleSearchDialog()}
-                />
-                <QuickAction
-                  icon={<Sparkles className="h-3.5 w-3.5" />}
-                  label="Toggle AI panel"
-                  shortcut="⌘⇧A"
-                  onClick={() => useAppStore.getState().toggleAIPanel()}
-                />
-                <QuickAction
-                  icon={<Inbox className="h-3.5 w-3.5" />}
-                  label="Agent inbox"
-                  hint="Pending agent runs"
-                  onClick={() => useAppStore.getState().toggleInbox()}
-                />
-              </div>
-            </div>
-          </div>
+          </section>
         </div>
       </div>
     </div>
@@ -323,9 +319,7 @@ export function HomePanel() {
 
 /**
  * Sort active agents for the Home screen: running first, then
- * non-paused, then paused at the bottom. Within each group the order
- * follows the server's alphabetical list — deterministic across
- * renders, no churn on a poll.
+ * non-paused, then paused at the bottom. Deterministic across polls.
  */
 function orderedForHome(
   agents: ReturnType<typeof useWorkspaceActivity>["agents"],
@@ -334,15 +328,42 @@ function orderedForHome(
   return [...agents].sort((a, b) => rank(a) - rank(b));
 }
 
+function formatActiveRunsMeta(running: number, idle: number, paused: number): string {
+  const parts: string[] = [];
+  if (running > 0) parts.push(`${running} RUNNING`);
+  if (idle > 0) parts.push(`${idle} IDLE`);
+  if (paused > 0) parts.push(`${paused} PAUSED`);
+  return parts.length > 0 ? parts.join(" · ") : "NO AGENTS";
+}
+
+function LoadingRow() {
+  return (
+    <div
+      className="font-mono"
+      style={{
+        padding: "14px 0",
+        textAlign: "center",
+        fontSize: 10.5,
+        letterSpacing: "0.06em",
+        color: "var(--il-text3)",
+        textTransform: "uppercase",
+      }}
+    >
+      loading…
+    </div>
+  );
+}
+
 function EmptyCard({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="rounded border py-6 text-center"
       style={{
-        borderColor: "var(--il-border-soft)",
-        borderStyle: "dashed",
+        padding: "14px 16px",
+        border: "1px dashed var(--il-border-soft)",
+        borderRadius: 3,
         color: "var(--il-text3)",
         fontSize: 12.5,
+        textAlign: "center",
       }}
     >
       {children}
@@ -351,39 +372,36 @@ function EmptyCard({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Active-agent card matching the design-system AgentRunCard:
- *  · Reuleaux pip on the left (spinning when running)
- *  · Agent slug + status label
- *  · Mono "step N" tag on the right
- *  · Blue accent bar on the left rail while live
- *  · AgentPulse wrapping the row when running
- *  · "Run now" CTA in the idle state — posts autonomously so the user
- *    can start a scheduled agent without opening its detail page.
- *    Matches the §01 Active runs punch-list item from the UX review.
+ * Active-agent card matching `screen-home.jsx` AgentRunCard:
+ *  · AgentPulse wrapper (live sweep while running)
+ *  · Reuleaux + slug + status + step-meta row
+ *  · Action line from the most-recent run's `note` (when present)
+ *  · 2 px blue-left rail when live, neutral rail otherwise
+ *  · "Run now" CTA in the idle state — autonomous `POST /agents/:slug/run`
+ *
+ * Target path + progress bar from the JSX mock are intentionally
+ * skipped: we don't have a `totalSteps` feed or a per-run "current
+ * target" field yet. They'll light up the moment the executor
+ * surfaces them; meanwhile decoration stays off.
  */
 function ActiveAgentCard({
   slug,
   running,
   paused,
   stepLabel,
+  note,
 }: {
   slug: string;
   running: boolean;
   paused: boolean;
   stepLabel: string | null;
+  note: string | null;
 }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const onOpen = () => useAppStore.getState().setActiveAgentSlug(slug);
 
-  // "Run now" — start an autonomous run. `starting` latches true from
-  //  click to the first poll tick that surfaces this agent as running.
-  //  If the poll doesn't flip within 20 s the latch auto-clears so a
-  //  failed-to-enqueue run doesn't leave the button dead. Rate-limit
-  //  errors (429) and forbidden states (403) surface inline; network
-  //  or server errors also surface so the user sees why nothing
-  //  happened.
   const onRunNow = useCallback(async () => {
     if (starting || running) return;
     setStarting(true);
@@ -404,8 +422,6 @@ function ActiveAgentCard({
     }
   }, [slug, running, starting]);
 
-  // Clear the latch once the poll reflects the new running state or
-  //  after a 20 s watchdog.
   useEffect(() => {
     if (!starting) return;
     if (running) {
@@ -422,16 +438,17 @@ function ActiveAgentCard({
   else if (paused) statusLabel = "paused";
   else statusLabel = "idle";
   const showRunNow = !running && !paused;
+  const live = running || starting;
 
   return (
     <AgentPulse
-      active={running || starting}
+      active={live}
       style={{
         background: "var(--il-slate)",
         border: "1px solid var(--il-border-soft)",
-        borderLeft: `2px solid ${running || starting ? "var(--il-blue)" : "var(--il-border)"}`,
+        borderLeft: `2px solid ${live ? "var(--il-blue)" : "var(--il-border)"}`,
         borderRadius: 4,
-        padding: "12px 14px",
+        padding: "14px 16px",
       }}
     >
       <div className="flex w-full items-baseline gap-3">
@@ -444,20 +461,14 @@ function ActiveAgentCard({
         >
           <Reuleaux
             size={9}
-            color={
-              running || starting
-                ? "var(--il-blue)"
-                : paused
-                  ? "var(--il-amber)"
-                  : "var(--il-text3)"
-            }
-            spin={running || starting}
+            color={live ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)"}
+            spin={live}
           />
           <span
             className="truncate"
             style={{
               fontFamily: "var(--font-sans)",
-              fontSize: 13.5,
+              fontSize: 14,
               fontWeight: 600,
               letterSpacing: "-0.01em",
               color: "var(--il-text)",
@@ -469,23 +480,14 @@ function ActiveAgentCard({
             className="font-mono uppercase"
             style={{
               fontSize: 10,
-              color:
-                running || starting
-                  ? "var(--il-blue)"
-                  : paused
-                    ? "var(--il-amber)"
-                    : "var(--il-text3)",
+              color: live ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)",
               letterSpacing: "0.06em",
             }}
           >
             {statusLabel}
           </span>
           <span style={{ flex: 1 }} />
-          <Meta
-            k="step"
-            v={stepLabel ?? "—"}
-            color={running || starting ? "var(--il-blue)" : "var(--il-text3)"}
-          />
+          <Meta k="step" v={stepLabel ?? "—"} color={live ? "var(--il-blue)" : "var(--il-text3)"} />
         </button>
 
         {showRunNow && (
@@ -518,6 +520,35 @@ function ActiveAgentCard({
         )}
       </div>
 
+      {/* Action line — the last run's `note`, only when we have one.
+       *  Surfaces current context for running agents; fades to an
+       *  honest "no recent runs" line for fresh idle agents. */}
+      {live && note && (
+        <div
+          className="truncate"
+          style={{
+            marginTop: 6,
+            fontSize: 12.5,
+            color: "var(--il-text2)",
+          }}
+        >
+          {note}
+        </div>
+      )}
+      {!live && note && (
+        <div
+          className="font-mono truncate"
+          style={{
+            marginTop: 6,
+            fontSize: 10.5,
+            color: "var(--il-text3)",
+            letterSpacing: "0.02em",
+          }}
+        >
+          last · {note}
+        </div>
+      )}
+
       {error && (
         <div
           className="font-mono"
@@ -537,8 +568,8 @@ function ActiveAgentCard({
 
 /**
  * Compact 24-bar histogram aggregated across every installed agent
- * plus a dashed cap line at the combined `perDay` ceiling. Fetches
- * each agent's histogram in parallel (small N — personas directory is
+ * plus a dashed cap line at the per-hour ceiling. Fetches each
+ * agent's histogram in parallel (small N — personas directory is
  * tens at most) and sums the buckets.
  */
 function RunRateHeadroom({
@@ -548,10 +579,6 @@ function RunRateHeadroom({
 }) {
   const [series, setSeries] = useState<AgentHistogramResponse[] | null>(null);
 
-  // Stable slug list + primitive key. `agents` is a new array
-  //  reference on every poll tick, so depending on it directly would
-  //  refetch the histogram every 10s; we only want to refetch when
-  //  the *set* of slugs actually changes.
   const slugs = useMemo(() => agents.map((a) => a.slug).sort(), [agents]);
   const slugsKey = slugs.join("|");
 
@@ -571,12 +598,8 @@ function RunRateHeadroom({
     };
   }, [slugsKey]);
 
-  if (series === null) {
-    return <div className="py-6 text-center text-xs text-secondary">Loading…</div>;
-  }
-  if (series.length === 0) {
-    return <EmptyCard>No activity data yet.</EmptyCard>;
-  }
+  if (series === null) return <LoadingRow />;
+  if (series.length === 0) return <EmptyCard>No activity data yet.</EmptyCard>;
 
   const bucketCount = 24;
   const buckets = new Array<number>(bucketCount).fill(0);
@@ -619,11 +642,7 @@ function RunRateHeadroom({
         <div>
           <div
             className="font-mono uppercase"
-            style={{
-              fontSize: 10.5,
-              color: "var(--il-text3)",
-              letterSpacing: "0.06em",
-            }}
+            style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.06em" }}
           >
             runs / 24h
           </div>
@@ -635,11 +654,7 @@ function RunRateHeadroom({
         <div style={{ textAlign: "right" }}>
           <div
             className="font-mono uppercase"
-            style={{
-              fontSize: 10.5,
-              color: "var(--il-text3)",
-              letterSpacing: "0.06em",
-            }}
+            style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.06em" }}
           >
             headroom
           </div>
@@ -659,7 +674,7 @@ function RunRateHeadroom({
           display: "flex",
           alignItems: "flex-end",
           gap: 2,
-          height: 64,
+          height: 72,
           padding: "0 2px",
           borderBottom: "1px dashed var(--il-border)",
           position: "relative",
@@ -734,11 +749,26 @@ function RunRateHeadroom({
   );
 }
 
+/**
+ * RecentCard — matches `screen-home.jsx` shape:
+ *  · Mono uppercase folder overline (muted).
+ *  · Inter 500 name, weighted down from the greeting.
+ *  · Single mono footer line: `{time} ago · {author}`. Author renders
+ *    Ironlore-Blue when it isn't "you" — a hand-off cue that the
+ *    edit came from an agent, not the user.
+ *
+ * Blocks-count from the JSX mock is dropped; the server's
+ * `recent_edits` table doesn't store it and synthesising it per row
+ * would be decoration.
+ */
 function RecentCard({ entry }: { entry: RecentEdit }) {
   const { path } = entry;
   const name = path.split("/").pop() ?? path;
   const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
   const when = useRelativeTime(entry.updatedAt);
+  const author = entry.author;
+  const isSelf = !author || author === "you";
+
   return (
     <button
       type="button"
@@ -750,11 +780,12 @@ function RecentCard({ entry }: { entry: RecentEdit }) {
         border: "1px solid var(--il-border-soft)",
         borderRadius: 3,
         cursor: "pointer",
+        minWidth: 0,
       }}
     >
       {folder && (
         <div
-          className="font-mono uppercase"
+          className="font-mono uppercase truncate"
           style={{
             fontSize: 10,
             color: "var(--il-text4)",
@@ -772,15 +803,27 @@ function RecentCard({ entry }: { entry: RecentEdit }) {
           fontSize: 13.5,
           fontWeight: 500,
           color: "var(--il-text)",
+          lineHeight: 1.2,
         }}
       >
         {name}
       </div>
-      <div className="mt-2 flex items-baseline gap-3">
-        <Meta k="edited" v={when} />
-        {entry.author && entry.author !== "you" && (
-          <Meta k="by" v={entry.author} color="var(--il-blue)" />
-        )}
+      <div
+        className="font-mono truncate"
+        style={{
+          display: "flex",
+          gap: 10,
+          marginTop: 8,
+          fontSize: 10,
+          color: "var(--il-text3)",
+          letterSpacing: "0.02em",
+        }}
+      >
+        <span>{when}</span>
+        <span style={{ color: "var(--il-text4)" }}>·</span>
+        <span style={{ color: isSelf ? "var(--il-text2)" : "var(--il-blue)" }}>
+          {isSelf ? "you" : author}
+        </span>
       </div>
     </button>
   );
@@ -790,42 +833,27 @@ interface QuickActionProps {
   icon: React.ReactNode;
   label: string;
   shortcut?: string;
-  hint?: string;
-  onClick?: () => void;
+  onClick: () => void;
 }
 
-function QuickAction({ icon, label, shortcut, hint, onClick }: QuickActionProps) {
-  const interactive = typeof onClick === "function";
-  const Wrap = interactive ? "button" : "div";
+function QuickAction({ icon, label, shortcut, onClick }: QuickActionProps) {
   return (
-    <Wrap
-      type={interactive ? "button" : undefined}
+    <button
+      type="button"
       onClick={onClick}
-      className="flex items-center gap-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      className="flex items-center gap-3 text-left outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
       style={{
         padding: "9px 12px",
         background: "var(--il-slate)",
         border: "1px solid var(--il-border-soft)",
         borderRadius: 3,
-        cursor: interactive ? "pointer" : "default",
+        cursor: "pointer",
       }}
     >
       <span style={{ color: "var(--il-text2)" }}>{icon}</span>
       <span style={{ flex: 1, fontSize: 13, color: "var(--il-text)" }}>{label}</span>
-      {hint && !shortcut && (
-        <span
-          className="font-mono uppercase"
-          style={{
-            fontSize: 10,
-            letterSpacing: "0.04em",
-            color: "var(--il-text3)",
-          }}
-        >
-          {hint}
-        </span>
-      )}
       {shortcut && <Key>{shortcut}</Key>}
-    </Wrap>
+    </button>
   );
 }
 

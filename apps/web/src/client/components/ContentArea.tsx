@@ -453,6 +453,7 @@ function MarkdownContent({
   onSelectionChange,
 }: MarkdownContentProps) {
   const filePath = useEditorStore((s) => s.filePath);
+  const fileType = useEditorStore((s) => s.fileType);
   const etag = useEditorStore((s) => s.etag);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
 
@@ -503,34 +504,43 @@ function MarkdownContent({
       )}
 
       {/*
-       * Toolbar — mode toggle on the left; Meta(etag) + StatusPip
-       * on the right. Replaces the previous bare "Unsaved | Saving…
-       * | Conflict" string with the canvas's mono-metadata + pip
-       * grammar so save state reads the same language as every
-       * other live surface in the product.
+       * Editor toolbar — 36 px schematic strip per screen-editor.jsx.
+       * Layout: [mode toggle] [rule] [page-type mono tag] [flex spacer]
+       * [Meta etag] [rule] [StatusPip label]. Every item is backed by
+       * real data; the JSX's decorative `B / I / U / ⋯` cluster + the
+       * static `H1 · H2 · Quote · Code · Link` filler are dropped
+       * intentionally — placeholders without onClick are exactly the
+       * "drop decoration" pattern the brand doc forbids.
        */}
-      <div className="flex items-center gap-3 border-b border-border px-4 py-1.5">
-        <div className="flex rounded border border-border text-xs">
-          <button
-            type="button"
-            className={`px-3 py-1 ${mode === "wysiwyg" ? "bg-ironlore-slate-hover font-medium" : "hover:bg-ironlore-slate-hover"}`}
-            onClick={() => useEditorStore.getState().setMode("wysiwyg")}
-            aria-pressed={mode === "wysiwyg"}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className={`border-l border-border px-3 py-1 ${mode === "source" ? "bg-ironlore-slate-hover font-medium" : "hover:bg-ironlore-slate-hover"}`}
-            onClick={() => useEditorStore.getState().setMode("source")}
-            aria-pressed={mode === "source"}
-          >
-            Source
-          </button>
-        </div>
+      <div
+        className="flex shrink-0 items-center gap-3 border-b"
+        style={{
+          height: 36,
+          padding: "0 16px",
+          borderColor: "var(--il-border-soft)",
+        }}
+      >
+        <ModeToggle mode={mode} />
+        <span
+          aria-hidden="true"
+          style={{ width: 1, height: 14, background: "var(--il-border)" }}
+        />
+        <span
+          className="font-mono uppercase"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.04em",
+            color: "var(--il-text3)",
+          }}
+        >
+          {fileType ?? "markdown"}
+        </span>
         <div className="flex-1" />
         <Meta k="etag" v={shortEtag(etag)} />
-        <span aria-hidden="true" style={{ width: 1, height: 14, background: "var(--il-border)" }} />
+        <span
+          aria-hidden="true"
+          style={{ width: 1, height: 14, background: "var(--il-border)", margin: "0 2px" }}
+        />
         <span role="status" aria-live="polite">
           <StatusPip state={pip.state} label={pip.label} size={8} />
         </span>
@@ -552,5 +562,56 @@ function MarkdownContent({
         />
       )}
     </>
+  );
+}
+
+/**
+ * Edit / Source mode toggle, styled as the `SegChoice` primitive
+ * (docs/09-ui-and-brand.md §Settings → Appearance) so the same
+ * shape recurs across the product. The toolbar is the one place the
+ * editor surfaces a mutable control — everything else is read-only
+ * metadata — so the toggle carries its own visual weight.
+ */
+function ModeToggle({ mode }: { mode: "wysiwyg" | "source" }) {
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        padding: 2,
+        background: "var(--il-slate)",
+        border: "1px solid var(--il-border-soft)",
+        borderRadius: 4,
+      }}
+    >
+      {(
+        [
+          ["wysiwyg", "Edit"],
+          ["source", "Source"],
+        ] as const
+      ).map(([value, label]) => {
+        const active = mode === value;
+        return (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => useEditorStore.getState().setMode(value)}
+            style={{
+              padding: "3px 10px",
+              fontSize: 11.5,
+              fontFamily: "var(--font-sans)",
+              fontWeight: 500,
+              color: active ? "var(--il-text)" : "var(--il-text2)",
+              background: active ? "var(--il-slate-elev)" : "transparent",
+              border: `1px solid ${active ? "var(--il-border)" : "transparent"}`,
+              borderRadius: 3,
+              cursor: "pointer",
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
