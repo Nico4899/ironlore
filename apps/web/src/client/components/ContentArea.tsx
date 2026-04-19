@@ -473,37 +473,6 @@ function MarkdownContent({
   return (
     <>
       {/*
-       * Page metadata strip — canvas-grammar overline above the
-       * editor content per docs/09-ui-and-brand.md §Editor. Only
-       * renders for markdown pages (the other viewers have their
-       * own headers). Author attribution is omitted until per-file
-       * provenance lands in the backend.
-       */}
-      {filePath && (
-        <div
-          className="flex items-center gap-2 border-b border-border px-6 py-2 font-mono uppercase"
-          style={{
-            fontSize: 10.5,
-            letterSpacing: "0.06em",
-            color: "var(--il-text3)",
-          }}
-        >
-          <Reuleaux size={8} color="var(--il-blue)" aria-label="Page metadata" />
-          <span>page</span>
-          <span style={{ color: "var(--il-text4)" }}>/</span>
-          <span style={{ color: "var(--il-text2)" }}>
-            {blockCount} {blockCount === 1 ? "block" : "blocks"}
-          </span>
-          {savedLabel && (
-            <>
-              <span style={{ color: "var(--il-text4)" }}>/</span>
-              <span style={{ color: "var(--il-text2)" }}>{savedLabel}</span>
-            </>
-          )}
-        </div>
-      )}
-
-      {/*
        * Editor toolbar — 36 px schematic strip per screen-editor.jsx.
        * Layout: [mode toggle] [rule] [page-type mono tag] [flex spacer]
        * [Meta etag] [rule] [StatusPip label]. Every item is backed by

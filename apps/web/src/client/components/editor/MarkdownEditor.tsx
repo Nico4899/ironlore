@@ -429,7 +429,11 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
 
   return (
     <div className="relative flex flex-1 flex-col overflow-hidden">
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-8 py-6" />
+      {/* Content padding mirrors screen-editor.jsx EditorArea: 28/44
+       *  in the safe variant, bumped to 36/56 in the display-type
+       *  variant via a `html[data-type-display="serif"]` selector in
+       *  editor.css. */}
+      <div ref={containerRef} className="il-editor-scroll flex-1 overflow-y-auto" />
       {showStartCard && <EditorStartCard />}
       {slashMenu && (
         <div

@@ -9,6 +9,22 @@
  * 13px for code, Inter 600 for headings.
  */
 
+/* ─── Scroll container ───
+ *
+ * Matches screen-editor.jsx EditorArea padding: 28 / 44 safe,
+ * 36 / 56 under the serif display variant. The padding lives on the
+ * scroll container so ProseMirror's content block fills the width
+ * beneath its padded well without a nested wrapper.
+ */
+
+.il-editor-scroll {
+  padding: 28px 44px;
+}
+
+html[data-type-display="serif"] .il-editor-scroll {
+  padding: 36px 56px;
+}
+
 /* ─── Base ─── */
 
 .ProseMirror {
@@ -55,8 +71,30 @@
   margin-top: 0;
 }
 
-.ProseMirror h1 { font-size: 28px; }
-.ProseMirror h2 { font-size: 22px; }
+/* Heading sizes mirror screen-editor.jsx:
+ *   · h1 — title, 26 / 600, −0.025em, 1.1 line-height, 20 px bottom
+ *   · h2 — section, 17 / 600, −0.01em, 28/10 margin rhythm
+ *  The serif display variant lifts h1 to Instrument Serif 42 / 400
+ *  italic, matching the hero silhouette in the design bundle.
+ */
+.ProseMirror h1 {
+  font-size: 26px;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  margin-bottom: 20px;
+}
+html[data-type-display="serif"] .ProseMirror h1 {
+  font-family: "Instrument Serif", "GT Sectra", "Times New Roman", serif;
+  font-weight: 400;
+  font-size: 42px;
+  font-style: italic;
+}
+.ProseMirror h2 {
+  font-size: 17px;
+  letter-spacing: -0.01em;
+  margin-top: 28px;
+  margin-bottom: 10px;
+}
 .ProseMirror h3 { font-size: 18px; }
 .ProseMirror h4 { font-size: 16px; }
 .ProseMirror h5 { font-size: 15px; }
