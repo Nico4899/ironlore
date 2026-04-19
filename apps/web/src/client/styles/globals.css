@@ -520,8 +520,8 @@ html[data-density="compact"] {
  */
 .il-hue-slider {
   appearance: none;
-  height: 6px;
-  border-radius: 3px;
+  height: 4px;
+  border-radius: 2px;
   background: linear-gradient(
     90deg,
     oklch(0.68 0.17 0),
@@ -537,7 +537,7 @@ html[data-density="compact"] {
 .il-hue-slider::-webkit-slider-thumb {
   appearance: none;
   width: 2px;
-  height: 14px;
+  height: 12px;
   background: var(--il-text);
   border-radius: 1px;
   border: none;
@@ -545,7 +545,7 @@ html[data-density="compact"] {
 }
 .il-hue-slider::-moz-range-thumb {
   width: 2px;
-  height: 14px;
+  height: 12px;
   background: var(--il-text);
   border-radius: 1px;
   border: none;

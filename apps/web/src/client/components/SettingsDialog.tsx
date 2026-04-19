@@ -822,6 +822,11 @@ function AccentHueControl({ hue }: { hue: number }) {
             letterSpacing: "0.04em",
             minWidth: 56,
             textAlign: "right",
+            // Tabular figures keep the digits column-locked so the
+            //  readout doesn't jiggle horizontally as the user drags
+            //  the thumb — per docs/09-ui-and-brand.md §Settings →
+            //  Appearance / Primitive details.
+            fontVariantNumeric: "tabular-nums",
           }}
         >
           h · {Math.round(hue)}°
