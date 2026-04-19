@@ -260,29 +260,33 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
        * Inbox icon live at the top so mouse users still have one-click
        * dismissal.
        */}
+      {/*
+       * Header — canvas-grammar per docs/09-ui-and-brand.md §Agent
+       * Inbox. Mono `NN PENDING` overline sits above the Inter 600 h1,
+       * followed by a keyboard-hint row. The close X hangs top-right
+       * for mouse users. The decorative Inbox icon from the prior
+       * iteration is dropped — the `PENDING` overline is the anchor.
+       */}
       <header className="border-b border-border px-3 py-3">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-secondary">
-            <Inbox className="h-3.5 w-3.5" aria-hidden="true" />
+          <div
+            className="font-mono uppercase"
+            style={{
+              fontSize: 10.5,
+              letterSpacing: "0.08em",
+              color: "var(--il-text3)",
+            }}
+          >
+            {paddedCount} pending
           </div>
           <button
             type="button"
-            className="rounded p-1 text-secondary hover:bg-ironlore-slate-hover"
+            className="-mt-1 -mr-1 rounded p-1 text-secondary hover:bg-ironlore-slate-hover"
             onClick={onClose}
             aria-label="Close inbox"
           >
             <X className="h-3.5 w-3.5" />
           </button>
-        </div>
-        <div
-          className="mt-1 font-mono uppercase"
-          style={{
-            fontSize: 10.5,
-            letterSpacing: "0.08em",
-            color: "var(--il-text3)",
-          }}
-        >
-          {paddedCount} pending
         </div>
         <h1
           className="mt-0.5"
@@ -299,7 +303,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
         </h1>
         {!loading && entries.length > 0 && (
           <div
-            className="mt-3 flex flex-wrap gap-x-3 gap-y-1 font-mono uppercase"
+            className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono uppercase"
             style={{
               fontSize: 10,
               letterSpacing: "0.04em",
@@ -323,28 +327,6 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
       </header>
 
       <section className="flex-1 overflow-y-auto p-3" aria-label="Pending inbox entries">
-        {!loading && entries.length > 1 && (
-          <div className="mb-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRejectAll}
-              disabled={busy}
-              className="flex-1 rounded border border-border bg-transparent px-2 py-1 text-[11px] font-medium text-secondary hover:bg-ironlore-slate-hover disabled:opacity-40"
-            >
-              Reject all
-            </button>
-            <button
-              type="button"
-              onClick={handleApproveAll}
-              disabled={busy}
-              className="flex-1 rounded border-none bg-ironlore-blue px-2 py-1 text-[11px] font-medium text-background hover:bg-ironlore-blue-strong disabled:opacity-40"
-              style={{ boxShadow: "0 0 10px var(--il-blue-glow)" }}
-            >
-              Approve all
-            </button>
-          </div>
-        )}
-
         {loading && <div className="py-8 text-center text-xs text-secondary">Loading...</div>}
 
         {!loading && entries.length === 0 && <InboxEmptyState />}
@@ -352,64 +334,109 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
         {entries.map((entry, idx) => {
           const focused = idx === focusIdx;
           return (
-            <div
+            <InboxEntryCard
               key={entry.id}
-              id={`inbox-entry-${entry.id}`}
-              aria-current={focused ? "true" : undefined}
-              className={`mb-2 rounded-lg border p-3 text-xs transition-colors ${
-                focused
-                  ? "border-ironlore-blue/60 bg-ironlore-blue/10"
-                  : "border-border bg-ironlore-slate-hover/50"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <Reuleaux size={9} color="var(--il-amber)" aria-label="Pending review" />
-                <GitBranch className="h-3.5 w-3.5 text-accent-violet" />
-                <span className="font-semibold text-primary">{entry.agentSlug}</span>
-                <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-tertiary">
-                  {new Date(entry.finalizedAt).toLocaleDateString()}
-                </span>
-              </div>
-
-              <div className="mt-1.5 text-secondary">
-                {entry.filesChanged.length} file
-                {entry.filesChanged.length === 1 ? "" : "s"} changed
-              </div>
-
-              <InboxEntryFiles
-                entry={entry}
-                stats={fileStats.get(entry.id)}
-                onDecisionChange={(path, decision) => handleFileDecision(entry.id, path, decision)}
-              />
-
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleApprove(entry.id);
-                  }}
-                  className="flex items-center gap-1 rounded border border-signal-green/30 bg-signal-green/10 px-2 py-1 text-signal-green hover:bg-signal-green/20"
-                >
-                  <Check className="h-3 w-3" />
-                  Approve <Key style={{ fontSize: 9 }}>a</Key>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleReject(entry.id);
-                  }}
-                  className="flex items-center gap-1 rounded border border-signal-red/30 bg-signal-red/10 px-2 py-1 text-signal-red hover:bg-signal-red/20"
-                >
-                  <X className="h-3 w-3" />
-                  Reject <Key style={{ fontSize: 9 }}>r</Key>
-                </button>
-              </div>
-            </div>
+              entry={entry}
+              focused={focused}
+              stats={fileStats.get(entry.id)}
+              onApprove={() => handleApprove(entry.id)}
+              onReject={() => handleReject(entry.id)}
+              onDecisionChange={(path, decision) => handleFileDecision(entry.id, path, decision)}
+            />
           );
         })}
       </section>
+    </div>
+  );
+}
+
+/**
+ * One entry in the inbox list. Header row mirrors screen-more.jsx +
+ * docs/09-ui-and-brand.md §Agent Inbox: Signal-Amber Reuleaux + slug
+ * (Inter 15/600 safe, Instrument Serif 22 italic display via
+ * `.il-inbox-slug`) + `Meta k="branch"` + `Meta k="finalized"` +
+ * flex-spacer + Reject all (transparent + border) + Approve all
+ * (blue + `--il-blue-glow`). The button hierarchy matches the AI
+ * panel's DiffCard so users learn it once.
+ *
+ * Focused state (keyboard cursor) paints a 3 px `--il-blue-glow`
+ * outer ring, swaps the soft border for `var(--il-blue)`, and tints
+ * the first file row blue 8 % so the selection reads unambiguously.
+ */
+function InboxEntryCard({
+  entry,
+  focused,
+  stats,
+  onApprove,
+  onReject,
+  onDecisionChange,
+}: {
+  entry: InboxEntry;
+  focused: boolean;
+  stats: InboxFileDiff[] | "error" | undefined;
+  onApprove: () => void;
+  onReject: () => void;
+  onDecisionChange: (path: string, decision: "approved" | "rejected" | null) => void;
+}) {
+  // Branch names can be long — show last path segment and stash the
+  //  full value in `title` for hover inspection.
+  const shortBranch = entry.branch.split("/").pop() || entry.branch;
+  const finalizedLabel = formatRelative(entry.finalizedAt, Date.now());
+
+  return (
+    <div
+      id={`inbox-entry-${entry.id}`}
+      aria-current={focused ? "true" : undefined}
+      className="mb-2 rounded-lg text-xs transition-colors"
+      style={{
+        padding: 12,
+        background: focused
+          ? "color-mix(in oklch, var(--il-blue) 8%, transparent)"
+          : "color-mix(in oklch, var(--il-slate-hover) 50%, transparent)",
+        border: focused ? "1px solid var(--il-blue)" : "1px solid var(--il-border-soft)",
+        boxShadow: focused ? "0 0 0 3px var(--il-blue-glow)" : undefined,
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <Reuleaux size={9} color="var(--il-amber)" aria-label="Pending review" />
+        <span className="il-inbox-slug">{entry.agentSlug}</span>
+        <Meta
+          k="branch"
+          v={shortBranch}
+          style={{ maxWidth: "8rem", overflow: "hidden", textOverflow: "ellipsis" }}
+        />
+        <Meta k="finalized" v={finalizedLabel} />
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onReject();
+          }}
+          className="rounded px-2 py-0.5 text-[11px] font-medium text-secondary transition-colors hover:bg-ironlore-slate-hover"
+          style={{ border: "1px solid var(--il-border)" }}
+        >
+          Reject all
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onApprove();
+          }}
+          className="rounded border-none bg-ironlore-blue px-2 py-0.5 text-[11px] font-medium text-background hover:bg-ironlore-blue-strong"
+          style={{ boxShadow: "0 0 10px var(--il-blue-glow)" }}
+        >
+          Approve all
+        </button>
+      </div>
+
+      <InboxEntryFiles
+        entry={entry}
+        stats={stats}
+        focused={focused}
+        onDecisionChange={onDecisionChange}
+      />
     </div>
   );
 }
@@ -446,25 +473,32 @@ function InboxEmptyState() {
 }
 
 /**
- * Per-file diff rows for an inbox entry — `A/D/M  path  +N -M` per
- * docs/09-ui-and-brand.md §Agent Inbox. Falls back to the plain
- * filename list when git stats aren't available yet (loading / error
- * / fell off the branch) so the row never goes empty.
+ * Per-file diff rows for an inbox entry — `A/D/M · path · ±NN ·
+ * StatusPip "pending" · ✓/✗` per docs/09-ui-and-brand.md §Agent
+ * Inbox. Falls back to the plain filename list when git stats
+ * aren't available yet (loading / error / fell off the branch) so
+ * the row never goes empty.
+ *
+ * Focused entries tint their first file row blue 8 % so the
+ * selection cue carries into the body of the card, not just the
+ * outer frame.
  */
 function InboxEntryFiles({
   entry,
   stats,
+  focused,
   onDecisionChange,
 }: {
   entry: InboxEntry;
   stats: InboxFileDiff[] | "error" | undefined;
+  focused: boolean;
   onDecisionChange: (path: string, decision: "approved" | "rejected" | null) => void;
 }) {
   // While we're fetching or the endpoint failed, degrade to the plain
   //  filename list. Never block the entry from rendering on this.
   if (stats === undefined || stats === "error" || stats.length === 0) {
     return (
-      <ul className="mt-1 max-h-20 overflow-y-auto text-[10px] text-secondary">
+      <ul className="mt-2 max-h-20 overflow-y-auto text-[10px] text-secondary">
         {entry.filesChanged.map((f) => (
           <li key={f} className="truncate font-mono">
             {f}
@@ -475,8 +509,8 @@ function InboxEntryFiles({
   }
 
   return (
-    <ul className="mt-1 max-h-32 overflow-y-auto">
-      {stats.map((f) => {
+    <ul className="mt-2 max-h-32 overflow-y-auto">
+      {stats.map((f, i) => {
         const isApproved = f.decision === "approved";
         const isRejected = f.decision === "rejected";
         // Toggle semantics: clicking an already-set decision clears
@@ -485,18 +519,25 @@ function InboxEntryFiles({
         const toggle = (next: "approved" | "rejected") => {
           onDecisionChange(f.path, f.decision === next ? null : next);
         };
+        // First-row tint only applies to the focused entry and only
+        //  when the user hasn't already voted on that file — the
+        //  decision tints (green/red) win over selection.
+        const firstRowFocusTint =
+          focused && i === 0 && !isApproved && !isRejected
+            ? "color-mix(in oklch, var(--il-blue) 8%, transparent)"
+            : null;
         return (
           <li
             key={f.path}
             className="grid items-center gap-1.5 py-0.5"
             style={{
-              gridTemplateColumns: "12px minmax(0, 1fr) auto auto",
+              gridTemplateColumns: "12px minmax(0, 1fr) auto auto auto",
               fontSize: 10,
               background: isApproved
                 ? "color-mix(in oklch, var(--il-green) 10%, transparent)"
                 : isRejected
                   ? "color-mix(in oklch, var(--il-red) 10%, transparent)"
-                  : "transparent",
+                  : (firstRowFocusTint ?? "transparent"),
               opacity: isRejected ? 0.65 : 1,
               paddingLeft: 2,
               paddingRight: 2,
@@ -526,6 +567,7 @@ function InboxEntryFiles({
             <span className="font-mono" style={{ color: "var(--il-text4)" }}>
               {formatDelta(f)}
             </span>
+            <StatusPip state="idle" label="pending" size={7} />
             <span className="flex gap-1">
               <FileDecisionButton
                 kind="rejected"
@@ -543,6 +585,22 @@ function InboxEntryFiles({
       })}
     </ul>
   );
+}
+
+/**
+ * Compact relative-time label — `just now`, `Ns ago`, `Nm ago`,
+ * `Nh ago`, `Nd ago`. Mirrors ContentArea.tsx's helper so inbox
+ * finalized-at reads the same as the status bar's saved-at.
+ */
+function formatRelative(ms: number, now: number): string {
+  const sec = Math.max(0, Math.floor((now - ms) / 1000));
+  if (sec < 5) return "just now";
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
 }
 
 /**

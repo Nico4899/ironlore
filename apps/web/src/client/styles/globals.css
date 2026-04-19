@@ -400,6 +400,28 @@ html[data-type-display="serif"] .il-ai-slug {
 }
 
 /*
+ * Inbox entry header slug — same serif/sans pairing as `.il-ai-slug`
+ * but one size up because the inbox card header sits on a full-width
+ * surface (15/600 safe, 22 italic display) per the JSX source-of-
+ * truth.
+ */
+.il-inbox-slug {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--il-text);
+}
+
+html[data-type-display="serif"] .il-inbox-slug {
+  font-family: "Instrument Serif", "GT Sectra", "Times New Roman", serif;
+  font-size: 22px;
+  font-weight: 400;
+  font-style: italic;
+  letter-spacing: 0;
+}
+
+/*
  * Provenance target block — framed block inside the provenance pane
  * that corresponds to the `[[Page#blk_…]]` citation the user clicked.
  * Rendered by ProvenancePane's useEffect after sanitized HTML mounts:
