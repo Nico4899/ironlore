@@ -490,10 +490,7 @@ function MarkdownContent({
         }}
       >
         <ModeToggle mode={mode} />
-        <span
-          aria-hidden="true"
-          style={{ width: 1, height: 14, background: "var(--il-border)" }}
-        />
+        <span aria-hidden="true" style={{ width: 1, height: 14, background: "var(--il-border)" }} />
         <span
           className="font-mono uppercase"
           style={{

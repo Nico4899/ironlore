@@ -1,4 +1,4 @@
-import { Check, GitBranch, Inbox, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   approveInboxEntry,
@@ -9,7 +9,7 @@ import {
   setInboxFileDecision,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
-import { Key, Reuleaux, Venn } from "./primitives/index.js";
+import { Key, Meta, Reuleaux, StatusPip, Venn } from "./primitives/index.js";
 
 interface InboxEntry {
   id: string;

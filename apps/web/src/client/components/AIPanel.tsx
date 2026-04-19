@@ -18,14 +18,7 @@ import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
-import {
-  AgentPulse,
-  Blockref,
-  Key,
-  Meta,
-  ProvenanceStrip,
-  StatusPip,
-} from "./primitives/index.js";
+import { AgentPulse, Blockref, Key, Meta, ProvenanceStrip, StatusPip } from "./primitives/index.js";
 
 /**
  * Storage key pattern for cost-estimate acknowledgement per agent slug.

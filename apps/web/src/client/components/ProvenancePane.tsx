@@ -126,20 +126,17 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
         {content === null ? (
           <p className="text-sm text-secondary">Loading…</p>
         ) : (
-          <ProvenanceContent content={content} blockId={blockId} />
+          // `key` forces a fresh mount whenever the user clicks a new
+          //  citation so the target-block effect re-runs with the new
+          //  DOM. Lets us scope the effect's deps to `[blockId]` alone.
+          <ProvenanceContent key={`${pagePath}#${blockId}`} content={content} blockId={blockId} />
         )}
       </div>
     </aside>
   );
 }
 
-function PaneHeader({
-  pagePath,
-  onClose,
-}: {
-  pagePath: string;
-  onClose: () => void;
-}) {
+function PaneHeader({ pagePath, onClose }: { pagePath: string; onClose: () => void }) {
   const fileName = pagePath.split("/").pop() ?? pagePath;
   return (
     <div
@@ -235,7 +232,7 @@ function ProvenanceContent({ content, blockId }: { content: string; blockId: str
       block?.classList.remove("il-provenance-target");
       overline.remove();
     };
-  }, [blockId, html]);
+  }, [blockId]);
 
   return (
     <div
