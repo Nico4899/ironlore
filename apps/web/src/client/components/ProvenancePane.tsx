@@ -1,9 +1,9 @@
 import { X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchPage } from "../lib/api.js";
 import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
 import { MOTION } from "../styles/motion.js";
-import { Reuleaux } from "./primitives/index.js";
+import { Key } from "./primitives/index.js";
 
 /**
  * Provenance pane — opened by clicking a `[[Page#blk_…]]` citation
@@ -85,7 +85,7 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
         className="flex w-[40%] shrink-0 flex-col border-l border-border bg-ironlore-slate"
         aria-label="Source of citation"
       >
-        <PaneHeader pagePath={pagePath} blockId={blockId} onClose={onClose} />
+        <PaneHeader pagePath={pagePath} onClose={onClose} />
         <div className="flex flex-1 items-center justify-center px-6">
           <p className="text-sm text-signal-amber">This source has moved or was deleted.</p>
         </div>
@@ -102,7 +102,7 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
         if (e.key === "Escape") onClose();
       }}
     >
-      <PaneHeader pagePath={pagePath} blockId={blockId} onClose={onClose} />
+      <PaneHeader pagePath={pagePath} onClose={onClose} />
       <div className="flex-1 overflow-y-auto px-6 py-4">
         {content === null ? (
           <p className="text-sm text-secondary">Loading…</p>
@@ -116,25 +116,38 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
 
 function PaneHeader({
   pagePath,
-  blockId,
   onClose,
 }: {
   pagePath: string;
-  blockId: string;
   onClose: () => void;
 }) {
+  const fileName = pagePath.split("/").pop() ?? pagePath;
   return (
-    <div className="flex items-center gap-3 border-b border-border px-4 py-2">
-      {/* Blue Reuleaux anchors the header — this is a provenance surface,
-       *  so the universal pip + JetBrains Mono metadata undercurrent do
-       *  the talking. No "Provenance" label needed. */}
-      <Reuleaux size={10} color="var(--il-blue)" aria-label="Source of citation" />
-      <div className="flex-1 min-w-0">
-        <div className="truncate text-xs font-medium text-primary">{pagePath.split("/").pop()}</div>
-        <div className="truncate font-mono text-[10px] uppercase tracking-wider text-tertiary">
-          {blockId}
-        </div>
-      </div>
+    <div
+      className="flex shrink-0 items-center gap-2 border-b"
+      style={{
+        padding: "10px 14px",
+        borderColor: "var(--il-border-soft)",
+      }}
+    >
+      {/* Mono `SOURCE · <file>` label — matches screen-editor.jsx. The
+       *  short filename sits after the `Source ·` anchor; the full
+       *  path appears below, inside the body, in muted text4. */}
+      <span
+        className="font-mono uppercase truncate"
+        style={{
+          fontSize: 10.5,
+          letterSpacing: "0.08em",
+          color: "var(--il-text3)",
+        }}
+        title={pagePath}
+      >
+        source · <span style={{ color: "var(--il-text)" }}>{fileName}</span>
+      </span>
+      <span className="flex-1" />
+      {/* ESC chip is discovery; the actual close is bound to the
+       *  Escape keydown listener above + the X button below. */}
+      <Key>ESC</Key>
       <button
         type="button"
         onClick={onClose}
