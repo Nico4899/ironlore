@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import { useAppStore } from "../stores/app.js";
+import { useAuthStore } from "../stores/auth.js";
 import { useEditorStore } from "../stores/editor.js";
 import { Reuleaux, StatusPip } from "./primitives/index.js";
 
@@ -27,6 +29,8 @@ export function StatusBar() {
   const wsReconnecting = useAppStore((s) => s.wsReconnecting);
   const editorStatus = useEditorStore((s) => s.status);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
+  const currentProjectId = useAuthStore((s) => s.currentProjectId);
+  const activity = useWorkspaceActivity();
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -35,25 +39,73 @@ export function StatusBar() {
   }, []);
 
   const savedLabel = relativeSaved(lastSavedAt, now);
+  // Location cell: prefer the active file path; fall back to the
+  //  current project id so the cell is never empty (an empty left
+  //  cluster reads as "nothing loaded" and is unhelpful).
+  const locationLabel = activePath ?? (currentProjectId ? `~/${currentProjectId}` : "");
 
   return (
-    <footer className="flex h-6 items-center border-t border-border bg-ironlore-slate px-3 text-xs text-secondary">
-      {activePath && (
+    <footer
+      className="flex h-5.5 shrink-0 items-center gap-3 border-t px-3"
+      style={{
+        background: "var(--il-slate)",
+        borderColor: "var(--il-border-soft)",
+        fontFamily: "var(--font-mono)",
+        fontSize: 10.5,
+        letterSpacing: "0.02em",
+        color: "var(--il-text3)",
+      }}
+    >
+      {locationLabel && (
         <button
           type="button"
-          className="hover:text-primary"
-          onClick={() => navigator.clipboard.writeText(activePath)}
-          title="Copy file path"
+          onClick={() => void navigator.clipboard.writeText(locationLabel)}
+          className="truncate outline-none hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          style={{ color: "var(--il-text2)" }}
+          title="Copy"
         >
-          {activePath}
+          {locationLabel}
         </button>
       )}
+      <BranchLabel />
       <div className="flex-1" />
       <div className="flex items-center gap-3">
+        {activity.runningCount > 0 && (
+          <button
+            type="button"
+            onClick={() => useAppStore.getState().toggleInbox()}
+            className="flex items-center gap-1.5 outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            style={{ color: "var(--il-blue)" }}
+            aria-label={`${activity.runningCount} agents running — open inbox`}
+            title={`${activity.runningCount} agents running`}
+          >
+            <Reuleaux size={7} color="var(--il-blue)" spin />
+            <span className="uppercase" style={{ letterSpacing: "0.04em" }}>
+              {activity.runningCount} {activity.runningCount === 1 ? "agent" : "agents"}
+            </span>
+          </button>
+        )}
         <EditorStatusPill status={editorStatus} savedLabel={savedLabel} />
         <ConnectionPill connected={wsConnected} reconnecting={wsReconnecting} />
       </div>
     </footer>
+  );
+}
+
+/**
+ * Branch label — `⎇ main` in mono. Static today because the user
+ * doesn't switch branches in Ironlore (agents do, via inbox staging).
+ * If the product surfaces HEAD detection later, this becomes a live
+ * read from the git worker.
+ */
+function BranchLabel() {
+  return (
+    <span className="flex items-center gap-1">
+      <span aria-hidden="true" style={{ color: "var(--il-text4)" }}>
+        ·
+      </span>
+      <span style={{ color: "var(--il-text3)" }}>⎇ main</span>
+    </span>
   );
 }
 
