@@ -138,6 +138,8 @@ interface AppStore {
   terminalOpen: boolean;
   /** Cmd+P project switcher palette visibility (Phase 9 Item 2). */
   projectSwitcherOpen: boolean;
+  /** Cross-project copy dialog source path, or null when closed (Phase 9 Item 4). */
+  copyToProjectSrc: string | null;
   activePath: string | null;
   /**
    * Slug of the agent whose detail page is currently open, or null.
@@ -176,6 +178,8 @@ interface AppStore {
   toggleSettings: () => void;
   toggleTerminal: () => void;
   toggleProjectSwitcher: () => void;
+  openCopyToProject: (srcPath: string) => void;
+  closeCopyToProject: () => void;
   setActivePath: (path: string | null) => void;
   /** Open an agent's detail page. Passing null clears it. */
   setActiveAgentSlug: (slug: string | null) => void;
@@ -261,6 +265,7 @@ export const useAppStore = create<AppStore>((set) => ({
   settingsOpen: false,
   terminalOpen: false,
   projectSwitcherOpen: false,
+  copyToProjectSrc: null,
   activePath: null,
   activeAgentSlug: null,
   openPaths: [],
@@ -282,6 +287,8 @@ export const useAppStore = create<AppStore>((set) => ({
   toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
   toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
   toggleProjectSwitcher: () => set((s) => ({ projectSwitcherOpen: !s.projectSwitcherOpen })),
+  openCopyToProject: (srcPath) => set({ copyToProjectSrc: srcPath }),
+  closeCopyToProject: () => set({ copyToProjectSrc: null }),
   // Opening an agent detail page and opening a file are mutually
   // exclusive surfaces in the content area — toggling one clears the
   // other so the user never sees a half-rendered mash-up.

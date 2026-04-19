@@ -638,6 +638,16 @@ export function SidebarNew() {
             <>
               <div className="my-1 border-t border-border" />
               <ContextMenuItem label="Rename" onClick={ctxRename} />
+              {contextMenu.itemPath.endsWith(".md") && (
+                <ContextMenuItem
+                  label="Copy to project…"
+                  onClick={() => {
+                    const path = contextMenu.itemPath;
+                    if (path) useAppStore.getState().openCopyToProject(path);
+                    setContextMenu(null);
+                  }}
+                />
+              )}
               <ContextMenuItem label="Delete" onClick={ctxDelete} danger />
             </>
           )}

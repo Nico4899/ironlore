@@ -569,6 +569,43 @@ export async function fetchProjects(): Promise<ProjectListEntry[]> {
   return data.projects;
 }
 
+export interface CopyPageResponse {
+  targetProjectId: string;
+  targetPath: string;
+  etag: string;
+  renamed: boolean;
+}
+
+/**
+ * Copy a page from the current project to another project. Per
+ * docs/08-projects-and-isolation.md §Cross-project copy workflow —
+ * the server stamps `copied_from` frontmatter and writes through the
+ * target project's StorageWriter. `onConflict` defaults to "rename",
+ * which appends `-copy` / `-copy-2` until a free slot is found.
+ */
+export async function copyPageToProject(params: {
+  srcProjectId: string;
+  srcPath: string;
+  targetProjectId: string;
+  targetPath?: string;
+  onConflict?: "rename" | "overwrite";
+}): Promise<CopyPageResponse> {
+  const res = await apiFetch(
+    `/api/projects/${params.srcProjectId}/pages/${params.srcPath}/copy-to`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        targetProjectId: params.targetProjectId,
+        targetPath: params.targetPath,
+        onConflict: params.onConflict ?? "rename",
+      }),
+    },
+  );
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<CopyPageResponse>;
+}
+
 /** Log in with username and password. Throws on bad creds (401) or rate limit (429). */
 export async function login(username: string, password: string): Promise<LoginResponse> {
   const res = await fetch("/api/auth/login", {

@@ -14,6 +14,7 @@ import { seedAgents } from "./agents/seed-agents.js";
 import { createAuthApi, SessionStore } from "./auth.js";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
+import { createCrossProjectCopyApi } from "./cross-project-copy.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { BackpressureController } from "./jobs/backpressure.js";
 import { openJobsDb } from "./jobs/schema.js";
@@ -354,6 +355,17 @@ async function start() {
     const list = projectRegistry.list();
     return c.json({ projects: list });
   });
+
+  // Cross-project copy. Mounted under `/api/projects` (not per-project)
+  //  because it spans two projects' StorageWriters — the source is in
+  //  the URL, the target comes from the request body. Protected by the
+  //  same /api/projects/* auth middleware.
+  app.route(
+    "/api/projects",
+    createCrossProjectCopyApi({
+      resolveProject: (projectId) => servicesById.get(projectId) ?? null,
+    }),
+  );
 
   // Expose an aggregated WAL for the health endpoint — sum of depths
   //  across every project. A single `wal` module-level was wrong for

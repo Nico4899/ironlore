@@ -7,6 +7,7 @@ import { ContentArea } from "./components/ContentArea.js";
 import { InboxPanel } from "./components/InboxPanel.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OfflineBanner } from "./components/OfflineBanner.js";
+import { CopyToProjectDialog } from "./components/CopyToProjectDialog.js";
 import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
 import { ProvenancePane } from "./components/ProvenancePane.js";
 import { RecoveryBanner } from "./components/RecoveryBanner.js";
@@ -59,6 +60,7 @@ function AppShell() {
   const settingsOpen = useAppStore((s) => s.settingsOpen);
   const terminalOpen = useAppStore((s) => s.terminalOpen);
   const projectSwitcherOpen = useAppStore((s) => s.projectSwitcherOpen);
+  const copyToProjectSrc = useAppStore((s) => s.copyToProjectSrc);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -137,6 +139,14 @@ function AppShell() {
 
       {/* Project switcher (Cmd+P) */}
       {projectSwitcherOpen && <ProjectSwitcher />}
+
+      {/* Cross-project copy dialog */}
+      {copyToProjectSrc && (
+        <CopyToProjectDialog
+          srcPath={copyToProjectSrc}
+          onClose={() => useAppStore.getState().closeCopyToProject()}
+        />
+      )}
 
       {/* Settings dialog */}
       {settingsOpen && <SettingsDialog />}
