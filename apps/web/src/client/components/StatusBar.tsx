@@ -73,7 +73,7 @@ export function StatusBar() {
         {activity.runningCount > 0 && (
           <button
             type="button"
-            onClick={() => useAppStore.getState().toggleInbox()}
+            onClick={() => useAppStore.getState().openSidebarTab("inbox")}
             className="flex items-center gap-1.5 outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
             style={{ color: "var(--il-blue)" }}
             aria-label={`${activity.runningCount} agents running — open inbox`}

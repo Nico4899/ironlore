@@ -201,7 +201,6 @@ interface AppStore {
   wsConnected: boolean;
   wsReconnecting: boolean;
   provenance: { pagePath: string; blockId: string } | null;
-  inboxOpen: boolean;
   /** Current folder path in the sidebar drill-down navigation. "" = root. */
   sidebarFolder: string;
   /** Active sidebar tab: home, search, explore. */
@@ -246,7 +245,12 @@ interface AppStore {
   setWsReconnecting: (reconnecting: boolean) => void;
   openProvenance: (pagePath: string, blockId: string) => void;
   closeProvenance: () => void;
-  toggleInbox: () => void;
+  /**
+   * Select a sidebar tab and, as a side-effect, ensure the sidebar is
+   * expanded. Used by call sites that mean "show me the inbox" — they
+   * don't want to discover the sidebar was collapsed first.
+   */
+  openSidebarTab: (tab: "files" | "inbox") => void;
   setSidebarFolder: (folder: string) => void;
   setSidebarTab: (tab: "files" | "inbox") => void;
 }
@@ -321,7 +325,6 @@ export const useAppStore = create<AppStore>((set) => ({
   wsConnected: false,
   wsReconnecting: false,
   provenance: null,
-  inboxOpen: false,
   sidebarFolder: "",
   sidebarTab: "files",
 
@@ -416,7 +419,7 @@ export const useAppStore = create<AppStore>((set) => ({
   setWsReconnecting: (reconnecting) => set({ wsReconnecting: reconnecting }),
   openProvenance: (pagePath, blockId) => set({ provenance: { pagePath, blockId } }),
   closeProvenance: () => set({ provenance: null }),
-  toggleInbox: () => set((s) => ({ inboxOpen: !s.inboxOpen })),
+  openSidebarTab: (tab) => set({ sidebarTab: tab, sidebarOpen: true }),
   setSidebarFolder: (folder) => set({ sidebarFolder: folder }),
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
 }));

@@ -117,7 +117,7 @@ export function HomePanel() {
                 {activity.inboxCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => useAppStore.getState().toggleInbox()}
+                    onClick={() => useAppStore.getState().openSidebarTab("inbox")}
                     className="inline-flex items-baseline gap-1 rounded-sm outline-none hover:underline focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
                     style={{
                       background: "transparent",
@@ -307,7 +307,7 @@ export function HomePanel() {
               <QuickAction
                 icon={<Inbox className="h-3.5 w-3.5" />}
                 label="Open inbox"
-                onClick={() => useAppStore.getState().toggleInbox()}
+                onClick={() => useAppStore.getState().openSidebarTab("inbox")}
               />
             </div>
           </section>

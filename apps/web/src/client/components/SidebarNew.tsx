@@ -44,6 +44,7 @@ import {
 import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
+import { Logo } from "./Logo.js";
 import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 
 // ---------------------------------------------------------------------------
@@ -234,6 +235,18 @@ export function SidebarNew() {
       useAppStore.getState().setSidebarFolder("");
       setSlideDir(null);
     }, 150);
+  }, []);
+
+  /**
+   * Top-row logo click — "go home." Clears the active file + active
+   * agent so the content area lands on the HomePanel; keeps the
+   * sidebar on the files tab (the user's existing drill-down context
+   * survives). Same intent the retired Header's logo used to carry.
+   */
+  const goHome = useCallback(() => {
+    const store = useAppStore.getState();
+    store.setActivePath(null);
+    store.setActiveAgentSlug(null);
   }, []);
 
   const openFile = useCallback((path: string) => {
@@ -427,38 +440,62 @@ export function SidebarNew() {
         width: collapsed ? 56 : sidebarWidth,
       }}
     >
-      {/* ─── Top: collapse toggle ───
-       *  The Ironlore logo + wordmark now live in the app-wide Header.
-       *  The sidebar's top row only carries the expand/collapse
-       *  affordance; the primary identity surface for the sidebar is
-       *  the ProjectTile below. */}
-      <div className="relative flex h-10 items-center gap-2 border-b border-border px-2">
+      {/*
+       * Sidebar top row — the app's only identity surface after the
+       * Header was retired.
+       *   · Expanded: Ironlore mark on the left, collapse-chevron
+       *     button on the right. Clicking the mark returns to Home.
+       *   · Collapsed: the mark is the whole cell; on hover an
+       *     expand-chevron fades up and overlays it so the click
+       *     target is always the entire strip.
+       * Height matches the ProjectTile row so the two stacked panels
+       * feel like one block.
+       */}
+      {collapsed ? (
         <button
           type="button"
           onClick={() => useAppStore.getState().toggleSidebar()}
-          className="flex h-7 w-7 items-center justify-center rounded text-secondary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          title={collapsed ? "Expand sidebar (⌘B)" : "Collapse sidebar (⌘B)"}
+          className="il-sidebar-toptile group relative flex h-10 w-full items-center justify-center border-b border-border outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          aria-label="Expand sidebar"
+          title="Expand sidebar (⌘B)"
         >
-          {collapsed ? (
-            <PanelLeftOpen className="h-4 w-4" />
-          ) : (
-            <PanelLeftClose className="h-4 w-4" />
-          )}
-        </button>
-        {!collapsed && (
           <span
-            className="font-mono uppercase"
-            style={{
-              fontSize: 10.5,
-              letterSpacing: "0.08em",
-              color: "var(--il-text4)",
-            }}
+            className="il-sidebar-toptile__logo"
+            style={{ display: "inline-flex" }}
+            aria-hidden="true"
           >
-            files
+            <Logo size={20} />
           </span>
-        )}
-      </div>
+          <span
+            className="il-sidebar-toptile__icon"
+            style={{ display: "inline-flex" }}
+            aria-hidden="true"
+          >
+            <PanelLeftOpen className="h-4 w-4 text-primary" />
+          </span>
+        </button>
+      ) : (
+        <div className="relative flex h-10 items-center justify-between gap-2 border-b border-border px-2">
+          <button
+            type="button"
+            onClick={goHome}
+            className="flex items-center rounded-[3px] p-1 outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            aria-label="Ironlore home"
+            title="Home"
+          >
+            <Logo size={20} />
+          </button>
+          <button
+            type="button"
+            onClick={() => useAppStore.getState().toggleSidebar()}
+            className="flex h-7 w-7 items-center justify-center rounded text-secondary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar (⌘B)"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       {/* ─── Project switcher tile ───
        *  Full tile per docs/08 §Project switcher UX. Clickable

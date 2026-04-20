@@ -808,6 +808,34 @@ kbd {
   box-shadow: 0 0 8px var(--il-blue-glow);
 }
 
+/*
+ * Collapsed-sidebar top tile. The logo sits in the cell at rest; on
+ * hover (or keyboard focus on the button itself) an expand-chevron
+ * fades up and overlays it. Both children stack via absolute
+ * positioning; the button's own padding keeps them visually centered
+ * within the 40 × 56 cell. Uses `--motion-snap` so the swap feels
+ * snappy, not slow.
+ */
+.il-sidebar-toptile__logo,
+.il-sidebar-toptile__icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  transition: opacity var(--motion-snap) ease-out;
+}
+.il-sidebar-toptile__icon {
+  opacity: 0;
+}
+.il-sidebar-toptile:hover .il-sidebar-toptile__logo,
+.il-sidebar-toptile:focus-visible .il-sidebar-toptile__logo {
+  opacity: 0;
+}
+.il-sidebar-toptile:hover .il-sidebar-toptile__icon,
+.il-sidebar-toptile:focus-visible .il-sidebar-toptile__icon {
+  opacity: 1;
+}
+
 
 /* ─── Skip navigation (a11y) ─── */
 
