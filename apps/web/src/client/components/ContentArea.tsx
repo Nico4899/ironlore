@@ -213,12 +213,9 @@ export function ContentArea() {
   //  time ContentArea renders the user has already completed or
   //  skipped the wizard.
 
-  const sidebarTab = useAppStore((s) => s.sidebarTab);
-
-  // No active file — show Home/Explore view or welcome screen. The
-  // agent detail page takes precedence: once a slug is set the editor
-  // stays out of the way so clicking the agent name in the AI panel
-  // reliably lands on its dashboard.
+  // No active file — show Home or the agent-detail page. Explore was
+  //  removed in the sidebar revision (deferred; `sidebarTab` is now
+  //  only `files | inbox`, both of which leave the canvas on Home).
   if (!activePath || !filePath) {
     return (
       <main
@@ -229,20 +226,7 @@ export function ContentArea() {
         {...dropZoneProps}
       >
         <TabBar />
-        {activeAgentSlug ? (
-          <AgentDetailPage slug={activeAgentSlug} />
-        ) : sidebarTab === "explore" ? (
-          <div className="flex flex-1 items-center justify-center px-8">
-            <div className="max-w-md text-center">
-              <h1 className="text-xl font-semibold text-primary">Explore</h1>
-              <p className="mt-2 text-sm text-secondary">
-                Visualize connections between your pages. Coming soon.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <HomePanel />
-        )}
+        {activeAgentSlug ? <AgentDetailPage slug={activeAgentSlug} /> : <HomePanel />}
         {dragOver && <DropOverlay />}
       </main>
     );

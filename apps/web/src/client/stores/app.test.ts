@@ -105,7 +105,7 @@ describe("useAppStore — sidebar + theme", () => {
 
 describe("useAppStore — sidebar folder drill-down", () => {
   beforeEach(() => {
-    useAppStore.setState({ sidebarFolder: "", sidebarTab: "home" });
+    useAppStore.setState({ sidebarFolder: "", sidebarTab: "files" });
   });
 
   it("sets sidebar folder path", () => {
@@ -114,7 +114,7 @@ describe("useAppStore — sidebar folder drill-down", () => {
   });
 
   it("switches sidebar tab", () => {
-    useAppStore.getState().setSidebarTab("explore");
-    expect(useAppStore.getState().sidebarTab).toBe("explore");
+    useAppStore.getState().setSidebarTab("inbox");
+    expect(useAppStore.getState().sidebarTab).toBe("inbox");
   });
 });

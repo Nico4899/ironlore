@@ -248,7 +248,7 @@ interface AppStore {
   closeProvenance: () => void;
   toggleInbox: () => void;
   setSidebarFolder: (folder: string) => void;
-  setSidebarTab: (tab: "home" | "search" | "explore") => void;
+  setSidebarTab: (tab: "files" | "inbox") => void;
 }
 
 function persistSidebarWidth(width: number): void {
