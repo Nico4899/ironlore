@@ -118,7 +118,7 @@ export function CopyToProjectDialog({ srcPath, onClose }: CopyToProjectDialogPro
           <span
             className="font-mono uppercase"
             style={{
-              fontSize: 10,
+              fontSize: 10.5,
               letterSpacing: "0.06em",
               color: "var(--il-text3)",
             }}

@@ -114,7 +114,7 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
         <div
           className="font-mono truncate"
           style={{
-            fontSize: 10,
+            fontSize: 10.5,
             color: "var(--il-text4)",
             letterSpacing: "0.06em",
             marginBottom: 6,

@@ -473,7 +473,7 @@ html[data-type-display="serif"] .il-inbox-slug {
   gap: 6px;
   margin-top: 8px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 10.5px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--il-amber);
@@ -694,24 +694,21 @@ kbd {
 .icon-folder { color: oklch(0.72 0.14 80); }
 
 /* ─── Sidebar depth ─── */
-
+/*
+ * Brand rule: no gradients on chrome surfaces (docs/09-ui-and-brand.md
+ * §Color rules). The previous 180° light→dark gradient was decorative;
+ * replaced with a flat `--il-slate` and a subtle inset + drop shadow
+ * so the sidebar still reads as its own plane without a gradient.
+ */
 .sidebar-chrome {
-  background: linear-gradient(
-    180deg,
-    var(--il-slate) 0%,
-    oklch(from var(--il-slate) calc(l - 0.02) c h) 100%
-  );
+  background: var(--il-slate);
   box-shadow: inset -1px 0 0 var(--il-border),
               2px 0 8px oklch(0 0 0 / 0.15);
 }
 
-/* Active sidebar item — subtle glow */
+/* Active sidebar item — flat blue tint, no gradient. */
 .sidebar-item-active {
-  background: linear-gradient(
-    135deg,
-    oklch(from var(--il-blue) l c h / 0.15) 0%,
-    oklch(from var(--il-blue) l c h / 0.08) 100%
-  );
+  background: color-mix(in oklch, var(--il-blue) 12%, transparent);
   box-shadow: inset 0 0 0 1px oklch(from var(--il-blue) l c h / 0.2);
 }
 

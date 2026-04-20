@@ -92,7 +92,7 @@ export function SectionLabel({
         <span
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: 10,
+            fontSize: 10.5,
             letterSpacing: "0.04em",
             textTransform: "uppercase",
             color: "var(--il-text3)",

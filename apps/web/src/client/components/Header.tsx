@@ -123,18 +123,22 @@ export function Header() {
       {/* Agent-pulse 1px gradient at the bottom rule while any agent
        *  is streaming. Matches §Agent pulse "the header bottom rule"
        *  clause. Positioned absolutely so it doesn't shift layout. */}
+      {/* Header bottom rule IS the agent pulse per
+       *  docs/09-ui-and-brand.md §Agent pulse — the building's
+       *  heartbeat. `.il-pulse` drives the animated 3.2 s sweep; we
+       *  stretch it 1 px tall along the bottom edge. Static decorative
+       *  gradient was previously here — removed because chrome
+       *  gradients are forbidden. */}
       {streaming && (
         <span
           aria-hidden="true"
-          className="il-header-pulse"
+          className="il-pulse"
           style={{
             position: "absolute",
             left: 0,
             right: 0,
             bottom: -1,
             height: 1,
-            background: "linear-gradient(90deg, transparent, var(--il-blue) 50%, transparent)",
-            opacity: 0.8,
             pointerEvents: "none",
           }}
         />
@@ -171,7 +175,7 @@ function Breadcrumb({ projectId, path }: { projectId: string | null; path: strin
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional
           <span key={i} className="flex items-center gap-1 truncate">
-            <ChevronRight className="h-3 w-3 shrink-0" style={{ color: "var(--il-text4)" }} />
+            <ChevronRight className="h-3.5 w-3.5 shrink-0" style={{ color: "var(--il-text4)" }} />
             <span
               className="truncate"
               style={{
@@ -207,7 +211,7 @@ function UserAvatar({ username }: { username: string | null }) {
         background: "var(--il-slate-elev)",
         border: "1px solid var(--il-border)",
         fontFamily: "var(--font-mono)",
-        fontSize: 10,
+        fontSize: 10.5,
         color: "var(--il-text2)",
       }}
       aria-label={`Account — ${username ?? "you"} (open settings)`}

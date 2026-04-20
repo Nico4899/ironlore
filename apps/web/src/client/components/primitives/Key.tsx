@@ -23,7 +23,7 @@ export function Key({ children, className, style }: KeyProps) {
       className={className}
       style={{
         fontFamily: "var(--font-mono)",
-        fontSize: 10,
+        fontSize: 10.5,
         letterSpacing: "0.02em",
         color: "var(--il-text2)",
         background: "var(--il-slate-elev)",

@@ -479,7 +479,7 @@ function ActiveAgentCard({
           <span
             className="font-mono uppercase"
             style={{
-              fontSize: 10,
+              fontSize: 10.5,
               color: live ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)",
               letterSpacing: "0.06em",
             }}
@@ -718,7 +718,7 @@ function RunRateHeadroom({
                 position: "absolute",
                 right: 0,
                 bottom: `calc(${capRatio * 100}% + 2px)`,
-                fontSize: 9.5,
+                fontSize: 10.5,
                 color: "var(--il-amber)",
                 letterSpacing: "0.04em",
               }}
@@ -734,7 +734,7 @@ function RunRateHeadroom({
           display: "flex",
           justifyContent: "space-between",
           marginTop: 6,
-          fontSize: 9.5,
+          fontSize: 10.5,
           color: "var(--il-text4)",
           letterSpacing: "0.06em",
         }}
@@ -787,7 +787,7 @@ function RecentCard({ entry }: { entry: RecentEdit }) {
         <div
           className="font-mono uppercase truncate"
           style={{
-            fontSize: 10,
+            fontSize: 10.5,
             color: "var(--il-text4)",
             letterSpacing: "0.04em",
             marginBottom: 4,
@@ -814,7 +814,7 @@ function RecentCard({ entry }: { entry: RecentEdit }) {
           display: "flex",
           gap: 10,
           marginTop: 8,
-          fontSize: 10,
+          fontSize: 10.5,
           color: "var(--il-text3)",
           letterSpacing: "0.02em",
         }}

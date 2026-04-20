@@ -54,7 +54,7 @@ export function DiffPreview({ pageId, diff, approved, onApprove, onReject }: Dif
             onClick={onApprove}
             className="flex items-center gap-1 rounded bg-signal-green/20 px-2 py-1 font-medium text-signal-green hover:bg-signal-green/30"
           >
-            <Check className="h-3 w-3" />
+            <Check className="h-3.5 w-3.5" />
             Apply
           </button>
           <button
@@ -62,7 +62,7 @@ export function DiffPreview({ pageId, diff, approved, onApprove, onReject }: Dif
             onClick={onReject}
             className="flex items-center gap-1 rounded bg-signal-red/20 px-2 py-1 font-medium text-signal-red hover:bg-signal-red/30"
           >
-            <X className="h-3 w-3" />
+            <X className="h-3.5 w-3.5" />
             Skip
           </button>
         </div>

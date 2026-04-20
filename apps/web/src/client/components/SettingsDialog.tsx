@@ -83,7 +83,7 @@ export function SettingsDialog() {
           <div
             className="font-mono uppercase"
             style={{
-              fontSize: 10,
+              fontSize: 10.5,
               color: "var(--il-text3)",
               letterSpacing: "0.08em",
               padding: "0 8px 10px",
@@ -476,7 +476,7 @@ function FieldLabel({ children }: { children: ReactNode }) {
     <span
       className="font-mono uppercase"
       style={{
-        fontSize: 10,
+        fontSize: 10.5,
         letterSpacing: "0.06em",
         color: "var(--il-text3)",
         paddingTop: 2,
@@ -537,7 +537,7 @@ function StatusChip({
       className="font-mono uppercase"
       title={pauseReason ?? undefined}
       style={{
-        fontSize: 9.5,
+        fontSize: 10.5,
         letterSpacing: "0.06em",
         padding: "1px 5px",
         borderRadius: 2,
@@ -642,7 +642,7 @@ function MotifToggle({ label, live, value, onChange }: MotifToggleProps) {
         <span
           className="font-mono uppercase"
           style={{
-            fontSize: 9.5,
+            fontSize: 10.5,
             letterSpacing: "0.04em",
             color: "var(--il-text3)",
             padding: "1px 4px",
@@ -683,7 +683,7 @@ function SettingRow({
         <div
           className="font-mono"
           style={{
-            fontSize: 10,
+            fontSize: 10.5,
             color: "var(--il-text4)",
             letterSpacing: "0.08em",
             marginBottom: 4,
@@ -788,7 +788,7 @@ function AccentHueControl({ hue }: { hue: number }) {
           style={{
             marginLeft: 4,
             padding: "4px 8px",
-            fontSize: 10,
+            fontSize: 10.5,
             letterSpacing: "0.06em",
             color: "var(--il-text2)",
             background: "transparent",

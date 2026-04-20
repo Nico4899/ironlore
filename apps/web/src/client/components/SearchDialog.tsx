@@ -334,7 +334,7 @@ export function SearchDialog() {
             <div
               className="px-5 pb-1 pt-3 font-mono uppercase"
               style={{
-                fontSize: 10,
+                fontSize: 10.5,
                 letterSpacing: "0.08em",
                 color: "var(--il-text3)",
               }}
@@ -370,7 +370,7 @@ export function SearchDialog() {
               <div
                 className="font-mono uppercase"
                 style={{
-                  fontSize: 10,
+                  fontSize: 10.5,
                   letterSpacing: "0.06em",
                   color: "var(--il-text3)",
                   marginBottom: 4,

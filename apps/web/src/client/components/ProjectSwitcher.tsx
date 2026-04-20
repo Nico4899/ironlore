@@ -179,7 +179,7 @@ export function ProjectSwitcher() {
           <span
             className="font-mono uppercase"
             style={{
-              fontSize: 10,
+              fontSize: 10.5,
               letterSpacing: "0.06em",
               color: "var(--il-text3)",
             }}
@@ -257,7 +257,7 @@ export function ProjectSwitcher() {
                   <span
                     className="font-mono uppercase"
                     style={{
-                      fontSize: 9.5,
+                      fontSize: 10.5,
                       letterSpacing: "0.06em",
                       color: "var(--il-blue)",
                     }}
@@ -275,7 +275,7 @@ export function ProjectSwitcher() {
           style={{
             borderTop: "1px solid var(--il-border-soft)",
             padding: "6px 14px",
-            fontSize: 10,
+            fontSize: 10.5,
             color: "var(--il-text3)",
             letterSpacing: "0.06em",
           }}

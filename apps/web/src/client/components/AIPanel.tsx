@@ -670,11 +670,11 @@ function CitationText({ text }: { text: string }) {
 function ContextChip({ ctx, onRemove }: ContextChipProps) {
   const icon =
     ctx.kind === "highlight" ? (
-      <Highlighter className="h-3 w-3 text-ironlore-blue" />
+      <Highlighter className="h-3.5 w-3.5 text-ironlore-blue" />
     ) : ctx.kind === "file" ? (
-      <Paperclip className="h-3 w-3 text-accent-violet" />
+      <Paperclip className="h-3.5 w-3.5 text-accent-violet" />
     ) : (
-      <Sparkles className="h-3 w-3 text-accent-violet" />
+      <Sparkles className="h-3.5 w-3.5 text-accent-violet" />
     );
 
   return (
@@ -687,7 +687,7 @@ function ContextChip({ ctx, onRemove }: ContextChipProps) {
         aria-label={`Remove context: ${ctx.label}`}
         className="flex h-4 w-4 items-center justify-center rounded-full text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
       >
-        <X className="h-3 w-3" />
+        <X className="h-3.5 w-3.5" />
       </button>
     </div>
   );

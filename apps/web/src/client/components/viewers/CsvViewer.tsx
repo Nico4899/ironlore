@@ -222,7 +222,7 @@ function SaveStatusPill({ status }: { status: "clean" | "dirty" | "syncing" | "c
   if (status === "syncing") {
     return (
       <span className={`${cls} text-secondary`} role="status" aria-live="polite">
-        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
         Saving…
       </span>
     );
@@ -237,7 +237,7 @@ function SaveStatusPill({ status }: { status: "clean" | "dirty" | "syncing" | "c
   // dirty
   return (
     <span className={`${cls} text-secondary`} role="status" aria-live="polite">
-      <Check className="h-3 w-3" aria-hidden="true" />
+      <Check className="h-3.5 w-3.5" aria-hidden="true" />
       Unsaved
     </span>
   );

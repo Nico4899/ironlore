@@ -74,6 +74,10 @@ export function StatusPip({
             letterSpacing: "0.04em",
             textTransform: "uppercase",
             color: "var(--il-text2)",
+            // Pip labels routinely contain counters (`step NN / MM`,
+            //  `finalized 2m ago`); tabular figures stop the numbers
+            //  from jiggling as they tick. Per spec §Typography.
+            fontVariantNumeric: "tabular-nums",
           }}
         >
           {label}

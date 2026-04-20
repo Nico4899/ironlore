@@ -305,7 +305,7 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           <div
             className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono uppercase"
             style={{
-              fontSize: 10,
+              fontSize: 10.5,
               letterSpacing: "0.04em",
               color: "var(--il-text3)",
             }}
@@ -456,7 +456,7 @@ function InboxEmptyState() {
       <div
         className="font-mono uppercase"
         style={{
-          fontSize: 10,
+          fontSize: 10.5,
           letterSpacing: "0.08em",
           color: "var(--il-text3)",
         }}
@@ -532,7 +532,7 @@ function InboxEntryFiles({
             className="grid items-center gap-1.5 py-0.5"
             style={{
               gridTemplateColumns: "12px minmax(0, 1fr) auto auto auto",
-              fontSize: 10,
+              fontSize: 10.5,
               background: isApproved
                 ? "color-mix(in oklch, var(--il-green) 10%, transparent)"
                 : isRejected
@@ -633,7 +633,7 @@ function FileDecisionButton({
         width: 16,
         height: 14,
         padding: 0,
-        fontSize: 9,
+        fontSize: 10.5,
         lineHeight: 1,
         background: active ? color : "transparent",
         color: active ? "var(--il-bg)" : color,

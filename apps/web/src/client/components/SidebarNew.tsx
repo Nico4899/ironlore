@@ -390,7 +390,7 @@ export function SidebarNew() {
           <span
             className="font-mono uppercase"
             style={{
-              fontSize: 10,
+              fontSize: 10.5,
               letterSpacing: "0.08em",
               color: "var(--il-text4)",
             }}
@@ -838,7 +838,7 @@ function ProjectTile({ collapsed }: { collapsed: boolean }) {
           <span
             className="font-mono"
             style={{
-              fontSize: 10,
+              fontSize: 10.5,
               color: "var(--il-text3)",
               letterSpacing: "0.04em",
             }}
@@ -884,7 +884,7 @@ function ActiveAgentsStrip({ collapsed }: { collapsed: boolean }) {
       <div
         className="mb-2 flex items-center gap-2 font-mono uppercase"
         style={{
-          fontSize: 10,
+          fontSize: 10.5,
           color: "var(--il-text3)",
           letterSpacing: "0.08em",
         }}
@@ -910,7 +910,7 @@ function ActiveAgentsStrip({ collapsed }: { collapsed: boolean }) {
               <span
                 className="font-mono"
                 style={{
-                  fontSize: 10,
+                  fontSize: 10.5,
                   color: "var(--il-text3)",
                   letterSpacing: "0.04em",
                 }}

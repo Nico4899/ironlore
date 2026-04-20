@@ -37,7 +37,11 @@ export function Meta({ k, v, color = "var(--il-text3)", className, style }: Meta
     >
       <span style={{ textTransform: "uppercase", color: "var(--il-text4)" }}>{k}</span>
       <span aria-hidden="true">·</span>
-      <span>{v}</span>
+      {/* Tabular figures on the value — Meta values are nearly always
+       *  counts (step NN) or positions (etag hash, NN / NN). Keeps
+       *  numbers column-locked across re-renders. Per
+       *  docs/09-ui-and-brand.md §Typography rule 2. */}
+      <span style={{ fontVariantNumeric: "tabular-nums" }}>{v}</span>
     </span>
   );
 }

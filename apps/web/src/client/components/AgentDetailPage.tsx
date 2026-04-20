@@ -271,7 +271,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
                 borderColor: "var(--il-amber)",
                 color: "var(--il-amber)",
                 background: "color-mix(in oklch, var(--il-amber) 10%, transparent)",
-                fontSize: 10,
+                fontSize: 10.5,
                 letterSpacing: "0.04em",
               }}
               title="persona.md was edited more recently than the rails state was refreshed"
@@ -302,7 +302,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
         className="flex items-center justify-end gap-2 px-10 py-2 font-mono uppercase"
         style={{
           borderBottom: "1px solid var(--il-border-soft)",
-          fontSize: 10,
+          fontSize: 10.5,
           letterSpacing: "0.04em",
           color: "var(--il-text3)",
         }}
@@ -421,7 +421,7 @@ function StatBlock({ label, value, unit, accent }: StatBlockProps) {
       <div
         className="font-mono uppercase"
         style={{
-          fontSize: 10,
+          fontSize: 10.5,
           letterSpacing: "0.08em",
           color: "var(--il-text3)",
           marginBottom: 4,
@@ -565,7 +565,7 @@ function ActivityHistogram({ histogram }: { histogram: AgentHistogramResponse | 
       <div
         className="mt-1.5 flex justify-between font-mono"
         style={{
-          fontSize: 9.5,
+          fontSize: 10.5,
           letterSpacing: "0.06em",
           color: "var(--il-text4)",
         }}
@@ -579,7 +579,7 @@ function ActivityHistogram({ histogram }: { histogram: AgentHistogramResponse | 
       <div
         className="mt-2 font-mono uppercase"
         style={{
-          fontSize: 10,
+          fontSize: 10.5,
           letterSpacing: "0.04em",
           color: "var(--il-amber)",
         }}
@@ -633,7 +633,7 @@ function ControlButton({ icon, label, hint, shortcut, disabled, onClick }: Contr
         <span
           className="truncate font-mono uppercase"
           style={{
-            fontSize: 9.5,
+            fontSize: 10.5,
             letterSpacing: "0.04em",
             color: "var(--il-text3)",
             maxWidth: 160,
