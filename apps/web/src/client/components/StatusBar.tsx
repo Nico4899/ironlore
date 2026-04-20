@@ -183,7 +183,7 @@ function ConnectionPill({
       role="status"
       aria-live="polite"
       aria-label={label}
-      className={`flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider ${color}`}
+      className={`flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider ${color}`}
     >
       <StatusPip state={state} size={9} aria-label={label} />
       {label}
