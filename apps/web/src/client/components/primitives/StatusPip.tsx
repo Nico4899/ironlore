@@ -63,6 +63,7 @@ export function StatusPip({
         color={color}
         spin={state === "running"}
         dim={state === "paused"}
+        pulse={state === "error"}
         aria-label={resolvedAriaLabel}
       />
       {label && (

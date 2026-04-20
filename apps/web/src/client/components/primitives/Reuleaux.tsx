@@ -22,6 +22,8 @@ export interface ReuleauxProps {
   spin?: boolean;
   /** Render at half opacity — paused state. */
   dim?: boolean;
+  /** Apply the 3s 2-step opacity pulse — error state. */
+  pulse?: boolean;
   /** Optional ARIA label. When omitted the pip is decorative. */
   "aria-label"?: string;
   className?: string;
@@ -33,6 +35,7 @@ export function Reuleaux({
   color = "currentColor",
   spin = false,
   dim = false,
+  pulse = false,
   className,
   style,
   ...rest
@@ -46,7 +49,9 @@ export function Reuleaux({
       role={hasLabel ? "img" : undefined}
       aria-hidden={hasLabel ? undefined : true}
       aria-label={rest["aria-label"]}
-      className={[spin ? "il-spin" : "", className].filter(Boolean).join(" ")}
+      className={[spin ? "il-spin" : "", pulse ? "il-error" : "", className]
+        .filter(Boolean)
+        .join(" ")}
       style={{
         display: "inline-block",
         verticalAlign: "middle",

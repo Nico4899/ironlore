@@ -2,6 +2,7 @@ import { messages } from "@ironlore/core";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, fetchFirstRunHint, login } from "../lib/api.js";
 import { useAuthStore } from "../stores/auth.js";
+import { Logo } from "./Logo.js";
 import { Reuleaux } from "./primitives/index.js";
 
 /** Auto-focus an input element via ref callback (a11y-safe, no autoFocus attr). */
@@ -59,12 +60,35 @@ export function LoginPage() {
   return (
     <div className="flex h-screen items-center justify-center bg-ironlore-slate">
       <form onSubmit={handleSubmit} className="flex w-full max-w-xs flex-col gap-6">
-        {/* Wordmark */}
-        <div className="flex flex-col items-center gap-2">
-          <span className="text-lg font-medium tracking-tight text-primary">
+        {/* Login-screen brand lockup — mark at 56 px stacked above the
+         *  wordmark at 44 px per docs/09-ui-and-brand.md §Wordmark.
+         *  `authLoginTitle` moves down to a mono under-rule so the
+         *  wordmark itself owns the strongest visual anchor. */}
+        <div className="flex flex-col items-center gap-3">
+          <Logo size={56} />
+          <span
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontWeight: 500,
+              fontSize: 44,
+              letterSpacing: "-0.02em",
+              lineHeight: 1,
+              color: "var(--il-text)",
+            }}
+          >
             {messages.appName}
           </span>
-          <span className="text-sm text-secondary">{messages.authLoginTitle}</span>
+          <span
+            className="font-mono uppercase"
+            style={{
+              fontSize: 10.5,
+              letterSpacing: "0.08em",
+              color: "var(--il-text3)",
+              marginTop: 2,
+            }}
+          >
+            {messages.authLoginTitle}
+          </span>
         </div>
 
         {/* First-run hint — rendered only while `install.json` is still
