@@ -235,6 +235,19 @@ html.light {
   to   { transform: rotate(360deg); }
 }
 
+/* Reuleaux error pulse — 2-frame opacity step at 3s per cycle so a
+ * failed run reads from the corner of the eye without yanking
+ * attention. Pairs with Signal-Red fill on the pip (StatusPip sets
+ * the color, `.il-error` drives the motion). Per
+ * docs/09-ui-and-brand.md §Reuleaux state table. */
+@keyframes ilError {
+  0%, 49%   { opacity: 1; }
+  50%, 100% { opacity: 0.55; }
+}
+.il-error {
+  animation: ilError 3s steps(2) infinite;
+}
+
 /* Provenance target flash — 1.5s Signal-Amber fade-out on the block
  * the user just navigated to via a citation click. */
 @keyframes ilFlash {
@@ -293,11 +306,13 @@ html[data-motion="reduced"] .il-pulse::before {
   animation: none;
   opacity: 0.3;
 }
-html[data-motion="reduced"] .il-spin {
+html[data-motion="reduced"] .il-spin,
+html[data-motion="reduced"] .il-error {
   animation: none;
 }
 html[data-motion="none"] .il-pulse::before,
-html[data-motion="none"] .il-spin {
+html[data-motion="none"] .il-spin,
+html[data-motion="none"] .il-error {
   animation: none;
 }
 html[data-motion="none"] .il-pulse::before {
@@ -490,7 +505,8 @@ html[data-type-display="serif"] .il-inbox-slug {
     animation: none;
     opacity: 0.3;
   }
-  .il-spin {
+  .il-spin,
+  .il-error {
     animation: none;
   }
 }
