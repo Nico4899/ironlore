@@ -434,7 +434,11 @@ html[data-motif-provenance="off"] .il-provenance-strip {
   gap: 6px;
   font-family: var(--font-mono);
   font-size: 10.5px;
-  letter-spacing: 0.06em;
+  /* Spec §Type → Metadata: +0.04em UPPER. Earlier iteration used
+   *  0.06em (overline tracking); tightened to the canonical metadata
+   *  value so inline metadata spacing is consistent across every
+   *  mono chip. */
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--il-text2);
   padding-bottom: 6px;

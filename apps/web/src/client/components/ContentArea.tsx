@@ -508,7 +508,8 @@ function MarkdownContent({
           style={{ width: 1, height: 14, background: "var(--il-border)", margin: "0 2px" }}
         />
         <span role="status" aria-live="polite">
-          <StatusPip state={pip.state} label={pip.label} size={8} />
+          {/* 7 px pip — spec §Reuleaux sizes: inline. */}
+          <StatusPip state={pip.state} label={pip.label} size={7} />
         </span>
       </div>
 
@@ -530,7 +531,7 @@ function MarkdownContent({
             color: "var(--il-text3)",
           }}
         >
-          <Reuleaux size={8} color="var(--il-blue)" aria-label="Page metadata" />
+          <Reuleaux size={7} color="var(--il-blue)" aria-label="Page metadata" />
           <span>page</span>
           <span style={{ color: "var(--il-text4)" }}>/</span>
           <span style={{ color: "var(--il-text2)" }}>

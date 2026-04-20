@@ -101,7 +101,7 @@ export function HomePanel() {
             marginBottom: 10,
           }}
         >
-          <Reuleaux size={8} color="var(--il-blue)" />
+          <Reuleaux size={7} color="var(--il-blue)" />
           <span>{today}</span>
           {hasActivity && (
             <>

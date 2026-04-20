@@ -185,7 +185,8 @@ function ConnectionPill({
       aria-label={label}
       className={`flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider ${color}`}
     >
-      <StatusPip state={state} size={9} aria-label={label} />
+      {/* 7 px pip — spec §Reuleaux sizes: inline (22 px status-bar footer). */}
+      <StatusPip state={state} size={7} aria-label={label} />
       {label}
     </span>
   );

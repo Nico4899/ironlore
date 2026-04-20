@@ -108,7 +108,7 @@ export function Header() {
           aria-label={`Agent inbox (${inboxCount} pending)`}
           title={`Agent inbox (${inboxCount} pending)`}
         >
-          <Reuleaux size={8} color="var(--il-amber)" />
+          <Reuleaux size={7} color="var(--il-amber)" />
           <span className="font-mono uppercase" style={{ fontSize: 10.5, letterSpacing: "0.04em" }}>
             inbox · {inboxCount}
           </span>

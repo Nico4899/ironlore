@@ -164,7 +164,8 @@ export function AIPanel() {
           className="flex items-center gap-2 border-b border-border"
           style={{ height: 36, padding: "0 14px" }}
         >
-          <StatusPip state={isStreaming ? "running" : "idle"} size={11} />
+          {/* 14 px pip — spec §Reuleaux sizes: headers / banners. */}
+          <StatusPip state={isStreaming ? "running" : "idle"} size={14} />
           <button
             type="button"
             onClick={() => useAppStore.getState().setActiveAgentSlug(activeAgent)}
@@ -521,7 +522,7 @@ function AssistantReply({ text }: { text: string }) {
   return (
     <div className="leading-relaxed text-primary" style={{ fontSize: 13, lineHeight: 1.55 }}>
       <div className="mb-1 flex items-center gap-1.5">
-        <Reuleaux size={8} color="var(--il-blue)" aria-label="Assistant" />
+        <Reuleaux size={7} color="var(--il-blue)" aria-label="Assistant" />
         <span
           className="font-mono uppercase"
           style={{

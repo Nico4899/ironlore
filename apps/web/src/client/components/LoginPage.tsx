@@ -107,7 +107,7 @@ export function LoginPage() {
             }}
           >
             <span className="pt-0.5">
-              <Reuleaux size={8} color="var(--il-blue)" />
+              <Reuleaux size={7} color="var(--il-blue)" />
             </span>
             <span>
               <span className="uppercase" style={{ color: "var(--il-blue)" }}>

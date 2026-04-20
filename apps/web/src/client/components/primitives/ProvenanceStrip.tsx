@@ -77,7 +77,7 @@ export function ProvenanceStrip({
         ...style,
       }}
     >
-      <Reuleaux size={8} color="var(--il-blue)" />
+      <Reuleaux size={7} color="var(--il-blue)" />
       <span style={{ color: "var(--il-text)" }}>{agent}</span>
       <span style={{ color: "var(--il-text4)" }}>/</span>
       <span>{timestamp}</span>

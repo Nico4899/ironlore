@@ -479,7 +479,8 @@ function RecentRunsTable({ runs }: { runs: AgentRunRecord[] | null }) {
           <span className="font-mono" style={{ fontSize: 11, color: "var(--il-text3)" }}>
             {formatClockTime(r.startedAt)}
           </span>
-          <StatusPip state={r.status} size={8} />
+          {/* 10 px pip — spec §Reuleaux sizes: cards / rows. */}
+          <StatusPip state={r.status} size={10} />
           <span
             className="font-mono"
             style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.04em" }}
