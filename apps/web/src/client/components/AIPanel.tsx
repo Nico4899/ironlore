@@ -1,8 +1,5 @@
 import {
   ArrowUp,
-  BookOpen,
-  ChevronDown,
-  ChevronRight,
   Highlighter,
   Lightbulb,
   Paperclip,
@@ -18,7 +15,15 @@ import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
-import { AgentPulse, Blockref, Key, Meta, ProvenanceStrip, StatusPip } from "./primitives/index.js";
+import {
+  AgentPulse,
+  Blockref,
+  Key,
+  Meta,
+  ProvenanceStrip,
+  Reuleaux,
+  StatusPip,
+} from "./primitives/index.js";
 
 /**
  * Storage key pattern for cost-estimate acknowledgement per agent slug.
@@ -211,14 +216,22 @@ export function AIPanel() {
        */}
       <AgentPulse active={isStreaming} className="border-t border-border p-3">
         <div className="relative flex items-end gap-2 rounded-lg border border-border bg-background px-2 py-1.5 focus-within:border-ironlore-blue">
+          {/* Paper-clip in a 20×20 slate-elevated chip per
+           *  docs/09-ui-and-brand.md §AI panel composer. */}
           <button
             type="button"
             onClick={openFilePicker}
             aria-label="Attach a local file"
             title="Attach a local file"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+            className="flex shrink-0 items-center justify-center rounded text-secondary hover:text-primary"
+            style={{
+              width: 20,
+              height: 20,
+              background: "var(--il-slate-elev)",
+              border: "1px solid var(--il-border-soft)",
+            }}
           >
-            <Paperclip className="h-4 w-4" />
+            <Paperclip style={{ width: 12, height: 12 }} />
           </button>
           <input
             ref={fileInputRef}
@@ -229,22 +242,26 @@ export function AIPanel() {
           />
           <textarea
             className="flex-1 resize-none bg-transparent py-1.5 text-sm text-primary placeholder:text-secondary focus:outline-none"
-            placeholder="Ask about your knowledge base…"
+            placeholder={`Ask ${activeAgent} to…`}
             value={inputDraft}
             rows={1}
             onChange={(e) => setInputDraft(e.target.value)}
             onKeyDown={onPromptKeyDown}
             style={{ minHeight: "28px", maxHeight: "160px" }}
           />
+          {/* Send pill — 20×20 blue rounded-full with an up-arrow
+           *  glyph. Replaces the prior 28×28 rounded-md shape so the
+           *  cluster reads as the JSX schematic. */}
           <button
             type="button"
             onClick={handleSend}
             disabled={!canSend}
             aria-label="Send message"
             title="Send (⌘↵)"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-ironlore-blue text-white shadow-sm transition-opacity hover:bg-ironlore-blue-strong disabled:cursor-not-allowed disabled:opacity-30"
+            className="flex shrink-0 items-center justify-center bg-ironlore-blue text-white shadow-sm transition-opacity hover:bg-ironlore-blue-strong disabled:cursor-not-allowed disabled:opacity-30"
+            style={{ width: 20, height: 20, borderRadius: 9999 }}
           >
-            <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+            <ArrowUp style={{ width: 12, height: 12 }} strokeWidth={2.5} />
           </button>
         </div>
       </AgentPulse>
@@ -400,23 +417,11 @@ function MessageList() {
       {messages.map((msg, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: messages are append-only, no stable ID yet
         <div key={i} className="mb-3 text-sm">
-          {msg.type === "user" && (
-            <div className="rounded-lg bg-ironlore-blue/15 px-3 py-2 text-primary">{msg.text}</div>
-          )}
-          {msg.type === "assistant" && (
-            <div className="px-1 leading-relaxed text-primary">
-              <CitationText text={msg.text} />
-            </div>
-          )}
+          {msg.type === "user" && <UserBubble text={msg.text} timestamp={msg.timestamp} />}
+          {msg.type === "assistant" && <AssistantReply text={msg.text} />}
           {msg.type === "tool_call" && <ToolCallCard msg={msg} />}
           {msg.type === "journal" && (
-            <div className="rounded-lg border border-ironlore-blue/30 bg-ironlore-blue/5 px-3 py-2">
-              <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-ironlore-blue">
-                <BookOpen className="h-3.5 w-3.5" />
-                Journal
-              </div>
-              <div className="text-xs leading-relaxed text-primary">{msg.text}</div>
-            </div>
+            <JournalCard text={msg.text} step={msg.step} totalSteps={msg.totalSteps} />
           )}
           {msg.type === "diff_preview" && (
             <DiffPreview
@@ -471,8 +476,183 @@ function MessageList() {
 }
 
 /**
- * Collapsible tool-call card. Shows tool name + collapsed args by
- * default; clicking expands to show the full args JSON + result.
+ * User bubble per docs/09-ui-and-brand.md §AI panel user bubble:
+ * right-aligned (max-width 85 %), 16 % blue tint, 28 % blue border,
+ * `3px 3px 0 3px` corner radii so the bottom-right corner forms a
+ * conversation-bubble tail. The mono timestamp under the bubble
+ * uses `Intl.DateTimeFormat` so we always show local-time HH:MM,
+ * rendered only when the message carries a `timestamp`.
+ */
+function UserBubble({ text, timestamp }: { text: string; timestamp?: number }) {
+  return (
+    <div className="flex flex-col items-end">
+      <div
+        style={{
+          maxWidth: "85%",
+          padding: "6px 10px",
+          background: "color-mix(in oklch, var(--il-blue) 16%, transparent)",
+          border: "1px solid color-mix(in oklch, var(--il-blue) 28%, transparent)",
+          borderRadius: "3px 3px 0 3px",
+          color: "var(--il-text)",
+          lineHeight: 1.5,
+        }}
+      >
+        {text}
+      </div>
+      {timestamp != null && (
+        <span
+          className="font-mono"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.04em",
+            color: "var(--il-text4)",
+            marginTop: 2,
+          }}
+        >
+          {formatClockShort(timestamp)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Assistant reply per docs/09-ui-and-brand.md §AI panel assistant
+ * reply: mono uppercase `ASSISTANT` overline with a static Reuleaux
+ * prefix, then Inter 13 / 1.55 body. No border, no background — the
+ * model's voice is the unmarked default. Citation parsing stays in
+ * `CitationText` so `[[Page#blk_…]]` still becomes a Blockref.
+ */
+function AssistantReply({ text }: { text: string }) {
+  return (
+    <div className="leading-relaxed text-primary" style={{ fontSize: 13, lineHeight: 1.55 }}>
+      <div className="mb-1 flex items-center gap-1.5">
+        <Reuleaux size={8} color="var(--il-blue)" aria-label="Assistant" />
+        <span
+          className="font-mono uppercase"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.08em",
+            color: "var(--il-text3)",
+          }}
+        >
+          assistant
+        </span>
+      </div>
+      <CitationText text={text} />
+    </div>
+  );
+}
+
+/**
+ * JournalCard per docs/09-ui-and-brand.md §AI panel journal: 7 %
+ * blue tint + 2 px blue left border + mono
+ * `→ journal · step NN / NN` overline + Inter 12.5 body that can
+ * carry italic emphasis for quoted source names. Step + total are
+ * optional — when the executor omits them the overline degrades to
+ * `→ journal` alone.
+ */
+function JournalCard({
+  text,
+  step,
+  totalSteps,
+}: {
+  text: string;
+  step?: number;
+  totalSteps?: number;
+}) {
+  const stepPart =
+    step != null && totalSteps != null
+      ? ` · step ${String(step).padStart(2, "0")} / ${String(totalSteps).padStart(2, "0")}`
+      : step != null
+        ? ` · step ${String(step).padStart(2, "0")}`
+        : "";
+  return (
+    <div
+      style={{
+        padding: "8px 10px",
+        borderLeft: "2px solid var(--il-blue)",
+        background: "color-mix(in oklch, var(--il-blue) 7%, transparent)",
+        borderRadius: "0 3px 3px 0",
+      }}
+    >
+      <div
+        className="font-mono uppercase"
+        style={{
+          fontSize: 10.5,
+          letterSpacing: "0.06em",
+          color: "var(--il-text3)",
+          marginBottom: 4,
+        }}
+      >
+        → journal{stepPart}
+      </div>
+      <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--il-text)" }}>{text}</div>
+    </div>
+  );
+}
+
+/**
+ * Compact HH:MM clock — the only timestamp shape user bubbles carry
+ * (day rollovers are implicit because the full log resets per run).
+ */
+function formatClockShort(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Derive the `(page · #block)` target-label for a tool-call header
+ * from its `args` payload. `kb.replace_block` / `kb.insert_after` /
+ * `kb.delete_block` all carry `{ page / pageId, blockId }`; other
+ * tools (kb.search etc.) get a null target and the header degrades
+ * to the bare tool name.
+ */
+function deriveToolTarget(args: unknown): string | null {
+  if (!args || typeof args !== "object") return null;
+  const bag = args as Record<string, unknown>;
+  const page =
+    typeof bag.page === "string"
+      ? bag.page
+      : typeof bag.pageId === "string"
+        ? bag.pageId
+        : typeof bag.path === "string"
+          ? bag.path
+          : null;
+  const block = typeof bag.blockId === "string" ? bag.blockId : null;
+  if (page && block) return `${truncate(page, 22)} · #${block}`;
+  if (page) return truncate(page, 28);
+  if (block) return `#${block}`;
+  return null;
+}
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? `…${s.slice(-(max - 1))}` : s;
+}
+
+/**
+ * Heuristic for the error state of a tool-call result. Executor
+ * payloads aren't a typed union, so we check a few conventional
+ * shapes: `{ error: … }`, `{ ok: false }`, or the string prefix
+ * `Error:`. Everything else counts as healthy success.
+ */
+function isErrorResult(result: unknown): boolean {
+  if (result == null) return false;
+  if (typeof result === "string") return result.startsWith("Error:") || result.startsWith("error:");
+  if (typeof result === "object") {
+    const bag = result as Record<string, unknown>;
+    if ("error" in bag && bag.error) return true;
+    if ("ok" in bag && bag.ok === false) return true;
+  }
+  return false;
+}
+
+/**
+ * Collapsible tool-call card per docs/09-ui-and-brand.md §AI panel
+ * tool-call: mono `kb.replace_block (page · #block)` header + a
+ * `StatusPip` reading `running` / `healthy` / `error` + the caret
+ * glyph. Args + result remain in the expandable drawer so power
+ * users can still inspect the raw payload.
  */
 function ToolCallCard({
   msg,
@@ -481,22 +661,45 @@ function ToolCallCard({
 }) {
   const [expanded, setExpanded] = useState(!msg.collapsed);
   const hasResult = msg.result !== undefined;
+  const target = deriveToolTarget(msg.args);
+  const headerLabel = target ? `${msg.tool} (${target})` : msg.tool;
+  const pipState: "running" | "healthy" | "error" = !hasResult
+    ? "running"
+    : isErrorResult(msg.result)
+      ? "error"
+      : "healthy";
 
   return (
-    <div className="rounded-lg border border-border bg-ironlore-slate-hover/50 text-xs">
+    <div
+      style={{
+        borderRadius: 4,
+        border: "1px solid var(--il-border-soft)",
+        background: "var(--il-slate-elev)",
+        fontSize: 12,
+      }}
+    >
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left"
       >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-secondary" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-secondary" />
-        )}
+        <span
+          aria-hidden="true"
+          className="font-mono shrink-0"
+          style={{ color: "var(--il-text4)", width: 10 }}
+        >
+          {expanded ? "▾" : "▸"}
+        </span>
         <Wrench className="h-3.5 w-3.5 shrink-0 text-accent-violet" />
-        <span className="font-semibold text-primary">{msg.tool}</span>
-        {hasResult && <span className="ml-auto text-[10px] text-signal-green">done</span>}
+        <span
+          className="font-mono truncate"
+          style={{ fontSize: 11.5, letterSpacing: "0.01em", color: "var(--il-text)" }}
+        >
+          {headerLabel}
+        </span>
+        <span className="ml-auto">
+          <StatusPip state={pipState} size={7} />
+        </span>
       </button>
       {expanded && (
         <div className="border-t border-border px-3 py-2">

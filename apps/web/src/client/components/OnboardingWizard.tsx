@@ -1,6 +1,8 @@
 import { Sparkles } from "lucide-react";
 import { useCallback, useState } from "react";
-import { Key, Reuleaux, Venn } from "./primitives/index.js";
+import { useAppStore } from "../stores/app.js";
+import { Logo } from "./Logo.js";
+import { Key, Venn } from "./primitives/index.js";
 
 /**
  * Onboarding wizard — 5 questions → keyword-matched team suggestion
@@ -76,6 +78,11 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
     painPoints: "",
     channels: "",
   });
+  // Mirror the display-type preference so the left-panel copy +
+  //  question title can swap into Instrument Serif under the
+  //  display variant per docs/09-ui-and-brand.md §Onboarding wizard.
+  const typeDisplay = useAppStore((s) => s.typeDisplay);
+  const serif = typeDisplay === "serif";
 
   const current = QUESTIONS[step];
   const isLast = step === QUESTIONS.length - 1;
@@ -112,7 +119,7 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
         className="flex h-11 items-center gap-2 px-5"
         style={{ borderBottom: "1px solid var(--il-border-soft)" }}
       >
-        <Reuleaux size={10} color="var(--il-blue)" aria-label="Ironlore" />
+        <Logo size={20} />
         <span
           style={{
             fontFamily: "var(--font-sans)",
@@ -170,27 +177,50 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
             >
               the ironlore model
             </div>
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontWeight: 500,
-                fontSize: 17,
-                letterSpacing: "-0.015em",
-                lineHeight: 1.4,
-                color: "var(--il-text)",
-                margin: 0,
-              }}
-            >
-              Human intent, agent capability, and shared memory overlap at the center — your
-              workspace.
-            </p>
+            {serif ? (
+              // Display variant — Instrument Serif 30 / 400 with the
+              //  middle clause in italic on --il-text2, matching
+              //  §Onboarding wizard left-panel copy.
+              <p
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontWeight: 400,
+                  fontSize: 30,
+                  letterSpacing: "-0.01em",
+                  lineHeight: 1.25,
+                  color: "var(--il-text)",
+                  margin: 0,
+                }}
+              >
+                Three rings, one center.{" "}
+                <span style={{ fontStyle: "italic", color: "var(--il-text2)" }}>
+                  Human intent, agent capability, and shared memory
+                </span>{" "}
+                overlap here.
+              </p>
+            ) : (
+              <p
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  fontWeight: 500,
+                  fontSize: 17,
+                  letterSpacing: "-0.015em",
+                  lineHeight: 1.4,
+                  color: "var(--il-text)",
+                  margin: 0,
+                }}
+              >
+                Human intent, agent capability, and shared memory overlap at the center — your
+                workspace.
+              </p>
+            )}
           </div>
         </aside>
 
         {/* Right panel — wizard step */}
         <section
           className="flex flex-col justify-center px-10 py-12 md:px-14"
-          style={{ maxWidth: 640 }}
+          style={{ maxWidth: 560 }}
         >
           {/* Progress — 5 thin segments, filled up to current step */}
           <div className="mb-7 flex gap-1.5" aria-hidden="true">
@@ -223,10 +253,14 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
           <label
             htmlFor={`wizard-${current.key}`}
             style={{
-              fontFamily: "var(--font-sans)",
-              fontWeight: 600,
-              fontSize: 26,
-              letterSpacing: "-0.025em",
+              // Display variant lifts the question into Instrument
+              //  Serif 38 / 400 per §Onboarding wizard. Safe variant
+              //  keeps Inter 600 / 26.
+              fontFamily: serif ? "var(--font-display)" : "var(--font-sans)",
+              fontWeight: serif ? 400 : 600,
+              fontStyle: serif ? "italic" : "normal",
+              fontSize: serif ? 38 : 26,
+              letterSpacing: serif ? "-0.015em" : "-0.025em",
               lineHeight: 1.15,
               color: "var(--il-text)",
               margin: "0 0 18px",
@@ -317,10 +351,14 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
 
             <span className="flex-1" />
 
+            {/* Skip hint per docs/09-ui-and-brand.md §Onboarding wizard:
+             *  mono `↻ skip · all defaults`. The `↻` glyph replaces the
+             *  earlier Reuleaux pip — Reuleaux is reserved for state
+             *  (§Signature motifs), not decoration. */}
             <button
               type="button"
               onClick={onSkip}
-              className="inline-flex items-center gap-2 bg-transparent font-mono uppercase outline-none"
+              className="inline-flex items-center gap-1.5 bg-transparent font-mono uppercase outline-none"
               style={{
                 fontSize: 10.5,
                 letterSpacing: "0.06em",
@@ -330,7 +368,7 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
                 cursor: "pointer",
               }}
             >
-              <Reuleaux size={7} color="var(--il-text3)" />
+              <span aria-hidden="true">↻</span>
               skip · all defaults
             </button>
           </div>

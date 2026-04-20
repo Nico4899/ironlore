@@ -1,4 +1,4 @@
-import { Check, X } from "lucide-react";
+import { Meta } from "./primitives/index.js";
 
 interface DiffPreviewProps {
   pageId: string;
@@ -6,67 +6,190 @@ interface DiffPreviewProps {
   approved: boolean | null;
   onApprove: () => void;
   onReject: () => void;
+  /** Optional block id so the header can render `page · #block`. */
+  blockId?: string;
 }
 
 /**
- * Inline diff preview card for destructive agent edits.
+ * Inline diff preview card per docs/09-ui-and-brand.md §AI panel
+ * DiffCard: mono `diff preview` + `page · #block` overline + a
+ * right-aligned `Meta k="Δ" v="+N −N"` chip. Hunk rows are 14 %
+ * red- or green-tinted with a matching 2 px left bar. Footer
+ * buttons are **Approve** (blue + `--il-blue-glow`) and **Reject**
+ * (transparent with `--il-border` stroke) — the same hierarchy the
+ * Agent Inbox uses, so the user learns it once.
  *
  * When dry-run mode is on (default for the Editor agent), the tool
  * dispatcher emits a `diff_preview` event instead of executing the
  * mutation. The AI panel renders this card so the user can approve
  * or reject before the edit lands.
  *
- * See docs/04-ai-and-agents.md §Dry-run diff preview and
- * docs/09-ui-and-brand.md §useAIPanelStore.ConversationMessage.
+ * See docs/04-ai-and-agents.md §Dry-run diff preview.
  */
-export function DiffPreview({ pageId, diff, approved, onApprove, onReject }: DiffPreviewProps) {
+export function DiffPreview({
+  pageId,
+  blockId,
+  diff,
+  approved,
+  onApprove,
+  onReject,
+}: DiffPreviewProps) {
   const lines = diff.split("\n");
+  const { added, removed } = countHunkLines(lines);
+  const target = blockId ? `${pageId} · #${blockId}` : pageId;
 
   return (
-    <div className="rounded-lg border border-border bg-ironlore-slate text-xs">
-      <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-        <span className="font-medium text-primary">
-          {approved === true ? "✓ Approved" : approved === false ? "✗ Rejected" : "Review edit"}
+    <div
+      style={{
+        borderRadius: 4,
+        border: "1px solid var(--il-border-soft)",
+        background: "var(--il-slate)",
+        fontSize: 12,
+      }}
+    >
+      {/* Mono `diff preview` overline + page · #block + right-aligned Δ. */}
+      <div
+        className="flex items-center gap-2"
+        style={{
+          padding: "6px 10px",
+          borderBottom: "1px solid var(--il-border-soft)",
+        }}
+      >
+        <span
+          className="font-mono uppercase"
+          style={{ fontSize: 10.5, letterSpacing: "0.06em", color: "var(--il-text3)" }}
+        >
+          diff preview
         </span>
-        <code className="font-mono text-[10px] text-secondary">{pageId}</code>
+        <span aria-hidden="true" style={{ color: "var(--il-text4)" }}>
+          ·
+        </span>
+        <code
+          className="font-mono truncate"
+          style={{ fontSize: 10.5, color: "var(--il-text2)" }}
+          title={target}
+        >
+          {target}
+        </code>
+        <span className="flex-1" />
+        <Meta k="Δ" v={`+${added} −${removed}`} />
       </div>
 
-      <pre className="max-h-48 overflow-auto px-3 py-2 font-mono text-[11px] leading-relaxed">
+      {/* Hunks — one row per line, 14 % tint + 2 px left bar on
+       *  add/remove. No horizontal scroll; overflow wraps so full
+       *  hunks stay visible inside the 380 px panel. */}
+      <div style={{ maxHeight: 208, overflowY: "auto", padding: "6px 0" }}>
         {lines.map((line, i) => {
-          let cls = "text-secondary";
-          if (line.startsWith("+") && !line.startsWith("+++")) cls = "text-signal-green";
-          else if (line.startsWith("-") && !line.startsWith("---")) cls = "text-signal-red";
-          else if (line.startsWith("@@")) cls = "text-ironlore-blue";
-
+          const isAdd = line.startsWith("+") && !line.startsWith("+++");
+          const isDel = line.startsWith("-") && !line.startsWith("---");
+          const isHunk = line.startsWith("@@");
+          let bg: string | undefined;
+          let rail: string | undefined;
+          let color: string = "var(--il-text2)";
+          if (isAdd) {
+            bg = "color-mix(in oklch, var(--il-green) 14%, transparent)";
+            rail = "var(--il-green)";
+            color = "var(--il-text)";
+          } else if (isDel) {
+            bg = "color-mix(in oklch, var(--il-red) 14%, transparent)";
+            rail = "var(--il-red)";
+            color = "var(--il-text)";
+          } else if (isHunk) {
+            color = "var(--il-blue)";
+          }
           return (
-            // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are static
-            <div key={`${i}:${line.slice(0, 20)}`} className={cls}>
+            <div
+              // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are positional
+              key={`${i}:${line.slice(0, 20)}`}
+              className="font-mono"
+              style={{
+                fontSize: 11.5,
+                lineHeight: 1.55,
+                padding: "0 10px",
+                background: bg,
+                borderLeft: rail ? `2px solid ${rail}` : "2px solid transparent",
+                color,
+                whiteSpace: "pre-wrap",
+              }}
+            >
               {line}
             </div>
           );
         })}
-      </pre>
+      </div>
 
       {approved === null && (
-        <div className="flex gap-2 border-t border-border px-3 py-2">
-          <button
-            type="button"
-            onClick={onApprove}
-            className="flex items-center gap-1 rounded bg-signal-green/20 px-2 py-1 font-medium text-signal-green hover:bg-signal-green/30"
-          >
-            <Check className="h-3.5 w-3.5" />
-            Apply
-          </button>
+        <div
+          className="flex items-center gap-2"
+          style={{
+            padding: "6px 10px",
+            borderTop: "1px solid var(--il-border-soft)",
+          }}
+        >
           <button
             type="button"
             onClick={onReject}
-            className="flex items-center gap-1 rounded bg-signal-red/20 px-2 py-1 font-medium text-signal-red hover:bg-signal-red/30"
+            style={{
+              padding: "4px 10px",
+              fontSize: 11.5,
+              fontWeight: 500,
+              background: "transparent",
+              color: "var(--il-text2)",
+              border: "1px solid var(--il-border)",
+              borderRadius: 3,
+              cursor: "pointer",
+            }}
           >
-            <X className="h-3.5 w-3.5" />
-            Skip
+            Reject
           </button>
+          <button
+            type="button"
+            onClick={onApprove}
+            style={{
+              padding: "4px 10px",
+              fontSize: 11.5,
+              fontWeight: 500,
+              background: "var(--il-blue)",
+              color: "var(--il-bg)",
+              border: "none",
+              borderRadius: 3,
+              cursor: "pointer",
+              boxShadow: "0 0 10px var(--il-blue-glow)",
+            }}
+          >
+            Approve
+          </button>
+        </div>
+      )}
+
+      {approved !== null && (
+        <div
+          className="font-mono uppercase"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.06em",
+            padding: "6px 10px",
+            borderTop: "1px solid var(--il-border-soft)",
+            color: approved ? "var(--il-green)" : "var(--il-red)",
+          }}
+        >
+          {approved ? "approved" : "rejected"}
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * Count `+` and `-` diff lines (skipping the `+++` / `---` file
+ * headers) so the header chip can show `Δ +N −N`.
+ */
+function countHunkLines(lines: string[]): { added: number; removed: number } {
+  let added = 0;
+  let removed = 0;
+  for (const line of lines) {
+    if (line.startsWith("+") && !line.startsWith("+++")) added++;
+    else if (line.startsWith("-") && !line.startsWith("---")) removed++;
+  }
+  return { added, removed };
 }

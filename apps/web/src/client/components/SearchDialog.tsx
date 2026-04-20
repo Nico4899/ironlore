@@ -250,7 +250,7 @@ export function SearchDialog() {
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[12vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[15vh]"
       onClick={handleOverlayClick}
       onKeyDown={handleKeyDown}
       role="dialog"
@@ -259,8 +259,16 @@ export function SearchDialog() {
     >
       <div
         ref={dialogRef}
-        className="surface-glass flex w-full max-w-2xl flex-col overflow-hidden rounded-md shadow-2xl"
-        style={{ background: "var(--il-slate)", border: "1px solid var(--il-border)" }}
+        className="surface-glass flex w-full flex-col overflow-hidden rounded-md shadow-2xl"
+        style={{
+          background: "var(--il-slate)",
+          border: "1px solid var(--il-border)",
+          // Spec §Search (⌘K): fixed 640 px wide. Tailwind max-w-2xl
+          //  is 672 — 32 px over spec. Inline style pins the exact
+          //  value and leaves the responsive shrink-below-640 path
+          //  via `w-full`.
+          maxWidth: 640,
+        }}
       >
         {/* Input row */}
         <div

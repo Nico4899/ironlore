@@ -1,10 +1,24 @@
 import { create } from "zustand";
 
+/**
+ * Every message carries an optional millisecond `timestamp` so the
+ * conversation log can surface a mono time tag beneath the bubble
+ * (per docs/09-ui-and-brand.md §AI panel user bubble). The field is
+ * stamped at `addMessage` time — it's client-wall-clock, not a
+ * server field, which keeps the receive path unchanged.
+ */
 export type ConversationMessage =
-  | { type: "user"; text: string; attachments: string[] }
-  | { type: "assistant"; text: string }
-  | { type: "tool_call"; tool: string; args: unknown; result?: unknown; collapsed: boolean }
-  | { type: "journal"; text: string }
+  | { type: "user"; text: string; attachments: string[]; timestamp?: number }
+  | { type: "assistant"; text: string; timestamp?: number }
+  | {
+      type: "tool_call";
+      tool: string;
+      args: unknown;
+      result?: unknown;
+      collapsed: boolean;
+      timestamp?: number;
+    }
+  | { type: "journal"; text: string; step?: number; totalSteps?: number; timestamp?: number }
   | {
       type: "diff_preview";
       /** The tool-call ID the dispatcher is waiting on. */
@@ -14,6 +28,7 @@ export type ConversationMessage =
       pageId: string;
       diff: string;
       approved: boolean | null;
+      timestamp?: number;
     }
   | {
       type: "run_finalized";
@@ -23,8 +38,9 @@ export type ConversationMessage =
       commitShaEnd: string;
       filesChanged: string[];
       revertedAt: number | null;
+      timestamp?: number;
     }
-  | { type: "error"; text: string }
+  | { type: "error"; text: string; timestamp?: number }
   | { type: "resume_divider" };
 
 /**
@@ -74,7 +90,19 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
   contexts: [],
 
   setJobId: (jobId) => set({ jobId }),
-  addMessage: (message) => set((s) => ({ messages: [...s.messages, message] })),
+  // Stamp every inbound message with the current wall clock unless
+  //  the caller already provided one. The AI panel's `mono` timestamp
+  //  row under each user bubble reads this field; missing fields are
+  //  tolerated so older stream events don't crash the log.
+  addMessage: (message) =>
+    set((s) => ({
+      messages: [
+        ...s.messages,
+        message.type === "resume_divider" || (message as { timestamp?: number }).timestamp != null
+          ? message
+          : { ...(message as object), timestamp: Date.now() } as ConversationMessage,
+      ],
+    })),
   setInputDraft: (draft) => set({ inputDraft: draft }),
   setIsStreaming: (streaming) => set({ isStreaming: streaming }),
   setActiveAgent: (agent) => set({ activeAgent: agent }),
