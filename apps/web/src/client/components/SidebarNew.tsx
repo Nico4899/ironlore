@@ -1,12 +1,10 @@
 import type { PageType } from "@ironlore/core";
 import {
   BookOpen,
-  Boxes,
   Captions,
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
-  Compass,
   FileCode,
   FileSpreadsheet,
   FileText,
@@ -15,10 +13,9 @@ import {
   FolderPlus,
   Home,
   Image,
-  Inbox,
+  Inbox as InboxIcon,
   LogOut,
   Mail,
-  MessageSquare,
   Moon,
   Music,
   PanelLeftClose,
@@ -26,7 +23,6 @@ import {
   Search,
   Settings as SettingsIcon,
   Sun,
-  TerminalSquare,
   Video,
   Workflow,
 } from "lucide-react";
@@ -44,6 +40,8 @@ import {
 import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
+import { MOTION } from "../styles/motion.js";
+import { InboxPanel } from "./InboxPanel.js";
 import { Logo } from "./Logo.js";
 import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 
@@ -114,6 +112,9 @@ export function SidebarNew() {
   const theme = useAppStore((s) => s.theme);
   const activePath = useAppStore((s) => s.activePath);
   const nodes = useTreeStore((s) => s.nodes);
+  // Shared activity source — powers the INBOX tab badge + the
+  //  active-agents strip. Polls on a 10 s tick.
+  const workspaceActivity = useWorkspaceActivity();
 
   /**
    * Drag state for the right-edge resize handle. Pointer-capture on
@@ -180,7 +181,6 @@ export function SidebarNew() {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const collapsed = !sidebarOpen;
-  const inboxCount = 2; // placeholder
 
   // Load tree on mount
   useEffect(() => {
@@ -211,14 +211,21 @@ export function SidebarNew() {
   }, [nodes, sidebarFolder]);
 
   // Navigation
+  /**
+   * Drill into a folder — the current list slides LEFT off-screen
+   * (ease-in-out, `--motion-transit`); when the timer matches the
+   * transition we swap the folder and slide the new list in from
+   * the right. Semantically a stack push.
+   */
   const drillInto = useCallback((folderPath: string) => {
     setSlideDir("left");
     setTimeout(() => {
       useAppStore.getState().setSidebarFolder(folderPath);
       setSlideDir(null);
-    }, 150);
+    }, MOTION.transit);
   }, []);
 
+  /** Drill up — mirror of `drillInto`; stack pop. */
   const drillUp = useCallback(() => {
     setSlideDir("right");
     setTimeout(() => {
@@ -226,7 +233,7 @@ export function SidebarNew() {
       parts.pop();
       useAppStore.getState().setSidebarFolder(parts.join("/"));
       setSlideDir(null);
-    }, 150);
+    }, MOTION.transit);
   }, [sidebarFolder]);
 
   const drillToRoot = useCallback(() => {
@@ -234,7 +241,7 @@ export function SidebarNew() {
     setTimeout(() => {
       useAppStore.getState().setSidebarFolder("");
       setSlideDir(null);
-    }, 150);
+    }, MOTION.transit);
   }, []);
 
   /**
@@ -503,35 +510,25 @@ export function SidebarNew() {
        *  a compact square with just the gradient mark + pulse. */}
       <ProjectTile collapsed={collapsed} />
 
-      {/* ─── Vertical tabs: Home / Search / Explore ─── */}
-      <div
-        className={`flex flex-col gap-0.5 border-b border-border px-1 py-1.5 ${collapsed ? "items-center" : ""}`}
-      >
-        <SidebarNavTab
-          icon={Home}
-          label="Home"
-          collapsed={collapsed}
-          active={sidebarTab === "home"}
-          onClick={() => useAppStore.getState().setSidebarTab("home")}
-        />
-        <SidebarNavTab
-          icon={Search}
-          label="Search"
-          collapsed={collapsed}
-          active={false}
-          onClick={() => useAppStore.getState().toggleSearchDialog()}
-        />
-        <SidebarNavTab
-          icon={Compass}
-          label="Explore"
-          collapsed={collapsed}
-          active={sidebarTab === "explore"}
-          onClick={() => useAppStore.getState().setSidebarTab("explore")}
-        />
-      </div>
+      {/*
+       * Primary tabs — `FILES` and `INBOX` per docs/09-ui-and-brand.md
+       * §Sidebar. Mono uppercase 10.5/0.06em with a 1.5 px blue
+       * underline on the active tab; the underline's `margin-bottom:
+       * -1px` tucks it under the parent border so the rule reads as
+       * continuous. INBOX carries an amber counter badge from
+       * `useWorkspaceActivity` — the whole tab row suppresses the
+       * badge at zero rather than rendering a hollow chip. Collapsed
+       * sidebar shows the two tabs as small icon buttons stacked.
+       */}
+      <SidebarTabs
+        collapsed={collapsed}
+        active={sidebarTab}
+        inboxCount={workspaceActivity.inboxCount}
+        onSelect={(tab) => useAppStore.getState().setSidebarTab(tab)}
+      />
 
       {/* ─── Folder breadcrumb (when drilled in) ─── */}
-      {!collapsed && sidebarFolder && sidebarTab === "home" && (
+      {!collapsed && sidebarFolder && sidebarTab === "files" && (
         <div className="flex items-center gap-1 border-b border-border px-2 py-1.5 text-xs text-secondary">
           <button
             type="button"
@@ -573,11 +570,18 @@ export function SidebarNew() {
         </div>
       )}
 
-      {/* ─── File/folder list (scrollable, home tab only, expanded only) ─── */}
-      {!collapsed && sidebarTab === "home" && (
+      {/*
+       * File/folder list — the FILES tab body. Slide animation is
+       * directionally meaningful: drilling INTO a folder sends the
+       * current list left (new content enters from the right); going
+       * back up reverses it. `ease-in-out` pairs with
+       * `--motion-transit` (180 ms) so the direction reads before the
+       * motion settles.
+       */}
+      {!collapsed && sidebarTab === "files" && (
         // biome-ignore lint/a11y/noStaticElementInteractions: context menu on container
         <div
-          className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ${
+          className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ease-in-out ${
             slideDir === "left"
               ? "-translate-x-full opacity-0"
               : slideDir === "right"
@@ -658,11 +662,21 @@ export function SidebarNew() {
         </div>
       )}
 
-      {/* Collapsed: no file list shown */}
+      {/* Collapsed: no list shown — the ActiveAgentsStrip + bottom
+       *  rail still render below. */}
       {collapsed && <div className="flex-1" />}
 
-      {/* Explore/Search placeholders only visible in expanded non-home tabs */}
-      {!collapsed && sidebarTab !== "home" && <div className="flex-1" />}
+      {/*
+       * INBOX tab body. Renders the existing `InboxPanel` in embedded
+       * mode: no outer aside + no close X (the sidebar tab bar is the
+       * "close" affordance). The panel's internal width adapts to
+       * `sidebarWidth` via flex.
+       */}
+      {!collapsed && sidebarTab === "inbox" && (
+        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+          <InboxPanel embedded />
+        </div>
+      )}
 
       {/* ─── Active-agents strip (only renders when agents are running) ─── */}
       <ActiveAgentsStrip collapsed={collapsed} />
@@ -670,26 +684,24 @@ export function SidebarNew() {
       {/* ─── Divider ─── */}
       <div className="border-t border-border" />
 
-      {/* ─── Fixed bottom section ─── */}
+      {/*
+       * Bottom rail — tighter than before. Per docs/09-ui-and-brand.md
+       * §Sidebar revision (post-Header retirement) the four items are:
+       *   · Search chip (⌘K affordance — opens the command palette)
+       *   · Settings (⚙)
+       *   · Theme toggle (Sun/Moon)
+       *   · Profile avatar (opens account menu; holds Log out)
+       * Feedback, Switch-project, Terminal, and Inbox buttons are
+       * dropped — Switch-project has the ProjectTile at the top,
+       * Inbox is a tab, Terminal is dev-mode gated, Feedback had no
+       * wiring.
+       */}
       <div className={`flex flex-col gap-0.5 px-1 py-1.5 ${collapsed ? "items-center" : ""}`}>
         <SidebarBottomTab
-          icon={Inbox}
-          label="Inbox"
+          icon={Search}
+          label="Search (⌘K)"
           collapsed={collapsed}
-          badge={inboxCount}
-          onClick={() => useAppStore.getState().toggleInbox()}
-        />
-        <SidebarBottomTab
-          icon={TerminalSquare}
-          label="Terminal"
-          collapsed={collapsed}
-          onClick={() => useAppStore.getState().toggleTerminal()}
-        />
-        <SidebarBottomTab
-          icon={Boxes}
-          label="Switch project (⌘P)"
-          collapsed={collapsed}
-          onClick={() => useAppStore.getState().toggleProjectSwitcher()}
+          onClick={() => useAppStore.getState().toggleSearchDialog()}
         />
         <SidebarBottomTab
           icon={SettingsIcon}
@@ -698,23 +710,12 @@ export function SidebarNew() {
           onClick={() => useAppStore.getState().toggleSettings()}
         />
         <SidebarBottomTab
-          icon={MessageSquare}
-          label="Feedback"
-          collapsed={collapsed}
-          onClick={() => {}}
-        />
-        <SidebarBottomTab
           icon={theme === "dark" ? Sun : Moon}
           label={theme === "dark" ? "Light mode" : "Dark mode"}
           collapsed={collapsed}
           onClick={() => useAppStore.getState().toggleTheme()}
         />
-        <SidebarBottomTab
-          icon={LogOut}
-          label="Log out"
-          collapsed={collapsed}
-          onClick={handleLogout}
-        />
+        <ProfileTile collapsed={collapsed} onLogout={handleLogout} />
       </div>
 
       {/* ─── New folder button (expanded only) ─── */}
@@ -794,36 +795,196 @@ export function SidebarNew() {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function SidebarNavTab({
-  icon: Icon,
-  label,
+/**
+ * Two-tab bar — `FILES` and `INBOX`. Expanded: mono uppercase
+ * labels with a 1.5 px blue underline on the active tab (margin
+ * −1 px so the underline replaces the parent's border). Collapsed:
+ * stacked icon buttons (Home for files, Inbox for inbox) with the
+ * same blue-tint active state. INBOX badge is an amber counter
+ * derived from `useWorkspaceActivity`; suppressed at zero.
+ */
+function SidebarTabs({
   collapsed,
   active,
+  inboxCount,
+  onSelect,
+}: {
+  collapsed: boolean;
+  active: "files" | "inbox";
+  inboxCount: number;
+  onSelect: (tab: "files" | "inbox") => void;
+}) {
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-0.5 border-b border-border px-1 py-1.5">
+        <SidebarBottomTab icon={Home} label="Files" collapsed onClick={() => onSelect("files")} />
+        <SidebarBottomTab
+          icon={InboxIcon}
+          label="Inbox"
+          collapsed
+          badge={inboxCount > 0 ? inboxCount : undefined}
+          onClick={() => onSelect("inbox")}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-end gap-2 border-b border-border px-3" style={{ height: 30 }}>
+      <SidebarTabPill label="files" active={active === "files"} onClick={() => onSelect("files")} />
+      <SidebarTabPill
+        label="inbox"
+        active={active === "inbox"}
+        badge={inboxCount > 0 ? inboxCount : undefined}
+        onClick={() => onSelect("inbox")}
+      />
+    </div>
+  );
+}
+
+function SidebarTabPill({
+  label,
+  active,
+  badge,
   onClick,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
   label: string;
-  collapsed: boolean;
   active: boolean;
+  badge?: number;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={label}
       aria-pressed={active}
-      className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-        active
-          ? "bg-ironlore-blue/15 font-medium text-primary"
-          : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-      } ${collapsed ? "justify-center" : ""}`}
-      title={collapsed ? label : undefined}
+      className="flex items-center gap-1.5 bg-transparent font-mono uppercase outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      style={{
+        padding: "6px 4px 7px",
+        marginBottom: -1,
+        fontSize: 10.5,
+        letterSpacing: "0.06em",
+        color: active ? "var(--il-text)" : "var(--il-text3)",
+        borderBottom: `1.5px solid ${active ? "var(--il-blue)" : "transparent"}`,
+      }}
     >
-      <Icon className="h-4 w-4 shrink-0" />
-      {!collapsed && <span>{label}</span>}
+      {label}
+      {badge !== undefined && (
+        <span
+          aria-hidden="true"
+          className="inline-flex items-center justify-center"
+          style={{
+            minWidth: 14,
+            height: 14,
+            padding: "0 4px",
+            borderRadius: 7,
+            fontSize: 10.5,
+            background: "var(--il-amber)",
+            color: "var(--il-bg)",
+            letterSpacing: 0,
+          }}
+        >
+          {badge}
+        </span>
+      )}
     </button>
   );
+}
+
+/**
+ * Profile tile — 22 × 22 slate-elevated chip with the session user's
+ * initials; click opens a tiny menu anchored to the chip carrying
+ * the Log out action. Replaces the retired Header avatar + the old
+ * bottom-rail Log out button in one step.
+ */
+function ProfileTile({ collapsed, onLogout }: { collapsed: boolean; onLogout: () => void }) {
+  const username = useAuthStore((s) => s.username);
+  const [open, setOpen] = useState(false);
+  const initials = deriveInitials(username);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        aria-label={`Account — ${username ?? "you"}`}
+        title={username ? `Signed in as ${username}` : "Signed in"}
+        className={`flex items-center gap-2 rounded-md outline-none transition-colors hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 ${
+          collapsed ? "h-9 w-9 justify-center" : "w-full px-2 py-1.5"
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className="flex items-center justify-center rounded-full font-mono"
+          style={{
+            width: 22,
+            height: 22,
+            fontSize: 10.5,
+            color: "var(--il-text2)",
+            background: "var(--il-slate-elev)",
+            border: "1px solid var(--il-border)",
+            flexShrink: 0,
+          }}
+        >
+          {initials}
+        </span>
+        {!collapsed && (
+          <span className="flex-1 truncate text-left text-xs text-secondary">
+            {username ?? "account"}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          className="surface-glass absolute z-50 rounded-md py-1"
+          style={{
+            left: collapsed ? "calc(100% + 6px)" : 0,
+            bottom: "calc(100% + 4px)",
+            minWidth: 160,
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          role="menu"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              onLogout();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-ironlore-slate-hover"
+          >
+            <LogOut className="h-3.5 w-3.5 shrink-0" />
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function deriveInitials(username: string | null): string {
+  if (!username) return "·";
+  const trimmed = username.trim();
+  if (!trimmed) return "·";
+  const parts = trimmed.split(/[\s._-]+/).filter(Boolean);
+  if (parts.length >= 2) {
+    const first = parts[0]?.[0] ?? "";
+    const last = parts[parts.length - 1]?.[0] ?? "";
+    return `${first}${last}`.toLowerCase();
+  }
+  return trimmed.slice(0, 2).toLowerCase();
 }
 
 function SidebarBottomTab({

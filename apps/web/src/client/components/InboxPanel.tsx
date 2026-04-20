@@ -34,7 +34,20 @@ interface InboxEntry {
  * failure doesn't cascade and partially-applied state is still
  * observable in the list.
  */
-export function InboxPanel({ onClose }: { onClose: () => void }) {
+/**
+ * Embedded mode — dropped inside the sidebar's INBOX tab. Width is
+ * inherited from the sidebar (no `w-80`), no left border (the sidebar
+ * draws its own right border via `sidebar-chrome`), no close X (the
+ * sidebar tab bar owns the "close" affordance). Overlay mode is no
+ * longer used anywhere; kept for API compatibility.
+ */
+export function InboxPanel({
+  onClose,
+  embedded = false,
+}: {
+  onClose?: () => void;
+  embedded?: boolean;
+}) {
   const [entries, setEntries] = useState<InboxEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusIdx, setFocusIdx] = useState(0);
@@ -252,7 +265,13 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
   const paddedCount = String(entries.length).padStart(2, "0");
 
   return (
-    <div className="flex h-full w-80 flex-col border-l border-border bg-ironlore-slate">
+    <div
+      className={
+        embedded
+          ? "flex h-full min-h-0 flex-col bg-ironlore-slate"
+          : "flex h-full w-80 flex-col border-l border-border bg-ironlore-slate"
+      }
+    >
       {/*
        * Header — canvas-grammar per docs/09-ui-and-brand.md §Agent
        * Inbox. Mono uppercase overline `"<NN> pending"` sits above an
@@ -279,14 +298,19 @@ export function InboxPanel({ onClose }: { onClose: () => void }) {
           >
             {paddedCount} pending
           </div>
-          <button
-            type="button"
-            className="-mt-1 -mr-1 rounded p-1 text-secondary hover:bg-ironlore-slate-hover"
-            onClick={onClose}
-            aria-label="Close inbox"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          {/* Close X suppressed in embedded mode — the sidebar tab
+           *  bar is the "back to files" affordance. Overlay mode
+           *  still renders it for mouse users. */}
+          {!embedded && onClose && (
+            <button
+              type="button"
+              className="-mt-1 -mr-1 rounded p-1 text-secondary hover:bg-ironlore-slate-hover"
+              onClick={onClose}
+              aria-label="Close inbox"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
         <h1
           className="mt-0.5"
