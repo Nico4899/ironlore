@@ -205,7 +205,14 @@ interface AppStore {
   /** Current folder path in the sidebar drill-down navigation. "" = root. */
   sidebarFolder: string;
   /** Active sidebar tab: home, search, explore. */
-  sidebarTab: "home" | "search" | "explore";
+  /**
+   * Sidebar primary surface: `files` is the drill-down file/folder
+   * navigator (the default), `inbox` renders pending agent runs. The
+   * old `home | search | explore` triad collapsed into just these two
+   * per the post-header sidebar revision — search became its own
+   * bottom-rail chip that opens the ⌘K dialog; explore is deferred.
+   */
+  sidebarTab: "files" | "inbox";
 
   toggleSidebar: () => void;
   toggleAIPanel: () => void;
@@ -316,7 +323,7 @@ export const useAppStore = create<AppStore>((set) => ({
   provenance: null,
   inboxOpen: false,
   sidebarFolder: "",
-  sidebarTab: "home",
+  sidebarTab: "files",
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleAIPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),

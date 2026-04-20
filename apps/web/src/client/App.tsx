@@ -5,7 +5,6 @@ import { AIPanelRail } from "./components/AIPanelRail.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { CopyToProjectDialog } from "./components/CopyToProjectDialog.js";
-import { Header } from "./components/Header.js";
 import { InboxPanel } from "./components/InboxPanel.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OfflineBanner } from "./components/OfflineBanner.js";
@@ -163,12 +162,9 @@ function AppShell() {
         Skip to content
       </a>
 
-      {/* App header — logo, breadcrumb, search chip, inbox pill, avatar.
-       *  Spans the full window width; per shell.jsx the header sits
-       *  above both the sidebar and the content. */}
-      <Header />
-
-      {/* Shell body — sidebar on the left, content + panels on the right. */}
+      {/* Shell body — sidebar on the left (carries logo, project,
+       *  tabs, search, profile — the Header was retired in the sidebar
+       *  consolidation per docs/09-ui-and-brand.md §Sidebar revision). */}
       <div className="flex min-h-0 flex-1">
         <SidebarNew />
 
