@@ -401,6 +401,66 @@ html[data-motif-provenance="off"] .il-provenance-strip {
 }
 
 /*
+ * Blockref hover preview — the 200 ms delayed card that renders the
+ * target block's text from the in-memory cache. Anchored to the
+ * bottom-left of the chip; pointer-events disabled on the card
+ * itself so the chip stays the focus target. Gated by
+ * `html[data-motif-blockref-preview="off"]` so users who want a
+ * quieter product can drop the hover card without losing the chip.
+ */
+.il-blockref-preview {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 280px;
+  max-width: 420px;
+  padding: 10px 12px 12px;
+  background: var(--il-slate-elev);
+  border: 1px solid var(--il-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px oklch(0 0 0 / 0.35);
+  pointer-events: none;
+  /*
+   * Motion-snap fade-in so the card doesn't pop. `ease-out` pairs
+   * with the 200 ms hover gate — by the time the opacity settles
+   * the user has committed to the hover.
+   */
+  animation: ilBlockrefPreviewIn var(--motion-snap) ease-out both;
+}
+.il-blockref-preview__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--il-text2);
+  padding-bottom: 6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--il-border-soft);
+}
+.il-blockref-preview__body {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--il-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+@keyframes ilBlockrefPreviewIn {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+html[data-motion="none"] .il-blockref-preview {
+  animation: none;
+}
+html[data-motif-blockref-preview="off"] .il-blockref-preview {
+  display: none;
+}
+
+/*
  * AI panel header — agent slug button. Safe variant is Inter 600 / 13
  * matching the inline labels that anchor the rest of the editor
  * chrome. The serif display variant swaps in Instrument Serif italic

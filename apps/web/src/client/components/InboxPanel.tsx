@@ -656,9 +656,7 @@ function FileDecisionChip({
         fontSize: 10.5,
         letterSpacing: "0.06em",
         lineHeight: 1,
-        background: active
-          ? color
-          : `color-mix(in oklch, ${color} 10%, transparent)`,
+        background: active ? color : `color-mix(in oklch, ${color} 10%, transparent)`,
         color: active ? "var(--il-bg)" : color,
         border: `1px solid ${active ? color : `color-mix(in oklch, ${color} 40%, transparent)`}`,
         cursor: "pointer",

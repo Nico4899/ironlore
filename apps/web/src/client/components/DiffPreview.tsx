@@ -186,7 +186,6 @@ export function DiffPreview({
           </button>
         </div>
       )}
-
     </div>
   );
 }
