@@ -962,7 +962,8 @@ function ActiveAgentsStrip({ collapsed }: { collapsed: boolean }) {
         title={`${running.length} running`}
         style={{ background: "color-mix(in oklch, var(--il-blue) 10%, transparent)" }}
       >
-        <ReuleauxIcon size={9} color="var(--il-blue)" spin />
+        {/* 7 px pip — spec §Reuleaux sizes: inline / sidebar. */}
+        <ReuleauxIcon size={7} color="var(--il-blue)" spin />
       </button>
     );
   }
@@ -977,7 +978,8 @@ function ActiveAgentsStrip({ collapsed }: { collapsed: boolean }) {
           letterSpacing: "0.08em",
         }}
       >
-        <ReuleauxIcon size={8} color="var(--il-blue)" spin />
+        {/* 7 px pip — spec §Reuleaux sizes: inline / sidebar. */}
+        <ReuleauxIcon size={7} color="var(--il-blue)" spin />
         <span>
           {running.length} agent{running.length === 1 ? "" : "s"} running
         </span>

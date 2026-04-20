@@ -398,7 +398,8 @@ function InboxEntryCard({
       }}
     >
       <div className="flex items-center gap-2">
-        <Reuleaux size={9} color="var(--il-amber)" aria-label="Pending review" />
+        {/* 10 px pip — spec §Reuleaux sizes: cards / rows. */}
+        <Reuleaux size={10} color="var(--il-amber)" aria-label="Pending review" />
         <span className="il-inbox-slug">{entry.agentSlug}</span>
         <Meta
           k="branch"
