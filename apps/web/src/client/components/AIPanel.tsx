@@ -418,6 +418,8 @@ function MessageList() {
           {msg.type === "diff_preview" && (
             <DiffPreview
               pageId={msg.pageId}
+              blockId={msg.blockId}
+              commitSha={msg.commitSha}
               diff={msg.diff}
               approved={msg.approved}
               onApprove={() => {

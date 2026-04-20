@@ -529,7 +529,11 @@ function InboxEntryFiles({
         return (
           <li
             key={f.path}
-            className="grid items-center gap-1.5 py-0.5"
+            // `group` enables `group-hover:` selectors on the
+            //  approve/reject chips so they only reveal on pointer
+            //  hover or keyboard focus — matches the micro-interaction
+            //  in the design handoff (resting vs. hover).
+            className="group grid items-center gap-1.5 py-0.5"
             style={{
               gridTemplateColumns: "12px minmax(0, 1fr) auto auto auto",
               fontSize: 10.5,
@@ -568,13 +572,23 @@ function InboxEntryFiles({
               {formatDelta(f)}
             </span>
             <StatusPip state="idle" label="pending" size={7} />
-            <span className="flex gap-1">
-              <FileDecisionButton
+            <span
+              // Hidden at rest; revealed on row hover, or any time the
+              //  user has explicitly voted so they can see + reverse
+              //  the current decision. `focus-within` keeps the cluster
+              //  visible while keyboard focus is inside.
+              className={`flex gap-1.5 transition-opacity ${
+                isApproved || isRejected
+                  ? "opacity-100"
+                  : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+              }`}
+            >
+              <FileDecisionChip
                 kind="rejected"
                 active={isRejected}
                 onClick={() => toggle("rejected")}
               />
-              <FileDecisionButton
+              <FileDecisionChip
                 kind="approved"
                 active={isApproved}
                 onClick={() => toggle("approved")}
@@ -604,11 +618,16 @@ function formatRelative(ms: number, now: number): string {
 }
 
 /**
- * Per-file ✓/✗ pill. The active state uses a solid fill; idle is
- * outlined. Matches the canvas's miniBtn pattern — small, quiet,
- * sits at the right edge of the file row.
+ * Per-file `A · APPROVE` / `R · REJECT` hover chip. Inline decision
+ * affordance sized to match the keyboard-hint grammar used elsewhere:
+ * a mono Key chip carrying the accelerator glyph, a `·` separator,
+ * and the uppercase mono label in the state-signal color. Hidden at
+ * rest (parent row has `group`) and revealed on hover or focus; when
+ * the user has already voted, the active chip is solid-filled so its
+ * current state is always visible, while its partner still shows on
+ * hover for reversal.
  */
-function FileDecisionButton({
+function FileDecisionChip({
   kind,
   active,
   onClick,
@@ -618,31 +637,48 @@ function FileDecisionButton({
   onClick: () => void;
 }) {
   const color = kind === "approved" ? "var(--il-green)" : "var(--il-red)";
-  const glyph = kind === "approved" ? "✓" : "✗";
-  const label = kind === "approved" ? "Approve this file" : "Reject this file";
+  const accel = kind === "approved" ? "A" : "R";
+  const label = kind === "approved" ? "approve" : "reject";
+  const ariaLabel = kind === "approved" ? "Approve this file" : "Reject this file";
   return (
     <button
       type="button"
-      aria-label={label}
+      aria-label={ariaLabel}
       aria-pressed={active}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
       }}
+      className="inline-flex items-center gap-1 font-mono uppercase outline-none"
       style={{
-        width: 16,
-        height: 14,
-        padding: 0,
+        padding: "2px 6px",
+        borderRadius: 3,
         fontSize: 10.5,
+        letterSpacing: "0.06em",
         lineHeight: 1,
-        background: active ? color : "transparent",
+        background: active
+          ? color
+          : `color-mix(in oklch, ${color} 10%, transparent)`,
         color: active ? "var(--il-bg)" : color,
-        border: `1px solid ${active ? color : "var(--il-border)"}`,
-        borderRadius: 2,
+        border: `1px solid ${active ? color : `color-mix(in oklch, ${color} 40%, transparent)`}`,
         cursor: "pointer",
       }}
     >
-      {glyph}
+      <span
+        aria-hidden="true"
+        style={{
+          fontSize: 10.5,
+          padding: "0 3px",
+          border: `1px solid ${active ? "color-mix(in oklch, var(--il-bg) 60%, transparent)" : `color-mix(in oklch, ${color} 40%, transparent)`}`,
+          borderRadius: 2,
+        }}
+      >
+        {accel}
+      </span>
+      <span aria-hidden="true" style={{ opacity: 0.6 }}>
+        ·
+      </span>
+      <span>{label}</span>
     </button>
   );
 }

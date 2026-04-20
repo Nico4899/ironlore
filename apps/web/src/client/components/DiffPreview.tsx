@@ -8,6 +8,12 @@ interface DiffPreviewProps {
   onReject: () => void;
   /** Optional block id so the header can render `page · #block`. */
   blockId?: string;
+  /**
+   * Commit SHA produced by the executor after approval. When present
+   * the collapsed summary line shows `… · <short>`. Absent for the
+   * resting / pending state.
+   */
+  commitSha?: string;
 }
 
 /**
@@ -33,10 +39,29 @@ export function DiffPreview({
   approved,
   onApprove,
   onReject,
+  commitSha,
 }: DiffPreviewProps) {
   const lines = diff.split("\n");
   const { added, removed } = countHunkLines(lines);
   const target = blockId ? `${pageId} · #${blockId}` : pageId;
+
+  // Collapsed summary row — rendered once the user has approved or
+  //  rejected. The conversation keeps flowing, so we trade the full
+  //  diff for a single mono line (matching screen-editor.jsx's
+  //  `· REPLACED / ARCHITECTURE.MD · BLK_A4F2 / -3 +8   SHA · 2s ago`).
+  if (approved !== null) {
+    return (
+      <DiffPreviewSummary
+        verb={approved ? "replaced" : "rejected"}
+        verbColor={approved ? "var(--il-green)" : "var(--il-red)"}
+        pageId={pageId}
+        blockId={blockId}
+        added={added}
+        removed={removed}
+        commitSha={commitSha}
+      />
+    );
+  }
 
   return (
     <div
@@ -162,20 +187,64 @@ export function DiffPreview({
         </div>
       )}
 
-      {approved !== null && (
-        <div
-          className="font-mono uppercase"
-          style={{
-            fontSize: 10.5,
-            letterSpacing: "0.06em",
-            padding: "6px 10px",
-            borderTop: "1px solid var(--il-border-soft)",
-            color: approved ? "var(--il-green)" : "var(--il-red)",
-          }}
-        >
-          {approved ? "approved" : "rejected"}
-        </div>
-      )}
+    </div>
+  );
+}
+
+/**
+ * Single-line summary rendered after the user has voted. Mirrors the
+ * schematic `· REPLACED / <path> · <blk> / -3 +8     <sha> · <ago>`
+ * from the JSX source-of-truth so the conversation can keep flowing
+ * without a stale hunk block in the middle of the transcript.
+ */
+function DiffPreviewSummary({
+  verb,
+  verbColor,
+  pageId,
+  blockId,
+  added,
+  removed,
+  commitSha,
+}: {
+  verb: string;
+  verbColor: string;
+  pageId: string;
+  blockId?: string;
+  added: number;
+  removed: number;
+  commitSha?: string;
+}) {
+  const shortSha = commitSha ? commitSha.slice(0, 7) : null;
+  const fileLabel = pageId.split("/").pop() ?? pageId;
+  const blockLabel = blockId ? ` · ${blockId}` : "";
+  return (
+    <div
+      className="flex items-center gap-2 font-mono uppercase"
+      style={{
+        padding: "6px 10px",
+        borderRadius: 3,
+        background: "color-mix(in oklch, var(--il-slate-elev) 60%, transparent)",
+        border: "1px solid var(--il-border-soft)",
+        fontSize: 10.5,
+        letterSpacing: "0.06em",
+        color: "var(--il-text3)",
+      }}
+    >
+      <span aria-hidden="true" style={{ color: "var(--il-text4)" }}>
+        ·
+      </span>
+      <span style={{ color: verbColor }}>{verb}</span>
+      <span style={{ color: "var(--il-text4)" }}>/</span>
+      <span className="truncate" style={{ color: "var(--il-text2)" }} title={pageId}>
+        {fileLabel}
+        {blockLabel}
+      </span>
+      <span style={{ color: "var(--il-text4)" }}>/</span>
+      <span style={{ color: "var(--il-text2)" }}>
+        −{removed} +{added}
+      </span>
+      <span className="flex-1" />
+      {shortSha && <span style={{ color: "var(--il-text3)" }}>{shortSha}</span>}
     </div>
   );
 }

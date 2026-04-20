@@ -28,6 +28,10 @@ export type ConversationMessage =
       pageId: string;
       diff: string;
       approved: boolean | null;
+      /** Block id so the collapsed summary can render `file · blk_…`. */
+      blockId?: string;
+      /** Commit SHA once the approved edit has landed. */
+      commitSha?: string;
       timestamp?: number;
     }
   | {
