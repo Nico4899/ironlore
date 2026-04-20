@@ -49,15 +49,22 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
     };
   }, [pagePath]);
 
-  // Scroll to block + flash on load.
+  // Scroll to block + flash on load. `.il-flash` runs the `ilFlash`
+  //  keyframe (Signal-Amber → transparent) for `--motion-flash`
+  //  (1.5 s). We add the class, then remove it MOTION.flash + 50 ms
+  //  later so a subsequent citation click can re-trigger the
+  //  animation (CSS only restarts when the class drops & re-adds).
   useEffect(() => {
     if (!content) return;
     const timer = setTimeout(() => {
       const el = document.getElementById(`provenance-${blockId}`);
       if (el) {
         el.scrollIntoView({ block: "center" });
-        el.classList.add("bg-signal-amber/20");
-        setTimeout(() => el.classList.remove("bg-signal-amber/20"), MOTION.flash);
+        el.classList.remove("il-flash");
+        // Force reflow so the re-added class re-runs the animation.
+        void (el as HTMLElement).offsetWidth;
+        el.classList.add("il-flash");
+        setTimeout(() => el.classList.remove("il-flash"), MOTION.flash + 50);
       }
     }, 100);
     return () => clearTimeout(timer);

@@ -254,6 +254,15 @@ html.light {
   0%   { background-color: oklch(from var(--il-amber) l c h / 0.25); }
   100% { background-color: transparent; }
 }
+/* Apply the keyframe via .il-flash so ProvenancePane can toggle it
+ *  on the citation target. Duration comes from --motion-flash so
+ *  any spec tweak to the attention-flash window lands in one place. */
+.il-flash {
+  animation: ilFlash var(--motion-flash) ease-out forwards;
+}
+html[data-motion="none"] .il-flash {
+  animation: none;
+}
 
 /* Search-dialog caret — 2-step blink at 1s per cycle. Decorative
  *  companion to the native <input> caret in the ⌘K dialog. */
