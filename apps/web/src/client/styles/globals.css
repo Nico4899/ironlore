@@ -633,13 +633,6 @@ kbd {
   border: 1px solid var(--il-border);
 }
 
-/* Glow focus ring — for primary interactive elements */
-.glow-focus:focus-visible {
-  outline: 2px solid var(--il-blue);
-  outline-offset: 2px;
-  box-shadow: var(--il-shadow-glow-blue);
-}
-
 /* Button depth — elevated button with hover lift.
  * Snap-fast feedback: the hover lift is immediate, not a drawn-out
  * state transition, so both channels share --motion-snap. */
@@ -654,16 +647,6 @@ kbd {
 .btn-depth:active {
   box-shadow: var(--il-shadow-inner);
   transform: translateY(0.5px);
-}
-
-/* Gradient border — subtle color shift on borders */
-.border-gradient {
-  border-image: linear-gradient(
-    to bottom,
-    oklch(from var(--il-border) calc(l + 0.08) c h),
-    var(--il-border),
-    oklch(from var(--il-border) calc(l - 0.04) c h)
-  ) 1;
 }
 
 /* Badge glow — notification badges */
@@ -712,24 +695,6 @@ kbd {
   box-shadow: inset 0 0 0 1px oklch(from var(--il-blue) l c h / 0.2);
 }
 
-/* ─── Tab depth ─── */
-
-.tab-active {
-  background: var(--il-bg-raised);
-  box-shadow: 0 -2px 0 var(--il-blue) inset,
-              var(--il-shadow-sm);
-}
-
-.tab-inactive {
-  background: transparent;
-  opacity: 0.7;
-  transition: opacity var(--motion-snap);
-}
-
-.tab-inactive:hover {
-  opacity: 1;
-  background: oklch(from var(--il-slate-hover) l c h / 0.5);
-}
 
 /* ─── Skip navigation (a11y) ─── */
 
