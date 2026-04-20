@@ -695,6 +695,46 @@ kbd {
   box-shadow: inset 0 0 0 1px oklch(from var(--il-blue) l c h / 0.2);
 }
 
+/* Sidebar right-edge resize handle.
+ *
+ * 1 px chrome at rest (matches the aside's own right border so it
+ * reads as a normal divider), thickens to 3 px `var(--il-blue)` on
+ * hover or keyboard focus. The 6 px absolute-positioned overlay is
+ * the hit target — users get a forgiving grab zone without adding
+ * visual weight to the resting state.
+ */
+.il-sidebar-resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  outline: none;
+  z-index: 1;
+  transition: background var(--motion-snap) ease-out;
+}
+.il-sidebar-resize::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--il-border);
+  transition: width var(--motion-snap) ease-out,
+              left var(--motion-snap) ease-out,
+              background var(--motion-snap) ease-out;
+}
+.il-sidebar-resize:hover::before,
+.il-sidebar-resize:focus-visible::before,
+.il-sidebar-resize:active::before {
+  width: 3px;
+  left: 2px;
+  background: var(--il-blue);
+  box-shadow: 0 0 8px var(--il-blue-glow);
+}
+
 
 /* ─── Skip navigation (a11y) ─── */
 

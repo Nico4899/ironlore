@@ -30,7 +30,7 @@ import {
   Video,
   Workflow,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
   createFolder,
@@ -41,7 +41,7 @@ import {
   logout,
   movePage,
 } from "../lib/api.js";
-import { useAppStore } from "../stores/app.js";
+import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
 import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
@@ -109,9 +109,66 @@ export function SidebarNew() {
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);
   const sidebarFolder = useAppStore((s) => s.sidebarFolder);
   const sidebarTab = useAppStore((s) => s.sidebarTab);
+  const sidebarWidth = useAppStore((s) => s.sidebarWidth);
   const theme = useAppStore((s) => s.theme);
   const activePath = useAppStore((s) => s.activePath);
   const nodes = useTreeStore((s) => s.nodes);
+
+  /**
+   * Drag state for the right-edge resize handle. Pointer-capture on
+   * the handle, not on document, so the drag survives a slow mouse
+   * even if it briefly exits the sidebar bounds. On drag end a width
+   * below `SIDEBAR_MIN_WIDTH - 20` snaps back to the minimum instead
+   * of hiding — per docs/09-ui-and-brand.md §Sidebar resize:
+   * "below 200 in a single drag it snaps to 220 rather than hiding."
+   * Hiding is a separate keyboard action (⌘B).
+   */
+  const resizeState = useRef<{ dragging: boolean } | null>(null);
+  if (resizeState.current === null) resizeState.current = { dragging: false };
+
+  const handleResizeDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeState.current) return;
+    resizeState.current.dragging = true;
+    (e.target as Element).setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }, []);
+
+  const handleResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeState.current?.dragging) return;
+    // The sidebar's left edge is x=0 of the viewport, so client X is
+    //  the width directly. Clamp in the store (it enforces 220..420).
+    const raw = e.clientX;
+    // Snap: if user drags below 200 px, snap to the minimum rather
+    //  than leaving the sidebar at a non-spec width.
+    const next = raw < 200 ? SIDEBAR_MIN_WIDTH : raw;
+    useAppStore.getState().setSidebarWidth(next);
+  }, []);
+
+  const handleResizeUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeState.current) return;
+    resizeState.current.dragging = false;
+    (e.target as Element).releasePointerCapture(e.pointerId);
+  }, []);
+
+  const handleResizeKey = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const step = e.shiftKey ? 20 : 5;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        useAppStore.getState().setSidebarWidth(sidebarWidth - step);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        useAppStore.getState().setSidebarWidth(sidebarWidth + step);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        useAppStore.getState().setSidebarWidth(SIDEBAR_MIN_WIDTH);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        useAppStore.getState().setSidebarWidth(SIDEBAR_MAX_WIDTH);
+      }
+    },
+    [sidebarWidth],
+  );
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [editingPath, setEditingPath] = useState<string | null>(null);
@@ -363,9 +420,12 @@ export function SidebarNew() {
 
   return (
     <aside
-      className={`sidebar-chrome flex h-full shrink-0 flex-col transition-all ${
-        collapsed ? "w-14" : "w-64"
-      }`}
+      className="sidebar-chrome relative flex h-full shrink-0 flex-col"
+      style={{
+        // Fixed 56 px when collapsed; otherwise the user-dragged
+        //  width out of `useAppStore` (clamped 220..420 by the store).
+        width: collapsed ? 56 : sidebarWidth,
+      }}
     >
       {/* ─── Top: collapse toggle ───
        *  The Ironlore logo + wordmark now live in the app-wide Header.
@@ -660,6 +720,34 @@ export function SidebarNew() {
             </>
           )}
         </div>
+      )}
+
+      {/*
+       * Right-edge resize handle per docs/09-ui-and-brand.md §Sidebar
+       * resize: a 1 px border at rest, thickens to 3 px
+       * `var(--il-blue)` on hover or while focused. Pointer drag
+       * updates `sidebarWidth` (clamped 220..420 in the store). Below
+       * 200 px of raw drag we snap to the minimum rather than hide —
+       * hiding is a separate keyboard action (⌘B). Keyboard:
+       * ArrowLeft/ArrowRight ±5 px (±20 with Shift), Home/End jump to
+       * min/max.
+       */}
+      {!collapsed && (
+        // biome-ignore lint/a11y/useSemanticElements: <hr> has no interactive affordance; this separator must accept pointer, focus, and key events
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={sidebarWidth}
+          tabIndex={0}
+          onPointerDown={handleResizeDown}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeUp}
+          onKeyDown={handleResizeKey}
+          className="il-sidebar-resize"
+        />
       )}
     </aside>
   );
