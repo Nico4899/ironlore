@@ -1,12 +1,4 @@
-import {
-  ArrowUp,
-  Highlighter,
-  Lightbulb,
-  Paperclip,
-  Sparkles,
-  Wrench,
-  X,
-} from "lucide-react";
+import { ArrowUp, Highlighter, Lightbulb, Paperclip, Sparkles, Wrench, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";

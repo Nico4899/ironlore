@@ -100,7 +100,7 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
         ...s.messages,
         message.type === "resume_divider" || (message as { timestamp?: number }).timestamp != null
           ? message
-          : { ...(message as object), timestamp: Date.now() } as ConversationMessage,
+          : ({ ...(message as object), timestamp: Date.now() } as ConversationMessage),
       ],
     })),
   setInputDraft: (draft) => set({ inputDraft: draft }),
