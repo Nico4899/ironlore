@@ -116,6 +116,7 @@ function AppShell() {
   const searchDialogOpen = useAppStore((s) => s.searchDialogOpen);
   const settingsOpen = useAppStore((s) => s.settingsOpen);
   const terminalOpen = useAppStore((s) => s.terminalOpen);
+  const devMode = useAppStore((s) => s.devMode);
   const projectSwitcherOpen = useAppStore((s) => s.projectSwitcherOpen);
   const copyToProjectSrc = useAppStore((s) => s.copyToProjectSrc);
 
@@ -133,8 +134,13 @@ function AppShell() {
         e.preventDefault();
         useAppStore.getState().toggleProjectSwitcher();
       }
-      // Ctrl+` — toggle terminal
+      // Ctrl+` — toggle terminal. Dev-mode gated so the shortcut
+      //  is inert for non-technical users (matches Settings →
+      //  General → Developer mode). The preventDefault only fires
+      //  when the shortcut is active; otherwise the keystroke
+      //  passes through.
       if (e.ctrlKey && e.key === "`") {
+        if (!useAppStore.getState().devMode) return;
         e.preventDefault();
         useAppStore.getState().toggleTerminal();
       }
@@ -250,8 +256,11 @@ function AppShell() {
             )}
           </div>
 
-          {/* Terminal panel (Ctrl+`) */}
-          {terminalOpen && (
+          {/* Terminal panel (Ctrl+`). Dev-mode gated — even if
+           *  `terminalOpen` persisted true across a session, the
+           *  panel stays hidden until the user flips Settings →
+           *  General → Developer mode to On. */}
+          {terminalOpen && devMode && (
             <Suspense fallback={<div className="h-64 border-t border-border" />}>
               <Terminal />
             </Suspense>

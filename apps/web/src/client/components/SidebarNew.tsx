@@ -23,6 +23,7 @@ import {
   Search,
   Settings as SettingsIcon,
   Sun,
+  Terminal as TerminalIcon,
   Video,
   Workflow,
 } from "lucide-react";
@@ -110,6 +111,10 @@ export function SidebarNew() {
   const sidebarTab = useAppStore((s) => s.sidebarTab);
   const sidebarWidth = useAppStore((s) => s.sidebarWidth);
   const theme = useAppStore((s) => s.theme);
+  // Dev-mode gates the terminal affordance here — the button only
+  //  renders when Settings → General → Developer mode is On. Keeps
+  //  the shell free of power-user noise for non-technical users.
+  const devMode = useAppStore((s) => s.devMode);
   const activePath = useAppStore((s) => s.activePath);
   const nodes = useTreeStore((s) => s.nodes);
   // Shared activity source — powers the INBOX tab badge + the
@@ -709,6 +714,14 @@ export function SidebarNew() {
           collapsed={collapsed}
           onClick={() => useAppStore.getState().toggleSettings()}
         />
+        {devMode && (
+          <SidebarBottomTab
+            icon={TerminalIcon}
+            label="Terminal (Ctrl+`)"
+            collapsed={collapsed}
+            onClick={() => useAppStore.getState().toggleTerminal()}
+          />
+        )}
         <SidebarBottomTab
           icon={theme === "dark" ? Sun : Moon}
           label={theme === "dark" ? "Light mode" : "Dark mode"}

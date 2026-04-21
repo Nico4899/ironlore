@@ -33,6 +33,23 @@ function persistEffort(value: EffortLevel): void {
   }
 }
 
+/**
+ * Initial `activeAgent`. Reads the persisted `defaultAgent` the user
+ * set in Settings → General; falls back to `"general"` on a fresh
+ * install. Kept as a plain helper (not a store import) so we can
+ * read localStorage directly without pulling the app store into a
+ * circular dep.
+ */
+function loadInitialActiveAgent(): string {
+  try {
+    const raw = window.localStorage.getItem("ironlore.defaultAgent");
+    if (raw && raw.length > 0) return raw;
+  } catch {
+    /* storage denied */
+  }
+  return "general";
+}
+
 function loadIncludeActiveFile(): boolean {
   try {
     const raw = window.localStorage.getItem(INCLUDE_ACTIVE_FILE_KEY);
@@ -172,7 +189,7 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
   lastSeq: 0,
   inputDraft: "",
   isStreaming: false,
-  activeAgent: "general",
+  activeAgent: loadInitialActiveAgent(),
   contexts: [],
   tokensUsed: 0,
   effort: loadEffort(),

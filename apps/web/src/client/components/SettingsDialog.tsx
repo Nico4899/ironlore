@@ -206,9 +206,7 @@ function TabHero({ title, blurb }: { title: string; blurb: string }) {
         }}
       >
         {title}
-        {serif && (
-          <span style={{ fontStyle: "italic", color: "var(--il-text2)" }}>.</span>
-        )}
+        {serif && <span style={{ fontStyle: "italic", color: "var(--il-text2)" }}>.</span>}
       </h1>
       <p
         style={{
@@ -727,9 +725,7 @@ function GeneralTab() {
         {agents === null ? (
           <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>Loading…</span>
         ) : agents.length === 0 ? (
-          <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>
-            No agents installed yet.
-          </span>
+          <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>No agents installed yet.</span>
         ) : (
           <SegChoice
             options={agents.map((a) => ({ value: a.slug, label: a.slug }))}
@@ -1048,9 +1044,7 @@ function AgentsTab() {
       />
 
       {error && (
-        <div style={{ fontSize: 12.5, color: "var(--il-red)" }}>
-          Failed to load agents: {error}
-        </div>
+        <div style={{ fontSize: 12.5, color: "var(--il-red)" }}>Failed to load agents: {error}</div>
       )}
       {agents === null && !error && (
         <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>Loading…</span>
