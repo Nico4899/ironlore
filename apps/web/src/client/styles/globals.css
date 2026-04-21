@@ -34,6 +34,11 @@
   --il-slate: oklch(0.20 0.012 265);
   --il-slate-hover: oklch(0.24 0.014 265);
   --il-slate-elev: oklch(0.22 0.013 265);
+  /* Home canvas — pure black in dark mode so slate cards elevate
+   *  cleanly; pure white in light mode (see light-theme block).
+   *  Read by HomePanel via `var(--il-home-bg)` so the surface flips
+   *  automatically when the user toggles theme. */
+  --il-home-bg: oklch(0 0 0);
 
   /* Brand (dark) — hue driven by --il-accent-hue */
   --il-blue: oklch(0.68 0.17 var(--il-accent-hue, 258));
@@ -123,6 +128,10 @@ html.light {
   --il-slate: oklch(0.94 0.006 265);
   --il-slate-hover: oklch(0.90 0.008 265);
   --il-slate-elev: oklch(0.98 0.004 265);
+  /* Home canvas in light mode — pure white, mirroring the dark
+   *  mode's pure-black. The slate cards (`--il-slate` = 0.94)
+   *  elevate against it the same way. */
+  --il-home-bg: oklch(1 0 0);
 
   --il-blue: oklch(0.52 0.20 var(--il-accent-hue, 258));
   --il-blue-strong: oklch(0.45 0.22 var(--il-accent-hue, 258));

@@ -236,12 +236,12 @@ export function HomePanel() {
   return (
     <div
       className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
-      // Home sits on pure black so the slate cards elevate cleanly
-      //  against it — the rest of the shell stays on `--il-bg`
-      //  (warm dark blue-black), so Home's flat-black canvas reads
-      //  as "the central surface" rather than another layer of
-      //  chrome. Overrides the bg inherited from the shell.
-      style={{ background: "oklch(0 0 0)" }}
+      // Home sits on `--il-home-bg` — pure black in dark mode, pure
+      //  white in light mode. Both extremes make the slate cards
+      //  (`--il-slate`) elevate cleanly without competing with the
+      //  shell's `--il-bg` elsewhere. The token flips automatically
+      //  on theme toggle via globals.css.
+      style={{ background: "var(--il-home-bg)" }}
     >
       {/* Venn watermark — contemplative rest when nothing exists yet.
        *  Sized + positioned like screen-home.jsx's bold-variant hero
