@@ -608,7 +608,6 @@ function ScopeRow({
   onToggle: () => void;
 }) {
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: label wraps a real <input>, pattern is standard
     <label
       className="flex cursor-pointer items-center gap-3"
       style={{
