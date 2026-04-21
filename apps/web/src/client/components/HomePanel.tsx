@@ -5,12 +5,14 @@ import {
   ApiError,
   createPage,
   fetchAgentHistogram,
+  fetchInbox,
   fetchPage,
   fetchRecentEdits,
   type RecentEdit,
   startAutonomousRun,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
+import { useAuthStore } from "../stores/auth.js";
 import {
   AgentPulse,
   DisplayNum,
@@ -52,9 +54,7 @@ export function HomePanel() {
    *   · `"err"`       — fetch failed (non-markdown, 404, etc.)
    *   · missing key   — still fetching
    */
-  const [blockCounts, setBlockCounts] = useState<Map<string, number | "err">>(
-    () => new Map(),
-  );
+  const [blockCounts, setBlockCounts] = useState<Map<string, number | "err">>(() => new Map());
 
   useEffect(() => {
     fetchRecentEdits(8)
@@ -107,6 +107,50 @@ export function HomePanel() {
   const activity = useWorkspaceActivity();
   const typeDisplay = useAppStore((s) => s.typeDisplay);
   const displaySerif = typeDisplay === "serif";
+  /**
+   * First-name suffix for the greeting. Pulled from the auth store
+   * and title-cased client-side (`"eli"` → `"Eli"`). Brand doc rule
+   * §Home hero: "the greeting never names the user unless the store
+   * has a name to show" — when `username` is null we suppress the
+   * suffix silently.
+   */
+  const username = useAuthStore((s) => s.username);
+  const greetingName = useMemo(() => (username ? titleCaseFirstWord(username) : null), [username]);
+
+  /**
+   * Most-recent-completed-run clause for the hero sub-paragraph.
+   * We read from the inbox: every entry represents a finished
+   * autonomous run that landed on a staging branch, which is exactly
+   * the "finished this morning" signal the spec calls for. We pick
+   * the newest entry by `finalizedAt` and describe it succinctly.
+   */
+  const [lastCompleted, setLastCompleted] = useState<{
+    agentSlug: string;
+    filesChanged: number;
+    finalizedAt: number;
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchInbox()
+      .then(({ entries }) => {
+        if (cancelled || entries.length === 0) return;
+        // `fetchInbox` returns entries descending by finalizedAt
+        //  already — just take the head.
+        const head = entries[0];
+        if (!head) return;
+        setLastCompleted({
+          agentSlug: head.agentSlug,
+          filesChanged: head.filesChanged.length,
+          finalizedAt: head.finalizedAt,
+        });
+      })
+      .catch(() => {
+        /* no-op — drop the clause on failure */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const hasActivity = activity.runningCount > 0 || activity.inboxCount > 0;
   // "Fresh project" — zero recent pages AND zero installed agents.
@@ -274,6 +318,7 @@ export function HomePanel() {
           }
         >
           {greeting}
+          {greetingName ? `, ${greetingName}` : ""}
           {displaySerif && (
             <>
               .
@@ -340,6 +385,23 @@ export function HomePanel() {
               </>
             ) : (
               "Pick up where you left off."
+            )}
+            {/* Most-recent-completed-run trailing clause. Rendered
+             *  whenever the inbox surfaces a finalized entry; the
+             *  primary sentence above is about "what's live now",
+             *  this sentence is "what just finished" — two distinct
+             *  facts, so they compose cleanly. Suppressed on a
+             *  fresh project since no agent has run yet. */}
+            {!isFreshProject && lastCompleted && (
+              <>
+                {" "}
+                <span style={{ color: "var(--il-text)" }}>
+                  {titleCaseFirstWord(lastCompleted.agentSlug)}
+                </span>{" "}
+                finished {formatFinishedRelative(lastCompleted.finalizedAt)} with{" "}
+                {lastCompleted.filesChanged} {lastCompleted.filesChanged === 1 ? "file" : "files"}{" "}
+                awaiting review.
+              </>
             )}
           </div>
         )}
@@ -1249,6 +1311,62 @@ function extractPathToken(text: string): string | null {
     return extMatch[extMatch.length - 1] ?? null;
   }
   return null;
+}
+
+/**
+ * Capitalize the first word of a slug-ish string. `"eli"` → `"Eli"`,
+ * `"docs-curator"` → `"Docs-curator"`. We only touch the first
+ * character so multi-word slugs keep their internal punctuation.
+ */
+function titleCaseFirstWord(raw: string): string {
+  if (!raw) return raw;
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+/**
+ * Relative-time shape tuned for the hero's "finished …" clause. We
+ * prefer day-parts ("this morning", "this afternoon", "tonight",
+ * "yesterday") over raw deltas because the hero copy should read
+ * like prose, not a timestamp. Falls back to `<N> days ago` for
+ * anything outside the last ~30 h. Never returns the empty string
+ * so the caller can concatenate unconditionally.
+ */
+function formatFinishedRelative(ms: number): string {
+  const now = Date.now();
+  const diffMs = now - ms;
+  // Under a minute — the run just ended.
+  if (diffMs < 60_000) return "just now";
+  // Under an hour — minutes granularity.
+  if (diffMs < 3_600_000) {
+    const m = Math.max(1, Math.floor(diffMs / 60_000));
+    return `${m}m ago`;
+  }
+
+  const nowDate = new Date(now);
+  const thenDate = new Date(ms);
+  const sameDay =
+    nowDate.getFullYear() === thenDate.getFullYear() &&
+    nowDate.getMonth() === thenDate.getMonth() &&
+    nowDate.getDate() === thenDate.getDate();
+
+  if (sameDay) {
+    const hour = thenDate.getHours();
+    if (hour < 12) return "this morning";
+    if (hour < 17) return "this afternoon";
+    return "tonight";
+  }
+
+  // Check "yesterday" by calendar-day diff, not a 24h delta.
+  const y = new Date(now);
+  y.setDate(y.getDate() - 1);
+  const isYesterday =
+    y.getFullYear() === thenDate.getFullYear() &&
+    y.getMonth() === thenDate.getMonth() &&
+    y.getDate() === thenDate.getDate();
+  if (isYesterday) return "yesterday";
+
+  const days = Math.floor(diffMs / 86_400_000);
+  return `${days}d ago`;
 }
 
 function useGreeting(): string {
