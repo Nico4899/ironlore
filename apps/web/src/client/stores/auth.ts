@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { fetchMe, setApiProject } from "../lib/api.js";
+import { ApiError, fetchMe, setApiProject } from "../lib/api.js";
 
 type AuthStatus = "loading" | "unauthenticated" | "authenticated" | "must-change-password";
 
@@ -34,7 +34,19 @@ export const useAuthStore = create<AuthStore>((set) => ({
         username: session.username,
         currentProjectId: session.currentProjectId,
       });
-    } catch {
+    } catch (err) {
+      // Transient failures (rate-limit, network blip) must NOT boot
+      //  the user to the login screen — a 429 on `/me` after a few
+      //  quick Cmd+R reloads is not evidence of an invalid session.
+      //  Only treat a definitive "not authenticated" response (401,
+      //  handled by `fetchMe` returning null) as grounds to clear.
+      if (err instanceof ApiError && (err.status === 429 || err.status >= 500)) {
+        // Leave the current state alone — next `checkSession` will
+        //  retry. We intentionally don't flip `status` back to
+        //  `loading` here either, since that would re-render the
+        //  loading splash during a transient hiccup.
+        return;
+      }
       set({ status: "unauthenticated", username: null, currentProjectId: null });
     }
   },
