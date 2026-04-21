@@ -1,5 +1,5 @@
 import { AGENTS_DIR } from "@ironlore/core";
-import { ExternalLink, Pause, Play, X, Zap } from "lucide-react";
+import { ExternalLink, Pause, Play, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   type AgentConfigResponse,
@@ -194,6 +194,21 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
       ? `paused · ${(config?.pauseReason ?? state?.reason ?? "user").toLowerCase()}`
       : "idle";
 
+  // Display-variant toggle for the hero slug: the safe variant keeps
+  //  Inter 600 30 (matching screen-more.jsx `ScreenAgentDetail` safe
+  //  silhouette); the serif display variant swaps to Instrument
+  //  Serif 400 italic 48 with a trailing italic `.` period, echoing
+  //  the Home / Settings hero grammar. Onboarding stays
+  //  unconditionally serif; everything else respects typeDisplay.
+  const typeDisplay = useAppStore((s) => s.typeDisplay);
+  const serif = typeDisplay === "serif";
+
+  // Prose description comes from persona.md frontmatter. Falls back
+  //  to a terse instruction so the hero never reads blank.
+  const description =
+    config?.persona?.description ??
+    "Open the persona file to inspect or edit the prompt, budget, and tool list.";
+
   // Hero stats — all derived from the two data endpoints. `runs · 24h`
   //  sums the 24 histogram buckets; `avg duration` medians the recent
   //  runs' `finishedAt - startedAt`; `headroom` shows the slack under
@@ -229,10 +244,10 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
           </div>
           <h1
             style={{
-              fontFamily: "var(--font-display)",
-              fontWeight: 400,
-              fontStyle: "italic",
-              fontSize: 44,
+              fontFamily: serif ? "var(--font-display)" : "var(--font-sans)",
+              fontWeight: serif ? 400 : 600,
+              fontStyle: serif ? "italic" : "normal",
+              fontSize: serif ? 48 : 30,
               letterSpacing: "-0.025em",
               lineHeight: 1,
               margin: "0 0 6px",
@@ -240,6 +255,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
             }}
           >
             {slug}
+            {serif && <span style={{ fontStyle: "italic", color: "var(--il-text2)" }}>.</span>}
           </h1>
           <p
             style={{
@@ -251,8 +267,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
               lineHeight: 1.5,
             }}
           >
-            Agent persona lives on disk. Open the file to inspect or edit the prompt, budget, and
-            tool list.
+            {description}
           </p>
           <div
             className="mt-1 font-mono"
@@ -297,28 +312,9 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
         </div>
       </section>
 
-      {/* Close ribbon */}
-      <div
-        className="flex items-center justify-end gap-2 px-10 py-2 font-mono uppercase"
-        style={{
-          borderBottom: "1px solid var(--il-border-soft)",
-          fontSize: 10.5,
-          letterSpacing: "0.04em",
-          color: "var(--il-text3)",
-        }}
-      >
-        <span>Close</span>
-        <button
-          type="button"
-          onClick={() => useAppStore.getState().setActiveAgentSlug(null)}
-          aria-label="Close agent detail"
-          className="rounded p-1 text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      {/* Body grid — recent runs left, config/controls rail right */}
+      {/* Body grid — recent runs left, config/controls rail right.
+       *  Close ribbon dropped per spec; exit via the sidebar tree
+       *  (clicking any file path clears `activeAgentSlug`). */}
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px]">
         <div className="px-10 py-6" style={{ borderRight: "1px solid var(--il-border-soft)" }}>
           <SectionLabel index={1} title="Recent runs" meta="LAST 24" />

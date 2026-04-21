@@ -330,11 +330,7 @@ export function InboxPanel() {
         )}
       </header>
 
-      <div
-        className="flex-1 overflow-y-auto"
-        style={{ padding: "14px 32px" }}
-        aria-label="Pending inbox entries"
-      >
+      <div className="flex-1 overflow-y-auto" style={{ padding: "14px 32px" }}>
         {loading && <div className="py-8 text-center text-xs text-secondary">Loading…</div>}
         {!loading && entries.length === 0 && <InboxEmptyState />}
         {entries.map((entry, idx) => {
@@ -487,11 +483,7 @@ function InboxEntryCard({
        *  CTA so the user can open the changed file without leaving
        *  the review flow. */}
       {expanded && (
-        <InboxDiffDropdown
-          entryId={entry.id}
-          stats={stats}
-          onJumpToFile={onJumpToFile}
-        />
+        <InboxDiffDropdown entryId={entry.id} stats={stats} onJumpToFile={onJumpToFile} />
       )}
     </div>
   );
@@ -612,10 +604,7 @@ function InboxEntryFiles({
             >
               {f.path}
             </span>
-            <span
-              className="font-mono"
-              style={{ fontSize: 10.5, color: "var(--il-text3)" }}
-            >
+            <span className="font-mono" style={{ fontSize: 10.5, color: "var(--il-text3)" }}>
               {formatDelta(f)}
             </span>
             <StatusPip state="idle" label="pending" size={7} />
@@ -713,10 +702,7 @@ function InboxDiffDropdown({
   }
 
   return (
-    <div
-      id={`inbox-diff-${entryId}`}
-      style={{ borderTop: "1px solid var(--il-border-soft)" }}
-    >
+    <div id={`inbox-diff-${entryId}`} style={{ borderTop: "1px solid var(--il-border-soft)" }}>
       {filePaths.map((path) => (
         <DiffBlock
           key={path}
@@ -799,15 +785,11 @@ function DiffBlock({
           background: "var(--il-bg)",
         }}
       >
-        {loading && (
-          <div style={{ fontSize: 11.5, color: "var(--il-text3)" }}>Loading diff…</div>
-        )}
+        {loading && <div style={{ fontSize: 11.5, color: "var(--il-text3)" }}>Loading diff…</div>}
         {!loading && diff === null && (
           <div style={{ fontSize: 11.5, color: "var(--il-text3)" }}>Diff unavailable.</div>
         )}
-        {!loading && diff !== null && diff !== undefined && (
-          <DiffPre diff={diff} />
-        )}
+        {!loading && diff !== null && diff !== undefined && <DiffPre diff={diff} />}
       </div>
     </div>
   );
@@ -919,11 +901,7 @@ function FileDecisionButton({
         fontSize: 13,
         lineHeight: 1,
         background: active ? activeBg : "transparent",
-        color: active
-          ? kind === "approved"
-            ? "var(--il-bg)"
-            : color
-          : color,
+        color: active ? (kind === "approved" ? "var(--il-bg)" : color) : color,
         border: active
           ? kind === "approved"
             ? "none"
