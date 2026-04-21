@@ -11,7 +11,6 @@ import {
   AgentPulse,
   Blockref,
   Key,
-  Meta,
   ProvenanceStrip,
   Reuleaux,
   StatusPip,
@@ -164,8 +163,13 @@ export function AIPanel() {
           className="flex items-center gap-2 border-b border-border"
           style={{ height: 36, padding: "0 14px" }}
         >
-          {/* 14 px pip — spec §Reuleaux sizes: headers / banners. */}
-          <StatusPip state={isStreaming ? "running" : "idle"} size={14} />
+          {/*
+           * Raw Reuleaux per screen-editor.jsx AIPanel header — not
+           * the StatusPip wrapper. Size 10 matches the brand doc
+           * cards/rows anchor (nearest to spec's 9). Spins while the
+           * agent streams.
+           */}
+          <Reuleaux size={10} color="var(--il-blue)" spin={isStreaming} />
           <button
             type="button"
             onClick={() => useAppStore.getState().setActiveAgentSlug(activeAgent)}
@@ -174,7 +178,19 @@ export function AIPanel() {
           >
             {activeAgent}
           </button>
-          {stepLabel && <Meta k="step" v={stepLabel.replace(/^step\s+/, "")} />}
+          {stepLabel && (
+            <span
+              className="font-mono"
+              style={{
+                fontSize: 10.5,
+                color: "var(--il-text3)",
+                letterSpacing: "0.04em",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {stepLabel.replace(/^step\s+/, "")}
+            </span>
+          )}
           <span className="flex-1" />
           <Key>⌘⇧A</Key>
         </div>
