@@ -118,39 +118,60 @@ export function HomePanel() {
   const greetingName = useMemo(() => (username ? titleCaseFirstWord(username) : null), [username]);
 
   /**
-   * Most-recent-completed-run clause for the hero sub-paragraph.
-   * We read from the inbox: every entry represents a finished
-   * autonomous run that landed on a staging branch, which is exactly
-   * the "finished this morning" signal the spec calls for. We pick
-   * the newest entry by `finalizedAt` and describe it succinctly.
+   * Every inbox entry visible to the user. We'll project this into
+   * two different hero clauses: the single most-recent entry (for
+   * the "Docs-curator finished this morning…" line when the inbox
+   * surfaces pending work) and a 24-hour rollup (for the "in the
+   * last 24 hours" line that replaces the old "pick up where you
+   * left off" fallback when no work is live but something did
+   * finish in the window).
    */
-  const [lastCompleted, setLastCompleted] = useState<{
-    agentSlug: string;
-    filesChanged: number;
-    finalizedAt: number;
-  } | null>(null);
+  const [inboxEntries, setInboxEntries] = useState<
+    Array<{ agentSlug: string; filesChanged: string[]; finalizedAt: number }>
+  >([]);
   useEffect(() => {
     let cancelled = false;
     fetchInbox()
       .then(({ entries }) => {
-        if (cancelled || entries.length === 0) return;
-        // `fetchInbox` returns entries descending by finalizedAt
-        //  already — just take the head.
-        const head = entries[0];
-        if (!head) return;
-        setLastCompleted({
-          agentSlug: head.agentSlug,
-          filesChanged: head.filesChanged.length,
-          finalizedAt: head.finalizedAt,
-        });
+        if (cancelled) return;
+        setInboxEntries(
+          entries.map((e) => ({
+            agentSlug: e.agentSlug,
+            filesChanged: e.filesChanged,
+            finalizedAt: e.finalizedAt,
+          })),
+        );
       })
       .catch(() => {
-        /* no-op — drop the clause on failure */
+        /* no-op — drop both clauses on failure */
       });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // Single most-recent entry — drives the existing inbox sub-clause.
+  //  fetchInbox returns entries descending by finalizedAt, so the
+  //  head is the newest by definition.
+  const lastCompleted = inboxEntries[0] ?? null;
+
+  // 24-hour rollup — distinct agents + total files touched + total
+  //  changes across all entries finalized in the last 24 h.
+  //  Surfaces when there's no live activity but something recent
+  //  happened; replaces the old "Pick up where you left off" copy.
+  const rollup24h = useMemo(() => {
+    const cutoff = Date.now() - 24 * 3_600_000;
+    const recent = inboxEntries.filter((e) => e.finalizedAt >= cutoff);
+    if (recent.length === 0) return null;
+    const agents = Array.from(new Set(recent.map((e) => e.agentSlug)));
+    const uniqueFiles = new Set<string>();
+    let changes = 0;
+    for (const e of recent) {
+      for (const p of e.filesChanged) uniqueFiles.add(p);
+      changes += e.filesChanged.length;
+    }
+    return { agents, changes, fileCount: uniqueFiles.size };
+  }, [inboxEntries]);
 
   const hasActivity = activity.runningCount > 0 || activity.inboxCount > 0;
   // "Fresh project" — zero recent pages AND zero installed agents.
@@ -391,6 +412,16 @@ export function HomePanel() {
                   : `${activity.runningCount} agents are`}{" "}
                 working. Pick up where you left off.
               </>
+            ) : rollup24h ? (
+              // No work is live right now, but something finished in
+              //  the last 24 h — describe it. Templated from real
+              //  inbox data, not an LLM call: the "intelligence" is
+              //  in picking the right signal, not generating prose.
+              <>
+                In the last 24 hours, {formatAgentList(rollup24h.agents)} made {rollup24h.changes}{" "}
+                {rollup24h.changes === 1 ? "change" : "changes"} across {rollup24h.fileCount}{" "}
+                {rollup24h.fileCount === 1 ? "file" : "files"}.
+              </>
             ) : (
               "Pick up where you left off."
             )}
@@ -407,8 +438,8 @@ export function HomePanel() {
                   {titleCaseFirstWord(lastCompleted.agentSlug)}
                 </span>{" "}
                 finished {formatFinishedRelative(lastCompleted.finalizedAt)} with{" "}
-                {lastCompleted.filesChanged} {lastCompleted.filesChanged === 1 ? "file" : "files"}{" "}
-                awaiting review.
+                {lastCompleted.filesChanged.length}{" "}
+                {lastCompleted.filesChanged.length === 1 ? "file" : "files"} awaiting review.
               </>
             )}
           </div>
@@ -1322,6 +1353,49 @@ function extractPathToken(text: string): string | null {
     return extMatch[extMatch.length - 1] ?? null;
   }
   return null;
+}
+
+/**
+ * Render a list of agent slugs as prose:
+ *   []              → "no agents"
+ *   ["a"]           → "<code>a</code>"
+ *   ["a", "b"]      → "<code>a</code> and <code>b</code>"
+ *   ["a", "b", "c"] → "<code>a</code>, <code>b</code> and <code>c</code>"
+ *
+ * Slugs render with `--il-text` tint so they read as signal chips
+ * inside the surrounding text2 sentence, matching the spec line
+ * "agent X at time Y made N changes."
+ */
+function formatAgentList(agents: string[]): React.ReactNode {
+  if (agents.length === 0) return "no agents";
+  const styled = agents.map((a) => (
+    <code
+      key={a}
+      style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: 12.5,
+        color: "var(--il-text)",
+        background: "transparent",
+      }}
+    >
+      {a}
+    </code>
+  ));
+  if (styled.length === 1) return styled[0];
+  if (styled.length === 2) {
+    return (
+      <>
+        {styled[0]} and {styled[1]}
+      </>
+    );
+  }
+  const head = styled.slice(0, -1);
+  const tail = styled[styled.length - 1];
+  return (
+    <>
+      {head.flatMap((el, i) => (i < head.length - 1 ? [el, ", "] : [el]))} and {tail}
+    </>
+  );
 }
 
 /**

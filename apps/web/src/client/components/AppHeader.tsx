@@ -78,8 +78,7 @@ export function AppHeader() {
             left: 0,
             right: 0,
             height: 1,
-            background:
-              "linear-gradient(90deg, transparent, var(--il-blue) 50%, transparent)",
+            background: "linear-gradient(90deg, transparent, var(--il-blue) 50%, transparent)",
             animation: "ilHeaderPulse 4s ease-in-out infinite",
             opacity: 0.8,
             pointerEvents: "none",
@@ -102,10 +101,7 @@ export function AppHeader() {
         </span>
       </div>
 
-      <span
-        aria-hidden="true"
-        style={{ width: 1, height: 16, background: "var(--il-border)" }}
-      />
+      <span aria-hidden="true" style={{ width: 1, height: 16, background: "var(--il-border)" }} />
 
       <nav
         className="flex items-center gap-2 font-mono truncate"
