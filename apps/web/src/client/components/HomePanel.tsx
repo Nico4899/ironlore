@@ -101,7 +101,10 @@ export function HomePanel() {
             marginBottom: 10,
           }}
         >
-          <Reuleaux size={7} color="var(--il-blue)" />
+          {/* 8 px pip — spec §Reuleaux sizes: headers / banners. The
+           *  hero overline is the most prominent inline location, so
+           *  it runs at the upper end of the inline range. */}
+          <Reuleaux size={8} color="var(--il-blue)" />
           <span>{today}</span>
           {hasActivity && (
             <>
@@ -179,7 +182,12 @@ export function HomePanel() {
             </>
           )}
         </h1>
-        {isFreshProject && !displaySerif && (
+        {/* Safe-mode sub-paragraph. Renders on every canvas state —
+         *  fresh, populated, and in-between — with data-driven copy so
+         *  the line is never generic filler. Bold mode carries its own
+         *  italic continuation inside the h1 above, so this block
+         *  suppresses there. */}
+        {!displaySerif && (
           <div
             style={{
               color: "var(--il-text2)",
@@ -189,17 +197,44 @@ export function HomePanel() {
               lineHeight: 1.5,
             }}
           >
-            Create a page from the sidebar, drop files to upload, or install a persona into{" "}
-            <code
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 12.5,
-                color: "var(--il-text)",
-              }}
-            >
-              .agents/
-            </code>{" "}
-            to get started.
+            {isFreshProject ? (
+              <>
+                Create a page from the sidebar, drop files to upload, or install a persona into{" "}
+                <code
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 12.5,
+                    color: "var(--il-text)",
+                  }}
+                >
+                  .agents/
+                </code>{" "}
+                to get started.
+              </>
+            ) : activity.inboxCount > 0 ? (
+              <>
+                {activity.inboxCount === 1
+                  ? "One run awaits"
+                  : `${activity.inboxCount} runs await`}{" "}
+                your review.
+                {activity.runningCount > 0 && (
+                  <>
+                    {" "}
+                    {activity.runningCount === 1
+                      ? "Another agent is"
+                      : `${activity.runningCount} other agents are`}{" "}
+                    working in the background.
+                  </>
+                )}
+              </>
+            ) : activity.runningCount > 0 ? (
+              <>
+                {activity.runningCount === 1 ? "One agent is" : `${activity.runningCount} agents are`}{" "}
+                working. Pick up where you left off.
+              </>
+            ) : (
+              "Pick up where you left off."
+            )}
           </div>
         )}
       </div>
@@ -242,6 +277,7 @@ export function HomePanel() {
                       paused={a.status === "paused"}
                       stepLabel={a.stepLabel}
                       note={a.lastNote}
+                      displaySerif={displaySerif}
                     />
                   ))
                 )}
@@ -867,13 +903,25 @@ function useGreeting(): string {
   return "Good evening";
 }
 
+/**
+ * Hero overline text — `Weekday · DD Month · HH:MM`, matching
+ * screen-home.jsx's `Tuesday · 17 April · 09:24`. Re-renders on a
+ * 60 s tick so the clock stays roughly honest without noise.
+ */
 function useTodayLabel(): string {
-  const d = new Date();
-  return d.toLocaleDateString(undefined, {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const dateHalf = now.toLocaleDateString(undefined, {
     weekday: "long",
     day: "numeric",
     month: "long",
   });
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${dateHalf} · ${hh}:${mm}`;
 }
 
 /**
