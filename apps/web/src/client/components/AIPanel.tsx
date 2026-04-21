@@ -1,10 +1,20 @@
-import { ArrowUp, Highlighter, Lightbulb, Sparkles, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowUp, Highlighter, Lightbulb, Plus, Slash, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import { getApiProject, revertJob, submitDryRunVerdict } from "../lib/api.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
+import { useEditorStore } from "../stores/editor.js";
+import { ContextBudgetChip } from "./ai-composer/ContextBudgetChip.js";
+import {
+  type MentionCandidate,
+  MentionPicker,
+} from "./ai-composer/MentionPicker.js";
+import { MicButton } from "./ai-composer/MicButton.js";
+import { OpenedFileToggle } from "./ai-composer/OpenedFileToggle.js";
+import { PlusMenu } from "./ai-composer/PlusMenu.js";
+import { type SlashAction, SlashMenu } from "./ai-composer/SlashMenu.js";
 import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
 import {
@@ -34,10 +44,49 @@ export function AIPanel() {
   const removeContext = useAIPanelStore((s) => s.removeContext);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Composer popover visibility. Opened on button click AND on
+  //  first-char keystroke (`+` / `/`) from an empty draft. Typing
+  //  `@` anywhere opens the mention picker instead.
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [slashOpen, setSlashOpen] = useState(false);
+  // Mention picker state — active when the caret is inside an
+  //  `@query` token. `mentionRange` stores the `[start, end]` char
+  //  offsets of the token so we can replace it on pick.
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionRange, setMentionRange] = useState<[number, number] | null>(null);
 
   const openFilePicker = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  /**
+   * Insert `@` at the caret and open the mention picker. Used by
+   * the `+` menu's "Add context" item and the `/` menu's "Mention"
+   * item. The picker's keystroke detection will pick up the new
+   * `@` token on the next render.
+   */
+  const insertAtCaret = useCallback(
+    (ch: string) => {
+      const el = textareaRef.current;
+      if (!el) {
+        setInputDraft(inputDraft + ch);
+        return;
+      }
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const next = inputDraft.slice(0, start) + ch + inputDraft.slice(end);
+      setInputDraft(next);
+      // Restore caret to the char immediately after the insert.
+      queueMicrotask(() => {
+        el.focus();
+        el.setSelectionRange(start + ch.length, start + ch.length);
+      });
+    },
+    [inputDraft, setInputDraft],
+  );
 
   const onFilesPicked = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -77,10 +126,30 @@ export function AIPanel() {
   const handleSend = useCallback(() => {
     const draft = inputDraft.trim();
     if (!draft && contexts.length === 0) return;
-    // Build the full prompt including any context pills.
+
+    // If the opened-file toggle is on, append the active file as a
+    //  transient context pill for this send only. We read from the
+    //  editor store at send time (not via subscription) so the
+    //  composer doesn't re-render every time the user edits.
+    const { filePath, markdown } = useEditorStore.getState();
+    const include = useAIPanelStore.getState().includeActiveFileAsContext;
+    const sendContexts: ContextPill[] = [...contexts];
+    if (include && filePath) {
+      const baseName = filePath.split("/").pop() ?? filePath;
+      sendContexts.push({
+        kind: "file",
+        label: baseName,
+        // Body is the live markdown buffer; the agent sees the
+        //  user's working copy, not the on-disk snapshot.
+        body: markdown,
+        path: filePath,
+      });
+    }
+
+    // Build the full prompt including all context pills.
     const contextBlock =
-      contexts.length > 0
-        ? `${contexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n")}\n\n`
+      sendContexts.length > 0
+        ? `${sendContexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n")}\n\n`
         : "";
     const fullPrompt = contextBlock + draft;
 
@@ -121,14 +190,162 @@ export function AIPanel() {
     setPendingPrompt(null);
   }, []);
 
+  /**
+   * Scan the textarea around the caret for an `@mention` token. If
+   * the caret is inside an `@…` run (no whitespace after the `@`),
+   * open the mention picker with the current query; otherwise close
+   * it. Re-invoked on every input change + selection shift.
+   */
+  const updateMentionFromCaret = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) {
+      setMentionOpen(false);
+      return;
+    }
+    const caret = el.selectionStart;
+    const upto = inputDraft.slice(0, caret);
+    const atIdx = upto.lastIndexOf("@");
+    if (atIdx === -1) {
+      setMentionOpen(false);
+      return;
+    }
+    // The `@` must be at start of line or preceded by whitespace.
+    const prevChar = atIdx === 0 ? " " : inputDraft[atIdx - 1];
+    if (prevChar !== " " && prevChar !== "\n" && prevChar !== "\t") {
+      setMentionOpen(false);
+      return;
+    }
+    const between = inputDraft.slice(atIdx + 1, caret);
+    // Close if the user has crossed whitespace — the `@token` is complete.
+    if (/\s/.test(between)) {
+      setMentionOpen(false);
+      return;
+    }
+    setMentionOpen(true);
+    setMentionQuery(between);
+    setMentionRange([atIdx, caret]);
+  }, [inputDraft]);
+
+  // Re-scan whenever the draft changes.
+  useEffect(() => {
+    updateMentionFromCaret();
+  }, [updateMentionFromCaret]);
+
   const onPromptKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
         handleSend();
+        return;
+      }
+      // First-char triggers — typing `+` or `/` into an empty draft
+      //  opens the corresponding popover INSTEAD of inserting the
+      //  character. The mention `@` picker is handled reactively via
+      //  `updateMentionFromCaret` in the onChange branch, so the
+      //  user does see `@` in the textarea.
+      if (inputDraft.length === 0 && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (e.key === "+") {
+          e.preventDefault();
+          setPlusOpen(true);
+          return;
+        }
+        if (e.key === "/") {
+          e.preventDefault();
+          setSlashOpen(true);
+          return;
+        }
       }
     },
-    [handleSend],
+    [handleSend, inputDraft.length],
+  );
+
+  /**
+   * Commit a chosen mention — replace the `@query` range with a
+   * pill in `contexts` (not inline text) so the downstream prompt
+   * sees a first-class context block, not a freeform `@slug`
+   * sprinkled in the body. Consistent with how highlight/upload
+   * attachments ride as pills.
+   */
+  const onMentionPick = useCallback(
+    (c: MentionCandidate) => {
+      const range = mentionRange;
+      if (!range) {
+        setMentionOpen(false);
+        return;
+      }
+      const [from, to] = range;
+      // Strip the `@query` — we don't want double-reference with a pill.
+      const next = inputDraft.slice(0, from) + inputDraft.slice(to);
+      setInputDraft(next);
+      useAIPanelStore.getState().addContext({
+        kind: c.kind === "agent" ? "page" : "page",
+        label: c.label,
+        body:
+          c.kind === "agent"
+            ? `Reference to agent @${c.path}`
+            : `Reference to page ${c.path}`,
+        path: c.path,
+      });
+      setMentionOpen(false);
+      setMentionQuery("");
+      setMentionRange(null);
+      queueMicrotask(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(from, from);
+        }
+      });
+    },
+    [inputDraft, mentionRange, setInputDraft],
+  );
+
+  /**
+   * Dispatch a slash-menu action. `attach-file` / `mention` share
+   * handlers with the `+` menu; `clear-conversation` and the actual
+   * `/slash` commands mutate the conversation via store actions.
+   * Settings links open the settings dialog (category-specific
+   * deep-linking is a follow-up once the dialog grows tabs beyond
+   * Appearance/Security).
+   */
+  const onSlashAction = useCallback(
+    (action: SlashAction) => {
+      switch (action) {
+        case "attach-file":
+          openFilePicker();
+          break;
+        case "mention":
+          insertAtCaret("@");
+          break;
+        case "clear-conversation":
+        case "slash.clear": {
+          const ok = window.confirm("Clear the conversation? This can't be undone.");
+          if (!ok) return;
+          useAIPanelStore.getState().clearMessages();
+          useAIPanelStore.getState().resetTokens();
+          break;
+        }
+        case "switch-model":
+        case "account-usage":
+          useAppStore.getState().toggleSettings();
+          break;
+        case "slash.summarize":
+          setInputDraft(
+            "Summarize the conversation so far in five bullets, then propose the next step.",
+          );
+          queueMicrotask(() => textareaRef.current?.focus());
+          break;
+        case "slash.retry":
+          setInputDraft("Retry the last turn.");
+          queueMicrotask(() => textareaRef.current?.focus());
+          break;
+        case "slash.continue":
+          setInputDraft("Continue.");
+          queueMicrotask(() => textareaRef.current?.focus());
+          break;
+      }
+    },
+    [openFilePicker, insertAtCaret, setInputDraft],
   );
 
   const canSend = inputDraft.trim().length > 0 || contexts.length > 0;

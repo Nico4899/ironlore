@@ -460,6 +460,28 @@ html[data-motif-provenance="off"] .il-provenance-strip {
 html[data-motion="none"] .il-blockref-preview {
   animation: none;
 }
+
+/*
+ * Composer popovers — +/slash/mention menus. 80ms ease-out rise on
+ * open, matching the `--motion-snap` token. The hover rule lifts
+ * `PopoverItem` to slate-elev so arrow-key and pointer selection
+ * share the same visual cue. Selection ring uses the blue accent.
+ */
+@keyframes ilSnapIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+html[data-motion="none"] [role="dialog"] {
+  animation: none !important;
+}
+.il-popover-item:hover:not(:disabled),
+.il-popover-item[data-selected="true"] {
+  background: var(--il-slate-elev);
+}
+.il-popover-item[data-selected="true"] {
+  outline: 1px solid color-mix(in oklch, var(--il-blue) 45%, transparent);
+  outline-offset: -1px;
+}
 html[data-motif-blockref-preview="off"] .il-blockref-preview {
   display: none;
 }
