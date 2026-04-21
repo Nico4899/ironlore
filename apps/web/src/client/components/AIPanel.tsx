@@ -1,5 +1,5 @@
-import { ArrowUp, Highlighter, Lightbulb, Plus, Slash, Sparkles, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, Highlighter, Lightbulb, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import { getApiProject, revertJob, submitDryRunVerdict } from "../lib/api.js";
@@ -7,10 +7,7 @@ import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { ContextBudgetChip } from "./ai-composer/ContextBudgetChip.js";
-import {
-  type MentionCandidate,
-  MentionPicker,
-} from "./ai-composer/MentionPicker.js";
+import { type MentionCandidate, MentionPicker } from "./ai-composer/MentionPicker.js";
 import { MicButton } from "./ai-composer/MicButton.js";
 import { OpenedFileToggle } from "./ai-composer/OpenedFileToggle.js";
 import { PlusMenu } from "./ai-composer/PlusMenu.js";
@@ -280,10 +277,7 @@ export function AIPanel() {
       useAIPanelStore.getState().addContext({
         kind: c.kind === "agent" ? "page" : "page",
         label: c.label,
-        body:
-          c.kind === "agent"
-            ? `Reference to agent @${c.path}`
-            : `Reference to page ${c.path}`,
+        body: c.kind === "agent" ? `Reference to agent @${c.path}` : `Reference to page ${c.path}`,
         path: c.path,
       });
       setMentionOpen(false);
@@ -422,11 +416,15 @@ export function AIPanel() {
       </div>
 
       {/*
-       * Composer region — wraps BOTH the context pill row and the
-       * input well so `AgentPulse`'s 3.2 s sweep crosses both while
-       * the agent streams, matching screen-editor.jsx. Pills were
-       * previously in a separate sibling block above, which kept
-       * them outside the sweep.
+       * Composer region — two-row well per the redesign brief:
+       *   Row 1: textarea + mic placeholder
+       *   Row 2: [+][/] · opened-file toggle · flex · context-%
+       *          chip · send ↑
+       * Pills (context chips) sit above the well. The `+` and `/`
+       * popovers anchor to their trigger buttons; the mention
+       * picker anchors to the textarea.
+       * AgentPulse wraps everything so the 3.2s sweep crosses the
+       * whole composer while streaming.
        */}
       <AgentPulse active={isStreaming} className="border-t border-border p-3">
         {contexts.length > 0 && (
@@ -437,33 +435,12 @@ export function AIPanel() {
             ))}
           </div>
         )}
-        <div className="relative flex items-end gap-2 rounded-lg border border-border bg-background px-2 py-1.5 focus-within:border-ironlore-blue">
-          {/*
-           * Attach chip — mono `@` glyph in a 20 × 20 slate-elevated
-           * cell per screen-editor.jsx. The prior Paperclip icon
-           * implied file upload; `@` reads as mention/context, which
-           * is what the action actually does (attaches a file or
-           * page as context).
-           */}
-          <button
-            type="button"
-            onClick={openFilePicker}
-            aria-label="Add context"
-            title="Add context (@ file or page)"
-            className="flex shrink-0 items-center justify-center rounded outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-            style={{
-              width: 20,
-              height: 20,
-              background: "var(--il-slate-elev)",
-              border: "1px solid var(--il-border-soft)",
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              color: "var(--il-text3)",
-              lineHeight: 1,
-            }}
-          >
-            @
-          </button>
+        <div
+          className="relative rounded-lg border border-border bg-background focus-within:border-ironlore-blue"
+          style={{ padding: "6px 8px" }}
+        >
+          {/* Hidden file input — triggered by the `+` menu and the
+           *  `/` menu's Attach file item. Accepts multi-select. */}
           <input
             ref={fileInputRef}
             type="file"
@@ -471,29 +448,105 @@ export function AIPanel() {
             className="hidden"
             onChange={onFilesPicked}
           />
-          <textarea
-            className="flex-1 resize-none bg-transparent py-1.5 text-sm text-primary placeholder:text-secondary focus:outline-none"
-            placeholder={`Ask ${activeAgent} to…`}
-            value={inputDraft}
-            rows={1}
-            onChange={(e) => setInputDraft(e.target.value)}
-            onKeyDown={onPromptKeyDown}
-            style={{ minHeight: "28px", maxHeight: "160px" }}
+
+          {/* Row 1 — textarea + mic placeholder. */}
+          <div className="relative flex items-start">
+            <textarea
+              ref={textareaRef}
+              className="flex-1 resize-none bg-transparent py-1 text-sm text-primary placeholder:text-secondary focus:outline-none"
+              placeholder={`Ask ${activeAgent} to…`}
+              value={inputDraft}
+              rows={1}
+              onChange={(e) => setInputDraft(e.target.value)}
+              onKeyDown={onPromptKeyDown}
+              onSelect={updateMentionFromCaret}
+              style={{ minHeight: "24px", maxHeight: "160px" }}
+            />
+            <MicButton />
+          </div>
+
+          {/* Row 2 — toolbar strip. */}
+          <div className="flex items-center" style={{ gap: 4, marginTop: 4, height: 24 }}>
+            {/* Left cluster — `+` and `/` triggers. */}
+            <div className="relative">
+              <ToolbarIconButton
+                glyph="+"
+                ariaLabel="Add to prompt"
+                title="Add to prompt (+)"
+                active={plusOpen}
+                onClick={() => {
+                  setPlusOpen((v) => !v);
+                  setSlashOpen(false);
+                }}
+              />
+              <PlusMenu
+                open={plusOpen}
+                onClose={() => setPlusOpen(false)}
+                onUpload={openFilePicker}
+                onAddContext={() => insertAtCaret("@")}
+              />
+            </div>
+            <div className="relative">
+              <ToolbarIconButton
+                glyph="/"
+                ariaLabel="Commands"
+                title="Commands (/)"
+                active={slashOpen}
+                onClick={() => {
+                  setSlashOpen((v) => !v);
+                  setPlusOpen(false);
+                }}
+              />
+              <SlashMenu
+                open={slashOpen}
+                onClose={() => setSlashOpen(false)}
+                onAction={onSlashAction}
+              />
+            </div>
+
+            {/* Divider · mono 10.5 dim — separates triggers from the
+             *  opened-file toggle. */}
+            <span
+              aria-hidden="true"
+              style={{
+                width: 1,
+                height: 14,
+                background: "var(--il-border-soft)",
+                marginLeft: 2,
+                marginRight: 4,
+              }}
+            />
+            <OpenedFileToggle />
+
+            <span className="flex-1" />
+
+            <ContextBudgetChip />
+
+            {/* Send pill — 20×20 blue rounded-full with an up-arrow.
+             *  Matches the JSX schematic. */}
+            <button
+              type="button"
+              onClick={handleSend}
+              disabled={!canSend}
+              aria-label="Send message"
+              title="Send (⌘↵)"
+              className="flex shrink-0 items-center justify-center bg-ironlore-blue text-white shadow-sm transition-opacity hover:bg-ironlore-blue-strong disabled:cursor-not-allowed disabled:opacity-30"
+              style={{ width: 20, height: 20, borderRadius: 9999, marginLeft: 4 }}
+            >
+              <ArrowUp style={{ width: 12, height: 12 }} strokeWidth={2.5} />
+            </button>
+          </div>
+
+          {/* Mention picker — anchored to the composer well so it
+           *  floats above Row 1 when active. Only one popover may
+           *  be open at a time; we dismiss the others when the
+           *  picker opens. */}
+          <MentionPicker
+            open={mentionOpen && !plusOpen && !slashOpen}
+            query={mentionQuery}
+            onPick={onMentionPick}
+            onClose={() => setMentionOpen(false)}
           />
-          {/* Send pill — 20×20 blue rounded-full with an up-arrow
-           *  glyph. Replaces the prior 28×28 rounded-md shape so the
-           *  cluster reads as the JSX schematic. */}
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!canSend}
-            aria-label="Send message"
-            title="Send (⌘↵)"
-            className="flex shrink-0 items-center justify-center bg-ironlore-blue text-white shadow-sm transition-opacity hover:bg-ironlore-blue-strong disabled:cursor-not-allowed disabled:opacity-30"
-            style={{ width: 20, height: 20, borderRadius: 9999 }}
-          >
-            <ArrowUp style={{ width: 12, height: 12 }} strokeWidth={2.5} />
-          </button>
         </div>
       </AgentPulse>
       {costDialogOpen && (
@@ -504,6 +557,52 @@ export function AIPanel() {
         />
       )}
     </aside>
+  );
+}
+
+/**
+ * Toolbar trigger — 22×22 slate-elevated cell rendering a single
+ * mono glyph (`+` or `/`). Matches the chrome grammar used by the
+ * prior `@` chip: mono 12 text3 on slate-elev with a soft border.
+ * When `active` is true (its popover is open), the cell brightens
+ * to `--il-text` so the user sees which menu owns focus.
+ */
+function ToolbarIconButton({
+  glyph,
+  ariaLabel,
+  title,
+  active,
+  onClick,
+}: {
+  glyph: string;
+  ariaLabel: string;
+  title: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      aria-expanded={active}
+      title={title}
+      className="flex items-center justify-center outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      style={{
+        width: 22,
+        height: 22,
+        background: active ? "var(--il-slate-elev)" : "transparent",
+        border: `1px solid ${active ? "var(--il-border)" : "var(--il-border-soft)"}`,
+        borderRadius: 3,
+        fontFamily: "var(--font-mono)",
+        fontSize: 12,
+        color: active ? "var(--il-text)" : "var(--il-text3)",
+        lineHeight: 1,
+        cursor: "pointer",
+      }}
+    >
+      {glyph}
+    </button>
   );
 }
 

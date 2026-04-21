@@ -1,4 +1,4 @@
-import { AtSign, CircleUserRound, Eraser, FileUp, RefreshCcw, Settings2 } from "lucide-react";
+import { AtSign, CircleUserRound, Eraser, FileUp, Settings2 } from "lucide-react";
 import { type EffortLevel, useAIPanelStore } from "../../stores/ai-panel.js";
 import { ComposerPopover, PopoverItem, PopoverSectionHeader } from "./ComposerPopover.js";
 
@@ -121,8 +121,6 @@ function EffortSlider({
         Effort
       </span>
       <div
-        role="radiogroup"
-        aria-label="Effort level"
         style={{
           display: "inline-flex",
           padding: 2,
@@ -137,8 +135,7 @@ function EffortSlider({
             <button
               key={o.value}
               type="button"
-              role="radio"
-              aria-checked={selected}
+              aria-pressed={selected}
               onClick={() => onChange(o.value)}
               style={{
                 padding: "3px 8px",

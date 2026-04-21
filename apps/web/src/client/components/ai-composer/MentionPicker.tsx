@@ -55,7 +55,12 @@ export function MentionPicker({ open, query, onPick, onClose }: MentionPickerPro
         setAgents(
           list.map(
             (a) =>
-              ({ kind: "agent", label: a.slug, path: a.slug, status: a.status }) as MentionCandidate,
+              ({
+                kind: "agent",
+                label: a.slug,
+                path: a.slug,
+                status: a.status,
+              }) as MentionCandidate,
           ),
         );
       })
