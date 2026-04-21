@@ -41,6 +41,12 @@ export function LoginPage() {
       try {
         const result = await login("admin", password);
         useAuthStore.getState().setAuthenticated(result.username, result.mustChangePassword);
+        // Login only hands back `{username, mustChangePassword}`; the
+        //  current project id is still server-side state. Refresh
+        //  the session so `currentProjectId` hydrates before the
+        //  sidebar re-mounts — otherwise the ProjectTile sees a null
+        //  id and bails (#B3: tile disappearing after re-login).
+        await useAuthStore.getState().checkSession();
       } catch (err) {
         if (err instanceof ApiError) {
           if (err.status === 429) {

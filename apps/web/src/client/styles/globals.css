@@ -471,6 +471,21 @@ html[data-motion="none"] .il-blockref-preview {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+/*
+ * App-header heartbeat — 1 px gradient line sweeping horizontally
+ * across the header's bottom edge while any agent is streaming. The
+ * 4 s cycle is deliberately slower than the composer's 3.2 s pulse
+ * so the shell's heartbeat doesn't compete with per-surface motion.
+ */
+@keyframes ilHeaderPulse {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(0); }
+  100% { transform: translateX(100%); }
+}
+html[data-motion="none"] [style*="ilHeaderPulse"] {
+  animation: none !important;
+}
 html[data-motion="none"] [role="dialog"] {
   animation: none !important;
 }

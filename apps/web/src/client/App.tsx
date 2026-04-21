@@ -6,7 +6,7 @@ import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { CopyToProjectDialog } from "./components/CopyToProjectDialog.js";
 import { LoginPage } from "./components/LoginPage.js";
-import { OfflineBanner } from "./components/OfflineBanner.js";
+import { AppHeader } from "./components/AppHeader.js";
 import { OnboardingWizard } from "./components/OnboardingWizard.js";
 import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
 import { ProvenancePane } from "./components/ProvenancePane.js";
@@ -241,15 +241,20 @@ function AppShell() {
         Skip to content
       </a>
 
-      {/* Shell body — sidebar on the left (carries logo, project,
-       *  tabs, search, profile — the Header was retired in the sidebar
-       *  consolidation per docs/09-ui-and-brand.md §Sidebar revision). */}
+      {/* Top app header — logo + breadcrumb + theme / search /
+       *  inbox / profile cluster. Lives above the sidebar so the
+       *  right cluster (⌘K, inbox, profile) is always above the
+       *  fold regardless of which surface is active. */}
+      <AppHeader />
+
+      {/* Shell body — sidebar on the left, content + panels on the right. */}
       <div className="flex min-h-0 flex-1">
         <SidebarNew />
 
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Banners */}
-          <OfflineBanner />
+          {/* Banners — OfflineBanner retired (WS health is visible in
+           *  the StatusBar's pip; an intrusive banner on top of the
+           *  content area was redundant and noisy). */}
           <RecoveryBanner />
 
           {/* Content + panels */}
