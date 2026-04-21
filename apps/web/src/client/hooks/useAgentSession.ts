@@ -227,9 +227,21 @@ function processJobEvent(event: { seq: number; kind: string; data: string }): vo
       });
       break;
 
-    case "usage":
-      // Token usage — could surface in UI later; skip for now.
+    case "usage": {
+      // Per-chunk TokenUsage payload from the provider (see
+      //  apps/web/src/server/providers/types.ts `TokenUsage`). We
+      //  accumulate `input + output` into the store so the
+      //  composer's context-budget chip reads `tokensUsed` /
+      //  AGENT_TOKEN_BUDGET for the % remaining. Cache tokens are
+      //  intentionally excluded — the server's `budget.usedTokens`
+      //  counter also sums only input + output (executor.ts line
+      //  195), so the UI gauge stays aligned with the server cap.
+      const input = typeof data.inputTokens === "number" ? data.inputTokens : 0;
+      const output = typeof data.outputTokens === "number" ? data.outputTokens : 0;
+      const delta = input + output;
+      if (delta > 0) store.incrementTokens(delta);
       break;
+    }
 
     case "session.paused":
       // Interactive session paused (client disconnected).

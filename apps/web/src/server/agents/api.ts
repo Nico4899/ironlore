@@ -41,9 +41,21 @@ export function createAgentApi(
     const body = await c.req.json<{
       prompt?: string;
       mode?: "interactive" | "autonomous";
+      /**
+       * Effort preference forwarded from the composer's `/ → Model →
+       *  Effort` slider (low/medium/high). Persisted per-session on
+       *  the client; the executor is free to map this to provider
+       *  params (e.g. temperature, max_tokens) once the provider
+       *  protocol grows an `effort` field. Stored verbatim in the
+       *  job payload today so recorded runs can later be replayed
+       *  with the same preference.
+       */
+      effort?: "low" | "medium" | "high";
     }>();
 
     const mode = body.mode ?? "interactive";
+    const effort: "low" | "medium" | "high" =
+      body.effort === "low" || body.effort === "high" ? body.effort : "medium";
 
     // Check rails before enqueuing.
     if (mode === "autonomous") {
@@ -58,7 +70,7 @@ export function createAgentApi(
       kind: "agent.run",
       mode,
       ownerId: slug,
-      payload: { prompt: body.prompt ?? "" },
+      payload: { prompt: body.prompt ?? "", effort },
     });
 
     // Record the run start for rate-limit tracking (autonomous only).
