@@ -1,4 +1,4 @@
-import { ArrowUp, Highlighter, Lightbulb, Paperclip, Sparkles, X } from "lucide-react";
+import { ArrowUp, Highlighter, Lightbulb, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
@@ -204,43 +204,48 @@ export function AIPanel() {
         {messages.length === 0 ? <AIEmptyState /> : <MessageList />}
       </div>
 
-      {/* Context pills */}
-      {contexts.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 border-t border-border px-3 py-2">
-          {contexts.map((ctx, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: pills are append-only and never reorder
-            <ContextChip key={i} ctx={ctx} onRemove={() => removeContext(i)} />
-          ))}
-        </div>
-      )}
-
       {/*
-       * Composer — wrapped in AgentPulse so the 3.2s sweep runs across
-       * the input box while the agent streams. Per
-       * docs/09-ui-and-brand.md §Signature motifs / Agent pulse, the
-       * composer is the canonical "live surface" during streaming.
-       * `.il-pulse::before` is an absolute overlay so it needs a
-       * position-relative + overflow-hidden host — the pulse wrapper
-       * is that host, the border wrapper sits inside it unchanged.
+       * Composer region — wraps BOTH the context pill row and the
+       * input well so `AgentPulse`'s 3.2 s sweep crosses both while
+       * the agent streams, matching screen-editor.jsx. Pills were
+       * previously in a separate sibling block above, which kept
+       * them outside the sweep.
        */}
       <AgentPulse active={isStreaming} className="border-t border-border p-3">
+        {contexts.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {contexts.map((ctx, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: pills are append-only and never reorder
+              <ContextChip key={i} ctx={ctx} onRemove={() => removeContext(i)} />
+            ))}
+          </div>
+        )}
         <div className="relative flex items-end gap-2 rounded-lg border border-border bg-background px-2 py-1.5 focus-within:border-ironlore-blue">
-          {/* Paper-clip in a 20×20 slate-elevated chip per
-           *  docs/09-ui-and-brand.md §AI panel composer. */}
+          {/*
+           * Attach chip — mono `@` glyph in a 20 × 20 slate-elevated
+           * cell per screen-editor.jsx. The prior Paperclip icon
+           * implied file upload; `@` reads as mention/context, which
+           * is what the action actually does (attaches a file or
+           * page as context).
+           */}
           <button
             type="button"
             onClick={openFilePicker}
-            aria-label="Attach a local file"
-            title="Attach a local file"
-            className="flex shrink-0 items-center justify-center rounded text-secondary hover:text-primary"
+            aria-label="Add context"
+            title="Add context (@ file or page)"
+            className="flex shrink-0 items-center justify-center rounded outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
             style={{
               width: 20,
               height: 20,
               background: "var(--il-slate-elev)",
               border: "1px solid var(--il-border-soft)",
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              color: "var(--il-text3)",
+              lineHeight: 1,
             }}
           >
-            <Paperclip style={{ width: 12, height: 12 }} />
+            @
           </button>
           <input
             ref={fileInputRef}
