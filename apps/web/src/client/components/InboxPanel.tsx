@@ -1,8 +1,9 @@
-import { X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { ExternalLink } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   approveInboxEntry,
   fetchInbox,
+  fetchInboxDiff,
   fetchInboxFiles,
   type InboxFileDiff,
   rejectInboxEntry,
@@ -10,6 +11,28 @@ import {
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { Key, Meta, Reuleaux, StatusPip, Venn } from "./primitives/index.js";
+
+/**
+ * Agent Inbox — batch review surface for inbox-mode agent runs.
+ *
+ * Per screen-more.jsx ScreenInbox + docs/09-ui-and-brand.md §Agent
+ * Inbox, Inbox is a full-screen content-area surface (promoted from
+ * the prior sidebar-embedded panel). The workspace sidebar stays on
+ * the files tree; selecting the sidebar's INBOX tab routes the
+ * content area here.
+ *
+ * Keyboard-first:
+ *   · `j`/`k` (or ↑↓) move focus between entries
+ *   · `a` approves the focused entry, `r` rejects
+ *   · `⇧A` approve-all, `⇧R` reject-all
+ *   · `↵` toggles the focused entry's expanded diff dropdown
+ *
+ * New interaction: clicking (or pressing Enter on) an entry expands
+ * an inline diff dropdown below it, rendering per-file `git diff`
+ * content with a "Jump to file" CTA that opens the changed file in
+ * the editor. The dropdown is the review affordance — we don't ship
+ * people to a separate surface to see what they're approving.
+ */
 
 interface InboxEntry {
   id: string;
@@ -21,44 +44,17 @@ interface InboxEntry {
   status: string;
 }
 
-/**
- * Agent Inbox panel — batch review UI for inbox-mode agent runs.
- *
- * Keyboard-first per docs/09-ui-and-brand.md §Agent Inbox:
- *   · `j`/`k` (or ↑↓) move focus between entries
- *   · `a` approves the focused entry, `r` rejects
- *   · `⇧A` approve-all, `⇧R` reject-all
- *   · `Enter` opens provenance for the first file changed
- *
- * Bulk operations fan out the per-entry endpoints serially so one
- * failure doesn't cascade and partially-applied state is still
- * observable in the list.
- */
-/**
- * Embedded mode — dropped inside the sidebar's INBOX tab. Width is
- * inherited from the sidebar (no `w-80`), no left border (the sidebar
- * draws its own right border via `sidebar-chrome`), no close X (the
- * sidebar tab bar owns the "close" affordance). Overlay mode is no
- * longer used anywhere; kept for API compatibility.
- */
-export function InboxPanel({
-  onClose,
-  embedded = false,
-}: {
-  onClose?: () => void;
-  embedded?: boolean;
-}) {
+export function InboxPanel() {
+  const typeDisplay = useAppStore((s) => s.typeDisplay);
+  const serif = typeDisplay === "serif";
+
   const [entries, setEntries] = useState<InboxEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusIdx, setFocusIdx] = useState(0);
   const [busy, setBusy] = useState(false);
+  /** Id of the currently-expanded entry (only one at a time). */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  /**
-   * Per-entry diff stats keyed by entry id. Populated lazily once
-   * the entry list lands — one git call per entry. Failure to compute
-   * for an individual entry surfaces as "no diff data" on that row
-   * rather than tanking the whole panel.
-   */
   const [fileStats, setFileStats] = useState<Map<string, InboxFileDiff[] | "error">>(
     () => new Map(),
   );
@@ -69,7 +65,7 @@ export function InboxPanel({
       const { entries: e } = await fetchInbox();
       setEntries(e);
     } catch {
-      // Network error — leave empty
+      /* leave empty on network error */
     } finally {
       setLoading(false);
     }
@@ -79,9 +75,6 @@ export function InboxPanel({
     load();
   }, [load]);
 
-  // Fan out the diff-stats fetches once the entry list changes. Each
-  //  entry's stats cache until entries change identity; we only fetch
-  //  for ids we haven't seen yet.
   useEffect(() => {
     if (entries.length === 0) return;
     let cancelled = false;
@@ -110,19 +103,16 @@ export function InboxPanel({
     };
   }, [entries, fileStats]);
 
-  // Keep focus in range when entries shrink after approve/reject.
   useEffect(() => {
-    if (entries.length === 0) {
-      setFocusIdx(0);
-    } else if (focusIdx >= entries.length) {
-      setFocusIdx(entries.length - 1);
-    }
+    if (entries.length === 0) setFocusIdx(0);
+    else if (focusIdx >= entries.length) setFocusIdx(entries.length - 1);
   }, [entries.length, focusIdx]);
 
   const handleApprove = useCallback(async (id: string) => {
     const result = await approveInboxEntry(id);
     if (result.success) {
       setEntries((prev) => prev.filter((e) => e.id !== id));
+      setExpandedId((cur) => (cur === id ? null : cur));
     }
   }, []);
 
@@ -130,15 +120,10 @@ export function InboxPanel({
     const result = await rejectInboxEntry(id);
     if (result.success) {
       setEntries((prev) => prev.filter((e) => e.id !== id));
+      setExpandedId((cur) => (cur === id ? null : cur));
     }
   }, []);
 
-  /**
-   * Per-file decision toggle. Optimistically updates the local stats
-   * cache so the button flip is instant; rolls back on server error.
-   * The new `approveInboxEntry` call honors these decisions — rejected
-   * files are skipped during the cherry-pick path.
-   */
   const handleFileDecision = useCallback(
     async (entryId: string, path: string, decision: "approved" | "rejected" | null) => {
       let prevDecision: "approved" | "rejected" | null = null;
@@ -160,7 +145,6 @@ export function InboxPanel({
         const result = await setInboxFileDecision(entryId, path, decision);
         if (!result.success) throw new Error(result.error ?? "Decision failed");
       } catch {
-        // Roll back the optimistic update on failure.
         setFileStats((prev) => {
           const current = prev.get(entryId);
           if (!Array.isArray(current)) return prev;
@@ -179,13 +163,11 @@ export function InboxPanel({
   const handleApproveAll = useCallback(async () => {
     if (busy || entries.length === 0) return;
     setBusy(true);
-    // Snapshot ids — entries is filtered as each resolves.
     const ids = entries.map((e) => e.id);
     for (const id of ids) {
       try {
         await handleApprove(id);
       } catch {
-        // Stop on first error so the user can inspect what's left.
         break;
       }
     }
@@ -206,9 +188,20 @@ export function InboxPanel({
     setBusy(false);
   }, [busy, entries, handleReject]);
 
+  /**
+   * Jump to a file that appears inside the expanded diff. Closes the
+   * inbox surface, restores the sidebar to its Files tab, and routes
+   * the editor to the file's path. This is the review-to-edit bridge
+   * the spec calls for in the expand-on-click flow.
+   */
+  const handleJumpToFile = useCallback((path: string) => {
+    const store = useAppStore.getState();
+    store.setSidebarTab("files");
+    store.setActivePath(path);
+  }, []);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Skip when the user is typing into any input/textarea/contenteditable.
       const t = e.target as HTMLElement | null;
       if (t) {
         const tag = t.tagName;
@@ -228,7 +221,6 @@ export function InboxPanel({
           setFocusIdx((i) => Math.max(i - 1, 0));
           break;
         case "A":
-          // Capital A only (user must hold Shift) — approve-all.
           e.preventDefault();
           handleApproveAll();
           break;
@@ -249,11 +241,13 @@ export function InboxPanel({
           }
           break;
         case "Enter": {
-          const file = entry?.filesChanged[0];
-          if (file) {
-            e.preventDefault();
-            useAppStore.getState().openProvenance(file, "");
-          }
+          if (!entry) break;
+          e.preventDefault();
+          // Enter toggles the inline diff dropdown for the focused
+          //  entry — the review affordance replaces the prior
+          //  "open provenance" behavior, which dropped users out of
+          //  the inbox flow.
+          setExpandedId((cur) => (cur === entry.id ? null : entry.id));
           break;
         }
       }
@@ -265,74 +259,57 @@ export function InboxPanel({
   const paddedCount = String(entries.length).padStart(2, "0");
 
   return (
-    <div
-      className={
-        embedded
-          ? "flex h-full min-h-0 flex-col bg-ironlore-slate"
-          : "flex h-full w-80 flex-col border-l border-border bg-ironlore-slate"
-      }
+    <section
+      className="flex h-full flex-col overflow-hidden"
+      aria-label="Agent Inbox"
+      style={{ background: "var(--il-bg)" }}
     >
-      {/*
-       * Header — canvas-grammar per docs/09-ui-and-brand.md §Agent
-       * Inbox. Mono uppercase overline `"<NN> pending"` sits above an
-       * Inter h1, followed by a keyboard-hint row. The close X and
-       * Inbox icon live at the top so mouse users still have one-click
-       * dismissal.
-       */}
-      {/*
-       * Header — canvas-grammar per docs/09-ui-and-brand.md §Agent
-       * Inbox. Mono `NN PENDING` overline sits above the Inter 600 h1,
-       * followed by a keyboard-hint row. The close X hangs top-right
-       * for mouse users. The decorative Inbox icon from the prior
-       * iteration is dropped — the `PENDING` overline is the anchor.
-       */}
-      <header className="border-b border-border px-3 py-3">
-        <div className="flex items-start justify-between gap-2">
-          <div
+      {/* Header — content-area grammar. Mono `NN pending` overline +
+       *  variant-aware H1 (Inter 22 safe / Serif 34 italic with
+       *  trailing italic `awaiting review.` in display) + a
+       *  keyboard-hint row. Matches screen-more.jsx ScreenInbox. */}
+      <header
+        className="shrink-0"
+        style={{
+          padding: "22px 32px 14px",
+          borderBottom: "1px solid var(--il-border-soft)",
+        }}
+      >
+        <div className="flex items-baseline gap-4">
+          <span
             className="font-mono uppercase"
             style={{
-              fontSize: 10.5,
+              fontSize: 11,
               letterSpacing: "0.08em",
               color: "var(--il-text3)",
             }}
           >
             {paddedCount} pending
-          </div>
-          {/* Close X suppressed in embedded mode — the sidebar tab
-           *  bar is the "back to files" affordance. Overlay mode
-           *  still renders it for mouse users. */}
-          {!embedded && onClose && (
-            <button
-              type="button"
-              className="-mt-1 -mr-1 rounded p-1 text-secondary hover:bg-ironlore-slate-hover"
-              onClick={onClose}
-              aria-label="Close inbox"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+          </span>
+          <h1
+            style={{
+              fontFamily: serif ? "var(--font-display)" : "var(--font-sans)",
+              fontWeight: serif ? 400 : 600,
+              fontSize: serif ? 34 : 22,
+              letterSpacing: "-0.025em",
+              lineHeight: 1.1,
+              margin: 0,
+              color: "var(--il-text)",
+            }}
+          >
+            Agent Inbox
+            {serif && (
+              <span style={{ fontStyle: "italic", color: "var(--il-text2)" }}>
+                {" "}
+                — awaiting review.
+              </span>
+            )}
+          </h1>
         </div>
-        <h1
-          className="mt-0.5"
-          style={{
-            fontFamily: "var(--font-sans)",
-            fontSize: 18,
-            fontWeight: 600,
-            letterSpacing: "-0.02em",
-            color: "var(--il-text)",
-            margin: 0,
-          }}
-        >
-          Agent Inbox
-        </h1>
         {!loading && entries.length > 0 && (
           <div
-            className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono uppercase"
-            style={{
-              fontSize: 10.5,
-              letterSpacing: "0.04em",
-              color: "var(--il-text3)",
-            }}
+            className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono uppercase"
+            style={{ fontSize: 10.5, letterSpacing: "0.04em", color: "var(--il-text3)" }}
           >
             <span>
               <Key>j</Key>/<Key>k</Key> navigate
@@ -346,64 +323,75 @@ export function InboxPanel({
             <span>
               <Key>⇧A</Key> approve all
             </span>
+            <span>
+              <Key>↵</Key> expand
+            </span>
           </div>
         )}
       </header>
 
-      <section className="flex-1 overflow-y-auto p-3" aria-label="Pending inbox entries">
-        {loading && <div className="py-8 text-center text-xs text-secondary">Loading...</div>}
-
+      <div
+        className="flex-1 overflow-y-auto"
+        style={{ padding: "14px 32px" }}
+        aria-label="Pending inbox entries"
+      >
+        {loading && <div className="py-8 text-center text-xs text-secondary">Loading…</div>}
         {!loading && entries.length === 0 && <InboxEmptyState />}
-
         {entries.map((entry, idx) => {
           const focused = idx === focusIdx;
+          const expanded = expandedId === entry.id;
           return (
             <InboxEntryCard
               key={entry.id}
               entry={entry}
               focused={focused}
+              expanded={expanded}
               stats={fileStats.get(entry.id)}
+              onToggleExpanded={() => {
+                setFocusIdx(idx);
+                setExpandedId((cur) => (cur === entry.id ? null : entry.id));
+              }}
               onApprove={() => handleApprove(entry.id)}
               onReject={() => handleReject(entry.id)}
               onDecisionChange={(path, decision) => handleFileDecision(entry.id, path, decision)}
+              onJumpToFile={handleJumpToFile}
             />
           );
         })}
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }
 
 /**
- * One entry in the inbox list. Header row mirrors screen-more.jsx +
- * docs/09-ui-and-brand.md §Agent Inbox: Signal-Amber Reuleaux + slug
- * (Inter 15/600 safe, Instrument Serif 22 italic display via
- * `.il-inbox-slug`) + `Meta k="branch"` + `Meta k="finalized"` +
- * flex-spacer + Reject all (transparent + border) + Approve all
- * (blue + `--il-blue-glow`). The button hierarchy matches the AI
- * panel's DiffCard so users learn it once.
- *
- * Focused state (keyboard cursor) paints a 3 px `--il-blue-glow`
- * outer ring, swaps the soft border for `var(--il-blue)`, and tints
- * the first file row blue 8 % so the selection reads unambiguously.
+ * One entry in the inbox list. The card header is click-to-expand;
+ * expanding drops an inline diff dropdown below the file rows.
+ * Approve/Reject remain in the header so users can act without
+ * having to expand first.
  */
 function InboxEntryCard({
   entry,
   focused,
+  expanded,
   stats,
+  onToggleExpanded,
   onApprove,
   onReject,
   onDecisionChange,
+  onJumpToFile,
 }: {
   entry: InboxEntry;
   focused: boolean;
+  expanded: boolean;
   stats: InboxFileDiff[] | "error" | undefined;
+  onToggleExpanded: () => void;
   onApprove: () => void;
   onReject: () => void;
   onDecisionChange: (path: string, decision: "approved" | "rejected" | null) => void;
+  onJumpToFile: (path: string) => void;
 }) {
-  // Branch names can be long — show last path segment and stash the
-  //  full value in `title` for hover inspection.
+  const typeDisplay = useAppStore((s) => s.typeDisplay);
+  const serif = typeDisplay === "serif";
   const shortBranch = entry.branch.split("/").pop() || entry.branch;
   const finalizedLabel = formatRelative(entry.finalizedAt, Date.now());
 
@@ -411,34 +399,65 @@ function InboxEntryCard({
     <div
       id={`inbox-entry-${entry.id}`}
       aria-current={focused ? "true" : undefined}
-      className="mb-2 rounded-lg text-xs transition-colors"
+      className="mb-3 overflow-hidden rounded-md"
       style={{
-        padding: 12,
         background: focused
           ? "color-mix(in oklch, var(--il-blue) 8%, transparent)"
-          : "color-mix(in oklch, var(--il-slate-hover) 50%, transparent)",
+          : "var(--il-slate)",
         border: focused ? "1px solid var(--il-blue)" : "1px solid var(--il-border-soft)",
         boxShadow: focused ? "0 0 0 3px var(--il-blue-glow)" : undefined,
+        transition: "background var(--motion-snap), border-color var(--motion-snap)",
       }}
     >
-      <div className="flex items-center gap-2">
-        {/* 10 px pip — spec §Reuleaux sizes: cards / rows. */}
+      {/* Header row — click to expand the diff dropdown. Approve /
+       *  Reject buttons stop propagation so they don't toggle too. */}
+      <button
+        type="button"
+        onClick={onToggleExpanded}
+        aria-expanded={expanded}
+        aria-controls={`inbox-diff-${entry.id}`}
+        className="flex w-full items-center gap-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        style={{ padding: "12px 16px" }}
+      >
         <Reuleaux size={10} color="var(--il-amber)" aria-label="Pending review" />
-        <span className="il-inbox-slug">{entry.agentSlug}</span>
+        <span
+          className="shrink-0"
+          style={{
+            fontFamily: serif ? "var(--font-display)" : "var(--font-sans)",
+            fontStyle: serif ? "italic" : "normal",
+            fontSize: serif ? 22 : 15,
+            fontWeight: serif ? 400 : 600,
+            letterSpacing: "-0.01em",
+            color: "var(--il-text)",
+          }}
+        >
+          {entry.agentSlug}
+        </span>
         <Meta
           k="branch"
           v={shortBranch}
-          style={{ maxWidth: "8rem", overflow: "hidden", textOverflow: "ellipsis" }}
+          style={{ maxWidth: "10rem", overflow: "hidden", textOverflow: "ellipsis" }}
         />
         <Meta k="finalized" v={finalizedLabel} />
         <span className="flex-1" />
+        <span
+          aria-hidden="true"
+          className="font-mono"
+          style={{
+            fontSize: 10.5,
+            color: "var(--il-text3)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {expanded ? "▾" : "▸"}
+        </span>
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             onReject();
           }}
-          className="rounded px-2 py-0.5 text-[11px] font-medium text-secondary transition-colors hover:bg-ironlore-slate-hover"
+          className="rounded px-3 py-1 text-xs font-medium text-secondary transition-colors hover:bg-ironlore-slate-hover"
           style={{ border: "1px solid var(--il-border)" }}
         >
           Reject all
@@ -449,12 +468,12 @@ function InboxEntryCard({
             e.stopPropagation();
             onApprove();
           }}
-          className="rounded border-none bg-ironlore-blue px-2 py-0.5 text-[11px] font-medium text-background hover:bg-ironlore-blue-strong"
+          className="rounded border-none bg-ironlore-blue px-3 py-1 text-xs font-medium text-background hover:bg-ironlore-blue-strong"
           style={{ boxShadow: "0 0 10px var(--il-blue-glow)" }}
         >
           Approve all
         </button>
-      </div>
+      </button>
 
       <InboxEntryFiles
         entry={entry}
@@ -462,6 +481,18 @@ function InboxEntryCard({
         focused={focused}
         onDecisionChange={onDecisionChange}
       />
+
+      {/* Inline diff dropdown — only one entry may be expanded at a
+       *  time. Each file shows its unified diff + a Jump-to-file
+       *  CTA so the user can open the changed file without leaving
+       *  the review flow. */}
+      {expanded && (
+        <InboxDiffDropdown
+          entryId={entry.id}
+          stats={stats}
+          onJumpToFile={onJumpToFile}
+        />
+      )}
     </div>
   );
 }
@@ -498,15 +529,11 @@ function InboxEmptyState() {
 }
 
 /**
- * Per-file diff rows for an inbox entry — `A/D/M · path · ±NN ·
- * StatusPip "pending" · ✓/✗` per docs/09-ui-and-brand.md §Agent
- * Inbox. Falls back to the plain filename list when git stats
- * aren't available yet (loading / error / fell off the branch) so
- * the row never goes empty.
- *
- * Focused entries tint their first file row blue 8 % so the
- * selection cue carries into the body of the card, not just the
- * outer frame.
+ * Per-file status rows. Each row: `A/D/M` status letter · mono path
+ * · mono delta (`+N -N`) · `pending` StatusPip · mini `× / ✓`
+ * decision buttons per screen-more.jsx. Decisions persist via
+ * `POST /inbox/:id/files/decision` and round-trip into the Approve-
+ * all partial-cherry-pick.
  */
 function InboxEntryFiles({
   entry,
@@ -519,11 +546,12 @@ function InboxEntryFiles({
   focused: boolean;
   onDecisionChange: (path: string, decision: "approved" | "rejected" | null) => void;
 }) {
-  // While we're fetching or the endpoint failed, degrade to the plain
-  //  filename list. Never block the entry from rendering on this.
   if (stats === undefined || stats === "error" || stats.length === 0) {
     return (
-      <ul className="mt-2 max-h-20 overflow-y-auto text-[10px] text-secondary">
+      <ul
+        className="border-t border-border/50 text-[10px] text-secondary"
+        style={{ padding: "8px 16px" }}
+      >
         {entry.filesChanged.map((f) => (
           <li key={f} className="truncate font-mono">
             {f}
@@ -534,19 +562,13 @@ function InboxEntryFiles({
   }
 
   return (
-    <ul className="mt-2 max-h-32 overflow-y-auto">
+    <ul style={{ borderTop: "1px solid var(--il-border-soft)" }}>
       {stats.map((f, i) => {
         const isApproved = f.decision === "approved";
         const isRejected = f.decision === "rejected";
-        // Toggle semantics: clicking an already-set decision clears
-        //  it (back to default-accept). Keeps the button pair
-        //  single-ended without needing a separate "clear" control.
         const toggle = (next: "approved" | "rejected") => {
           onDecisionChange(f.path, f.decision === next ? null : next);
         };
-        // First-row tint only applies to the focused entry and only
-        //  when the user hasn't already voted on that file — the
-        //  decision tints (green/red) win over selection.
         const firstRowFocusTint =
           focused && i === 0 && !isApproved && !isRejected
             ? "color-mix(in oklch, var(--il-blue) 8%, transparent)"
@@ -554,23 +576,19 @@ function InboxEntryFiles({
         return (
           <li
             key={f.path}
-            // `group` enables `group-hover:` selectors on the
-            //  approve/reject chips so they only reveal on pointer
-            //  hover or keyboard focus — matches the micro-interaction
-            //  in the design handoff (resting vs. hover).
-            className="group grid items-center gap-1.5 py-0.5"
+            className="grid items-center"
             style={{
-              gridTemplateColumns: "12px minmax(0, 1fr) auto auto auto",
-              fontSize: 10.5,
+              gridTemplateColumns: "20px minmax(0, 1fr) auto auto 72px",
+              columnGap: 12,
+              padding: "10px 16px",
+              fontSize: 12,
               background: isApproved
-                ? "color-mix(in oklch, var(--il-green) 10%, transparent)"
+                ? "color-mix(in oklch, var(--il-green) 8%, transparent)"
                 : isRejected
-                  ? "color-mix(in oklch, var(--il-red) 10%, transparent)"
+                  ? "color-mix(in oklch, var(--il-red) 8%, transparent)"
                   : (firstRowFocusTint ?? "transparent"),
               opacity: isRejected ? 0.65 : 1,
-              paddingLeft: 2,
-              paddingRight: 2,
-              borderRadius: 2,
+              borderTop: i > 0 ? "1px solid var(--il-border-soft)" : undefined,
             }}
             title={f.path}
           >
@@ -587,38 +605,32 @@ function InboxEntryFiles({
             <span
               className="truncate font-mono"
               style={{
-                color: "var(--il-text2)",
+                fontSize: 12,
+                color: "var(--il-text)",
                 textDecoration: isRejected ? "line-through" : undefined,
               }}
             >
               {f.path}
             </span>
-            <span className="font-mono" style={{ color: "var(--il-text4)" }}>
+            <span
+              className="font-mono"
+              style={{ fontSize: 10.5, color: "var(--il-text3)" }}
+            >
               {formatDelta(f)}
             </span>
             <StatusPip state="idle" label="pending" size={7} />
-            <span
-              // Hidden at rest; revealed on row hover, or any time the
-              //  user has explicitly voted so they can see + reverse
-              //  the current decision. `focus-within` keeps the cluster
-              //  visible while keyboard focus is inside.
-              className={`flex gap-1.5 transition-opacity ${
-                isApproved || isRejected
-                  ? "opacity-100"
-                  : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-              }`}
-            >
-              <FileDecisionChip
+            <div className="flex justify-end gap-1.5">
+              <FileDecisionButton
                 kind="rejected"
                 active={isRejected}
                 onClick={() => toggle("rejected")}
               />
-              <FileDecisionChip
+              <FileDecisionButton
                 kind="approved"
                 active={isApproved}
                 onClick={() => toggle("approved")}
               />
-            </span>
+            </div>
           </li>
         );
       })}
@@ -627,10 +639,239 @@ function InboxEntryFiles({
 }
 
 /**
- * Compact relative-time label — `just now`, `Ns ago`, `Nm ago`,
- * `Nh ago`, `Nd ago`. Mirrors ContentArea.tsx's helper so inbox
- * finalized-at reads the same as the status bar's saved-at.
+ * Expand-on-click dropdown — fetches the unified diff for every file
+ * in the entry and renders each block with a Jump-to-file CTA.
+ * Diffs are fetched lazily on expand so an un-expanded entry doesn't
+ * pay the git round-trip; results live in local component state so
+ * collapsing & re-expanding doesn't re-fetch.
  */
+function InboxDiffDropdown({
+  entryId,
+  stats,
+  onJumpToFile,
+}: {
+  entryId: string;
+  stats: InboxFileDiff[] | "error" | undefined;
+  onJumpToFile: (path: string) => void;
+}) {
+  const filePaths = useMemo<string[]>(() => {
+    if (!stats || stats === "error") return [];
+    return stats.filter((f) => f.status !== "D").map((f) => f.path);
+  }, [stats]);
+
+  const [diffs, setDiffs] = useState<Record<string, string | null>>({});
+  const [loading, setLoading] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    for (const path of filePaths) {
+      if (path in diffs) continue;
+      setLoading((prev) => {
+        const next = new Set(prev);
+        next.add(path);
+        return next;
+      });
+      fetchInboxDiff(entryId, path)
+        .then((text) => {
+          if (cancelled) return;
+          setDiffs((prev) => ({ ...prev, [path]: text }));
+          setLoading((prev) => {
+            const next = new Set(prev);
+            next.delete(path);
+            return next;
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setDiffs((prev) => ({ ...prev, [path]: null }));
+          setLoading((prev) => {
+            const next = new Set(prev);
+            next.delete(path);
+            return next;
+          });
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [entryId, filePaths, diffs]);
+
+  if (filePaths.length === 0) {
+    return (
+      <div
+        id={`inbox-diff-${entryId}`}
+        style={{
+          padding: "12px 16px",
+          borderTop: "1px solid var(--il-border-soft)",
+          fontSize: 12,
+          color: "var(--il-text3)",
+        }}
+      >
+        No readable diffs — this entry only has deletions or unreadable files.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      id={`inbox-diff-${entryId}`}
+      style={{ borderTop: "1px solid var(--il-border-soft)" }}
+    >
+      {filePaths.map((path) => (
+        <DiffBlock
+          key={path}
+          path={path}
+          diff={diffs[path]}
+          loading={loading.has(path)}
+          onJumpToFile={() => onJumpToFile(path)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function DiffBlock({
+  path,
+  diff,
+  loading,
+  onJumpToFile,
+}: {
+  path: string;
+  diff: string | null | undefined;
+  loading: boolean;
+  onJumpToFile: () => void;
+}) {
+  return (
+    <div style={{ borderBottom: "1px solid var(--il-border-soft)" }}>
+      <div
+        className="flex items-center gap-3"
+        style={{
+          padding: "8px 16px",
+          background: "var(--il-slate-elev)",
+          borderBottom: "1px solid var(--il-border-soft)",
+        }}
+      >
+        <span
+          className="font-mono uppercase"
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.06em",
+            color: "var(--il-text3)",
+          }}
+        >
+          diff
+        </span>
+        <span
+          className="truncate font-mono"
+          style={{ fontSize: 11.5, color: "var(--il-text2)" }}
+          title={path}
+        >
+          {path}
+        </span>
+        <span className="flex-1" />
+        {/* Jump-to-file CTA — closes the inbox surface + opens the
+         *  changed file in the editor. The explicit arrow glyph
+         *  matches the "→ open first" pattern in the onboarding
+         *  witness step. */}
+        <button
+          type="button"
+          onClick={onJumpToFile}
+          className="inline-flex items-center gap-1.5 rounded outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          style={{
+            padding: "4px 10px",
+            fontSize: 11.5,
+            fontFamily: "var(--font-sans)",
+            fontWeight: 500,
+            color: "var(--il-blue)",
+            background: "transparent",
+            border: "1px solid color-mix(in oklch, var(--il-blue) 40%, transparent)",
+          }}
+        >
+          <ExternalLink className="h-3 w-3" />
+          Jump to file
+        </button>
+      </div>
+      <div
+        style={{
+          padding: "8px 16px",
+          maxHeight: 360,
+          overflowY: "auto",
+          background: "var(--il-bg)",
+        }}
+      >
+        {loading && (
+          <div style={{ fontSize: 11.5, color: "var(--il-text3)" }}>Loading diff…</div>
+        )}
+        {!loading && diff === null && (
+          <div style={{ fontSize: 11.5, color: "var(--il-text3)" }}>Diff unavailable.</div>
+        )}
+        {!loading && diff !== null && diff !== undefined && (
+          <DiffPre diff={diff} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Colour-by-prefix renderer for unified diff text. Lines starting
+ * with `+` (not `+++`) tint green, `-` (not `---`) tint red,
+ * `@@` headings get amber, file headers stay muted mono. The whole
+ * block is read-only mono 11.5 / 1.55 — same grammar the AI panel's
+ * DiffCard uses, so users learn it once.
+ */
+function DiffPre({ diff }: { diff: string }) {
+  const lines = diff.split("\n");
+  return (
+    <pre
+      className="font-mono"
+      style={{
+        margin: 0,
+        fontSize: 11.5,
+        lineHeight: 1.55,
+        color: "var(--il-text2)",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+      }}
+    >
+      {lines.map((line, i) => {
+        let color = "var(--il-text2)";
+        let background = "transparent";
+        let borderLeft = "2px solid transparent";
+        if (line.startsWith("+++") || line.startsWith("---")) {
+          color = "var(--il-text3)";
+        } else if (line.startsWith("+")) {
+          color = "var(--il-green)";
+          background = "color-mix(in oklch, var(--il-green) 12%, transparent)";
+          borderLeft = "2px solid var(--il-green)";
+        } else if (line.startsWith("-")) {
+          color = "var(--il-red)";
+          background = "color-mix(in oklch, var(--il-red) 12%, transparent)";
+          borderLeft = "2px solid var(--il-red)";
+        } else if (line.startsWith("@@")) {
+          color = "var(--il-amber)";
+        } else if (line.startsWith("diff ") || line.startsWith("index ")) {
+          color = "var(--il-text3)";
+        }
+        return (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: diff text is positional; index IS the identity
+            key={i}
+            style={{
+              color,
+              background,
+              borderLeft,
+              padding: "0 6px",
+            }}
+          >
+            {line || " "}
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
 function formatRelative(ms: number, now: number): string {
   const sec = Math.max(0, Math.floor((now - ms) / 1000));
   if (sec < 5) return "just now";
@@ -643,16 +884,13 @@ function formatRelative(ms: number, now: number): string {
 }
 
 /**
- * Per-file `A · APPROVE` / `R · REJECT` hover chip. Inline decision
- * affordance sized to match the keyboard-hint grammar used elsewhere:
- * a mono Key chip carrying the accelerator glyph, a `·` separator,
- * and the uppercase mono label in the state-signal color. Hidden at
- * rest (parent row has `group`) and revealed on hover or focus; when
- * the user has already voted, the active chip is solid-filled so its
- * current state is always visible, while its partner still shows on
- * hover for reversal.
+ * Spec's mini decision button — solid-fill `×` / `✓` glyph in a
+ * 24×22 cell, borderless when active (bg carries the colour),
+ * transparent border when inactive. Replaces the prior labeled
+ * `R·REJECT` / `A·APPROVE` chip so the file row fits the canvas
+ * grammar in screen-more.jsx.
  */
-function FileDecisionChip({
+function FileDecisionButton({
   kind,
   active,
   onClick,
@@ -661,9 +899,9 @@ function FileDecisionChip({
   active: boolean;
   onClick: () => void;
 }) {
-  const color = kind === "approved" ? "var(--il-green)" : "var(--il-red)";
-  const accel = kind === "approved" ? "A" : "R";
-  const label = kind === "approved" ? "approve" : "reject";
+  const glyph = kind === "approved" ? "✓" : "×";
+  const color = kind === "approved" ? "var(--il-green)" : "var(--il-text2)";
+  const activeBg = kind === "approved" ? "var(--il-green)" : "transparent";
   const ariaLabel = kind === "approved" ? "Approve this file" : "Reject this file";
   return (
     <button
@@ -674,34 +912,28 @@ function FileDecisionChip({
         e.stopPropagation();
         onClick();
       }}
-      className="inline-flex items-center gap-1 font-mono uppercase outline-none"
       style={{
-        padding: "2px 6px",
-        borderRadius: 3,
-        fontSize: 10.5,
-        letterSpacing: "0.06em",
+        width: 24,
+        height: 22,
+        padding: 0,
+        fontSize: 13,
         lineHeight: 1,
-        background: active ? color : `color-mix(in oklch, ${color} 10%, transparent)`,
-        color: active ? "var(--il-bg)" : color,
-        border: `1px solid ${active ? color : `color-mix(in oklch, ${color} 40%, transparent)`}`,
+        background: active ? activeBg : "transparent",
+        color: active
+          ? kind === "approved"
+            ? "var(--il-bg)"
+            : color
+          : color,
+        border: active
+          ? kind === "approved"
+            ? "none"
+            : "1px solid var(--il-border)"
+          : "1px solid var(--il-border)",
+        borderRadius: 3,
         cursor: "pointer",
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          fontSize: 10.5,
-          padding: "0 3px",
-          border: `1px solid ${active ? "color-mix(in oklch, var(--il-bg) 60%, transparent)" : `color-mix(in oklch, ${color} 40%, transparent)`}`,
-          borderRadius: 2,
-        }}
-      >
-        {accel}
-      </span>
-      <span aria-hidden="true" style={{ opacity: 0.6 }}>
-        ·
-      </span>
-      <span>{label}</span>
+      {glyph}
     </button>
   );
 }
@@ -720,11 +952,6 @@ function statusColor(status: InboxFileDiff["status"]): string {
   }
 }
 
-/**
- * Compact delta label — `+3 -2`, `+24`, `-8`, or `bin` for binary
- * files (git reports `-` for both counts when the diff is unreadable
- * as text). Zero-count columns drop out so the row stays short.
- */
 function formatDelta(f: InboxFileDiff): string {
   if (f.added === null && f.removed === null) return "bin";
   const parts: string[] = [];
