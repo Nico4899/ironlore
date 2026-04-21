@@ -17,6 +17,14 @@ export type ConversationMessage =
       result?: unknown;
       collapsed: boolean;
       timestamp?: number;
+      /**
+       * Milliseconds between the call's start (`timestamp`) and the
+       * moment the result landed. Stamped once by `useAgentSession`
+       * when the tool-call result message arrives over the WS stream;
+       * the `ToolCallCard` surfaces it as the StatusPip's right-edge
+       * label (`180ms`).
+       */
+      durationMs?: number;
     }
   | { type: "journal"; text: string; step?: number; totalSteps?: number; timestamp?: number }
   | {
