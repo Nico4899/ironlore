@@ -6,16 +6,21 @@ import {
   type AgentListEntry,
   fetchAgentConfig,
   fetchAgents,
+  fetchProjects,
+  type ProjectListEntry,
+  setAgentPaused,
 } from "../lib/api.js";
+import { useAIPanelStore } from "../stores/ai-panel.js";
 import {
   DEFAULT_ACCENT_HUE,
   type MotifSettings,
   type MotionSetting,
+  type SettingsTab,
   type TypeDisplaySetting,
   useAppStore,
 } from "../stores/app.js";
 
-type Tab = "general" | "appearance" | "security";
+type Tab = SettingsTab;
 
 /** Preset accent hues offered as quick swatches on the Appearance tab. */
 const PRESET_HUES = [220, 258, 290, 320, 10, 40, 80, 148];
@@ -54,7 +59,11 @@ export function SettingsDialog() {
     [close],
   );
 
-  const [activeTab, setActiveTab] = useState<Tab>("appearance");
+  // Active tab is source-of-truth'd in the app store so composer
+  //  deep-links (`/ → Switch model`) can jump straight to a specific
+  //  category without rendering the dialog first. Persisted per device.
+  const activeTab = useAppStore((s) => s.settingsTab);
+  const setActiveTab = useAppStore((s) => s.setSettingsTab);
 
   return (
     <div
@@ -93,25 +102,23 @@ export function SettingsDialog() {
           </div>
           {/* Category order mirrors docs/09-ui-and-brand.md §Settings →
            *  Appearance: General · Projects · Agents · Security · Storage
-           *  · Appearance. Unwired rows render at 50% opacity so the
-           *  roadmap is visible at a glance. */}
+           *  · Appearance. All six tabs are wired now. */}
           {(
             [
-              ["general", "General", false],
-              ["projects", "Projects", false],
-              ["agents", "Agents", false],
-              ["security", "Security", true],
-              ["storage", "Storage", false],
-              ["appearance", "Appearance", true],
-            ] as Array<[Tab | "projects" | "agents" | "storage" | "general", string, boolean]>
-          ).map(([key, label, wired]) => {
-            const active = (key as string) === (activeTab as string);
+              ["general", "General"],
+              ["projects", "Projects"],
+              ["agents", "Agents"],
+              ["security", "Security"],
+              ["storage", "Storage"],
+              ["appearance", "Appearance"],
+            ] as Array<[Tab, string]>
+          ).map(([key, label]) => {
+            const active = key === activeTab;
             return (
               <button
                 key={key}
                 type="button"
-                disabled={!wired}
-                onClick={() => wired && setActiveTab(key as Tab)}
+                onClick={() => setActiveTab(key)}
                 className="text-left outline-none"
                 style={{
                   padding: "6px 10px",
@@ -123,8 +130,7 @@ export function SettingsDialog() {
                   color: active ? "var(--il-text)" : "var(--il-text2)",
                   fontSize: 13,
                   marginBottom: 2,
-                  cursor: wired ? "pointer" : "not-allowed",
-                  opacity: wired ? 1 : 0.5,
+                  cursor: "pointer",
                 }}
               >
                 {label}
@@ -150,7 +156,7 @@ export function SettingsDialog() {
                 letterSpacing: "0.08em",
               }}
             >
-              {activeTab === "security" ? "06 / security" : "06 / settings"}
+              06 / settings
             </span>
             <button
               type="button"
@@ -162,12 +168,59 @@ export function SettingsDialog() {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto" style={{ padding: "28px 36px" }}>
-            {activeTab === "security" ? <SecurityTab /> : <AppearanceTab />}
+          <div className="flex-1 overflow-y-auto" style={{ padding: "32px 48px" }}>
+            {activeTab === "general" && <GeneralTab />}
+            {activeTab === "projects" && <ProjectsTab />}
+            {activeTab === "agents" && <AgentsTab />}
+            {activeTab === "security" && <SecurityTab />}
+            {activeTab === "storage" && <StorageTab />}
+            {activeTab === "appearance" && <AppearanceTab />}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Tab hero — `TAB_TITLE` (Inter 600 26 safe, Instrument Serif 42 +
+ * trailing italic `.` under `data-type-display="serif"`) plus a
+ * short prose blurb. Matches the canvas grammar in
+ * screen-more.jsx ScreenSettings + brand doc §Settings → Appearance
+ * hero; every tab uses it so the surface reads as one variant family.
+ */
+function TabHero({ title, blurb }: { title: string; blurb: string }) {
+  const typeDisplay = useAppStore((s) => s.typeDisplay);
+  const serif = typeDisplay === "serif";
+  return (
+    <>
+      <h1
+        style={{
+          fontFamily: serif ? "var(--font-serif)" : "var(--font-sans)",
+          fontWeight: serif ? 400 : 600,
+          fontSize: serif ? 42 : 26,
+          letterSpacing: "-0.025em",
+          lineHeight: 1.05,
+          margin: "0 0 4px",
+          color: "var(--il-text)",
+        }}
+      >
+        {title}
+        {serif && (
+          <span style={{ fontStyle: "italic", color: "var(--il-text2)" }}>.</span>
+        )}
+      </h1>
+      <p
+        style={{
+          margin: "0 0 24px",
+          fontSize: 13.5,
+          color: "var(--il-text2)",
+          maxWidth: 520,
+        }}
+      >
+        {blurb}
+      </p>
+    </>
   );
 }
 
@@ -181,29 +234,10 @@ function AppearanceTab() {
 
   return (
     <>
-      <h1
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontWeight: 600,
-          fontSize: 26,
-          letterSpacing: "-0.025em",
-          margin: "0 0 4px",
-          color: "var(--il-text)",
-        }}
-      >
-        Appearance
-      </h1>
-      <p
-        style={{
-          margin: "0 0 24px",
-          fontSize: 13.5,
-          color: "var(--il-text2)",
-          maxWidth: 520,
-        }}
-      >
-        Adjust the visual density, theme, and accent hue. All settings apply instantly and persist
-        per device.
-      </p>
+      <TabHero
+        title="Appearance"
+        blurb="Adjust the visual density, theme, and accent hue. All settings apply instantly and persist per device."
+      />
 
       <SettingRow n="01" label="Theme">
         <SegChoice
@@ -333,23 +367,10 @@ function SecurityTab() {
 
   return (
     <>
-      <h1
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontWeight: 600,
-          fontSize: 26,
-          letterSpacing: "-0.025em",
-          margin: "0 0 4px",
-          color: "var(--il-text)",
-        }}
-      >
-        Security
-      </h1>
-      <p style={{ margin: "0 0 24px", fontSize: 13.5, color: "var(--il-text2)", maxWidth: 560 }}>
-        One row per installed agent showing what it can reach — scope globs, writable kinds,
-        declared tools, rate caps, and review mode. Scope itself is authored in each persona's
-        frontmatter; this tab is a read-only audit.
-      </p>
+      <TabHero
+        title="Security"
+        blurb="One row per installed agent showing what it can reach — scope globs, writable kinds, declared tools, rate caps, and review mode. Scope itself is authored in each persona's frontmatter; this tab is a read-only audit."
+      />
 
       {listError && (
         <div
