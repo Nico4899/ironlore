@@ -782,7 +782,80 @@ function GeneralTab() {
           onChange={(v) => setDevMode(v === "on")}
         />
       </SettingRow>
+
+      <SettingRow
+        n="05"
+        label="Account"
+        sub="Session managed by the server; log out to clear this browser's cookie."
+      >
+        <AccountRow />
+      </SettingRow>
     </>
+  );
+}
+
+/**
+ * Account row — shows the session username and a Log out button.
+ * Previously lived on the sidebar's `ProfileTile`; migrated here
+ * when the sidebar bottom rail was trimmed (the AppHeader's profile
+ * avatar now opens this tab).
+ */
+function AccountRow() {
+  const username = useAuthStore((s) => s.username);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const onLogout = useCallback(async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await logout();
+      // Re-check the session so the app flips back to LoginPage
+      //  without a hard reload. Don't await — clearSession below
+      //  will flip status synchronously if the server already
+      //  invalidated the cookie.
+      useAuthStore.getState().clearSession();
+    } catch {
+      /* best-effort — user can try again */
+    } finally {
+      setLoggingOut(false);
+    }
+  }, [loggingOut]);
+  return (
+    <div className="flex items-center gap-3">
+      <span style={{ fontSize: 13, color: "var(--il-text)" }}>
+        Signed in as{" "}
+        <code
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            color: "var(--il-text2)",
+          }}
+        >
+          {username ?? "—"}
+        </code>
+      </span>
+      <span className="flex-1" />
+      <button
+        type="button"
+        onClick={onLogout}
+        disabled={loggingOut}
+        className="inline-flex items-center gap-1.5 outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        style={{
+          padding: "6px 12px",
+          fontSize: 12,
+          fontFamily: "var(--font-sans)",
+          fontWeight: 500,
+          background: "transparent",
+          color: "var(--il-text2)",
+          border: "1px solid var(--il-border)",
+          borderRadius: 3,
+          cursor: loggingOut ? "progress" : "pointer",
+          opacity: loggingOut ? 0.6 : 1,
+        }}
+      >
+        <LogOut className="h-3.5 w-3.5" />
+        {loggingOut ? "Logging out…" : "Log out"}
+      </button>
+    </div>
   );
 }
 

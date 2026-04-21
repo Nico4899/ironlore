@@ -308,28 +308,36 @@ export function SidebarNew() {
   );
 
   /**
-   * Primary "+ New page" button beneath the tree. Creates an
-   * untitled markdown at the currently-drilled-in folder, drops
-   * into rename-mode immediately so the user names it inline, and
-   * activates the new path so the editor opens it. Replaces the
-   * prior "New folder" primary — folder creation stays on the
-   * right-click context menu.
+   * Primary "+ New page" button beneath the tree. Optimistic: the
+   * tree store gets the node first so the row appears instantly;
+   * the server round-trip runs in the background and the WS
+   * watcher event — when it arrives — is a no-op thanks to
+   * `insertNode`'s duplicate-path guard. On server error we
+   * `deleteNode` to roll back and surface the failure.
    */
   const handleNewPageFromSidebar = useCallback(async () => {
     const folder = sidebarFolder;
     const name = "Untitled";
     const path = folder ? `${folder}/${name}.md` : `${name}.md`;
+    useTreeStore.getState().insertNode({ id: path, name: `${name}.md`, path, type: "markdown" });
+    useAppStore.getState().setActivePath(path);
+    setEditingPath(path);
+    setEditingValue(name);
     try {
       await createPage(path, `# ${name}\n`);
-      useAppStore.getState().setActivePath(path);
-      setEditingPath(path);
-      setEditingValue(name);
     } catch {
-      /* server error — file-watcher will reconcile eventually */
+      // Roll back the optimistic insert. The user sees the row
+      //  vanish + an alert, which is better than a phantom file.
+      useTreeStore.getState().deleteNode(path);
+      setEditingPath(null);
+      window.alert("Couldn't create that page. The name may already be taken.");
     }
   }, [sidebarFolder]);
 
-  // Rename
+  // Rename (optimistic). The tree store moves the node right away
+  //  so the label flips in place; server failure rolls it back.
+  //  Captures the original node's `type` before the move so the
+  //  rollback preserves the file kind.
   const commitRename = useCallback(async (oldPath: string, newName: string) => {
     if (!newName.trim()) {
       setEditingPath(null);
@@ -338,14 +346,27 @@ export function SidebarNew() {
     const parts = oldPath.split("/");
     parts[parts.length - 1] = newName;
     const newPath = parts.join("/");
-    if (newPath !== oldPath) {
+    setEditingPath(null);
+    if (newPath === oldPath) return;
+
+    const snapshot = useTreeStore.getState().nodes.find((n) => n.path === oldPath);
+    if (!snapshot) {
+      // Unknown node — don't try an optimistic move. Just issue
+      //  the server call and let the watcher reconcile.
       try {
         await movePage(oldPath, newPath);
       } catch {
         /* */
       }
+      return;
     }
-    setEditingPath(null);
+    useTreeStore.getState().moveNode(oldPath, newPath, newName, snapshot.type);
+    try {
+      await movePage(oldPath, newPath);
+    } catch {
+      useTreeStore.getState().moveNode(newPath, oldPath, snapshot.name, snapshot.type);
+      window.alert("Rename failed — the old path was restored.");
+    }
   }, []);
 
   // Delete
@@ -368,11 +389,23 @@ export function SidebarNew() {
           ? `Delete folder "${name}" and all its contents?`
           : `Delete "${name}"?`;
       if (!window.confirm(msg)) return;
+
+      // Optimistic delete — yank the node (and children, via the
+      //  store's `deleteNode` prefix match) before the server
+      //  round-trip. Snapshot for rollback on failure.
+      const snapshot = useTreeStore
+        .getState()
+        .nodes.filter((n) => n.path === path || n.path.startsWith(`${path}/`));
+      useTreeStore.getState().deleteNode(path);
       try {
         if (type === "directory") await deleteFolder(path);
         else await deletePage(path);
       } catch {
-        /* */
+        // Roll back every affected node. The store's insertNode is
+        //  idempotent on path so a WS `tree:delete` landing after
+        //  this rollback just no-ops.
+        for (const n of snapshot) useTreeStore.getState().insertNode(n);
+        window.alert("Delete failed. The file was restored.");
       }
     },
     [],
@@ -406,14 +439,19 @@ export function SidebarNew() {
     const name = "Untitled";
     const path = folder ? `${folder}/${name}.md` : `${name}.md`;
     setContextMenu(null);
+    // Optimistic insert — see handleNewPageFromSidebar for the
+    //  pattern. Rollback on server error.
+    useTreeStore.getState().insertNode({ id: path, name: `${name}.md`, path, type: "markdown" });
+    if (folder && folder !== sidebarFolder) useAppStore.getState().setSidebarFolder(folder);
+    useAppStore.getState().setActivePath(path);
+    setEditingPath(path);
+    setEditingValue(name);
     try {
       await createPage(path, `# ${name}\n`);
-      if (folder && folder !== sidebarFolder) useAppStore.getState().setSidebarFolder(folder);
-      useAppStore.getState().setActivePath(path);
-      setEditingPath(path);
-      setEditingValue(name);
     } catch {
-      /* */
+      useTreeStore.getState().deleteNode(path);
+      setEditingPath(null);
+      window.alert("Couldn't create that page.");
     }
   }, [contextMenu, sidebarFolder]);
 
@@ -423,13 +461,18 @@ export function SidebarNew() {
     const name = "Untitled";
     const path = folder ? `${folder}/${name}` : name;
     setContextMenu(null);
+    // Optimistic insert — directory nodes carry `type: "directory"`
+    //  in the tree store. Rollback on server error.
+    useTreeStore.getState().insertNode({ id: path, name, path, type: "directory" });
+    if (folder && folder !== sidebarFolder) useAppStore.getState().setSidebarFolder(folder);
+    setEditingPath(path);
+    setEditingValue(name);
     try {
       await createFolder(path);
-      if (folder && folder !== sidebarFolder) useAppStore.getState().setSidebarFolder(folder);
-      setEditingPath(path);
-      setEditingValue(name);
     } catch {
-      /* */
+      useTreeStore.getState().deleteNode(path);
+      setEditingPath(null);
+      window.alert("Couldn't create that folder.");
     }
   }, [contextMenu, sidebarFolder]);
 
@@ -445,7 +488,6 @@ export function SidebarNew() {
     handleDelete(contextMenu.itemPath, contextMenu.itemType, contextMenu.itemName);
     setContextMenu(null);
   }, [contextMenu, handleDelete]);
-
 
   return (
     <aside
@@ -1076,7 +1118,9 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
     if (!slug) return;
     const clean = slug.trim().toLowerCase();
     if (!/^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(clean)) {
-      window.alert("Slug must be 3–32 chars, lowercase letters/digits/dashes; no leading/trailing dash.");
+      window.alert(
+        "Slug must be 3–32 chars, lowercase letters/digits/dashes; no leading/trailing dash.",
+      );
       return;
     }
     const path = `.agents/${clean}/persona.md`;
@@ -1218,7 +1262,9 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
         }}
         title="Create a new agent persona"
       >
-        <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)" }}>+</span>
+        <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)" }}>
+          +
+        </span>
         <span className="font-mono uppercase">add agent</span>
       </button>
     </div>
