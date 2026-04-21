@@ -1,5 +1,5 @@
 import { Sparkles } from "lucide-react";
-import { baseKeymap, toggleMark } from "prosemirror-commands";
+import { baseKeymap, setBlockType, toggleMark, wrapIn } from "prosemirror-commands";
 import { history, redo, undo } from "prosemirror-history";
 import {
   ellipsis,
@@ -14,6 +14,7 @@ import { EditorState, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../stores/app.js";
+import { type EditorCommands, registerEditorCommands } from "./editor-commands.js";
 import {
   buildSlashItems,
   filterSlashItems,
@@ -394,7 +395,85 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     const view = createView(container);
     viewRef.current = view;
 
+    // Register ProseMirror-backed toolbar commands while the view is
+    //  mounted. Each call dispatches through `view.dispatch` so
+    //  history tracking, input rules, and block-id preservation all
+    //  continue to work.
+    if (view) {
+      const schema = view.state.schema;
+      const run = (cmd: ReturnType<typeof toggleMark>) => {
+        cmd(view.state, view.dispatch);
+        view.focus();
+      };
+      const commands: EditorCommands = {
+        toggleBold: () => {
+          const m = schema.marks.strong;
+          if (m) run(toggleMark(m));
+        },
+        toggleItalic: () => {
+          const m = schema.marks.em;
+          if (m) run(toggleMark(m));
+        },
+        toggleUnderline: () => {
+          // No native `<u>` mark in the default markdown schema.
+          //  Skip gracefully; Source mode handles it via HTML.
+        },
+        toggleStrike: () => {
+          // `strikethrough` isn't in the default schema either.
+          //  Skip in WYSIWYG; Source mode handles it via `~~…~~`.
+        },
+        toggleInlineCode: () => {
+          const m = schema.marks.code;
+          if (m) run(toggleMark(m));
+        },
+        setHeading: (level) => {
+          const h = schema.nodes.heading;
+          const p = schema.nodes.paragraph;
+          if (!h || !p) return;
+          // Toggle: if the current block is already this heading
+          //  level, drop back to paragraph; otherwise set heading.
+          const $head = view.state.selection.$from;
+          const node = $head.parent;
+          const already = node.type === h && node.attrs.level === level;
+          const cmd = already ? setBlockType(p) : setBlockType(h, { level });
+          cmd(view.state, view.dispatch);
+          view.focus();
+        },
+        toggleBlockquote: () => {
+          const bq = schema.nodes.blockquote;
+          if (!bq) return;
+          wrapIn(bq)(view.state, view.dispatch);
+          view.focus();
+        },
+        insertCodeFence: () => {
+          const cb = schema.nodes.code_block;
+          if (!cb) return;
+          setBlockType(cb)(view.state, view.dispatch);
+          view.focus();
+        },
+        insertLink: () => {
+          const linkMark = schema.marks.link;
+          if (!linkMark) return;
+          const url = window.prompt("Link URL", "https://");
+          if (!url) return;
+          const { from, to, empty } = view.state.selection;
+          const tr = view.state.tr;
+          if (empty) {
+            // No selection — insert the URL itself as link text.
+            const text = view.state.schema.text(url, [linkMark.create({ href: url })]);
+            tr.insert(from, text);
+          } else {
+            tr.addMark(from, to, linkMark.create({ href: url }));
+          }
+          view.dispatch(tr);
+          view.focus();
+        },
+      };
+      registerEditorCommands(commands);
+    }
+
     return () => {
+      registerEditorCommands(null);
       view?.destroy();
       viewRef.current = null;
     };

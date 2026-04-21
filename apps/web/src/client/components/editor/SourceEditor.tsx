@@ -14,6 +14,7 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
+import { type EditorCommands, registerEditorCommands } from "./editor-commands.js";
 
 // ---------------------------------------------------------------------------
 // Theme — matches OKLCh design tokens
@@ -196,7 +197,14 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
     const view = new EditorView({ state, parent: container });
     viewRef.current = view;
 
+    // Expose toolbar commands while the source editor is mounted.
+    //  Each command mutates the current CodeMirror selection via
+    //  `view.dispatch(...)` — no heuristics, no hidden state; the
+    //  selection position is always authoritative.
+    registerEditorCommands(buildSourceEditorCommands(view));
+
     return () => {
+      registerEditorCommands(null);
       view.destroy();
       viewRef.current = null;
     };
@@ -220,4 +228,121 @@ export function SourceEditor({ markdown, onChange }: SourceEditorProps) {
   }, [markdown]);
 
   return <div ref={containerRef} className="h-full overflow-hidden" />;
+}
+
+// ---------------------------------------------------------------------------
+// Toolbar command bindings
+// ---------------------------------------------------------------------------
+
+/**
+ * Wrap the current CodeMirror selection in a pair of delimiters
+ * (e.g. `**…**`, `*…*`, `<u>…</u>`). When the selection is empty we
+ * insert the delimiters at the cursor and leave the caret between
+ * them; when it's non-empty we wrap + re-select the middle so the
+ * user can continue typing or re-trigger the command to toggle off.
+ *
+ * `open` and `close` may differ so HTML-style wrappers (`<u>…</u>`,
+ * `<mark>…</mark>`) keep a tidy single-call surface.
+ */
+function wrapSelection(view: EditorView, open: string, close: string = open): void {
+  const { from, to } = view.state.selection.main;
+  const sliced = view.state.sliceDoc(from, to);
+  // Toggle off when the selection is already wrapped exactly.
+  const before = view.state.sliceDoc(Math.max(0, from - open.length), from);
+  const after = view.state.sliceDoc(to, Math.min(view.state.doc.length, to + close.length));
+  if (before === open && after === close) {
+    view.dispatch({
+      changes: [
+        { from: from - open.length, to, insert: sliced },
+        { from: to, to: to + close.length, insert: "" },
+      ],
+      selection: { anchor: from - open.length, head: to - open.length },
+    });
+    view.focus();
+    return;
+  }
+  view.dispatch({
+    changes: { from, to, insert: `${open}${sliced}${close}` },
+    selection: {
+      anchor: from + open.length,
+      head: to + open.length,
+    },
+  });
+  view.focus();
+}
+
+/**
+ * Prepend a line-level prefix (`# `, `## `, `> `, etc.) to every
+ * line touched by the current selection. Idempotent: if every
+ * selected line already starts with the prefix we strip it instead,
+ * so the toolbar button acts as a toggle.
+ */
+function togglePrefix(view: EditorView, prefix: string): void {
+  const { from, to } = view.state.selection.main;
+  const startLine = view.state.doc.lineAt(from);
+  const endLine = view.state.doc.lineAt(to);
+  const lines: { from: number; to: number; text: string }[] = [];
+  for (let ln = startLine.number; ln <= endLine.number; ln++) {
+    const line = view.state.doc.line(ln);
+    lines.push({ from: line.from, to: line.to, text: line.text });
+  }
+  const allHave = lines.every((l) => l.text.startsWith(prefix));
+  const changes = lines.map((l) =>
+    allHave
+      ? { from: l.from, to: l.from + prefix.length, insert: "" }
+      : { from: l.from, to: l.from, insert: prefix },
+  );
+  view.dispatch({ changes });
+  view.focus();
+}
+
+/**
+ * Wrap the selection in a fenced code block (```…```). When the
+ * selection is empty we insert an empty fence and drop the caret
+ * inside it, ready for the user to type.
+ */
+function insertCodeFence(view: EditorView): void {
+  const { from, to } = view.state.selection.main;
+  const slice = view.state.sliceDoc(from, to);
+  const block = `\n\`\`\`\n${slice}\n\`\`\`\n`;
+  view.dispatch({
+    changes: { from, to, insert: block },
+    selection: { anchor: from + 5 + slice.length },
+  });
+  view.focus();
+}
+
+/**
+ * Prompt-driven link insertion. Wraps the current selection in
+ * `[text](url)` or — when the selection is empty — inserts
+ * `[label](url)` with the label pre-seeded to the URL. Uses
+ * `window.prompt` so no additional UI surface is needed; follows
+ * the same pattern as the WYSIWYG path for consistency.
+ */
+function insertLink(view: EditorView): void {
+  const url = window.prompt("Link URL", "https://");
+  if (!url) return;
+  const { from, to } = view.state.selection.main;
+  const sliced = view.state.sliceDoc(from, to);
+  const label = sliced.length > 0 ? sliced : url;
+  const md = `[${label}](${url})`;
+  view.dispatch({
+    changes: { from, to, insert: md },
+    selection: { anchor: from + md.length },
+  });
+  view.focus();
+}
+
+function buildSourceEditorCommands(view: EditorView): EditorCommands {
+  return {
+    toggleBold: () => wrapSelection(view, "**"),
+    toggleItalic: () => wrapSelection(view, "*"),
+    toggleUnderline: () => wrapSelection(view, "<u>", "</u>"),
+    toggleStrike: () => wrapSelection(view, "~~"),
+    toggleInlineCode: () => wrapSelection(view, "`"),
+    setHeading: (level) => togglePrefix(view, `${"#".repeat(level)} `),
+    toggleBlockquote: () => togglePrefix(view, "> "),
+    insertCodeFence: () => insertCodeFence(view),
+    insertLink: () => insertLink(view),
+  };
 }
