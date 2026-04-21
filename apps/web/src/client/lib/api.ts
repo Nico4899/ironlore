@@ -413,9 +413,18 @@ export async function fetchAgentRuns(slug: string, limit = 24): Promise<AgentRun
   return data.runs;
 }
 
-/** Fetch the 24h activity histogram for an agent. */
-export async function fetchAgentHistogram(slug: string): Promise<AgentHistogramResponse> {
-  const res = await apiFetch(`${base()}/agents/${slug}/histogram`);
+/**
+ * Fetch the rolling activity histogram for an agent. Defaults to the
+ * last 24 hours (24 buckets); pass `48` to get 48 buckets so the
+ * Home §03 Run-rate viz can compute the "vs. prior day" delta. Any
+ * value outside 1..48 is clamped server-side.
+ */
+export async function fetchAgentHistogram(
+  slug: string,
+  hours?: number,
+): Promise<AgentHistogramResponse> {
+  const qs = hours != null ? `?hours=${hours}` : "";
+  const res = await apiFetch(`${base()}/agents/${slug}/histogram${qs}`);
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json();
 }
