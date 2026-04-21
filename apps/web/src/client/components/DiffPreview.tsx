@@ -97,7 +97,21 @@ export function DiffPreview({
           {target}
         </code>
         <span className="flex-1" />
-        <Meta k="Δ" v={`+${added} −${removed}`} />
+        {/* Δ tint turns green when the edit is net-additive (pure
+         *  add, or more adds than deletes) and red when net-
+         *  destructive. Pure deletion reads red; mixed falls back to
+         *  the default Meta tone so the signal is never ambiguous. */}
+        <Meta
+          k="Δ"
+          v={`+${added} −${removed}`}
+          color={
+            removed === 0 && added > 0
+              ? "var(--il-green)"
+              : added === 0 && removed > 0
+                ? "var(--il-red)"
+                : undefined
+          }
+        />
       </div>
 
       {/* Hunks — one row per line, 14 % tint + 2 px left bar on
@@ -144,10 +158,15 @@ export function DiffPreview({
       </div>
 
       {approved === null && (
+        // Footer buttons split 50/50 via `flex: 1` per
+        //  screen-editor.jsx DiffCard. Reject stays on the left to
+        //  match the Inbox approve/reject grammar the user learns
+        //  once; the JSX source-of-truth is inconsistent across
+        //  surfaces on button order, so brand-doc consistency wins.
         <div
-          className="flex items-center gap-2"
+          className="flex items-center gap-1.5"
           style={{
-            padding: "6px 10px",
+            padding: "8px 10px",
             borderTop: "1px solid var(--il-border-soft)",
           }}
         >
@@ -155,8 +174,10 @@ export function DiffPreview({
             type="button"
             onClick={onReject}
             style={{
-              padding: "4px 10px",
-              fontSize: 11.5,
+              flex: 1,
+              padding: "5px 8px",
+              fontSize: 12,
+              fontFamily: "var(--font-sans)",
               fontWeight: 500,
               background: "transparent",
               color: "var(--il-text2)",
@@ -171,8 +192,10 @@ export function DiffPreview({
             type="button"
             onClick={onApprove}
             style={{
-              padding: "4px 10px",
-              fontSize: 11.5,
+              flex: 1,
+              padding: "5px 8px",
+              fontSize: 12,
+              fontFamily: "var(--font-sans)",
               fontWeight: 500,
               background: "var(--il-blue)",
               color: "var(--il-bg)",

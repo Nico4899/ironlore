@@ -89,7 +89,8 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
   if (error) {
     return (
       <aside
-        className="flex w-[40%] shrink-0 flex-col border-l border-border bg-ironlore-slate"
+        className="flex shrink-0 flex-col border-l border-border"
+        style={{ width: 380, background: "var(--il-bg-raised)" }}
         aria-label="Source of citation"
       >
         <PaneHeader pagePath={pagePath} onClose={onClose} />
@@ -102,7 +103,8 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
 
   return (
     <aside
-      className="flex w-[40%] shrink-0 flex-col border-l border-border bg-ironlore-slate"
+      className="flex shrink-0 flex-col border-l border-border"
+        style={{ width: 380, background: "var(--il-bg-raised)" }}
       aria-label="Source of citation"
       onClick={handleClickOutside}
       onKeyDown={(e) => {
