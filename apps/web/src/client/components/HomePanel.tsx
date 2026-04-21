@@ -5,6 +5,7 @@ import {
   ApiError,
   createPage,
   fetchAgentHistogram,
+  fetchPage,
   fetchRecentEdits,
   type RecentEdit,
   startAutonomousRun,
@@ -43,12 +44,63 @@ import {
  */
 export function HomePanel() {
   const [recent, setRecent] = useState<RecentEdit[] | null>(null);
+  /**
+   * Per-path block-count cache. Populated in parallel as each
+   * recent entry lands — we read `PageResponse.blocks.length`
+   * directly, so no extra parse on the client side. Values:
+   *   · `number`      — count ready
+   *   · `"err"`       — fetch failed (non-markdown, 404, etc.)
+   *   · missing key   — still fetching
+   */
+  const [blockCounts, setBlockCounts] = useState<Map<string, number | "err">>(
+    () => new Map(),
+  );
 
   useEffect(() => {
     fetchRecentEdits(8)
       .then(setRecent)
       .catch(() => setRecent([]));
   }, []);
+
+  // Kick off block-count fetches in parallel. Only markdown pages
+  //  are candidates (pages API only reads `.md`); everything else
+  //  records `"err"` immediately so the card doesn't render a stale
+  //  "N blocks" line.
+  useEffect(() => {
+    if (!recent || recent.length === 0) return;
+    let cancelled = false;
+    for (const entry of recent) {
+      if (blockCounts.has(entry.path)) continue;
+      if (!entry.path.endsWith(".md")) {
+        setBlockCounts((prev) => {
+          const next = new Map(prev);
+          next.set(entry.path, "err");
+          return next;
+        });
+        continue;
+      }
+      fetchPage(entry.path)
+        .then((page) => {
+          if (cancelled) return;
+          setBlockCounts((prev) => {
+            const next = new Map(prev);
+            next.set(entry.path, page.blocks.length);
+            return next;
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setBlockCounts((prev) => {
+            const next = new Map(prev);
+            next.set(entry.path, "err");
+            return next;
+          });
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [recent, blockCounts]);
 
   const greeting = useGreeting();
   const today = useTodayLabel();
@@ -347,9 +399,18 @@ export function HomePanel() {
               <EmptyCard>Nothing here yet.</EmptyCard>
             ) : (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" style={{ minWidth: 0 }}>
-                {recent.map((p) => (
-                  <RecentCard key={p.path} entry={p} displaySerif={displaySerif} />
-                ))}
+                {recent.map((p) => {
+                  const bc = blockCounts.get(p.path);
+                  const blockCount = typeof bc === "number" ? bc : null;
+                  return (
+                    <RecentCard
+                      key={p.path}
+                      entry={p}
+                      blockCount={blockCount}
+                      displaySerif={displaySerif}
+                    />
+                  );
+                })}
               </div>
             )}
           </section>
@@ -990,7 +1051,16 @@ function absoluteAxisTicks(): string[] {
  * `recent_edits` table doesn't store it and synthesising it per row
  * would be decoration.
  */
-function RecentCard({ entry, displaySerif }: { entry: RecentEdit; displaySerif: boolean }) {
+function RecentCard({
+  entry,
+  blockCount,
+  displaySerif,
+}: {
+  entry: RecentEdit;
+  /** Block count (fetched lazily in HomePanel) — null while loading or on error. */
+  blockCount: number | null;
+  displaySerif: boolean;
+}) {
   const { path } = entry;
   const name = path.split("/").pop() ?? path;
   const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
@@ -1061,6 +1131,12 @@ function RecentCard({ entry, displaySerif }: { entry: RecentEdit; displaySerif: 
         }}
       >
         <span>{when}</span>
+        {blockCount !== null && (
+          <>
+            <span style={{ color: "var(--il-text4)" }}>·</span>
+            <span>{blockCount} blocks</span>
+          </>
+        )}
         <span style={{ color: "var(--il-text4)" }}>·</span>
         <span style={{ color: isSelf ? "var(--il-text2)" : "var(--il-blue)" }}>
           {isSelf ? "you" : author}
