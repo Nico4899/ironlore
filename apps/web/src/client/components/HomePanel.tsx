@@ -10,7 +10,15 @@ import {
   startAutonomousRun,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
-import { AgentPulse, Key, Meta, Reuleaux, SectionLabel, Venn } from "./primitives/index.js";
+import {
+  AgentPulse,
+  DisplayNum,
+  Key,
+  Meta,
+  Reuleaux,
+  SectionLabel,
+  Venn,
+} from "./primitives/index.js";
 
 /**
  * HomePanel — the §Home canvas-grammar landing surface.
@@ -315,7 +323,7 @@ export function HomePanel() {
           {!isFreshProject && (
             <section>
               <SectionLabel index={3} title="Run-rate headroom" meta="ROLLING 24H" />
-              <RunRateHeadroom agents={activity.agents} />
+              <RunRateHeadroom agents={activity.agents} displaySerif={displaySerif} />
             </section>
           )}
 
@@ -630,8 +638,10 @@ function ActiveAgentCard({
  */
 function RunRateHeadroom({
   agents,
+  displaySerif,
 }: {
   agents: ReturnType<typeof useWorkspaceActivity>["agents"];
+  displaySerif: boolean;
 }) {
   const [series, setSeries] = useState<AgentHistogramResponse[] | null>(null);
 
@@ -645,10 +655,15 @@ function RunRateHeadroom({
       setSeries([]);
       return;
     }
-    Promise.all(slugs.map((slug) => fetchAgentHistogram(slug).catch(() => null))).then((rows) => {
-      if (cancelled) return;
-      setSeries(rows.filter((r): r is AgentHistogramResponse => r !== null));
-    });
+    // 48 h buckets so we can split them into "current 24 h" + "prior
+    //  24 h" and compute a real day-over-day delta for the trend line
+    //  per screen-home.jsx `↗ 18% vs. prior day`.
+    Promise.all(slugs.map((slug) => fetchAgentHistogram(slug, 48).catch(() => null))).then(
+      (rows) => {
+        if (cancelled) return;
+        setSeries(rows.filter((r): r is AgentHistogramResponse => r !== null));
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -657,21 +672,35 @@ function RunRateHeadroom({
   if (series === null) return <LoadingRow />;
   if (series.length === 0) return <EmptyCard>No activity data yet.</EmptyCard>;
 
-  const bucketCount = 24;
-  const buckets = new Array<number>(bucketCount).fill(0);
+  // Sum 48 buckets across every agent. The most recent 24 are the
+  //  current window the viz paints; the older 24 drive the trend line.
+  const totalBuckets = 48;
+  const allBuckets = new Array<number>(totalBuckets).fill(0);
   let capPerDay = 0;
   let capPerHour = 0;
   for (const s of series) {
     capPerDay += s.cap.perDay;
     capPerHour = Math.max(capPerHour, s.cap.perHour);
-    for (let i = 0; i < Math.min(bucketCount, s.buckets.length); i++) {
-      buckets[i] = (buckets[i] ?? 0) + (s.buckets[i] ?? 0);
+    const offset = totalBuckets - s.buckets.length;
+    for (let i = 0; i < s.buckets.length; i++) {
+      const dst = i + offset;
+      if (dst >= 0 && dst < totalBuckets) {
+        allBuckets[dst] = (allBuckets[dst] ?? 0) + (s.buckets[i] ?? 0);
+      }
     }
   }
+  const priorBuckets = allBuckets.slice(0, 24);
+  const buckets = allBuckets.slice(24);
   const total24h = buckets.reduce((a, b) => a + b, 0);
+  const prior24h = priorBuckets.reduce((a, b) => a + b, 0);
   const headroom = Math.max(0, capPerDay - total24h);
   const maxValue = Math.max(capPerHour, ...buckets, 1);
   const capRatio = capPerHour > 0 ? capPerHour / maxValue : 1;
+
+  // Trend = (current - prior) / prior. When prior is 0 we skip the
+  //  delta entirely rather than rendering an infinite "↗ ∞%" arrow —
+  //  no prior activity means no comparison surface to make.
+  const trend = computeTrend(total24h, prior24h);
 
   return (
     <div>
@@ -683,18 +712,12 @@ function RunRateHeadroom({
           marginBottom: 14,
         }}
       >
-        <span
-          style={{
-            fontFamily: "var(--font-serif)",
-            fontSize: 44,
-            lineHeight: 0.9,
-            letterSpacing: "-0.02em",
-            fontVariantNumeric: "tabular-nums",
-            color: "var(--il-text)",
-          }}
-        >
+        {/* DisplayNum — Instrument Serif 44 safe / 64 italic display,
+         *  per screen-home.jsx. Tabular figures so a count change
+         *  doesn't nudge the surrounding meta. */}
+        <DisplayNum size={displaySerif ? 64 : 44} serif italic={displaySerif}>
           {total24h}
-        </span>
+        </DisplayNum>
         <div>
           <div
             className="font-mono uppercase"
@@ -702,9 +725,23 @@ function RunRateHeadroom({
           >
             runs / 24h
           </div>
-          <div style={{ fontSize: 12, color: "var(--il-text2)", marginTop: 2 }}>
-            across {series.length} {series.length === 1 ? "agent" : "agents"}
-          </div>
+          {trend ? (
+            <div style={{ fontSize: 12, color: "var(--il-text2)", marginTop: 2 }}>
+              <span
+                style={{
+                  color: trend.direction === "down" ? "var(--il-red)" : "var(--il-green)",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {trend.direction === "down" ? "↘" : "↗"} {trend.pctLabel}
+              </span>{" "}
+              vs. prior day
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--il-text2)", marginTop: 2 }}>
+              across {series.length} {series.length === 1 ? "agent" : "agents"}
+            </div>
+          )}
         </div>
         <span style={{ flex: 1 }} />
         <div style={{ textAlign: "right" }}>
@@ -784,6 +821,10 @@ function RunRateHeadroom({
           </>
         )}
       </div>
+      {/* Axis ticks — absolute local time per screen-home.jsx
+       *  (`00:00 · 06:00 · 12:00 · 18:00 · NOW`). Computed from the
+       *  current clock so the rail always reads "where are we today,"
+       *  regardless of when the user opens the app. */}
       <div
         className="font-mono"
         style={{
@@ -795,14 +836,48 @@ function RunRateHeadroom({
           letterSpacing: "0.06em",
         }}
       >
-        <span>−24h</span>
-        <span>−18h</span>
-        <span>−12h</span>
-        <span>−6h</span>
-        <span>NOW</span>
+        {absoluteAxisTicks().map((tick) => (
+          <span key={tick}>{tick}</span>
+        ))}
       </div>
     </div>
   );
+}
+
+/**
+ * Trend between the current 24 h window and the prior 24 h window.
+ * Returns null when the prior window is empty — an infinite-growth
+ * arrow would be useless signal.
+ */
+function computeTrend(
+  current: number,
+  prior: number,
+): { direction: "up" | "down"; pctLabel: string } | null {
+  if (prior <= 0) return null;
+  const delta = (current - prior) / prior;
+  const direction: "up" | "down" = delta >= 0 ? "up" : "down";
+  const pct = Math.round(Math.abs(delta) * 100);
+  return { direction, pctLabel: `${pct}%` };
+}
+
+/**
+ * Axis labels for the 24-bar histogram: four evenly spaced absolute
+ * hour marks + a "NOW" anchor at the right. Mirrors the design
+ * handoff's `00:00 · 06:00 · 12:00 · 18:00 · NOW`; we pick the four
+ * ticks from the current local time so they walk back 24 h and land
+ * on whole hours.
+ */
+function absoluteAxisTicks(): string[] {
+  const now = new Date();
+  const ticks: string[] = [];
+  const hoursBack = [24, 18, 12, 6];
+  for (const back of hoursBack) {
+    const d = new Date(now.getTime() - back * 3_600_000);
+    const h = String(d.getHours()).padStart(2, "0");
+    ticks.push(`${h}:00`);
+  }
+  ticks.push("NOW");
+  return ticks;
 }
 
 /**
