@@ -28,8 +28,14 @@ export const IPC_TOKEN_FILE = "ipc.token";
 /** File permissions for sensitive files (POSIX mode 0600). */
 export const SENSITIVE_FILE_MODE = 0o600;
 
-/** Maximum login attempts per minute (per IP + username). */
-export const AUTH_RATE_LIMIT = 5;
+/**
+ * Maximum brute-force-sensitive auth attempts per minute (per IP).
+ * Covers the login + change-password endpoints only — session
+ * lookups (`/api/auth/me`) are explicitly exempted in
+ * `authRateLimiter` because they're not a credential surface and
+ * gating them causes spurious lockouts on page reload.
+ */
+export const AUTH_RATE_LIMIT = 20;
 
 /** Default per-run token cap. */
 export const DEFAULT_TOKEN_CAP = 100_000;

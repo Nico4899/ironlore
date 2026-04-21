@@ -64,13 +64,33 @@ class TokenBucket {
 const authBucket = new TokenBucket(AUTH_RATE_LIMIT, AUTH_RATE_LIMIT / 60);
 
 /**
+ * Paths under `/api/auth/*` that are NOT credential-sensitive and
+ * therefore aren't throttled by this limiter. `/me` in particular is
+ * hit on every page reload — gating it causes Cmd+R to bounce users
+ * back to the login page after a few quick refreshes, and it offers
+ * no brute-force surface of its own (it reads the session cookie,
+ * doesn't verify a password).
+ */
+const AUTH_RATE_LIMIT_EXEMPT_PATHS = new Set(["/me", "/logout"]);
+
+/**
  * Rate-limit middleware for auth endpoints.
- * Key: IP + username (from JSON body, if parseable).
+ * Key: IP (username may not be known yet for GET routes).
+ * Exempts session-check + logout paths — see
+ * `AUTH_RATE_LIMIT_EXEMPT_PATHS`.
  */
 export function authRateLimiter() {
   return async (c: Context, next: Next) => {
+    // Strip the `/api/auth` mount prefix so we match the route
+    //  pattern actually hit (`/me`, `/login`, …).
+    const rawPath = new URL(c.req.url).pathname;
+    const subPath = rawPath.replace(/^\/api\/auth/, "") || "/";
+    if (AUTH_RATE_LIMIT_EXEMPT_PATHS.has(subPath)) {
+      await next();
+      return;
+    }
+
     const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "127.0.0.1";
-    // For auth routes, we key by IP alone (username may not be known yet for GET routes)
     const key = `auth:${ip}`;
 
     if (!authBucket.consume(key)) {
