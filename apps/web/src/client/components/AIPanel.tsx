@@ -1,4 +1,4 @@
-import { ArrowUp, Highlighter, Lightbulb, Paperclip, Sparkles, Wrench, X } from "lucide-react";
+import { ArrowUp, Highlighter, Lightbulb, Paperclip, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
@@ -613,6 +613,22 @@ function formatClockShort(ms: number): string {
 }
 
 /**
+ * Compact duration label for the ToolCallCard StatusPip — `180ms`,
+ * `4.2s`, `1m12s`. Sub-second latencies are the common case for
+ * `kb.read_page` / `kb.replace_block`, so we keep ms precision up to
+ * 1 000; everything longer rounds to 1-decimal seconds or composite
+ * minutes. Mirrors screen-editor.jsx's `StatusPip label="180ms"`.
+ */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const totalSec = Math.round(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m${String(s).padStart(2, "0")}s`;
+}
+
+/**
  * Derive the `(page · #block)` target-label for a tool-call header
  * from its `args` payload. `kb.replace_block` / `kb.insert_after` /
  * `kb.delete_block` all carry `{ page / pageId, blockId }`; other
@@ -668,22 +684,31 @@ function isErrorResult(result: unknown): boolean {
 function ToolCallCard({
   msg,
 }: {
-  msg: { tool: string; args: unknown; result?: unknown; collapsed: boolean };
+  msg: {
+    tool: string;
+    args: unknown;
+    result?: unknown;
+    collapsed: boolean;
+    durationMs?: number;
+  };
 }) {
   const [expanded, setExpanded] = useState(!msg.collapsed);
   const hasResult = msg.result !== undefined;
   const target = deriveToolTarget(msg.args);
-  const headerLabel = target ? `${msg.tool} (${target})` : msg.tool;
   const pipState: "running" | "healthy" | "error" = !hasResult
     ? "running"
     : isErrorResult(msg.result)
       ? "error"
       : "healthy";
+  // Duration — rendered alongside the right-edge pip per
+  //  screen-editor.jsx. Omitted while in-flight (no finishedAt yet).
+  const durationLabel = msg.durationMs != null ? formatDuration(msg.durationMs) : undefined;
 
   return (
     <div
       style={{
-        borderRadius: 4,
+        // Radius 3 per screen-editor.jsx ToolCallCard (was 4).
+        borderRadius: 3,
         border: "1px solid var(--il-border-soft)",
         background: "var(--il-slate-elev)",
         fontSize: 12,
@@ -692,24 +717,35 @@ function ToolCallCard({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+        className="flex w-full items-center gap-2 text-left"
+        style={{ padding: "7px 10px" }}
       >
         <span
           aria-hidden="true"
           className="font-mono shrink-0"
-          style={{ color: "var(--il-text4)", width: 10 }}
+          style={{ color: "var(--il-text3)", fontSize: 10.5, width: 10 }}
         >
           {expanded ? "▾" : "▸"}
         </span>
-        <Wrench className="h-3.5 w-3.5 shrink-0 text-accent-violet" />
+        {/* Tool name + `(page · #block)` target split into two mono
+         *  spans per screen-editor.jsx — the tool in `--il-text`, the
+         *  target in `--il-text3` so the eye reads the verb first. */}
         <span
           className="font-mono truncate"
-          style={{ fontSize: 11.5, letterSpacing: "0.01em", color: "var(--il-text)" }}
+          style={{ fontSize: 11, letterSpacing: "0.01em", color: "var(--il-text)" }}
         >
-          {headerLabel}
+          {msg.tool}
         </span>
+        {target && (
+          <span
+            className="font-mono truncate"
+            style={{ fontSize: 10.5, color: "var(--il-text3)" }}
+          >
+            ({target})
+          </span>
+        )}
         <span className="ml-auto">
-          <StatusPip state={pipState} size={7} />
+          <StatusPip state={pipState} label={durationLabel} size={7} />
         </span>
       </button>
       {expanded && (
