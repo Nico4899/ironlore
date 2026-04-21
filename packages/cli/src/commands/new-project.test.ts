@@ -1,8 +1,8 @@
-import { buildProjectYaml } from "@ironlore/core/server";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildProjectYaml } from "@ironlore/core/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newProject } from "./new-project.js";
 

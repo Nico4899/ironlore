@@ -56,7 +56,9 @@ export class ProjectAlreadyExistsError extends Error {
  * `InvalidProjectIdError` otherwise.
  */
 export function validateProjectId(raw: string): string {
-  const id = String(raw ?? "").trim().toLowerCase();
+  const id = String(raw ?? "")
+    .trim()
+    .toLowerCase();
   if (!id) throw new InvalidProjectIdError("Project id is required.");
   if (id.length > MAX_PROJECT_ID_LENGTH) {
     throw new InvalidProjectIdError(
