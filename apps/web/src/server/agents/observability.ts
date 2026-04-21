@@ -73,7 +73,6 @@ export interface AgentConfigResponse {
 }
 
 const HOUR_MS = 3_600_000;
-const DAY_MS = 86_400_000;
 const WINDOW_BUCKETS = 24;
 
 /** Matches the leading YAML frontmatter block of a persona file. */

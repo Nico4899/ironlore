@@ -148,6 +148,72 @@ function AppShell() {
         e.preventDefault();
         useAppStore.getState().toggleSidebar();
       }
+      // Cmd+I / Ctrl+I — open inbox (Home §04 Quick actions).
+      //  Any ongoing text editor likely swallows ⌘I for italic; we
+      //  only preventDefault when the target isn't an input surface.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "i") {
+        const t = e.target as HTMLElement | null;
+        const tag = t?.tagName;
+        const inEditor = tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable === true;
+        if (!inEditor) {
+          e.preventDefault();
+          useAppStore.getState().openSidebarTab("inbox");
+        }
+      }
+      // Cmd+N / Ctrl+N — new page (Home §04 Quick actions). Create
+      //  an untitled markdown at root + focus it. Skipped when
+      //  focus is inside a text field so the browser's native
+      //  new-window binding still works from a non-app surface.
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "n") {
+        const t = e.target as HTMLElement | null;
+        const tag = t?.tagName;
+        const inEditor = tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable === true;
+        if (!inEditor) {
+          e.preventDefault();
+          void (async () => {
+            const { createPage } = await import("./lib/api.js");
+            const name = `untitled-${Date.now().toString(36).slice(-5)}.md`;
+            try {
+              await createPage(name, "# Untitled\n\n");
+              useAppStore.getState().setActivePath(name);
+            } catch {
+              /* non-fatal — file watcher will pick up any partial write */
+            }
+          })();
+        }
+      }
+      // Cmd+Shift+R / Ctrl+Shift+R — run an agent (Home §04 Quick
+      //  actions). Opens the first idle installed agent's detail
+      //  page. Best-effort: many browsers bind ⌘⇧R to hard-reload,
+      //  so the button on Home is the durable path.
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "r" || e.key === "R")) {
+        const t = e.target as HTMLElement | null;
+        const tag = t?.tagName;
+        const inEditor = tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable === true;
+        if (!inEditor) {
+          e.preventDefault();
+          void (async () => {
+            const { fetchAgents, fetchAgentRuns } = await import("./lib/api.js");
+            try {
+              const agents = await fetchAgents();
+              if (agents.length === 0) return;
+              // Find the first agent that isn't currently running.
+              const runs = await Promise.all(
+                agents.map((a) =>
+                  fetchAgentRuns(a.slug, 1).catch(
+                    () => [] as Awaited<ReturnType<typeof fetchAgentRuns>>,
+                  ),
+                ),
+              );
+              const idleIdx = agents.findIndex((_, i) => runs[i]?.[0]?.status !== "running");
+              const target = idleIdx >= 0 ? agents[idleIdx] : agents[0];
+              if (target) useAppStore.getState().setActiveAgentSlug(target.slug);
+            } catch {
+              /* silently no-op if the agents endpoint is unavailable */
+            }
+          })();
+        }
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);

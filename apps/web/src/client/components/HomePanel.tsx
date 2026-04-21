@@ -84,8 +84,7 @@ export function HomePanel() {
     //  server will 409 and we'll surface the error.
     let candidate = basePath;
     let n = 2;
-    const taken = (path: string): boolean =>
-      (recent ?? []).some((r) => r.path === path);
+    const taken = (path: string): boolean => (recent ?? []).some((r) => r.path === path);
     while (taken(candidate) && n < 100) {
       candidate = `untitled-${n}.md`;
       n++;
@@ -265,9 +264,7 @@ export function HomePanel() {
               </>
             ) : activity.inboxCount > 0 ? (
               <>
-                {activity.inboxCount === 1
-                  ? "One run awaits"
-                  : `${activity.inboxCount} runs await`}{" "}
+                {activity.inboxCount === 1 ? "One run awaits" : `${activity.inboxCount} runs await`}{" "}
                 your review.
                 {activity.runningCount > 0 && (
                   <>
@@ -281,7 +278,9 @@ export function HomePanel() {
               </>
             ) : activity.runningCount > 0 ? (
               <>
-                {activity.runningCount === 1 ? "One agent is" : `${activity.runningCount} agents are`}{" "}
+                {activity.runningCount === 1
+                  ? "One agent is"
+                  : `${activity.runningCount} agents are`}{" "}
                 working. Pick up where you left off.
               </>
             ) : (
@@ -649,13 +648,7 @@ function ActiveAgentCard({
               }
         }
       >
-        {live && note
-          ? note
-          : paused
-            ? "paused"
-            : note
-              ? `last · ${note}`
-              : "no recent activity"}
+        {live && note ? note : paused ? "paused" : note ? `last · ${note}` : "no recent activity"}
       </div>
 
       {error && (
@@ -937,13 +930,7 @@ function absoluteAxisTicks(): string[] {
  * `recent_edits` table doesn't store it and synthesising it per row
  * would be decoration.
  */
-function RecentCard({
-  entry,
-  displaySerif,
-}: {
-  entry: RecentEdit;
-  displaySerif: boolean;
-}) {
+function RecentCard({ entry, displaySerif }: { entry: RecentEdit; displaySerif: boolean }) {
   const { path } = entry;
   const name = path.split("/").pop() ?? path;
   const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
