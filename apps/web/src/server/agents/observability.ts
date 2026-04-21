@@ -286,9 +286,15 @@ export function getHourlyHistogram(
   projectId: string,
   slug: string,
   now: number = Date.now(),
+  hours: number = WINDOW_BUCKETS,
 ): AgentHistogramResponse {
+  // Clamp `hours` to a sensible range (1..48). The Home §03 Run-rate
+  //  viz asks for 48 to compute a "vs. prior day" delta; the Agent
+  //  detail page sticks to 24. The bucketing math is identical, only
+  //  the slot count and window start shift.
+  const bucketCount = Math.max(1, Math.min(48, Math.floor(hours)));
   const windowEnd = now;
-  const windowStart = windowEnd - DAY_MS;
+  const windowStart = windowEnd - bucketCount * HOUR_MS;
 
   const rawRows = db
     .prepare(
@@ -299,15 +305,15 @@ export function getHourlyHistogram(
     )
     .all(HOUR_MS, projectId, slug, windowStart) as Array<{ hourBucket: number; cnt: number }>;
 
-  // Build a 24-slot array oldest → newest. `endBucket` is the hour
-  //  bucket the window's end moment falls into; the oldest we show is
-  //  23 buckets before that (inclusive).
+  // Build an oldest → newest array. `endBucket` is the hour bucket
+  //  the window's end moment falls into; the oldest we show is
+  //  `bucketCount - 1` buckets before that (inclusive).
   const endBucket = Math.floor(windowEnd / HOUR_MS);
-  const startBucket = endBucket - (WINDOW_BUCKETS - 1);
-  const buckets = new Array<number>(WINDOW_BUCKETS).fill(0);
+  const startBucket = endBucket - (bucketCount - 1);
+  const buckets = new Array<number>(bucketCount).fill(0);
   for (const row of rawRows) {
     const idx = row.hourBucket - startBucket;
-    if (idx >= 0 && idx < WINDOW_BUCKETS) buckets[idx] = row.cnt;
+    if (idx >= 0 && idx < bucketCount) buckets[idx] = row.cnt;
   }
 
   // Rate caps from agent_state. Missing row → the rails defaults.
@@ -320,7 +326,7 @@ export function getHourlyHistogram(
   return {
     windowStart,
     windowEnd,
-    bucketHours: WINDOW_BUCKETS,
+    bucketHours: bucketCount,
     buckets,
     cap: { perHour: state?.perHour ?? 10, perDay: state?.perDay ?? 50 },
   };

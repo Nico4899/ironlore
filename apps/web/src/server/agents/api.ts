@@ -126,10 +126,17 @@ export function createAgentApi(
     const slug = c.req.param("slug") ?? "";
     if (!slug) return c.json({ error: "Agent slug required" }, 400);
 
+    // `?hours=` lets the caller widen the window. The Home §03
+    //  Run-rate viz asks for 48 h so it can compute the
+    //  "current 24 h vs. prior 24 h" delta; Agent detail keeps the
+    //  default 24. Clamped 1..48 in `getHourlyHistogram`.
+    const rawHours = Number.parseInt(c.req.query("hours") ?? "24", 10);
+    const hours = Number.isFinite(rawHours) ? rawHours : 24;
+
     // Ensure a state row so the cap falls back to defaults rather than
     //  returning 10/50 with no corresponding row downstream.
     rails.ensureState(projectId, slug);
-    return c.json(getHourlyHistogram(jobsDb, projectId, slug));
+    return c.json(getHourlyHistogram(jobsDb, projectId, slug, Date.now(), hours));
   });
 
   api.get("/:slug/config", (c) => {
