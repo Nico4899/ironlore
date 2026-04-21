@@ -64,6 +64,13 @@ export interface AgentConfigResponse {
    * next reload.
    */
   persona: {
+    /**
+     * One-line prose description from the persona frontmatter. Surfaces
+     * as the sub-heading on the Agent-detail hero so the surface
+     * actually introduces each agent instead of showing boilerplate.
+     * Null when the frontmatter omits `description`.
+     */
+    description: string | null;
     heartbeat: string | null;
     reviewMode: "auto-commit" | "inbox" | null;
     tools: string[] | null;
@@ -100,6 +107,17 @@ function parsePersonaFrontmatter(raw: string): AgentConfigResponse["persona"] {
   } catch {
     return null;
   }
+
+  // Description — one-liner shown on the Agent-detail hero. We
+  //  accept a few common key spellings (`description`, `summary`,
+  //  `purpose`) so older personas written against an earlier schema
+  //  still render useful text without a migration.
+  const rawDescription =
+    (typeof doc.description === "string" && doc.description) ||
+    (typeof doc.summary === "string" && doc.summary) ||
+    (typeof doc.purpose === "string" && doc.purpose) ||
+    null;
+  const description = rawDescription ? rawDescription.trim() : null;
 
   const heartbeat = typeof doc.heartbeat === "string" ? doc.heartbeat : null;
 
@@ -144,7 +162,7 @@ function parsePersonaFrontmatter(raw: string): AgentConfigResponse["persona"] {
       ? { pages: scopePages, writableKinds: scopeWritable }
       : null;
 
-  return { heartbeat, reviewMode, tools, budget, scope };
+  return { description, heartbeat, reviewMode, tools, budget, scope };
 }
 
 function pickNumber(v: unknown): number | null {

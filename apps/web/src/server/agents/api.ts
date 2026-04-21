@@ -377,6 +377,22 @@ export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir:
     return c.json({ files });
   });
 
+  /**
+   * Unified git diff for one file inside a pending entry. Powers the
+   * Inbox expand-on-click dropdown. Path is validated server-side
+   * against the entry's file list, so a hostile `path` query param
+   * can't escape the diff surface.
+   */
+  api.get("/:entryId/diff", (c) => {
+    const entryId = c.req.param("entryId") ?? "";
+    if (!entryId) return c.json({ error: "Entry id required" }, 400);
+    const path = c.req.query("path") ?? "";
+    if (!path) return c.json({ error: "path query parameter required" }, 400);
+    const diff = inbox.getFileDiff(entryId, path, projectDir);
+    if (diff === null) return c.json({ error: "diff unavailable" }, 404);
+    return c.json({ diff });
+  });
+
   api.post("/:entryId/files/decision", async (c) => {
     const entryId = c.req.param("entryId") ?? "";
     if (!entryId) return c.json({ error: "Entry id required" }, 400);

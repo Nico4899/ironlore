@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 
@@ -373,6 +373,55 @@ export class AgentInbox {
     }
 
     return Array.from(byPath.values());
+  }
+
+  /**
+   * Unified git diff for a single file within a pending inbox entry.
+   *
+   * Powers the Inbox expand-on-click dropdown: the UI shows stats via
+   * `getFileDiffStats`, and — when the user expands an entry — fetches
+   * the full `git diff main...<branch> -- <path>` so they can review
+   * the actual change before approving.
+   *
+   * Path is validated against the entry's file list first so a
+   * hostile `path` query parameter can't reach outside the diff
+   * surface. We use `execFileSync` (not `execSync`) so nothing is
+   * interpreted by a shell — paths with spaces or quotes in their
+   * names round-trip cleanly.
+   *
+   * Returns `null` when the entry or path is invalid, or when git
+   * reports an error (branch missing, etc.).
+   */
+  getFileDiff(entryId: string, path: string, projectDir: string): string | null {
+    const entry = this.getEntry(entryId);
+    if (!entry) return null;
+
+    // Validate: only paths that appear in the entry's own file list
+    //  are allowed through. Cheap belt + suspenders against a client
+    //  passing an arbitrary path.
+    const stats = this.getFileDiffStats(entryId, projectDir);
+    if (!stats.some((f) => f.path === path)) return null;
+
+    const gitDir = join(projectDir, ".git");
+    const rangeArg = `main...${entry.branch}`;
+    try {
+      const buf = execFileSync(
+        "git",
+        [
+          `--git-dir=${gitDir}`,
+          `--work-tree=${projectDir}`,
+          "diff",
+          "--no-color",
+          rangeArg,
+          "--",
+          path,
+        ],
+        { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 10 * 1024 * 1024 },
+      );
+      return buf;
+    } catch {
+      return null;
+    }
   }
 
   /**
