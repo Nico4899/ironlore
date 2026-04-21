@@ -679,8 +679,10 @@ export function SidebarNew() {
        *  tab is the trigger + state indicator; the tree stays
        *  visible behind it. */}
 
-      {/* ─── Active-agents strip (only renders when agents are running) ─── */}
-      <ActiveAgentsStrip collapsed={collapsed} />
+      {/* ─── Agents panel — all installed agents, always visible. Was
+       *  `ActiveAgentsStrip` (running-only); promoted to a first-class
+       *  sidebar surface with a `+ add agent` affordance. ─── */}
+      <AgentsPanel collapsed={collapsed} />
 
       {/* ─── Divider ─── */}
       <div className="border-t border-border" />
@@ -1155,69 +1157,179 @@ function ProjectTile({ collapsed }: { collapsed: boolean }) {
  * running (the rest of the agents already have a home on the Home
  * screen). Clicking a row opens that agent's detail page.
  */
-function ActiveAgentsStrip({ collapsed }: { collapsed: boolean }) {
+/**
+ * AgentsPanel — every installed agent, not just the ones running.
+ *
+ * Replaces the prior `ActiveAgentsStrip` (which hid entirely when no
+ * agent was running). Per the sidebar rework brief, the sidebar now
+ * promotes agents to a first-class surface: an `AGENTS` separator,
+ * one row per agent with a state-coloured Reuleaux (blue-spin =
+ * running, amber = paused, neutral = queued/idle), the step label
+ * while running, and a `+ Add agent` button below the list.
+ *
+ * Clicking a row routes the content area to the agent's detail page
+ * via `setActiveAgentSlug`. Clicking `+` prompts for a slug and
+ * scaffolds `.agents/<slug>/persona.md` with a minimal frontmatter
+ * + prose template — no new endpoint needed; the server picks the
+ * persona up via the file watcher.
+ */
+function AgentsPanel({ collapsed }: { collapsed: boolean }) {
   const activity = useWorkspaceActivity();
-  const running = activity.agents.filter((a) => a.running);
-  if (running.length === 0) return null;
+  const agents = activity.agents;
+  const runningCount = activity.runningCount;
+
+  const onAdd = useCallback(async () => {
+    // Light prompt for scope — a dedicated wizard is future work.
+    //  Slug rules mirror the persona file-system naming constraints.
+    const slug = window.prompt("New agent slug (lowercase, dashes only):", "");
+    if (!slug) return;
+    const clean = slug.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(clean)) {
+      window.alert("Slug must be 3–32 chars, lowercase letters/digits/dashes; no leading/trailing dash.");
+      return;
+    }
+    const path = `.agents/${clean}/persona.md`;
+    const template =
+      "---\n" +
+      `slug: ${clean}\n` +
+      "description: \n" +
+      "heartbeat: \n" +
+      "review_mode: inbox\n" +
+      "tools: []\n" +
+      "scope:\n" +
+      "  pages: []\n" +
+      "  writable_kinds: []\n" +
+      "---\n\n" +
+      `# ${clean}\n\nDescribe what this agent does.\n`;
+    try {
+      await createPage(path, template);
+      useAppStore.getState().setActivePath(path);
+    } catch {
+      window.alert("Couldn't create that agent. A persona with that slug may already exist.");
+    }
+  }, []);
 
   if (collapsed) {
+    // Collapsed rail: single pip summarising any running agents.
+    //  Clicking jumps to the first running (or any) agent's detail
+    //  so the collapsed state still surfaces agent activity.
+    if (agents.length === 0) return null;
+    const running = agents.find((a) => a.running);
+    const target = running ?? agents[0];
     return (
       <button
         type="button"
-        onClick={() => useAppStore.getState().setActiveAgentSlug(running[0]?.slug ?? null)}
+        onClick={() => useAppStore.getState().setActiveAgentSlug(target?.slug ?? null)}
         className="mx-2 my-2 flex items-center justify-center rounded-[3px] py-1 outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-        title={`${running.length} running`}
-        style={{ background: "color-mix(in oklch, var(--il-blue) 10%, transparent)" }}
+        title={runningCount > 0 ? `${runningCount} running` : `${agents.length} agents`}
+        style={
+          runningCount > 0
+            ? { background: "color-mix(in oklch, var(--il-blue) 10%, transparent)" }
+            : undefined
+        }
       >
-        {/* 7 px pip — spec §Reuleaux sizes: inline / sidebar. */}
-        <ReuleauxIcon size={7} color="var(--il-blue)" spin />
+        <ReuleauxIcon
+          size={7}
+          color={runningCount > 0 ? "var(--il-blue)" : "var(--il-text3)"}
+          spin={runningCount > 0}
+        />
       </button>
     );
   }
 
   return (
     <div className="border-t border-border px-3 py-2.5">
+      {/* Mono `AGENTS` overline — the separator the user asked for.
+       *  Trailing meta echoes the Home §01 grammar (`N RUNNING · N
+       *  QUEUED`) so the vocabulary is consistent across surfaces. */}
       <div
         className="mb-2 flex items-center gap-2 font-mono uppercase"
-        style={{
-          fontSize: 10.5,
-          color: "var(--il-text3)",
-          letterSpacing: "0.08em",
-        }}
+        style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.08em" }}
       >
-        {/* 7 px pip — spec §Reuleaux sizes: inline / sidebar. */}
-        <ReuleauxIcon size={7} color="var(--il-blue)" spin />
-        <span>
-          {running.length} agent{running.length === 1 ? "" : "s"} running
+        <span>Agents</span>
+        <span className="flex-1" />
+        <span style={{ color: "var(--il-text4)" }}>
+          {runningCount > 0 ? `${runningCount} running` : `${agents.length}`}
         </span>
       </div>
-      <div className="flex flex-col gap-0.5">
-        {running.slice(0, 3).map((a) => (
-          <button
-            key={a.slug}
-            type="button"
-            onClick={() => useAppStore.getState().setActiveAgentSlug(a.slug)}
-            className="flex items-center gap-2 rounded-[3px] px-1 py-0.5 text-left outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-          >
-            <ReuleauxIcon size={7} color="var(--il-blue)" />
-            <span className="flex-1 truncate" style={{ fontSize: 12, color: "var(--il-text2)" }}>
-              {a.slug}
-            </span>
-            {a.stepLabel && (
-              <span
-                className="font-mono"
-                style={{
-                  fontSize: 10.5,
-                  color: "var(--il-text3)",
-                  letterSpacing: "0.04em",
-                }}
+
+      {agents.length === 0 ? (
+        <div
+          style={{
+            fontSize: 11.5,
+            color: "var(--il-text3)",
+            padding: "4px 2px 8px",
+            fontStyle: "italic",
+          }}
+        >
+          No agents installed yet.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-0.5">
+          {agents.map((a) => {
+            // Pip colour vocabulary matches the rest of the app:
+            //  blue-spin = running, amber = paused, neutral = queued.
+            const paused = a.status === "paused";
+            const pipColor = a.running
+              ? "var(--il-blue)"
+              : paused
+                ? "var(--il-amber)"
+                : "var(--il-text3)";
+            const label = a.running ? a.stepLabel : paused ? "paused" : "idle";
+            return (
+              <button
+                key={a.slug}
+                type="button"
+                onClick={() => useAppStore.getState().setActiveAgentSlug(a.slug)}
+                className="flex items-center gap-2 rounded-[3px] px-1 py-0.5 text-left outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
               >
-                {a.stepLabel}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+                <ReuleauxIcon size={7} color={pipColor} spin={a.running} />
+                <span
+                  className="flex-1 truncate"
+                  style={{ fontSize: 12, color: "var(--il-text2)" }}
+                >
+                  {a.slug}
+                </span>
+                {label && (
+                  <span
+                    className="font-mono"
+                    style={{
+                      fontSize: 10.5,
+                      color: a.running
+                        ? "var(--il-blue)"
+                        : paused
+                          ? "var(--il-amber)"
+                          : "var(--il-text4)",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    {label}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* + Add agent — scaffolds `.agents/<slug>/persona.md` from a
+       *  template so the persona engine picks it up on next poll. */}
+      <button
+        type="button"
+        onClick={onAdd}
+        className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-[3px] border border-dashed outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        style={{
+          padding: "4px 6px",
+          borderColor: "var(--il-border-soft)",
+          fontSize: 10.5,
+          color: "var(--il-text3)",
+          letterSpacing: "0.04em",
+        }}
+        title="Create a new agent persona"
+      >
+        <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)" }}>+</span>
+        <span className="font-mono uppercase">add agent</span>
+      </button>
     </div>
   );
 }
