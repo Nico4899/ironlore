@@ -396,6 +396,13 @@ export interface AgentConfigResponse {
   personaMtimeDriftSeconds: number | null;
   /** Persona-frontmatter projection — null when file missing / malformed. */
   persona: {
+    /**
+     * One-line prose description from the persona frontmatter —
+     * shown on the Agent Detail hero so every agent introduces
+     * itself instead of rendering the same boilerplate. `null`
+     * when the persona omits `description`.
+     */
+    description: string | null;
     heartbeat: string | null;
     reviewMode: "auto-commit" | "inbox" | null;
     tools: string[] | null;
@@ -490,6 +497,22 @@ export async function fetchInboxFiles(entryId: string): Promise<InboxFileDiff[]>
   if (!res.ok) throw new ApiError(res.status, await res.text());
   const data = (await res.json()) as { files: InboxFileDiff[] };
   return data.files;
+}
+
+/**
+ * Unified git diff text for one file inside a pending inbox entry.
+ * Powers the expand-on-click diff dropdown on the Inbox surface.
+ * The server validates the `path` against the entry's file list and
+ * returns 404 if unknown — we surface that as `null` so the caller
+ * can render a "diff unavailable" placeholder rather than a throw.
+ */
+export async function fetchInboxDiff(entryId: string, path: string): Promise<string | null> {
+  const url = `${base()}/inbox/${entryId}/diff?path=${encodeURIComponent(path)}`;
+  const res = await apiFetch(url);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { diff: string };
+  return data.diff;
 }
 
 /** Approve an inbox entry (merge staging branch to main). */
