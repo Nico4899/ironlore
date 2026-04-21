@@ -68,9 +68,13 @@ export function SectionLabel({
       <span
         style={{
           fontFamily: "var(--font-sans)",
-          fontSize: 12,
+          // Bumped from 12 → 14 so the section headings carry more
+          //  presence against the new pure-black Home canvas. The
+          //  index + meta chips stay at 10.5 so the ratio reads as
+          //  hierarchy, not parity.
+          fontSize: 14,
           fontWeight: 600,
-          letterSpacing: "-0.005em",
+          letterSpacing: "-0.01em",
           color: "var(--il-text)",
         }}
       >

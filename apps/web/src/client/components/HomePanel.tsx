@@ -213,7 +213,15 @@ export function HomePanel() {
   }, [activity.agents]);
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+      // Home sits on pure black so the slate cards elevate cleanly
+      //  against it — the rest of the shell stays on `--il-bg`
+      //  (warm dark blue-black), so Home's flat-black canvas reads
+      //  as "the central surface" rather than another layer of
+      //  chrome. Overrides the bg inherited from the shell.
+      style={{ background: "oklch(0 0 0)" }}
+    >
       {/* Venn watermark — contemplative rest when nothing exists yet.
        *  Sized + positioned like screen-home.jsx's bold-variant hero
        *  accent but trigger-gated to fresh projects so it never fights
@@ -678,7 +686,10 @@ function ActiveAgentCard({
     <AgentPulse
       active={live}
       style={{
-        background: "var(--il-bg-raised)",
+        // Cards sit on the sidebar's slate tone so they read as
+        //  elevated over Home's pure-black canvas. Matches the
+        //  current design direction per the screenshot review.
+        background: "var(--il-slate)",
         border: "1px solid var(--il-border-soft)",
         borderLeft: `2px solid ${live ? "var(--il-blue)" : "var(--il-border)"}`,
         borderRadius: 4,
@@ -1137,7 +1148,7 @@ function RecentCard({
       className="text-left outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
       style={{
         padding: "12px 14px",
-        background: "var(--il-bg-raised)",
+        background: "var(--il-slate)",
         border: "1px solid var(--il-border-soft)",
         borderRadius: 3,
         cursor: "pointer",
@@ -1229,7 +1240,7 @@ function QuickAction({ label, shortcut, disabled, onClick }: QuickActionProps) {
       className="flex items-center gap-3 text-left outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 disabled:cursor-not-allowed disabled:opacity-40"
       style={{
         padding: "9px 12px",
-        background: "var(--il-bg-raised)",
+        background: "var(--il-slate)",
         border: "1px solid var(--il-border-soft)",
         borderRadius: 3,
         cursor: disabled ? "not-allowed" : "pointer",
