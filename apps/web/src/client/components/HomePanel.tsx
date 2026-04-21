@@ -603,16 +603,10 @@ function ActiveAgentCard({
           >
             {slug}
           </span>
-          <span
-            className="font-mono uppercase"
-            style={{
-              fontSize: 10.5,
-              color: live ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)",
-              letterSpacing: "0.06em",
-            }}
-          >
-            {statusLabel}
-          </span>
+          {/* Status word dropped per spec — the Reuleaux colour
+           *  (blue-spin / amber-static / neutral) and the `step`
+           *  meta's own colour already encode the state. A separate
+           *  word was redundant. */}
           <span style={{ flex: 1 }} />
           <Meta k="step" v={stepLabel ?? "—"} color={live ? "var(--il-blue)" : "var(--il-text3)"} />
         </button>
@@ -671,6 +665,51 @@ function ActiveAgentCard({
       >
         {live && note ? note : paused ? "paused" : note ? `last · ${note}` : "no recent activity"}
       </div>
+
+      {/* Target-path line — mono `→ <target>` per the JSX schematic.
+       *  Content is state-driven (parsed token, `queued`, `paused`,
+       *  `working…`); rendering unconditionally keeps the card's
+       *  silhouette the same regardless of which agent is shown. */}
+      <div
+        className="font-mono truncate"
+        style={{
+          marginTop: 4,
+          fontSize: 10.5,
+          letterSpacing: "0.02em",
+          color: "var(--il-text3)",
+        }}
+      >
+        → {target}
+      </div>
+
+      {/* Progress bar — 2 px blue rail with a matching glow, only
+       *  shown while the agent is live AND the step label parses.
+       *  Non-running agents don't get a progress bar; a static bar
+       *  would misread as "still happening." */}
+      {pct !== null && (
+        <div
+          aria-hidden="true"
+          style={{
+            height: 2,
+            background: "var(--il-border-soft)",
+            borderRadius: 1,
+            marginTop: 10,
+            position: "relative",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              right: `${100 - pct}%`,
+              background: "var(--il-blue)",
+              borderRadius: 1,
+              boxShadow: "0 0 8px var(--il-blue-glow)",
+              transition: "right var(--motion-transit) ease",
+            }}
+          />
+        </div>
+      )}
 
       {error && (
         <div
@@ -1065,6 +1104,76 @@ function QuickAction({ label, shortcut, disabled, onClick }: QuickActionProps) {
 }
 
 // ───────────── helpers ─────────────
+
+/**
+ * Parse a `"NN/MM"` step label (e.g. `"04/12"`) into a 0–100 %
+ * completion ratio. Clamps to `[0, 100]` so a server-side off-by-one
+ * doesn't overflow the progress bar. Returns `null` when the label
+ * can't be parsed so the caller suppresses the bar cleanly.
+ */
+function parseStepPct(label: string | null): number | null {
+  if (!label) return null;
+  const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(label);
+  if (!match?.[1] || !match[2]) return null;
+  const step = Number.parseInt(match[1], 10);
+  const total = Number.parseInt(match[2], 10);
+  if (!Number.isFinite(step) || !Number.isFinite(total) || total <= 0) return null;
+  return Math.max(0, Math.min(100, (step / total) * 100));
+}
+
+/**
+ * Derive the mono `→ <target>` line for an AgentRunCard. We lack a
+ * real `currentTarget` data field, so we fall back to these rules
+ * in order:
+ *   · starting → `working…` (transient)
+ *   · running + note carries a path-ish token → that token
+ *   · running without a parseable token → `working…`
+ *   · paused → `paused`
+ *   · otherwise → `queued`
+ * Keeps the line's silhouette consistent across states without
+ * inventing a target path.
+ */
+function deriveTargetLine({
+  live,
+  paused,
+  note,
+  starting,
+}: {
+  live: boolean;
+  paused: boolean;
+  note: string | null;
+  starting: boolean;
+}): string {
+  if (starting) return "working…";
+  if (live) {
+    const token = note ? extractPathToken(note) : null;
+    return token ?? "working…";
+  }
+  if (paused) return "paused";
+  return "queued";
+}
+
+/**
+ * Pull the most likely file reference out of a free-text note. The
+ * executor's notes often contain a `<name>.<ext>` or a
+ * `<folder>/<file>` substring — we surface that as the target when
+ * present. Returns `null` when no path-ish token is found so the
+ * caller can fall through to the state placeholder.
+ */
+function extractPathToken(text: string): string | null {
+  // Prefer the last `<folder>/<file>` hit since later tokens tend
+  //  to describe the currently-touched target rather than
+  //  introductory context.
+  const slashMatch = text.match(/[\w.-]+\/[\w./-]+/g);
+  if (slashMatch && slashMatch.length > 0) {
+    return slashMatch[slashMatch.length - 1] ?? null;
+  }
+  const extMatch = text.match(/[\w-]+\.(?:md|mdx|ts|tsx|js|jsx|json|yaml|yml|toml|txt|csv)\b/g);
+  if (extMatch && extMatch.length > 0) {
+    return extMatch[extMatch.length - 1] ?? null;
+  }
+  return null;
+}
 
 function useGreeting(): string {
   const h = new Date().getHours();
