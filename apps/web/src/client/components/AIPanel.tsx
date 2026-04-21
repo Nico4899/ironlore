@@ -320,8 +320,14 @@ export function AIPanel() {
           break;
         }
         case "switch-model":
+          // Deep-link into Settings → General where "Switch model"
+          //  controls will land. Today the tab houses provider
+          //  preferences; model selection grows here.
+          useAppStore.getState().toggleSettings("general");
+          break;
         case "account-usage":
-          useAppStore.getState().toggleSettings();
+          // Per-agent scope audit + rate caps live on Security.
+          useAppStore.getState().toggleSettings("security");
           break;
         case "slash.summarize":
           setInputDraft(

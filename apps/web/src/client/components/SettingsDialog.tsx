@@ -679,6 +679,602 @@ function MotifToggle({ label, live, value, onChange }: MotifToggleProps) {
   );
 }
 
+/**
+ * General tab — app-level preferences that don't fit anywhere else.
+ *
+ * Rows 01 (default agent) and 02/03 (effort + include-active-file)
+ * proxy into the AI panel store so the composer and Settings stay
+ * in sync; row 04 (developer mode) lives on the app store and
+ * gates the embedded terminal + `Ctrl+\`` shortcut.
+ */
+function GeneralTab() {
+  const defaultAgent = useAppStore((s) => s.defaultAgent);
+  const setDefaultAgent = useAppStore((s) => s.setDefaultAgent);
+  const devMode = useAppStore((s) => s.devMode);
+  const setDevMode = useAppStore((s) => s.setDevMode);
+  const effort = useAIPanelStore((s) => s.effort);
+  const setEffort = useAIPanelStore((s) => s.setEffort);
+  const include = useAIPanelStore((s) => s.includeActiveFileAsContext);
+  const setInclude = useAIPanelStore((s) => s.setIncludeActiveFileAsContext);
+
+  const [agents, setAgents] = useState<AgentListEntry[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchAgents()
+      .then((list) => {
+        if (!cancelled) setAgents(list);
+      })
+      .catch(() => {
+        if (!cancelled) setAgents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <>
+      <TabHero
+        title="General"
+        blurb="Defaults that follow you across projects. The AI-panel preferences mirror the composer's own controls — change either surface and the other updates."
+      />
+
+      <SettingRow
+        n="01"
+        label="Default AI agent"
+        sub="Seeds the AI panel on boot. You can still switch agents ad-hoc from the panel header."
+      >
+        {agents === null ? (
+          <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>Loading…</span>
+        ) : agents.length === 0 ? (
+          <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>
+            No agents installed yet.
+          </span>
+        ) : (
+          <SegChoice
+            options={agents.map((a) => ({ value: a.slug, label: a.slug }))}
+            active={defaultAgent}
+            onChange={(v) => setDefaultAgent(v)}
+          />
+        )}
+      </SettingRow>
+
+      <SettingRow
+        n="02"
+        label="Effort level"
+        sub="Forwarded to the agent run as a hint. Low keeps turns short; High allows longer, costlier reasoning."
+      >
+        <SegChoice
+          options={[
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High" },
+          ]}
+          active={effort}
+          onChange={(v) => setEffort(v as "low" | "medium" | "high")}
+        />
+      </SettingRow>
+
+      <SettingRow
+        n="03"
+        label="Include active file as context"
+        sub="When on, the file you're editing is sent to the agent alongside each prompt. Toggle also lives inline on the composer."
+      >
+        <SegChoice
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+          active={include ? "on" : "off"}
+          onChange={(v) => setInclude(v === "on")}
+        />
+      </SettingRow>
+
+      <SettingRow
+        n="04"
+        label="Developer mode"
+        sub="Adds the embedded terminal button to the sidebar and the Ctrl+` shortcut. Off by default so the shell stays clean for non-technical users."
+      >
+        <SegChoice
+          options={[
+            { value: "off", label: "Off" },
+            { value: "on", label: "On" },
+          ]}
+          active={devMode ? "on" : "off"}
+          onChange={(v) => setDevMode(v === "on")}
+        />
+      </SettingRow>
+    </>
+  );
+}
+
+/**
+ * Projects tab — single-install multi-project scoreboard. Shows the
+ * current project as a card, a button that re-opens the ⌘P switcher,
+ * and a read-only list of every installed project. Project creation
+ * stays in the CLI (`ironlore new-project …`) — no HTTP endpoint
+ * yet.
+ */
+function ProjectsTab() {
+  const currentProjectId = useAppStore((s) => s.currentProjectId);
+  const toggleSwitcher = useAppStore((s) => s.toggleProjectSwitcher);
+  const [projects, setProjects] = useState<ProjectListEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchProjects()
+      .then((list) => {
+        if (!cancelled) setProjects(list);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const current = projects?.find((p) => p.id === currentProjectId) ?? null;
+
+  return (
+    <>
+      <TabHero
+        title="Projects"
+        blurb="Every installed project lives under the same Ironlore root. Use ⌘P to switch quickly; new projects are scaffolded from the CLI."
+      />
+
+      <SettingRow n="01" label="Current project">
+        {current ? (
+          <div
+            style={{
+              padding: "10px 12px",
+              background: "var(--il-slate-elev)",
+              border: "1px solid var(--il-border-soft)",
+              borderRadius: 4,
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 500, color: "var(--il-text)" }}>
+              {current.name}
+            </div>
+            <div
+              className="font-mono"
+              style={{
+                fontSize: 10.5,
+                letterSpacing: "0.04em",
+                color: "var(--il-text3)",
+                marginTop: 3,
+              }}
+            >
+              {current.id} · {current.preset} · created {formatProjectDate(current.createdAt)}
+            </div>
+          </div>
+        ) : (
+          <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>Loading…</span>
+        )}
+      </SettingRow>
+
+      <SettingRow n="02" label="Switch project" sub="Opens the ⌘P palette.">
+        <button
+          type="button"
+          onClick={() => {
+            useAppStore.getState().toggleSettings();
+            toggleSwitcher();
+          }}
+          style={{
+            padding: "6px 14px",
+            fontSize: 12.5,
+            fontFamily: "var(--font-sans)",
+            fontWeight: 500,
+            background: "var(--il-blue)",
+            color: "var(--il-bg)",
+            border: "none",
+            borderRadius: 3,
+            cursor: "pointer",
+            boxShadow: "0 0 10px var(--il-blue-glow)",
+          }}
+        >
+          Open switcher
+        </button>
+      </SettingRow>
+
+      <SettingRow
+        n="03"
+        label="All projects"
+        sub="Click any row to switch projects. Creation is CLI-only for now — run `ironlore new-project <id> --preset main|research|sandbox`."
+      >
+        {error && (
+          <div style={{ fontSize: 12.5, color: "var(--il-red)" }}>
+            Failed to load projects: {error}
+          </div>
+        )}
+        {projects === null && !error && (
+          <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>Loading…</span>
+        )}
+        {projects && (
+          <div style={{ display: "grid", gap: 6 }}>
+            {projects.map((p) => {
+              const active = p.id === currentProjectId;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    if (active) return;
+                    // Hard reload matches ProjectSwitcher's commit path.
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("project", p.id);
+                    window.location.assign(url.toString());
+                  }}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto auto",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 12px",
+                    background: active
+                      ? "color-mix(in oklch, var(--il-blue) 10%, transparent)"
+                      : "var(--il-slate)",
+                    border: `1px solid ${active ? "var(--il-blue)" : "var(--il-border-soft)"}`,
+                    borderLeft: `2px solid ${active ? "var(--il-blue)" : "transparent"}`,
+                    borderRadius: 3,
+                    textAlign: "left",
+                    cursor: active ? "default" : "pointer",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, color: "var(--il-text)" }}>{p.name}</div>
+                    <div
+                      className="font-mono"
+                      style={{
+                        fontSize: 10.5,
+                        color: "var(--il-text3)",
+                        letterSpacing: "0.04em",
+                        marginTop: 2,
+                      }}
+                    >
+                      {p.id}
+                    </div>
+                  </div>
+                  <span
+                    className="font-mono uppercase"
+                    style={{
+                      fontSize: 10.5,
+                      letterSpacing: "0.06em",
+                      color: "var(--il-text3)",
+                      padding: "1px 6px",
+                      border: "1px solid var(--il-border-soft)",
+                      borderRadius: 2,
+                    }}
+                  >
+                    {p.preset}
+                  </span>
+                  {active && (
+                    <span
+                      className="font-mono uppercase"
+                      style={{
+                        fontSize: 10.5,
+                        letterSpacing: "0.06em",
+                        color: "var(--il-blue)",
+                      }}
+                    >
+                      active
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </SettingRow>
+    </>
+  );
+}
+
+function formatProjectDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  } catch {
+    return iso;
+  }
+}
+
+/**
+ * Agents tab — operational view of every installed agent. Shows
+ * slug + status pip, rate caps, review mode, and two controls:
+ * pause/resume (mutates `agent_state` via
+ * `PATCH /agents/:slug/state`) and "Open detail" (sets
+ * `activeAgentSlug` and closes the dialog).
+ *
+ * This tab is the operator's day-to-day view; the Security tab is
+ * the scope-audit view of the same agents. Overlap is intentional —
+ * different questions, same data.
+ */
+function AgentsTab() {
+  const [agents, setAgents] = useState<AgentListEntry[] | null>(null);
+  const [configs, setConfigs] = useState<Record<string, AgentConfigResponse | "error">>({});
+  const [error, setError] = useState<string | null>(null);
+  // Local pause-state mirror so the toggle responds instantly; the
+  //  next `fetchAgents()` pass will rehydrate from the server.
+  const [pausedLocal, setPausedLocal] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await fetchAgents();
+        if (cancelled) return;
+        setAgents(list);
+        setPausedLocal(Object.fromEntries(list.map((a) => [a.slug, a.status === "paused"])));
+        const entries = await Promise.all(
+          list.map(async (a) => {
+            try {
+              const cfg = await fetchAgentConfig(a.slug);
+              return [a.slug, cfg] as const;
+            } catch {
+              return [a.slug, "error"] as const;
+            }
+          }),
+        );
+        if (cancelled) return;
+        setConfigs(Object.fromEntries(entries));
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleToggle = async (slug: string) => {
+    const next = !pausedLocal[slug];
+    setPausedLocal((prev) => ({ ...prev, [slug]: next }));
+    try {
+      await setAgentPaused(slug, next);
+    } catch {
+      // Revert on failure; caller sees a stale toggle for one tick.
+      setPausedLocal((prev) => ({ ...prev, [slug]: !next }));
+    }
+  };
+
+  return (
+    <>
+      <TabHero
+        title="Agents"
+        blurb="Pause or resume installed agents and jump to each detail page. Scope (what files an agent may touch) is audited on the Security tab."
+      />
+
+      {error && (
+        <div style={{ fontSize: 12.5, color: "var(--il-red)" }}>
+          Failed to load agents: {error}
+        </div>
+      )}
+      {agents === null && !error && (
+        <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>Loading…</span>
+      )}
+      {agents && agents.length === 0 && (
+        <div
+          style={{
+            padding: 12,
+            border: "1px dashed var(--il-border-soft)",
+            borderRadius: 4,
+            color: "var(--il-text3)",
+            fontSize: 12.5,
+          }}
+        >
+          No agents installed yet.
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 10 }}>
+        {agents?.map((a) => {
+          const cfg = configs[a.slug];
+          const loaded = cfg && cfg !== "error" ? cfg : null;
+          const paused = pausedLocal[a.slug] ?? a.status === "paused";
+          return (
+            <div
+              key={a.slug}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr auto auto",
+                gap: 14,
+                alignItems: "center",
+                padding: "12px 14px",
+                background: "var(--il-slate-elev)",
+                border: "1px solid var(--il-border-soft)",
+                borderRadius: 4,
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <StatusChip status={paused ? "paused" : "active"} pauseReason={null} />
+                  <span style={{ fontSize: 14, fontWeight: 500, color: "var(--il-text)" }}>
+                    {a.slug}
+                  </span>
+                </div>
+                {loaded && (
+                  <div
+                    className="font-mono"
+                    style={{
+                      fontSize: 10.5,
+                      letterSpacing: "0.04em",
+                      color: "var(--il-text3)",
+                      marginTop: 4,
+                    }}
+                  >
+                    {loaded.maxRunsPerHour}/hr · {loaded.maxRunsPerDay}/day · review{" "}
+                    {loaded.persona?.reviewMode ?? "—"}
+                  </div>
+                )}
+                {cfg === "error" && (
+                  <div style={{ fontSize: 11.5, color: "var(--il-red)", marginTop: 3 }}>
+                    Failed to load config.
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => handleToggle(a.slug)}
+                style={{
+                  padding: "5px 12px",
+                  fontSize: 12,
+                  fontFamily: "var(--font-sans)",
+                  fontWeight: 500,
+                  background: paused ? "var(--il-blue)" : "transparent",
+                  color: paused ? "var(--il-bg)" : "var(--il-text2)",
+                  border: paused ? "none" : "1px solid var(--il-border)",
+                  borderRadius: 3,
+                  cursor: "pointer",
+                }}
+              >
+                {paused ? "Resume" : "Pause"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  useAppStore.getState().toggleSettings();
+                  useAppStore.getState().setActiveAgentSlug(a.slug);
+                }}
+                style={{
+                  padding: "5px 12px",
+                  fontSize: 12,
+                  fontFamily: "var(--font-sans)",
+                  fontWeight: 500,
+                  background: "transparent",
+                  color: "var(--il-text2)",
+                  border: "1px solid var(--il-border)",
+                  borderRadius: 3,
+                  cursor: "pointer",
+                }}
+              >
+                Open detail
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Storage tab — minimal today. The six maintenance verbs
+ * (reindex · flush · repair · backup · restore · eval) still live in
+ * the CLI; wiring them into the UI is tracked as a separate task.
+ * This tab surfaces the project root, a link to the CLI commands,
+ * and a copy affordance per command so users don't have to retype
+ * the project flag.
+ */
+function StorageTab() {
+  const currentProjectId = useAppStore((s) => s.currentProjectId);
+  const commands: Array<[string, string]> = [
+    ["Reindex search", `ironlore reindex --project ${currentProjectId}`],
+    ["Flush pending writes", `ironlore flush --project ${currentProjectId}`],
+    ["Integrity check", `ironlore repair --project ${currentProjectId} --dry-run`],
+    ["Create backup", `ironlore backup --project ${currentProjectId}`],
+    ["Restore from backup", `ironlore restore --project ${currentProjectId} <archive.tar.gz>`],
+    ["Performance scorecard", `ironlore eval --project ${currentProjectId} --json`],
+  ];
+
+  return (
+    <>
+      <TabHero
+        title="Storage"
+        blurb="Project root on disk and the CLI commands that maintain it. One-click UI wiring for these verbs is on the roadmap; until then, copy the command you need."
+      />
+
+      <SettingRow n="01" label="Project root">
+        <code
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 11.5,
+            padding: "5px 8px",
+            background: "var(--il-slate-elev)",
+            border: "1px solid var(--il-border-soft)",
+            borderRadius: 3,
+            color: "var(--il-text2)",
+          }}
+        >
+          projects/{currentProjectId}/
+        </code>
+      </SettingRow>
+
+      <SettingRow
+        n="02"
+        label="Maintenance commands"
+        sub="Run from a terminal at the Ironlore install root. Each row copies the full command (including the current project flag) to your clipboard."
+      >
+        <div style={{ display: "grid", gap: 6 }}>
+          {commands.map(([label, cmd]) => (
+            <CommandRow key={label} label={label} cmd={cmd} />
+          ))}
+        </div>
+      </SettingRow>
+    </>
+  );
+}
+
+function CommandRow({ label, cmd }: { label: string; cmd: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard denied — silently ignore */
+    }
+  };
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "160px 1fr auto",
+        gap: 12,
+        alignItems: "center",
+        padding: "8px 12px",
+        background: "var(--il-slate)",
+        border: "1px solid var(--il-border-soft)",
+        borderRadius: 3,
+      }}
+    >
+      <span style={{ fontSize: 13, color: "var(--il-text)" }}>{label}</span>
+      <code
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--il-text2)",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {cmd}
+      </code>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="font-mono uppercase"
+        style={{
+          padding: "3px 8px",
+          fontSize: 10.5,
+          letterSpacing: "0.06em",
+          color: copied ? "var(--il-green)" : "var(--il-text3)",
+          background: "transparent",
+          border: "1px solid var(--il-border-soft)",
+          borderRadius: 2,
+          cursor: "pointer",
+        }}
+      >
+        {copied ? "copied" : "copy"}
+      </button>
+    </div>
+  );
+}
+
 function SettingRow({
   n,
   label,
