@@ -1,7 +1,15 @@
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
-import type { HealthResponse, ReadyResponse } from "@ironlore/core";
+import type { HealthResponse, ProjectPreset, ReadyResponse } from "@ironlore/core";
 import { DEFAULT_HOST, DEFAULT_PORT, DEFAULT_PROJECT_ID } from "@ironlore/core";
+import {
+  InvalidPresetError,
+  InvalidProjectIdError,
+  ProjectAlreadyExistsError,
+  scaffoldProjectOnDisk,
+  validatePreset,
+  validateProjectId,
+} from "@ironlore/core/server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -354,6 +362,77 @@ async function start() {
   app.get("/api/projects", (c) => {
     const list = projectRegistry.list();
     return c.json({ projects: list });
+  });
+
+  /**
+   * Create a new project — parity with `ironlore new-project`.
+   *
+   * Writes the on-disk layout (data/, .ironlore/{locks,wal}/,
+   * project.yaml) via the shared `scaffoldProjectOnDisk` helper,
+   * then idempotently inserts the row into `projects.sqlite`.
+   * The in-flight server cannot yet mount `/api/projects/:id/*`
+   * without a restart — that's a Phase-9 follow-up per
+   * docs/06-implementation-roadmap.md. We surface the restart
+   * requirement in the response so the client can tell the user.
+   *
+   * Returns 400 on invalid id / preset, 409 when the project
+   * directory already exists.
+   */
+  app.post("/api/projects", async (c) => {
+    let body: { id?: unknown; name?: unknown; preset?: unknown };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Body must be JSON" }, 400);
+    }
+    if (typeof body.id !== "string" || typeof body.preset !== "string") {
+      return c.json({ error: "Body must include { id: string, preset: string }" }, 400);
+    }
+
+    let id: string;
+    try {
+      id = validateProjectId(body.id);
+    } catch (err) {
+      if (err instanceof InvalidProjectIdError) return c.json({ error: err.message }, 400);
+      throw err;
+    }
+
+    let preset: ProjectPreset;
+    try {
+      preset = validatePreset(body.preset);
+    } catch (err) {
+      if (err instanceof InvalidPresetError) return c.json({ error: err.message }, 400);
+      throw err;
+    }
+
+    const name = typeof body.name === "string" && body.name.trim() ? body.name.trim() : id;
+
+    try {
+      scaffoldProjectOnDisk({ installRoot, id, name, preset });
+    } catch (err) {
+      if (err instanceof ProjectAlreadyExistsError) {
+        return c.json({ error: "A project with that id already exists." }, 409);
+      }
+      throw err;
+    }
+
+    // Register the project so `GET /api/projects` includes it
+    //  immediately. The routes under `/api/projects/:id/*` won't
+    //  exist until the server restarts — that's explicit in the
+    //  response.
+    projectRegistry.ensureProject(id, name, preset);
+
+    return c.json(
+      {
+        id,
+        name,
+        preset,
+        restartRequired: true,
+        message:
+          "Project created. Restart the Ironlore server to activate its routes, then switch from the project list.",
+      },
+      201,
+    );
   });
 
   // Cross-project copy. Mounted under `/api/projects` (not per-project)

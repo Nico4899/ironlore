@@ -634,6 +634,42 @@ export async function fetchProjects(): Promise<ProjectListEntry[]> {
   return data.projects;
 }
 
+/** Payload returned by `POST /api/projects`. */
+export interface CreateProjectResponse {
+  id: string;
+  name: string;
+  preset: "main" | "research" | "sandbox";
+  /**
+   * Always `true` today — the in-flight server can't hot-mount the
+   * new project's routes under `/api/projects/<id>/*`. Client uses
+   * this to surface the "restart to switch" message. Phase-9
+   * follow-up: hot-mount + flip to `false`.
+   */
+  restartRequired: boolean;
+  message: string;
+}
+
+/**
+ * Scaffold a new project on disk + register it. Mirrors the
+ * `ironlore new-project` CLI command. The in-flight server cannot
+ * mount the new project's routes without a restart, so the response
+ * carries `restartRequired: true` and the caller should instruct
+ * the user before offering to switch.
+ */
+export async function createProject(params: {
+  id: string;
+  name: string;
+  preset: "main" | "research" | "sandbox";
+}): Promise<CreateProjectResponse> {
+  const res = await apiFetch("/api/projects", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<CreateProjectResponse>;
+}
+
 export interface CopyPageResponse {
   targetProjectId: string;
   targetPath: string;

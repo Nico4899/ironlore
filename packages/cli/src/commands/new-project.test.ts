@@ -1,9 +1,10 @@
+import { buildProjectYaml } from "@ironlore/core/server";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildProjectYaml, newProject } from "./new-project.js";
+import { newProject } from "./new-project.js";
 
 /**
  * `ironlore new-project` — scaffolds a project directory and writes

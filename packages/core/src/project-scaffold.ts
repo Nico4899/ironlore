@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ProjectPreset } from "./types.js";
 
 /**
  * Node-only helpers for scaffolding a new Ironlore project on disk.
@@ -14,8 +15,6 @@ import { join } from "node:path";
  * `packages/core/src/server.ts` instead, following the same pattern
  * as `resolve-safe.ts`.
  */
-
-export type ProjectPreset = "main" | "research" | "sandbox";
 
 export const VALID_PRESETS: readonly ProjectPreset[] = ["main", "research", "sandbox"] as const;
 
