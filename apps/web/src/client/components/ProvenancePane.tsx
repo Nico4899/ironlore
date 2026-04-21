@@ -104,7 +104,7 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
   return (
     <aside
       className="flex shrink-0 flex-col border-l border-border"
-        style={{ width: 380, background: "var(--il-bg-raised)" }}
+      style={{ width: 380, background: "var(--il-bg-raised)" }}
       aria-label="Source of citation"
       onClick={handleClickOutside}
       onKeyDown={(e) => {

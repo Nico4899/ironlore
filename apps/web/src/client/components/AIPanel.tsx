@@ -747,10 +747,7 @@ function ToolCallCard({
           {msg.tool}
         </span>
         {target && (
-          <span
-            className="font-mono truncate"
-            style={{ fontSize: 10.5, color: "var(--il-text3)" }}
-          >
+          <span className="font-mono truncate" style={{ fontSize: 10.5, color: "var(--il-text3)" }}>
             ({target})
           </span>
         )}

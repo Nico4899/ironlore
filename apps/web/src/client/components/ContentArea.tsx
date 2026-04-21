@@ -8,6 +8,7 @@ import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
 import { AgentDetailPage } from "./AgentDetailPage.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
+import { getEditorCommands } from "./editor/editor-commands.js";
 import { HighlightToolbar } from "./editor/HighlightToolbar.js";
 import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
@@ -437,7 +438,6 @@ function MarkdownContent({
   onSelectionChange,
 }: MarkdownContentProps) {
   const filePath = useEditorStore((s) => s.filePath);
-  const fileType = useEditorStore((s) => s.fileType);
   const etag = useEditorStore((s) => s.etag);
   const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
 
@@ -475,16 +475,40 @@ function MarkdownContent({
       >
         <ModeToggle mode={mode} />
         <span aria-hidden="true" style={{ width: 1, height: 14, background: "var(--il-border)" }} />
-        <span
-          className="font-mono uppercase"
-          style={{
-            fontSize: 10.5,
-            letterSpacing: "0.04em",
-            color: "var(--il-text3)",
-          }}
+        {/*
+         * Markdown format cluster per screen-editor.jsx — the
+         * previously decorative B / I / U / ⋯ squares are now live
+         * buttons that dispatch to whichever editor is mounted
+         * (MarkdownEditor ↔ SourceEditor via the shared
+         * `editor-commands` registry). Each button is 22×22, mono
+         * 11, text2 on `--il-slate-elev`; hover lifts to
+         * `--il-slate-hover`.
+         */}
+        <FormatClusterButton label="B" title="Bold · ⌘B" command="toggleBold" bold />
+        <FormatClusterButton label="I" title="Italic · ⌘I" command="toggleItalic" italic />
+        <FormatClusterButton label="U" title="Underline" command="toggleUnderline" underline />
+        <FormatMoreMenu />
+        <span aria-hidden="true" style={{ width: 1, height: 14, background: "var(--il-border)" }} />
+        {/*
+         * Block-level shortcuts row — `H1 · H2 · Quote · Code · Link`
+         * rendered as mono uppercase buttons in 0.04em tracking. The
+         * interpunct separators are inert text4 decoration, not
+         * buttons. Per screen-editor.jsx.
+         */}
+        <div
+          className="flex items-center gap-1.5 font-mono uppercase"
+          style={{ fontSize: 10.5, letterSpacing: "0.04em", color: "var(--il-text3)" }}
         >
-          {fileType ?? "markdown"}
-        </span>
+          <FormatBlockButton label="H1" command="setHeading" arg={1} />
+          <span style={{ color: "var(--il-text4)" }}>·</span>
+          <FormatBlockButton label="H2" command="setHeading" arg={2} />
+          <span style={{ color: "var(--il-text4)" }}>·</span>
+          <FormatBlockButton label="Quote" command="toggleBlockquote" />
+          <span style={{ color: "var(--il-text4)" }}>·</span>
+          <FormatBlockButton label="Code" command="insertCodeFence" />
+          <span style={{ color: "var(--il-text4)" }}>·</span>
+          <FormatBlockButton label="Link" command="insertLink" />
+        </div>
         <div className="flex-1" />
         <Meta k="etag" v={shortEtag(etag)} />
         <span
@@ -556,6 +580,186 @@ function MarkdownContent({
  * editor surfaces a mutable control — everything else is read-only
  * metadata — so the toggle carries its own visual weight.
  */
+type InlineFormatCommand =
+  | "toggleBold"
+  | "toggleItalic"
+  | "toggleUnderline"
+  | "toggleStrike"
+  | "toggleInlineCode";
+
+/**
+ * 22 × 22 mono-glyph format button (B / I / U). Dispatches to the
+ * shared `editor-commands` registry, which falls back silently when
+ * no editor is mounted. Per screen-editor.jsx: fontSize 11 text2 on
+ * slate-elev; the `bold / italic / underline` props decorate the
+ * glyph so the letter visually matches the action (italic `I`,
+ * underline `U`).
+ */
+function FormatClusterButton({
+  label,
+  title,
+  command,
+  bold,
+  italic,
+  underline,
+}: {
+  label: string;
+  title: string;
+  command: InlineFormatCommand;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={() => {
+        const c = getEditorCommands();
+        if (!c) return;
+        c[command]();
+      }}
+      className="flex shrink-0 items-center justify-center outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: 3,
+        background: "var(--il-slate-elev)",
+        fontFamily: "var(--font-mono)",
+        fontSize: 11,
+        fontWeight: bold ? 700 : 400,
+        fontStyle: italic ? "italic" : "normal",
+        textDecoration: underline ? "underline" : "none",
+        color: "var(--il-text2)",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * `⋯` more-formats menu. Opens a tiny popover with the inline
+ * formats that didn't earn their own slot: strikethrough + inline
+ * code. Closes on outside click or after an action fires.
+ */
+function FormatMoreMenu() {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [open]);
+  return (
+    <span className="relative">
+      <button
+        type="button"
+        title="More formats"
+        aria-label="More formats"
+        aria-expanded={open}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className="flex shrink-0 items-center justify-center outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        style={{
+          width: 22,
+          height: 22,
+          borderRadius: 3,
+          background: "transparent",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--il-text2)",
+          cursor: "pointer",
+        }}
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          className="surface-glass absolute z-20 rounded-md py-1"
+          style={{ left: 0, top: "calc(100% + 4px)", minWidth: 160 }}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          role="menu"
+        >
+          <FormatMoreItem label="Strikethrough" onClick={() => runCommand("toggleStrike")} />
+          <FormatMoreItem label="Inline code" onClick={() => runCommand("toggleInlineCode")} />
+        </div>
+      )}
+    </span>
+  );
+}
+
+function FormatMoreItem({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      className="flex w-full items-center px-3 py-1.5 text-left text-xs text-primary hover:bg-ironlore-slate-hover"
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Block-level quick button — `H1 / H2 / Quote / Code / Link`. Mono
+ * uppercase text at rest (inherits color/size from the parent row);
+ * hover bumps the color to `--il-text` so the target reads as live.
+ * Shares the `editor-commands` registry with the format cluster.
+ */
+function FormatBlockButton({
+  label,
+  command,
+  arg,
+}: {
+  label: string;
+  command: "setHeading" | "toggleBlockquote" | "insertCodeFence" | "insertLink";
+  arg?: 1 | 2 | 3;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const c = getEditorCommands();
+        if (!c) return;
+        if (command === "setHeading" && arg != null) {
+          c.setHeading(arg);
+        } else if (command === "toggleBlockquote") {
+          c.toggleBlockquote();
+        } else if (command === "insertCodeFence") {
+          c.insertCodeFence();
+        } else if (command === "insertLink") {
+          c.insertLink();
+        }
+      }}
+      className="rounded-sm outline-none transition-colors hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      style={{
+        padding: "2px 2px",
+        background: "transparent",
+        fontFamily: "var(--font-mono)",
+        fontSize: 10.5,
+        letterSpacing: "0.04em",
+        color: "inherit",
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function runCommand(name: InlineFormatCommand): void {
+  const c = getEditorCommands();
+  if (!c) return;
+  c[name]();
+}
+
 function ModeToggle({ mode }: { mode: "wysiwyg" | "source" }) {
   return (
     <div
