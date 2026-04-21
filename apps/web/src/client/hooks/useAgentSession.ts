@@ -174,7 +174,14 @@ function processJobEvent(event: { seq: number; kind: string; data: string }): vo
       for (let i = msgs.length - 1; i >= 0; i--) {
         const msg = msgs[i];
         if (msg?.type === "tool_call" && msg.result === undefined) {
-          (msg as { result?: unknown }).result = data.result;
+          const mutable = msg as { result?: unknown; durationMs?: number; timestamp?: number };
+          mutable.result = data.result;
+          // Stamp duration so the ToolCallCard's StatusPip can show
+          //  `180ms` per screen-editor.jsx. Only when we have both a
+          //  start timestamp and we haven't already stamped.
+          if (mutable.timestamp != null && mutable.durationMs == null) {
+            mutable.durationMs = Date.now() - mutable.timestamp;
+          }
           useAIPanelStore.setState({ messages: [...msgs] });
           break;
         }
@@ -187,7 +194,11 @@ function processJobEvent(event: { seq: number; kind: string; data: string }): vo
       for (let i = msgs2.length - 1; i >= 0; i--) {
         const msg = msgs2[i];
         if (msg?.type === "tool_call" && msg.result === undefined) {
-          (msg as { result?: unknown }).result = `Error: ${data.error}`;
+          const mutable = msg as { result?: unknown; durationMs?: number; timestamp?: number };
+          mutable.result = `Error: ${data.error}`;
+          if (mutable.timestamp != null && mutable.durationMs == null) {
+            mutable.durationMs = Date.now() - mutable.timestamp;
+          }
           useAIPanelStore.setState({ messages: [...msgs2] });
           break;
         }
