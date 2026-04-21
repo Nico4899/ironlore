@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { LogOut, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
 import {
@@ -7,6 +7,7 @@ import {
   fetchAgentConfig,
   fetchAgents,
   fetchProjects,
+  logout,
   type ProjectListEntry,
   setAgentPaused,
 } from "../lib/api.js";
@@ -19,6 +20,7 @@ import {
   type TypeDisplaySetting,
   useAppStore,
 } from "../stores/app.js";
+import { useAuthStore } from "../stores/auth.js";
 
 type Tab = SettingsTab;
 

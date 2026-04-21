@@ -6,23 +6,18 @@ import {
   ChevronRight,
   ChevronsUpDown,
   FileCode,
+  FilePlus,
   FileSpreadsheet,
   FileText,
   FileType,
   FolderClosed,
-  FolderPlus,
   Home,
   Image,
   Inbox as InboxIcon,
-  LogOut,
   Mail,
-  Moon,
   Music,
   PanelLeftClose,
   PanelLeftOpen,
-  Search,
-  Settings as SettingsIcon,
-  Sun,
   Terminal as TerminalIcon,
   Video,
   Workflow,
@@ -35,7 +30,6 @@ import {
   deleteFolder,
   deletePage,
   fetchTree,
-  logout,
   movePage,
 } from "../lib/api.js";
 import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app.js";
@@ -109,8 +103,7 @@ export function SidebarNew() {
   const sidebarFolder = useAppStore((s) => s.sidebarFolder);
   const sidebarTab = useAppStore((s) => s.sidebarTab);
   const sidebarWidth = useAppStore((s) => s.sidebarWidth);
-  const theme = useAppStore((s) => s.theme);
-  // Dev-mode gates the terminal affordance here — the button only
+  // Dev-mode gates the terminal affordance — the button only
   //  renders when Settings → General → Developer mode is On. Keeps
   //  the shell free of power-user noise for non-technical users.
   const devMode = useAppStore((s) => s.devMode);
@@ -314,17 +307,25 @@ export function SidebarNew() {
     [performMove],
   );
 
-  // New folder (only in expanded sidebar)
-  const handleNewFolder = useCallback(async () => {
+  /**
+   * Primary "+ New page" button beneath the tree. Creates an
+   * untitled markdown at the currently-drilled-in folder, drops
+   * into rename-mode immediately so the user names it inline, and
+   * activates the new path so the editor opens it. Replaces the
+   * prior "New folder" primary — folder creation stays on the
+   * right-click context menu.
+   */
+  const handleNewPageFromSidebar = useCallback(async () => {
     const folder = sidebarFolder;
     const name = "Untitled";
-    const path = folder ? `${folder}/${name}` : name;
+    const path = folder ? `${folder}/${name}.md` : `${name}.md`;
     try {
-      await createFolder(path);
+      await createPage(path, `# ${name}\n`);
+      useAppStore.getState().setActivePath(path);
       setEditingPath(path);
       setEditingValue(name);
     } catch {
-      /* */
+      /* server error — file-watcher will reconcile eventually */
     }
   }, [sidebarFolder]);
 
@@ -350,6 +351,18 @@ export function SidebarNew() {
   // Delete
   const handleDelete = useCallback(
     async (path: string, type: PageType | "directory", name: string) => {
+      // `.agents/` is a reserved, load-bearing directory — every
+      //  installed persona lives under it. Blocking deletion at the
+      //  UI prevents the "oops" case where a user collapses their
+      //  entire agent roster with one right-click. Individual
+      //  `.agents/<slug>/` subfolders can still be deleted (that's
+      //  how you uninstall an agent).
+      if (type === "directory" && path === ".agents") {
+        window.alert(
+          "The .agents folder is reserved and can't be deleted. To remove a single agent, delete its subfolder under .agents/ instead.",
+        );
+        return;
+      }
       const msg =
         type === "directory"
           ? `Delete folder "${name}" and all its contents?`
@@ -433,14 +446,6 @@ export function SidebarNew() {
     setContextMenu(null);
   }, [contextMenu, handleDelete]);
 
-  const handleLogout = useCallback(async () => {
-    try {
-      await logout();
-      useAuthStore.getState().checkSession();
-    } catch {
-      /* */
-    }
-  }, []);
 
   return (
     <aside
@@ -688,57 +693,39 @@ export function SidebarNew() {
       <div className="border-t border-border" />
 
       {/*
-       * Bottom rail — tighter than before. Per docs/09-ui-and-brand.md
-       * §Sidebar revision (post-Header retirement) the four items are:
-       *   · Search chip (⌘K affordance — opens the command palette)
-       *   · Settings (⚙)
-       *   · Theme toggle (Sun/Moon)
-       *   · Profile avatar (opens account menu; holds Log out)
-       * Feedback, Switch-project, Terminal, and Inbox buttons are
-       * dropped — Switch-project has the ProjectTile at the top,
-       * Inbox is a tab, Terminal is dev-mode gated, Feedback had no
-       * wiring.
+       * Bottom rail — trimmed to just the dev-mode terminal button.
+       * Search / Settings / Theme / Profile are now owned by the
+       * AppHeader (logo · breadcrumb · theme · search · inbox ·
+       * profile). Keeping the rail as an empty shell would be wasted
+       * vertical space; we only render it when there's actually
+       * something to show (dev-mode on).
        */}
-      <div className={`flex flex-col gap-0.5 px-1 py-1.5 ${collapsed ? "items-center" : ""}`}>
-        <SidebarBottomTab
-          icon={Search}
-          label="Search (⌘K)"
-          collapsed={collapsed}
-          onClick={() => useAppStore.getState().toggleSearchDialog()}
-        />
-        <SidebarBottomTab
-          icon={SettingsIcon}
-          label="Settings"
-          collapsed={collapsed}
-          onClick={() => useAppStore.getState().toggleSettings()}
-        />
-        {devMode && (
+      {devMode && (
+        <div className={`flex flex-col gap-0.5 px-1 py-1.5 ${collapsed ? "items-center" : ""}`}>
           <SidebarBottomTab
             icon={TerminalIcon}
             label="Terminal (Ctrl+`)"
             collapsed={collapsed}
             onClick={() => useAppStore.getState().toggleTerminal()}
           />
-        )}
-        <SidebarBottomTab
-          icon={theme === "dark" ? Sun : Moon}
-          label={theme === "dark" ? "Light mode" : "Dark mode"}
-          collapsed={collapsed}
-          onClick={() => useAppStore.getState().toggleTheme()}
-        />
-        <ProfileTile collapsed={collapsed} onLogout={handleLogout} />
-      </div>
+        </div>
+      )}
 
-      {/* ─── New folder button (expanded only) ─── */}
+      {/* ─── New-page button (expanded only). Replaces the prior
+       *  "New folder" primary button; folder creation still lives on
+       *  the tree's right-click menu + context-folder actions. Per
+       *  the sidebar brief: "Add + button below file structure to
+       *  add new page and remove it from the editor view at the
+       *  top." */}
       {!collapsed && (
         <div className="flex items-center gap-1 border-t border-border px-2 py-2">
           <button
             type="button"
-            onClick={handleNewFolder}
+            onClick={handleNewPageFromSidebar}
             className="btn-depth flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border py-1.5 text-xs text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
           >
-            <FolderPlus className="h-3.5 w-3.5" />
-            New folder
+            <FilePlus className="h-3.5 w-3.5" />
+            New page
           </button>
         </div>
       )}
@@ -900,102 +887,6 @@ function SidebarTabPill({
       )}
     </button>
   );
-}
-
-/**
- * Profile tile — 22 × 22 slate-elevated chip with the session user's
- * initials; click opens a tiny menu anchored to the chip carrying
- * the Log out action. Replaces the retired Header avatar + the old
- * bottom-rail Log out button in one step.
- */
-function ProfileTile({ collapsed, onLogout }: { collapsed: boolean; onLogout: () => void }) {
-  const username = useAuthStore((s) => s.username);
-  const [open, setOpen] = useState(false);
-  const initials = deriveInitials(username);
-
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, [open]);
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-        aria-label={`Account — ${username ?? "you"}`}
-        title={username ? `Signed in as ${username}` : "Signed in"}
-        className={`flex items-center gap-2 rounded-md outline-none transition-colors hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 ${
-          collapsed ? "h-9 w-9 justify-center" : "w-full px-2 py-1.5"
-        }`}
-      >
-        <span
-          aria-hidden="true"
-          className="flex items-center justify-center rounded-full font-mono"
-          style={{
-            width: 22,
-            height: 22,
-            fontSize: 10.5,
-            color: "var(--il-text2)",
-            background: "var(--il-slate-elev)",
-            border: "1px solid var(--il-border)",
-            flexShrink: 0,
-          }}
-        >
-          {initials}
-        </span>
-        {!collapsed && (
-          <span className="flex-1 truncate text-left text-xs text-secondary">
-            {username ?? "account"}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div
-          className="surface-glass absolute z-50 rounded-md py-1"
-          style={{
-            left: collapsed ? "calc(100% + 6px)" : 0,
-            bottom: "calc(100% + 4px)",
-            minWidth: 160,
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          role="menu"
-        >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onLogout();
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-primary hover:bg-ironlore-slate-hover"
-          >
-            <LogOut className="h-3.5 w-3.5 shrink-0" />
-            Log out
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function deriveInitials(username: string | null): string {
-  if (!username) return "·";
-  const trimmed = username.trim();
-  if (!trimmed) return "·";
-  const parts = trimmed.split(/[\s._-]+/).filter(Boolean);
-  if (parts.length >= 2) {
-    const first = parts[0]?.[0] ?? "";
-    const last = parts[parts.length - 1]?.[0] ?? "";
-    return `${first}${last}`.toLowerCase();
-  }
-  return trimmed.slice(0, 2).toLowerCase();
 }
 
 function SidebarBottomTab({

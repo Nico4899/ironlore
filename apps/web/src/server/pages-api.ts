@@ -140,6 +140,15 @@ export function createPagesApi(
     if (!dirPath) {
       return c.json({ error: "Path required" }, 400);
     }
+    // `.agents/` is reserved — every installed persona lives under
+    //  it and nuking the whole tree would cascade-delete the user's
+    //  entire agent roster. Individual `.agents/<slug>/` subfolders
+    //  stay deletable (that's how you uninstall an agent). Enforced
+    //  server-side as defense-in-depth on top of the client-side
+    //  guard in SidebarNew.
+    if (dirPath === ".agents") {
+      return c.json({ error: "The .agents folder is reserved and cannot be deleted." }, 403);
+    }
 
     try {
       writer.rmdir(dirPath);
