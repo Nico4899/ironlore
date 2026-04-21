@@ -65,7 +65,6 @@ export function AppHeader() {
         borderBottom: "1px solid var(--il-border-soft)",
         position: "relative",
       }}
-      aria-label="Application header"
     >
       {/* Heartbeat — 1 px animated gradient at the bottom edge while
        *  any agent is streaming, per screen-home.jsx AppHeader. */}
