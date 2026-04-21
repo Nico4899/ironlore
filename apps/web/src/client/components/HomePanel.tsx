@@ -66,9 +66,12 @@ export function HomePanel() {
   const isFreshProject =
     recent !== null && recent.length === 0 && activity.loaded && activity.agents.length === 0;
 
-  const idleCount = activity.agents.filter((a) => !a.running && a.status === "active").length;
-  const pausedCount = activity.agents.filter((a) => a.status === "paused").length;
-  const activeRunsMeta = formatActiveRunsMeta(activity.runningCount, idleCount, pausedCount);
+  // Queued = everything that isn't running right now (idle active
+  //  agents + paused ones). Paused state is still visible per-card
+  //  via the amber pip, so the meta count stays truthful without
+  //  double-counting.
+  const queuedCount = activity.agents.filter((a) => !a.running).length;
+  const activeRunsMeta = formatActiveRunsMeta(activity.runningCount, queuedCount);
 
   /**
    * Quick action — New page. Creates `untitled.md` (or
@@ -314,7 +317,7 @@ export function HomePanel() {
           {!isFreshProject && (
             <section>
               <SectionLabel index={1} title="Active runs" meta={activeRunsMeta} />
-              <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gap: 12 }}>
                 {!activity.loaded ? (
                   <LoadingRow />
                 ) : activity.agents.length === 0 ? (
@@ -378,7 +381,7 @@ export function HomePanel() {
              *  and a weak icon next to a self-explanatory verb is
              *  exactly the "prefer no icon over a weak icon" anti-
              *  pattern. */}
-            <SectionLabel index={4} title="Quick actions" meta="↵-JUMPABLE" />
+            <SectionLabel index={4} title="Quick actions" meta="⌘-JUMPABLE" />
             <div style={{ display: "grid", gap: 6 }}>
               <QuickAction label="New page" shortcut="⌘N" onClick={handleNewPage} />
               <QuickAction
@@ -416,11 +419,17 @@ function orderedForHome(
   return [...agents].sort((a, b) => rank(a) - rank(b));
 }
 
-function formatActiveRunsMeta(running: number, idle: number, paused: number): string {
+/**
+ * §01 section-meta formatter. Matches the JSX spec grammar
+ * `N RUNNING · N QUEUED` — paused agents fold into the queued
+ * count (they're "not running right now"), since per-card pip
+ * colour already encodes the paused state. Avoids double-counting
+ * while keeping the meta honest.
+ */
+function formatActiveRunsMeta(running: number, queued: number): string {
   const parts: string[] = [];
   if (running > 0) parts.push(`${running} RUNNING`);
-  if (idle > 0) parts.push(`${idle} IDLE`);
-  if (paused > 0) parts.push(`${paused} PAUSED`);
+  if (queued > 0) parts.push(`${queued} QUEUED`);
   return parts.length > 0 ? parts.join(" · ") : "NO AGENTS";
 }
 
@@ -522,23 +531,35 @@ function ActiveAgentCard({
     return () => window.clearTimeout(id);
   }, [starting, running]);
 
-  let statusLabel: string;
-  if (starting) statusLabel = "starting";
-  else if (running) statusLabel = "running";
-  else if (paused) statusLabel = "paused";
-  else statusLabel = "idle";
   const showRunNow = !running && !paused;
   const live = running || starting;
+
+  // ── Progress bar data ──────────────────────────────────────────
+  // `stepLabel` is of the shape "NN/MM" (e.g. "04/12"); the bar
+  //  spans the card width at 2 px with a blue glow, mirroring
+  //  screen-home.jsx. Parsing fails cleanly → `pct === null` →
+  //  no bar rendered. We also suppress the bar when the agent
+  //  isn't live — a paused/idle progress bar would misread as
+  //  "this is still happening."
+  const pct = live ? parseStepPct(stepLabel) : null;
+
+  // ── Target-path mono line ──────────────────────────────────────
+  // State-driven content per the spec silhouette. We don't have a
+  //  real `currentTarget` field yet, so we derive the best signal
+  //  available: a parseable file-ish token from the note when
+  //  running, or a state placeholder otherwise. Keeps the line
+  //  honest rather than inventing a path.
+  const target = deriveTargetLine({ live, paused, note, starting });
 
   return (
     <AgentPulse
       active={live}
       style={{
-        background: "var(--il-slate)",
+        background: "var(--il-bg-raised)",
         border: "1px solid var(--il-border-soft)",
         borderLeft: `2px solid ${live ? "var(--il-blue)" : "var(--il-border)"}`,
         borderRadius: 4,
-        padding: "14px 16px",
+        padding: "16px 18px",
       }}
     >
       <div className="flex w-full items-baseline gap-3">
@@ -945,7 +966,7 @@ function RecentCard({ entry, displaySerif }: { entry: RecentEdit; displaySerif: 
       className="text-left outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
       style={{
         padding: "12px 14px",
-        background: "var(--il-slate)",
+        background: "var(--il-bg-raised)",
         border: "1px solid var(--il-border-soft)",
         borderRadius: 3,
         cursor: "pointer",
@@ -1031,7 +1052,7 @@ function QuickAction({ label, shortcut, disabled, onClick }: QuickActionProps) {
       className="flex items-center gap-3 text-left outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 disabled:cursor-not-allowed disabled:opacity-40"
       style={{
         padding: "9px 12px",
-        background: "var(--il-slate)",
+        background: "var(--il-bg-raised)",
         border: "1px solid var(--il-border-soft)",
         borderRadius: 3,
         cursor: disabled ? "not-allowed" : "pointer",
