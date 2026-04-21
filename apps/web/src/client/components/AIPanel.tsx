@@ -581,7 +581,8 @@ function JournalCard({
   return (
     <div
       style={{
-        padding: "8px 10px",
+        // Padding 9/11 per screen-editor.jsx JournalCard (was 8/10).
+        padding: "9px 11px",
         borderLeft: "2px solid var(--il-blue)",
         background: "color-mix(in oklch, var(--il-blue) 7%, transparent)",
         borderRadius: "0 3px 3px 0",
@@ -592,13 +593,17 @@ function JournalCard({
         style={{
           fontSize: 10.5,
           letterSpacing: "0.06em",
-          color: "var(--il-text3)",
+          // Overline is blue per spec — signals "agent's own voice,
+          //  not chrome." text3 reads as generic metadata.
+          color: "var(--il-blue)",
           marginBottom: 4,
         }}
       >
         → journal{stepPart}
       </div>
-      <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--il-text)" }}>{text}</div>
+      {/* Body text2 per spec so the prose reads as a quiet aside,
+       *  not primary content. */}
+      <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--il-text2)" }}>{text}</div>
     </div>
   );
 }
@@ -917,25 +922,42 @@ function CitationText({ text }: { text: string }) {
   );
 }
 
+/**
+ * ContextChip per screen-editor.jsx ContextPill:
+ *   · slate-elevated background, `--il-border-soft` border, 2 px
+ *     radius (a rect, not a pill — pills are only for counters)
+ *   · mono 10.5 text2 0.02em
+ *   · leading `@` glyph in `var(--il-blue)` — the mention cue that
+ *     the JSX carries in place of kind-specific Lucide icons. Drops
+ *     the prior Highlighter / Paperclip / Sparkles trio.
+ *   · trailing `×` close keeps the existing dismiss affordance.
+ */
 function ContextChip({ ctx, onRemove }: ContextChipProps) {
-  const icon =
-    ctx.kind === "highlight" ? (
-      <Highlighter className="h-3.5 w-3.5 text-ironlore-blue" />
-    ) : ctx.kind === "file" ? (
-      <Paperclip className="h-3.5 w-3.5 text-accent-violet" />
-    ) : (
-      <Sparkles className="h-3.5 w-3.5 text-accent-violet" />
-    );
-
   return (
-    <div className="group flex max-w-full items-center gap-1.5 rounded-full border border-border bg-background py-0.5 pl-2 pr-1 text-[11px] text-secondary">
-      {icon}
-      <span className="max-w-45 truncate font-medium text-primary">{ctx.label}</span>
+    <div
+      className="inline-flex max-w-full items-center gap-1"
+      style={{
+        padding: "2px 6px 2px 7px",
+        background: "var(--il-slate-elev)",
+        border: "1px solid var(--il-border-soft)",
+        borderRadius: 2,
+        fontFamily: "var(--font-mono)",
+        fontSize: 10.5,
+        letterSpacing: "0.02em",
+        color: "var(--il-text2)",
+      }}
+    >
+      <span aria-hidden="true" style={{ color: "var(--il-blue)" }}>
+        @
+      </span>
+      <span className="truncate" title={ctx.label} style={{ maxWidth: 180 }}>
+        {ctx.label}
+      </span>
       <button
         type="button"
         onClick={onRemove}
         aria-label={`Remove context: ${ctx.label}`}
-        className="flex h-4 w-4 items-center justify-center rounded-full text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+        className="flex h-4 w-4 items-center justify-center rounded text-secondary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
       >
         <X className="h-3.5 w-3.5" />
       </button>
