@@ -13,6 +13,9 @@ const ACCENT_HUE_KEY = "ironlore.accentHue";
 const MOTION_KEY = "ironlore.motion";
 const MOTIFS_KEY = "ironlore.motifs";
 const TYPE_DISPLAY_KEY = "ironlore.typeDisplay";
+const DEV_MODE_KEY = "ironlore.devMode";
+const DEFAULT_AGENT_KEY = "ironlore.defaultAgent";
+const SETTINGS_TAB_KEY = "ironlore.settingsTab";
 
 /**
  * Motion intensity. `full` runs all animations; `reduced` mirrors
@@ -35,6 +38,24 @@ export type MotionSetting = "full" | "reduced" | "none";
  * attribute, and persists under `ironlore.typeDisplay`.
  */
 export type TypeDisplaySetting = "sans" | "serif";
+
+/**
+ * Settings dialog category. All six tabs are wired; the active tab
+ * is persisted per device so re-opening Settings returns you to the
+ * pane you were last editing. Composer's `/ → Switch model` /
+ * `Account & usage` deep-link by passing the target tab to
+ * `toggleSettings`.
+ */
+export type SettingsTab = "general" | "projects" | "agents" | "security" | "storage" | "appearance";
+
+const SETTINGS_TABS: readonly SettingsTab[] = [
+  "general",
+  "projects",
+  "agents",
+  "security",
+  "storage",
+  "appearance",
+] as const;
 
 /**
  * Five toggleable decorative motifs. Two (`provenance`, `agentPulse`)
@@ -140,6 +161,58 @@ function persistTypeDisplay(value: TypeDisplaySetting): void {
   }
 }
 
+function loadDevMode(): boolean {
+  try {
+    return window.localStorage.getItem(DEV_MODE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function persistDevMode(value: boolean): void {
+  try {
+    window.localStorage.setItem(DEV_MODE_KEY, value ? "1" : "0");
+  } catch {
+    /* storage denied */
+  }
+}
+
+function loadDefaultAgent(): string {
+  try {
+    const raw = window.localStorage.getItem(DEFAULT_AGENT_KEY);
+    if (raw && raw.length > 0) return raw;
+  } catch {
+    /* storage denied */
+  }
+  return "general";
+}
+
+function persistDefaultAgent(value: string): void {
+  try {
+    window.localStorage.setItem(DEFAULT_AGENT_KEY, value);
+  } catch {
+    /* storage denied */
+  }
+}
+
+function loadSettingsTab(): SettingsTab {
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_TAB_KEY);
+    if (raw && (SETTINGS_TABS as readonly string[]).includes(raw)) return raw as SettingsTab;
+  } catch {
+    /* storage denied */
+  }
+  return "appearance";
+}
+
+function persistSettingsTab(value: SettingsTab): void {
+  try {
+    window.localStorage.setItem(SETTINGS_TAB_KEY, value);
+  } catch {
+    /* storage denied */
+  }
+}
+
 /**
  * Load motif toggles, tolerating partial / corrupt payloads. Any
  * missing key falls back to `DEFAULT_MOTIFS[key] === true` so a
@@ -168,7 +241,21 @@ interface AppStore {
   aiPanelOpen: boolean;
   searchDialogOpen: boolean;
   settingsOpen: boolean;
+  /** Active Settings category. Persisted; composer's `/` menu can
+   *  jump into a specific tab via `toggleSettings(tab)`. */
+  settingsTab: SettingsTab;
   terminalOpen: boolean;
+  /**
+   * When true, the embedded terminal button + `Ctrl+\`` shortcut are
+   * available. Off by default — keeps the shell clean for
+   * non-technical users. Persisted.
+   */
+  devMode: boolean;
+  /**
+   * User's preferred AI agent slug; seeds the AI panel's
+   * `activeAgent` on boot. Persisted. Defaults to `"general"`.
+   */
+  defaultAgent: string;
   /** Cmd+P project switcher palette visibility (Phase 9 Item 2). */
   projectSwitcherOpen: boolean;
   /** Cross-project copy dialog source path, or null when closed (Phase 9 Item 4). */
@@ -216,7 +303,12 @@ interface AppStore {
   toggleSidebar: () => void;
   toggleAIPanel: () => void;
   toggleSearchDialog: () => void;
-  toggleSettings: () => void;
+  /** Toggle the Settings dialog. Passing a tab opens it (if closed)
+   *  or switches tabs (if already open). */
+  toggleSettings: (tab?: SettingsTab) => void;
+  setSettingsTab: (tab: SettingsTab) => void;
+  setDevMode: (value: boolean) => void;
+  setDefaultAgent: (slug: string) => void;
   toggleTerminal: () => void;
   toggleProjectSwitcher: () => void;
   openCopyToProject: (srcPath: string) => void;
@@ -310,6 +402,9 @@ export const useAppStore = create<AppStore>((set) => ({
   aiPanelOpen: false,
   searchDialogOpen: false,
   settingsOpen: false,
+  settingsTab: loadSettingsTab(),
+  devMode: loadDevMode(),
+  defaultAgent: loadDefaultAgent(),
   terminalOpen: false,
   projectSwitcherOpen: false,
   copyToProjectSrc: null,
@@ -331,7 +426,28 @@ export const useAppStore = create<AppStore>((set) => ({
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleAIPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
   toggleSearchDialog: () => set((s) => ({ searchDialogOpen: !s.searchDialogOpen })),
-  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+  toggleSettings: (tab) =>
+    set((s) => {
+      // With an explicit tab: open (or stay open) pinned to that tab.
+      //  Without: pure toggle of visibility.
+      if (tab) {
+        persistSettingsTab(tab);
+        return { settingsOpen: true, settingsTab: tab };
+      }
+      return { settingsOpen: !s.settingsOpen };
+    }),
+  setSettingsTab: (tab) => {
+    persistSettingsTab(tab);
+    set({ settingsTab: tab });
+  },
+  setDevMode: (value) => {
+    persistDevMode(value);
+    set({ devMode: value });
+  },
+  setDefaultAgent: (slug) => {
+    persistDefaultAgent(slug);
+    set({ defaultAgent: slug });
+  },
   toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
   toggleProjectSwitcher: () => set((s) => ({ projectSwitcherOpen: !s.projectSwitcherOpen })),
   openCopyToProject: (srcPath) => set({ copyToProjectSrc: srcPath }),
