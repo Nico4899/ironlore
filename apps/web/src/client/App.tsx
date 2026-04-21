@@ -57,16 +57,25 @@ export function App() {
   }, []);
 
   const handleOnboardingComplete = useCallback(
-    async (answers: { role: string; company: string; goals: string }) => {
+    async (state: {
+      selectedScopes: string[];
+      acceptedAgents: string[];
+      seedChoice: string | null;
+    }) => {
       try {
+        // The new onboarding flow captures category choices instead
+        //  of free text. We still call the server's template
+        //  substitution endpoint so library personas get populated —
+        //  we just pass the scope labels through `goals` and leave
+        //  `company_*` blank (the endpoint treats missing values as
+        //  no-ops). A network failure here shouldn't trap the user.
         await submitOnboarding({
-          company_name: answers.company,
-          company_description: answers.company,
-          goals: answers.goals,
+          company_name: "",
+          company_description: "",
+          goals: state.selectedScopes.join(", "),
         });
       } catch {
-        // Server-side template substitution is best-effort. A network
-        //  failure here shouldn't trap the user in the wizard.
+        /* best-effort */
       }
       markOnboarded();
       setOnboarded(true);
