@@ -42,7 +42,6 @@ import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app
 import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
 import { MOTION } from "../styles/motion.js";
-import { InboxPanel } from "./InboxPanel.js";
 import { Logo } from "./Logo.js";
 import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 
@@ -532,8 +531,11 @@ export function SidebarNew() {
         onSelect={(tab) => useAppStore.getState().setSidebarTab(tab)}
       />
 
-      {/* ─── Folder breadcrumb (when drilled in) ─── */}
-      {!collapsed && sidebarFolder && sidebarTab === "files" && (
+      {/* ─── Folder breadcrumb (when drilled in). Rendered regardless
+       *  of `sidebarTab` — the tree stays visible even when Inbox is
+       *  the active main-view surface, matching screen-more.jsx
+       *  ScreenInbox (sidebar tree + content-area inbox). */}
+      {!collapsed && sidebarFolder && (
         <div className="flex items-center gap-1 border-b border-border px-2 py-1.5 text-xs text-secondary">
           <button
             type="button"
@@ -583,7 +585,7 @@ export function SidebarNew() {
        * `--motion-transit` (180 ms) so the direction reads before the
        * motion settles.
        */}
-      {!collapsed && sidebarTab === "files" && (
+      {!collapsed && (
         // biome-ignore lint/a11y/noStaticElementInteractions: context menu on container
         <div
           className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ease-in-out ${
@@ -671,17 +673,11 @@ export function SidebarNew() {
        *  rail still render below. */}
       {collapsed && <div className="flex-1" />}
 
-      {/*
-       * INBOX tab body. Renders the existing `InboxPanel` in embedded
-       * mode: no outer aside + no close X (the sidebar tab bar is the
-       * "close" affordance). The panel's internal width adapts to
-       * `sidebarWidth` via flex.
-       */}
-      {!collapsed && sidebarTab === "inbox" && (
-        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
-          <InboxPanel embedded />
-        </div>
-      )}
+      {/* Inbox is now a full-screen surface routed via the content
+       *  area (ContentArea reads `sidebarTab === "inbox"` and renders
+       *  <InboxPanel /> in place of the editor). The sidebar's INBOX
+       *  tab is the trigger + state indicator; the tree stays
+       *  visible behind it. */}
 
       {/* ─── Active-agents strip (only renders when agents are running) ─── */}
       <ActiveAgentsStrip collapsed={collapsed} />
