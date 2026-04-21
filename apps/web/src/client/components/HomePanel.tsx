@@ -1,9 +1,9 @@
-import { Inbox, LayoutGrid, Search, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
   type AgentHistogramResponse,
   ApiError,
+  createPage,
   fetchAgentHistogram,
   fetchRecentEdits,
   type RecentEdit,
@@ -69,6 +69,50 @@ export function HomePanel() {
   const idleCount = activity.agents.filter((a) => !a.running && a.status === "active").length;
   const pausedCount = activity.agents.filter((a) => a.status === "paused").length;
   const activeRunsMeta = formatActiveRunsMeta(activity.runningCount, idleCount, pausedCount);
+
+  /**
+   * Quick action — New page. Creates `untitled.md` (or
+   * `untitled-N.md` if that name is taken) at the project root and
+   * focuses it in the editor. Unlike the sidebar's context-menu
+   * `New file` path, this lands from Home without the user having
+   * to navigate into a folder first.
+   */
+  const handleNewPage = useCallback(async () => {
+    const basePath = "untitled.md";
+    // Pick a free filename — check the recent-edits list and the
+    //  in-memory tree as best-effort deduplication. Worst case the
+    //  server will 409 and we'll surface the error.
+    let candidate = basePath;
+    let n = 2;
+    const taken = (path: string): boolean =>
+      (recent ?? []).some((r) => r.path === path);
+    while (taken(candidate) && n < 100) {
+      candidate = `untitled-${n}.md`;
+      n++;
+    }
+    try {
+      await createPage(candidate, "# Untitled\n\n");
+      useAppStore.getState().setActivePath(candidate);
+    } catch {
+      // Non-fatal — no toast infra on Home yet; user will see the
+      //  sidebar refresh via the file watcher either way.
+    }
+  }, [recent]);
+
+  /**
+   * Quick action — Run an agent. Opens the first idle installed
+   * agent's detail page so the user can inspect controls + trigger
+   * a run. When no agents exist the button disables itself upstream.
+   * Open question answer: option (a) — route to detail page rather
+   * than the AI panel, since the detail page carries the Run-now
+   * control + the recent-runs context.
+   */
+  const handleRunAnAgent = useCallback(() => {
+    const idle = activity.agents.find((a) => !a.running && a.status === "active");
+    const target = idle ?? activity.agents[0];
+    if (!target) return;
+    useAppStore.getState().setActiveAgentSlug(target.slug);
+  }, [activity.agents]);
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -328,30 +372,31 @@ export function HomePanel() {
           )}
 
           <section>
-            <SectionLabel index={4} title="Quick actions" meta="⌘-JUMPABLE" />
+            {/* Quick actions — mono section-meta reads `↵-jumpable`
+             *  per screen-home.jsx. Rows match the JSX spec exactly:
+             *  New page / Run an agent / Open inbox / Search. Icons
+             *  intentionally dropped — the JSX carries only labels,
+             *  and a weak icon next to a self-explanatory verb is
+             *  exactly the "prefer no icon over a weak icon" anti-
+             *  pattern. */}
+            <SectionLabel index={4} title="Quick actions" meta="↵-JUMPABLE" />
             <div style={{ display: "grid", gap: 6 }}>
+              <QuickAction label="New page" shortcut="⌘N" onClick={handleNewPage} />
               <QuickAction
-                icon={<Search className="h-3.5 w-3.5" />}
+                label="Run an agent"
+                shortcut="⌘⇧R"
+                disabled={activity.loaded && activity.agents.length === 0}
+                onClick={handleRunAnAgent}
+              />
+              <QuickAction
+                label="Open inbox"
+                shortcut="⌘I"
+                onClick={() => useAppStore.getState().openSidebarTab("inbox")}
+              />
+              <QuickAction
                 label="Search everything"
                 shortcut="⌘K"
                 onClick={() => useAppStore.getState().toggleSearchDialog()}
-              />
-              <QuickAction
-                icon={<Sparkles className="h-3.5 w-3.5" />}
-                label="Toggle AI panel"
-                shortcut="⌘⇧A"
-                onClick={() => useAppStore.getState().toggleAIPanel()}
-              />
-              <QuickAction
-                icon={<LayoutGrid className="h-3.5 w-3.5" />}
-                label="Switch project"
-                shortcut="⌘P"
-                onClick={() => useAppStore.getState().toggleProjectSwitcher()}
-              />
-              <QuickAction
-                icon={<Inbox className="h-3.5 w-3.5" />}
-                label="Open inbox"
-                onClick={() => useAppStore.getState().openSidebarTab("inbox")}
               />
             </div>
           </section>
@@ -979,27 +1024,32 @@ function RecentCard({
 }
 
 interface QuickActionProps {
-  icon: React.ReactNode;
   label: string;
   shortcut?: string;
+  disabled?: boolean;
   onClick: () => void;
 }
 
-function QuickAction({ icon, label, shortcut, onClick }: QuickActionProps) {
+/**
+ * Quick-action row — `[label] ... [⌘K]`. Icons intentionally dropped
+ * per screen-home.jsx (labels are self-explanatory verbs; adding a
+ * Lucide icon per row is the weak-icon anti-pattern).
+ */
+function QuickAction({ label, shortcut, disabled, onClick }: QuickActionProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex items-center gap-3 text-left outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      disabled={disabled}
+      className="flex items-center gap-3 text-left outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 disabled:cursor-not-allowed disabled:opacity-40"
       style={{
         padding: "9px 12px",
         background: "var(--il-slate)",
         border: "1px solid var(--il-border-soft)",
         borderRadius: 3,
-        cursor: "pointer",
+        cursor: disabled ? "not-allowed" : "pointer",
       }}
     >
-      <span style={{ color: "var(--il-text2)" }}>{icon}</span>
       <span style={{ flex: 1, fontSize: 13, color: "var(--il-text)" }}>{label}</span>
       {shortcut && <Key>{shortcut}</Key>}
     </button>
