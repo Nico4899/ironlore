@@ -294,7 +294,7 @@ export function HomePanel() {
             ) : (
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" style={{ minWidth: 0 }}>
                 {recent.map((p) => (
-                  <RecentCard key={p.path} entry={p} />
+                  <RecentCard key={p.path} entry={p} displaySerif={displaySerif} />
                 ))}
               </div>
             )}
@@ -426,12 +426,14 @@ function ActiveAgentCard({
   paused,
   stepLabel,
   note,
+  displaySerif,
 }: {
   slug: string;
   running: boolean;
   paused: boolean;
   stepLabel: string | null;
   note: string | null;
+  displaySerif: boolean;
 }) {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -500,15 +502,31 @@ function ActiveAgentCard({
             color={live ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)"}
             spin={live}
           />
+          {/* Serif-italic subject in display-variant, Inter 600 in
+           *  safe — matches screen-home.jsx AgentRunCard + the
+           *  §Typography "serif-italic name + mono meta + inter
+           *  sentence" triad. */}
           <span
             className="truncate"
-            style={{
-              fontFamily: "var(--font-sans)",
-              fontSize: 14,
-              fontWeight: 600,
-              letterSpacing: "-0.01em",
-              color: "var(--il-text)",
-            }}
+            style={
+              displaySerif
+                ? {
+                    fontFamily: "var(--font-serif)",
+                    fontSize: 20,
+                    fontWeight: 400,
+                    fontStyle: "italic",
+                    letterSpacing: "-0.01em",
+                    lineHeight: 1.15,
+                    color: "var(--il-text)",
+                  }
+                : {
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    letterSpacing: "-0.01em",
+                    color: "var(--il-text)",
+                  }
+            }
           >
             {slug}
           </span>
@@ -556,34 +574,36 @@ function ActiveAgentCard({
         )}
       </div>
 
-      {/* Action line — the last run's `note`, only when we have one.
-       *  Surfaces current context for running agents; fades to an
-       *  honest "no recent runs" line for fresh idle agents. */}
-      {live && note && (
-        <div
-          className="truncate"
-          style={{
-            marginTop: 6,
-            fontSize: 12.5,
-            color: "var(--il-text2)",
-          }}
-        >
-          {note}
-        </div>
-      )}
-      {!live && note && (
-        <div
-          className="font-mono truncate"
-          style={{
-            marginTop: 6,
-            fontSize: 10.5,
-            color: "var(--il-text3)",
-            letterSpacing: "0.02em",
-          }}
-        >
-          last · {note}
-        </div>
-      )}
+      {/* Action line — always renders per screen-home.jsx
+       *  AgentRunCard (every card shows one sentence of context).
+       *    · Live run + note → Inter 12.5 text2, the run's current
+       *      note verbatim.
+       *    · Idle + note → mono uppercase `last · <note>` so the user
+       *      can see what the agent was last up to.
+       *    · Idle + no runs yet → `no recent activity`.
+       *    · Paused → `paused`. */}
+      <div
+        className={live && note ? "truncate" : "font-mono truncate"}
+        style={
+          live && note
+            ? { marginTop: 6, fontSize: 12.5, color: "var(--il-text2)" }
+            : {
+                marginTop: 6,
+                fontSize: 10.5,
+                color: "var(--il-text3)",
+                letterSpacing: "0.02em",
+                textTransform: "uppercase",
+              }
+        }
+      >
+        {live && note
+          ? note
+          : paused
+            ? "paused"
+            : note
+              ? `last · ${note}`
+              : "no recent activity"}
+      </div>
 
       {error && (
         <div
@@ -797,7 +817,13 @@ function RunRateHeadroom({
  * `recent_edits` table doesn't store it and synthesising it per row
  * would be decoration.
  */
-function RecentCard({ entry }: { entry: RecentEdit }) {
+function RecentCard({
+  entry,
+  displaySerif,
+}: {
+  entry: RecentEdit;
+  displaySerif: boolean;
+}) {
   const { path } = entry;
   const name = path.split("/").pop() ?? path;
   const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
@@ -832,15 +858,27 @@ function RecentCard({ entry }: { entry: RecentEdit }) {
           {folder}/
         </div>
       )}
+      {/* Title — serif 18/400 in display mode, Inter 13.5/500 in safe
+       *  mode per screen-home.jsx RecentCard. */}
       <div
         className="truncate"
-        style={{
-          fontFamily: "var(--font-sans)",
-          fontSize: 13.5,
-          fontWeight: 500,
-          color: "var(--il-text)",
-          lineHeight: 1.2,
-        }}
+        style={
+          displaySerif
+            ? {
+                fontFamily: "var(--font-serif)",
+                fontSize: 18,
+                fontWeight: 400,
+                lineHeight: 1.2,
+                color: "var(--il-text)",
+              }
+            : {
+                fontFamily: "var(--font-sans)",
+                fontSize: 13.5,
+                fontWeight: 500,
+                lineHeight: 1.2,
+                color: "var(--il-text)",
+              }
+        }
       >
         {name}
       </div>
