@@ -69,13 +69,21 @@ export function useAgentSession() {
       const slug = store.activeAgent;
 
       store.addMessage({ type: "user", text, attachments: [] });
+      // Reset the run-scoped token counter so the context-budget chip
+      //  in the composer restarts from 0% used. Each `usage` event on
+      //  the stream increments it via `incrementTokens` below.
+      store.resetTokens();
       store.setIsStreaming(true);
 
       try {
         const res = await fetch(`${BASE()}/agents/${slug}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: text, mode: "interactive" }),
+          body: JSON.stringify({
+            prompt: text,
+            mode: "interactive",
+            effort: store.effort,
+          }),
         });
 
         if (!res.ok) {

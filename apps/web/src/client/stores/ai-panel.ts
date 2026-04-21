@@ -1,6 +1,58 @@
 import { create } from "zustand";
 
 /**
+ * Canonical budget cap shared with the server executor
+ * (apps/web/src/server/agents/executor.ts line 113). The
+ * composer's context-budget chip divides `tokensUsed` by this
+ * number so the % reads against the same limit that ultimately
+ * trips `budget.exhausted`.
+ */
+export const AGENT_TOKEN_BUDGET = 100_000;
+
+export type EffortLevel = "low" | "medium" | "high";
+
+/** LocalStorage keys — follow the `ironlore.<setting>` prefix pattern. */
+const EFFORT_KEY = "ironlore.aiPanel.effort";
+const INCLUDE_ACTIVE_FILE_KEY = "ironlore.aiPanel.includeActiveFile";
+
+function loadEffort(): EffortLevel {
+  try {
+    const raw = window.localStorage.getItem(EFFORT_KEY);
+    if (raw === "low" || raw === "medium" || raw === "high") return raw;
+  } catch {
+    /* storage denied */
+  }
+  return "medium";
+}
+
+function persistEffort(value: EffortLevel): void {
+  try {
+    window.localStorage.setItem(EFFORT_KEY, value);
+  } catch {
+    /* storage denied */
+  }
+}
+
+function loadIncludeActiveFile(): boolean {
+  try {
+    const raw = window.localStorage.getItem(INCLUDE_ACTIVE_FILE_KEY);
+    if (raw === "0") return false;
+    if (raw === "1") return true;
+  } catch {
+    /* storage denied */
+  }
+  return true;
+}
+
+function persistIncludeActiveFile(value: boolean): void {
+  try {
+    window.localStorage.setItem(INCLUDE_ACTIVE_FILE_KEY, value ? "1" : "0");
+  } catch {
+    /* storage denied */
+  }
+}
+
+/**
  * Every message carries an optional millisecond `timestamp` so the
  * conversation log can surface a mono time tag beneath the bubble
  * (per docs/09-ui-and-brand.md §AI panel user bubble). The field is
@@ -79,6 +131,24 @@ interface AIPanelStore {
   activeAgent: "general" | "editor" | string;
   /** Pending contexts shown as pills above the prompt input. */
   contexts: ContextPill[];
+  /**
+   * Cumulative tokens consumed by the current run. Reset at the start
+   * of each send, incremented each time a provider `usage` event
+   * arrives (see useAgentSession.ts). The composer's context-budget
+   * chip divides by AGENT_TOKEN_BUDGET for the % remaining readout.
+   */
+  tokensUsed: number;
+  /**
+   * Effort level forwarded to the agent run. Persisted in localStorage
+   * so user preference survives reloads.
+   */
+  effort: EffortLevel;
+  /**
+   * When true, the currently-open editor file is auto-attached as a
+   * context pill on send. Toggle lives in the composer toolbar (eye
+   * icon + filename). Persisted.
+   */
+  includeActiveFileAsContext: boolean;
 
   setJobId: (jobId: string | null) => void;
   addMessage: (message: ConversationMessage) => void;
@@ -90,6 +160,10 @@ interface AIPanelStore {
   addContext: (ctx: ContextPill) => void;
   removeContext: (index: number) => void;
   clearContexts: () => void;
+  incrementTokens: (n: number) => void;
+  resetTokens: () => void;
+  setEffort: (effort: EffortLevel) => void;
+  setIncludeActiveFileAsContext: (value: boolean) => void;
 }
 
 export const useAIPanelStore = create<AIPanelStore>((set) => ({
@@ -100,6 +174,9 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
   isStreaming: false,
   activeAgent: "general",
   contexts: [],
+  tokensUsed: 0,
+  effort: loadEffort(),
+  includeActiveFileAsContext: loadIncludeActiveFile(),
 
   setJobId: (jobId) => set({ jobId }),
   // Stamp every inbound message with the current wall clock unless
@@ -123,4 +200,14 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
   addContext: (ctx) => set((s) => ({ contexts: [...s.contexts, ctx] })),
   removeContext: (index) => set((s) => ({ contexts: s.contexts.filter((_, i) => i !== index) })),
   clearContexts: () => set({ contexts: [] }),
+  incrementTokens: (n) => set((s) => ({ tokensUsed: s.tokensUsed + n })),
+  resetTokens: () => set({ tokensUsed: 0 }),
+  setEffort: (effort) => {
+    persistEffort(effort);
+    set({ effort });
+  },
+  setIncludeActiveFileAsContext: (value) => {
+    persistIncludeActiveFile(value);
+    set({ includeActiveFileAsContext: value });
+  },
 }));
