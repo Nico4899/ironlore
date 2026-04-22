@@ -170,23 +170,41 @@ function ConnectionPill({
   connected: boolean;
   reconnecting: boolean;
 }) {
-  const label = connected ? "LIVE" : reconnecting ? "RECONNECTING" : "OFFLINE";
-  const state = connected ? "healthy" : reconnecting ? "running" : "error";
-  const color = connected
+  // Three distinct visual states — each carries its own Reuleaux
+  //  colour + label grammar:
+  //   · LIVE — green static pip + uppercase mono
+  //   · reconnecting… — amber spinning pip + lowercase mono (the
+  //     lowercase reads as "transient, not a warning" — we're
+  //     actively working on it, not paused)
+  //   · OFFLINE — red static pip + uppercase mono (terminal state)
+  //  StatusPip couples state → colour in a fixed palette; the
+  //  reconnecting case needs an amber-spinning pip specifically, so
+  //  we drop to the raw `Reuleaux` primitive for that branch.
+  const label = connected ? "LIVE" : reconnecting ? "reconnecting…" : "OFFLINE";
+  const textColor = connected
     ? "text-signal-green"
     : reconnecting
       ? "text-signal-amber"
       : "text-signal-red";
+  const textCase = reconnecting ? "normal-case" : "uppercase";
 
   return (
     <span
       role="status"
       aria-live="polite"
-      aria-label={label}
-      className={`flex items-center gap-1.5 font-mono text-[10.5px] uppercase tracking-wider ${color}`}
+      aria-label={connected ? "Connection live" : reconnecting ? "Reconnecting" : "Offline"}
+      className={`flex items-center gap-1.5 font-mono text-[10.5px] tracking-wider ${textCase} ${textColor}`}
     >
       {/* 7 px pip — spec §Reuleaux sizes: inline (22 px status-bar footer). */}
-      <StatusPip state={state} size={7} aria-label={label} />
+      {reconnecting ? (
+        <Reuleaux size={7} color="var(--il-amber)" spin aria-label="Reconnecting" />
+      ) : (
+        <StatusPip
+          state={connected ? "healthy" : "error"}
+          size={7}
+          aria-label={connected ? "Connection live" : "Offline"}
+        />
+      )}
       {label}
     </span>
   );
