@@ -1366,16 +1366,23 @@ function SettingRow({
       }}
     >
       <div>
+        {/* `[NN]` bracketed index — matches the new SectionLabel
+         *  grammar so numbering reads the same everywhere in the
+         *  product. Size bumped from 10.5 → 13.5 and fontWeight 400
+         *  so it carries the same hierarchy as the Home surface's
+         *  `[01] Active runs`. */}
         <div
           className="font-mono"
           style={{
-            fontSize: 10.5,
-            color: "var(--il-text4)",
-            letterSpacing: "0.08em",
-            marginBottom: 4,
+            fontSize: 13.5,
+            fontWeight: 400,
+            color: "var(--il-text3)",
+            letterSpacing: "0.04em",
+            marginBottom: 2,
+            fontVariantNumeric: "tabular-nums",
           }}
         >
-          {n}
+          [{n}]
         </div>
         <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--il-text)" }}>{label}</div>
         {sub && (

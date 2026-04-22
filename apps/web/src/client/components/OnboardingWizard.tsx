@@ -300,6 +300,10 @@ function HeaderBar({ step }: { step: number }) {
  * reading the heading.
  */
 function StepOverline({ n, theme }: { n: string; theme: string }) {
+  // Numbering grammar matches the rest of the app now (Home's
+  //  `[01] Active runs`, Settings rows): `[NN]` brackets. On the
+  //  welcome + witness steps the caller passes `n=""`; we skip the
+  //  bracket block there so the overline degrades cleanly.
   return (
     <div
       className="font-mono uppercase"
@@ -310,8 +314,14 @@ function StepOverline({ n, theme }: { n: string; theme: string }) {
         marginBottom: 14,
       }}
     >
-      <span style={{ color: "var(--il-text4)" }}>{n}</span>{" "}
-      <span style={{ color: "var(--il-text4)" }}>·</span> {theme}
+      {n ? (
+        <>
+          <span style={{ color: "var(--il-text3)" }}>[{n}]</span>{" "}
+          <span style={{ color: "var(--il-text4)" }}>·</span> {theme}
+        </>
+      ) : (
+        theme
+      )}
     </div>
   );
 }

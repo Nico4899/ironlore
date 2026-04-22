@@ -57,21 +57,23 @@ export function SectionLabel({
       <span
         style={{
           fontFamily: "var(--font-mono)",
-          fontSize: 10.5,
-          letterSpacing: "0.08em",
-          color: "var(--il-text4)",
+          // Index now renders at the same size as the title and
+          //  wraps in `[NN]` brackets — per the spec: "[01] Active
+          //  runs". The ratio of mono numeric to Inter title carries
+          //  the hierarchy through typography family + weight, not
+          //  size (the title stays 600, the index stays 400).
+          fontSize: 14,
+          fontWeight: 400,
+          letterSpacing: "0.04em",
+          color: "var(--il-text3)",
           fontVariantNumeric: "tabular-nums",
         }}
       >
-        {padded}
+        [{padded}]
       </span>
       <span
         style={{
           fontFamily: "var(--font-sans)",
-          // Bumped from 12 → 14 so the section headings carry more
-          //  presence against the new pure-black Home canvas. The
-          //  index + meta chips stay at 10.5 so the ratio reads as
-          //  hierarchy, not parity.
           fontSize: 14,
           fontWeight: 600,
           letterSpacing: "-0.01em",
