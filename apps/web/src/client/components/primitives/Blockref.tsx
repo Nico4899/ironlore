@@ -109,7 +109,10 @@ export function Blockref({
         <span>{children ?? page}</span>
         {short && <span className="il-blockref__id">#{short}</span>}
       </button>
-      {hovered && block && <BlockrefPreview page={page} block={block} text={preview} />}
+      {/* Render the preview any time the chip is hovered — the card
+       *  shows the page's first block when the ref doesn't carry a
+       *  `#blk_…` suffix, so `[[Page]]` citations aren't silent. */}
+      {hovered && <BlockrefPreview page={page} block={block} text={preview} />}
     </span>
   );
 }
@@ -129,7 +132,8 @@ function BlockrefPreview({
   text,
 }: {
   page: string;
-  block: string;
+  /** Optional — when present the head shows `file / blk_…`. */
+  block?: string;
   text: string | null;
 }) {
   const fileName = page.split("/").pop() ?? page;
@@ -148,8 +152,12 @@ function BlockrefPreview({
         <span className="truncate" title={page}>
           {fileName}
         </span>
-        <span style={{ color: "var(--il-text4)" }}>/</span>
-        <span style={{ color: "var(--il-text3)" }}>{block}</span>
+        {block && (
+          <>
+            <span style={{ color: "var(--il-text4)" }}>/</span>
+            <span style={{ color: "var(--il-text3)" }}>{block}</span>
+          </>
+        )}
         <span className="flex-1" />
         <span style={{ color: "var(--il-text4)" }}>click to open</span>
       </div>
