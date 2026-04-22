@@ -100,8 +100,27 @@ export interface AgentConfigResponse {
 const HOUR_MS = 3_600_000;
 const WINDOW_BUCKETS = 24;
 
-/** Matches the leading YAML frontmatter block of a persona file. */
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
+/**
+ * Matches the leading YAML frontmatter block of a persona file.
+ * Tolerates trailing whitespace and a single HTML comment after each
+ * `---` fence (e.g. `--- <!-- #blk_... -->`), which the ProseMirror
+ * editor roundtrip sometimes leaves behind. The YAML body itself is
+ * captured in group 1 without the fence chrome.
+ */
+const FRONTMATTER_RE = /^---[^\n]*\r?\n([\s\S]*?)\r?\n---[^\n]*/;
+
+/** An all-null persona shell carrying only the file's prose body. */
+function bodyOnly(body: string): AgentConfigResponse["persona"] {
+  return {
+    description: null,
+    heartbeat: null,
+    reviewMode: null,
+    tools: null,
+    budget: null,
+    scope: null,
+    body,
+  };
+}
 
 /**
  * Parse the persona's YAML frontmatter into the projection shape the
@@ -109,21 +128,33 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
  * is missing, malformed, or the wrong type — callers render "—" and
  * move on, rather than tanking the whole config rail on one bad key.
  *
+ * When the file has no frontmatter at all, or the frontmatter is
+ * syntactically bogus, we still return a persona shell with `body`
+ * populated so the UI's §05 Persona section can render the prose.
+ * The rail just shows "—" for each missing field — the same treatment
+ * a legit-but-sparse frontmatter would get.
+ *
  * This is a projection, not a schema. The executor has the canonical
  * view of persona fields for runtime; this helper only surfaces the
  * ones visible on the detail page.
  */
 function parsePersonaFrontmatter(raw: string): AgentConfigResponse["persona"] {
   const match = FRONTMATTER_RE.exec(raw);
-  if (!match?.[1]) return null;
+  if (!match?.[1]) {
+    // No recognizable frontmatter — render the whole file as body.
+    return bodyOnly(raw);
+  }
+  const afterFm = raw.slice(match.index + match[0].length).replace(/^\r?\n/, "");
 
   let doc: Record<string, unknown>;
   try {
     const parsed = loadYaml(match[1]);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return bodyOnly(afterFm);
+    }
     doc = parsed as Record<string, unknown>;
   } catch {
-    return null;
+    return bodyOnly(afterFm);
   }
 
   // Description — one-liner shown on the Agent-detail hero. We
@@ -180,15 +211,12 @@ function parsePersonaFrontmatter(raw: string): AgentConfigResponse["persona"] {
       ? { pages: scopePages, writableKinds: scopeWritable }
       : null;
 
-  // Body — everything after the closing `---` fence, with a single
-  //  leading newline trimmed so the client renders clean markdown.
-  //  Empty string is returned (not null) when the file has a
-  //  frontmatter but no prose below it, so the UI knows the parse
-  //  succeeded even if the body is empty.
-  const afterFm = raw.slice(match.index + match[0].length);
-  const body = afterFm.replace(/^\r?\n/, "");
-
-  return { description, heartbeat, reviewMode, tools, budget, scope, body };
+  // Body — `afterFm` was already computed at the top of the function
+  //  (it's the suffix after the closing `---` fence, with a single
+  //  leading newline trimmed). Empty string is returned (not null)
+  //  when the file has frontmatter but no prose below it, so the UI
+  //  knows the parse succeeded even if the body is empty.
+  return { description, heartbeat, reviewMode, tools, budget, scope, body: afterFm };
 }
 
 function pickNumber(v: unknown): number | null {

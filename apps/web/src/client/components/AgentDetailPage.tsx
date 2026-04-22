@@ -449,7 +449,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
  * file) so the section doesn't leave a blank strip.
  */
 function PersonaSection({ body }: { body: string | null }) {
-  if (!body || !body.trim()) return null;
+  if (!body?.trim()) return null;
   const html = renderMarkdownSafe(body);
   return (
     <section className="px-10 py-6" style={{ borderTop: "1px solid var(--il-border-soft)" }}>
@@ -486,16 +486,42 @@ function JournalSection({ slug }: { slug: string }) {
   }, [slug]);
 
   if (entries === null) return null; // loading — avoid layout jank
-  if (entries.length === 0) return null; // no journal yet — keep the surface tight
+
+  // Empty state is rendered (not hidden) so the section is
+  //  discoverable even before the agent has journaled anything —
+  //  that way the user knows §06 exists and will populate once the
+  //  agent runs start using `agent.journal`.
+  const isEmpty = entries.length === 0;
 
   return (
     <section className="px-10 py-6" style={{ borderTop: "1px solid var(--il-border-soft)" }}>
-      <SectionLabel index={6} title="Recent journal" meta={`last ${entries.length}`} />
-      <div className="mt-3 grid gap-2">
-        {entries.map((entry) => (
-          <JournalRow key={`${entry.jobId}-${entry.timestamp}`} entry={entry} />
-        ))}
-      </div>
+      <SectionLabel
+        index={6}
+        title="Recent journal"
+        meta={isEmpty ? "none yet" : `last ${entries.length}`}
+      />
+      {isEmpty ? (
+        <div
+          className="mt-3 rounded border border-dashed px-4 py-5 text-center"
+          style={{
+            borderColor: "var(--il-border-soft)",
+            color: "var(--il-text3)",
+            fontSize: 12.5,
+          }}
+        >
+          No journal entries yet. They appear here when this agent emits{" "}
+          <span className="font-mono" style={{ fontSize: 11.5, color: "var(--il-text2)" }}>
+            agent.journal
+          </span>{" "}
+          during a run.
+        </div>
+      ) : (
+        <div className="mt-3 grid gap-2">
+          {entries.map((entry) => (
+            <JournalRow key={`${entry.jobId}-${entry.timestamp}`} entry={entry} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

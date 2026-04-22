@@ -347,21 +347,56 @@ review_mode: auto-commit
     expect(cfg?.persona?.scope).toBeNull();
   });
 
-  it("returns persona: null when the YAML is malformed", () => {
+  it("falls back to an all-null persona shell when the YAML is malformed", () => {
     const rails = new AgentRails(db);
     rails.ensureState("main", "a");
     const personaDir = join(dir, "data", ".agents", "a");
     mkdirSync(personaDir, { recursive: true });
     writeFileSync(
       join(personaDir, "persona.md"),
-      "---\n: not valid yaml :\nbroken: [unclosed\n---\n",
+      "---\n: not valid yaml :\nbroken: [unclosed\n---\nprose body\n",
       "utf-8",
     );
 
     const cfg = getAgentConfig(db, "main", "a", dir);
-    // Row still comes back — agent_state is intact; just no projection.
+    // Row still comes back — agent_state is intact.
     expect(cfg?.slug).toBe("a");
-    expect(cfg?.persona).toBeNull();
+    // Persona is a shell (not null) so the UI can still render §05.
+    expect(cfg?.persona).not.toBeNull();
+    expect(cfg?.persona?.description).toBeNull();
+    expect(cfg?.persona?.heartbeat).toBeNull();
+    expect(cfg?.persona?.tools).toBeNull();
+    expect(cfg?.persona?.budget).toBeNull();
+    expect(cfg?.persona?.scope).toBeNull();
+    expect(cfg?.persona?.body).toBe("prose body\n");
+  });
+
+  it("renders a persona that has no frontmatter at all", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(join(personaDir, "persona.md"), "# Just prose, no YAML\n\nHello.\n", "utf-8");
+
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    expect(cfg?.persona).not.toBeNull();
+    expect(cfg?.persona?.body).toBe("# Just prose, no YAML\n\nHello.\n");
+  });
+
+  it("tolerates trailing comments/whitespace on the `---` fences", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(
+      join(personaDir, "persona.md"),
+      "--- <!-- #blk_abc -->\nname: A\ndescription: hi\n--- <!-- #blk_def -->\nbody text\n",
+      "utf-8",
+    );
+
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    expect(cfg?.persona?.description).toBe("hi");
+    expect(cfg?.persona?.body).toBe("body text\n");
   });
 
   it("returns persona: null when projectDir is null", () => {
