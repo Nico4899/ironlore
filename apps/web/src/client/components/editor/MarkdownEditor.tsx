@@ -23,6 +23,12 @@ import {
   type SlashItem,
 } from "./slash-menu.js";
 import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
+import {
+  filterWikiLinkCandidates,
+  getWikiLinkContext,
+  type WikiLinkCandidate,
+} from "./wiki-link-menu.js";
+import { useTreeStore } from "../../stores/tree.js";
 import "./editor.css";
 
 // ---------------------------------------------------------------------------
@@ -184,6 +190,22 @@ interface SlashMenuState {
   to: number;
 }
 
+/**
+ * UI state for the `[[…]]` wiki-link picker. Parallel to the slash
+ * menu — at most one is open at a time, and they share the same
+ * keyboard-navigation vocabulary (↑/↓, Enter, Esc).
+ */
+interface WikiLinkMenuState {
+  items: WikiLinkCandidate[];
+  index: number;
+  query: string;
+  coords: { left: number; top: number };
+  /** Position of the leading `[[` in the doc. */
+  from: number;
+  /** Caret position at the end of the query. */
+  to: number;
+}
+
 export function MarkdownEditor({ markdown, onChange, onSelectionChange }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -199,6 +221,10 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
   // can see the latest menu state without reinstalling the prop.
   const slashMenuRef = useRef<SlashMenuState | null>(null);
   slashMenuRef.current = slashMenu;
+
+  const [wikiMenu, setWikiMenu] = useState<WikiLinkMenuState | null>(null);
+  const wikiMenuRef = useRef<WikiLinkMenuState | null>(null);
+  wikiMenuRef.current = wikiMenu;
 
   // Keep callback refs current without recreating the editor
   onChangeRef.current = onChange;
@@ -217,6 +243,30 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     view.focus();
     setSlashMenu(null);
   }, []);
+
+  /**
+   * Commit a wiki-link candidate. Replaces the `[[query` trigger
+   * span with a `wikilink` inline node whose `target` attr is the
+   * chosen page's path. The schema's serializer renders this back
+   * to `[[<path>]]` on save, so the on-disk format is plain
+   * markdown — no custom HTML payload escapes the document.
+   */
+  const runWikiLinkItem = useCallback(
+    (candidate: WikiLinkCandidate, from: number, to: number) => {
+      const view = viewRef.current;
+      if (!view) return;
+      const wikilinkType = view.state.schema.nodes.wikilink;
+      if (!wikilinkType) {
+        setWikiMenu(null);
+        return;
+      }
+      const node = wikilinkType.create({ target: candidate.path });
+      view.dispatch(view.state.tr.replaceWith(from, to, node));
+      view.focus();
+      setWikiMenu(null);
+    },
+    [],
+  );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only callback; external markdown sync handled by separate useEffect
   const createView = useCallback((container: HTMLDivElement) => {
@@ -271,6 +321,37 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     const view = new EditorView(container, {
       state,
       handleKeyDown(_v, event) {
+        // Two menus share the navigation vocabulary (↑/↓, Enter,
+        //  Tab, Esc). Wiki-link menu takes precedence over slash —
+        //  they can't be simultaneously open, but if the user was
+        //  mid-slash and typed `[[` the newer trigger wins.
+        const wiki = wikiMenuRef.current;
+        if (wiki && wiki.items.length > 0) {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setWikiMenu((m) => (m ? { ...m, index: (m.index + 1) % m.items.length } : m));
+            return true;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setWikiMenu((m) =>
+              m ? { ...m, index: (m.index - 1 + m.items.length) % m.items.length } : m,
+            );
+            return true;
+          }
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            const pick = wiki.items[wiki.index];
+            if (pick) runWikiLinkItem(pick, wiki.from, wiki.to);
+            return true;
+          }
+          if (event.key === "Escape") {
+            event.preventDefault();
+            setWikiMenu(null);
+            return true;
+          }
+        }
+
         const menu = slashMenuRef.current;
         if (!menu || menu.items.length === 0) return false;
         if (event.key === "ArrowDown") {
@@ -373,8 +454,34 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           onSelectionChangeRef.current(from === to ? null : { from, to });
         }
 
-        // Recompute slash-menu state after every transaction so the popup
-        // tracks the cursor and filters as the user types.
+        // Recompute wiki-link + slash menu state after every transaction
+        //  so both popups track the cursor and filter as the user
+        //  types. The two triggers are mutually exclusive (you can't
+        //  be inside both `[[` and `/` at the same caret), so
+        //  checking wiki first and slash second is safe — closing
+        //  one when the other is active.
+        const wikiCtx = getWikiLinkContext(newState);
+        if (wikiCtx) {
+          const nodes = useTreeStore.getState().nodes;
+          const items = filterWikiLinkCandidates(nodes, wikiCtx.query);
+          if (items.length === 0) {
+            if (wikiMenuRef.current) setWikiMenu(null);
+          } else {
+            const coords = view.coordsAtPos(newState.selection.head);
+            setWikiMenu((prev) => ({
+              items,
+              index: prev ? Math.min(prev.index, items.length - 1) : 0,
+              query: wikiCtx.query,
+              coords: { left: coords.left, top: coords.top },
+              from: wikiCtx.from,
+              to: wikiCtx.to,
+            }));
+          }
+          if (slashMenuRef.current) setSlashMenu(null);
+          return;
+        }
+        if (wikiMenuRef.current) setWikiMenu(null);
+
         const ctx = getSlashContext(newState);
         if (!ctx) {
           if (slashMenuRef.current) setSlashMenu(null);
@@ -388,11 +495,8 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
         const coords = view.coordsAtPos(newState.selection.head);
         setSlashMenu((prev) => ({
           items: filtered,
-          // Clamp carry-over selection when the list shrinks from filtering.
           index: prev ? Math.min(prev.index, filtered.length - 1) : 0,
           query: ctx.query,
-          // `top` anchors the bottom of the menu above the current line so
-          // the popup never covers what the user is typing.
           coords: { left: coords.left, top: coords.top },
           from: ctx.from,
           to: ctx.to,
@@ -569,6 +673,61 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
                 </span>
               </button>
             </div>
+          ))}
+        </div>
+      )}
+
+      {wikiMenu && (
+        <div
+          role="listbox"
+          aria-label="Wiki-link candidates"
+          className="fixed z-50 min-w-64 rounded-md border border-border bg-ironlore-slate py-1 shadow-xl"
+          style={{
+            left: wikiMenu.coords.left,
+            bottom: `${Math.max(window.innerHeight - wikiMenu.coords.top + 6, 8)}px`,
+          }}
+        >
+          {/* Mono `[[REF` overline so the popup reads as a wiki
+           *  link context from the first glance — otherwise it
+           *  collides visually with the slash menu. */}
+          <div
+            className="font-mono uppercase"
+            style={{
+              fontSize: 10.5,
+              letterSpacing: "0.08em",
+              color: "var(--il-text3)",
+              padding: "6px 10px 4px",
+            }}
+          >
+            [[ref
+          </div>
+          {wikiMenu.items.map((item, i) => (
+            <button
+              key={item.path}
+              type="button"
+              role="option"
+              aria-selected={i === wikiMenu.index}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                runWikiLinkItem(item, wikiMenu.from, wikiMenu.to);
+              }}
+              onMouseEnter={() => setWikiMenu((m) => (m ? { ...m, index: i } : m))}
+              className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs ${
+                i === wikiMenu.index
+                  ? "bg-ironlore-slate-hover text-primary"
+                  : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+              }`}
+            >
+              <span className="flex flex-col overflow-hidden">
+                <span className="truncate font-medium text-primary">{item.name}</span>
+                <span
+                  className="truncate font-mono text-[10.5px]"
+                  style={{ color: "var(--il-text4)", letterSpacing: "0.02em" }}
+                >
+                  {item.path}
+                </span>
+              </span>
+            </button>
           ))}
         </div>
       )}
