@@ -243,10 +243,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     //  when the caret is in a list item; outside lists the splits
     //  fall through to the default block-split behaviour.
     const { list_item } = schema.nodes;
-    const listKeys: Record<
-      string,
-      (s: EditorState, d?: (tr: Transaction) => void) => boolean
-    > = {};
+    const listKeys: Record<string, (s: EditorState, d?: (tr: Transaction) => void) => boolean> = {};
     if (list_item) {
       listKeys.Enter = splitListItem(list_item);
       listKeys.Tab = sinkListItem(list_item);

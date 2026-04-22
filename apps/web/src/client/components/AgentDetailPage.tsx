@@ -1,5 +1,5 @@
 import { AGENTS_DIR } from "@ironlore/core";
-import { ExternalLink, Pause, Play, Zap } from "lucide-react";
+import { ExternalLink, Pause, Play, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   type AgentConfigResponse,
@@ -151,6 +151,13 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
         void handleRunNow();
         return;
       }
+      // Escape — close the detail surface. Mirrors the X button and
+      //  the modal-dialog grammar used elsewhere in the app.
+      if (e.key === "Escape") {
+        e.preventDefault();
+        useAppStore.getState().setActiveAgentSlug(null);
+        return;
+      }
       // `P` (unmodified) — toggle pause.
       if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "p") {
         e.preventDefault();
@@ -227,9 +234,31 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
     >
       {/* Hero */}
       <section
-        className="flex items-start gap-8 px-10 py-7"
+        className="relative flex items-start gap-8 px-10 py-7"
         style={{ borderBottom: "1px solid var(--il-border-soft)" }}
       >
+        {/* Close affordance — returns to whatever surface was open
+         *  before (editor / home). Lives top-right in the hero so it
+         *  doesn't compete with the stat grid or the slug. */}
+        <button
+          type="button"
+          onClick={() => useAppStore.getState().setActiveAgentSlug(null)}
+          aria-label="Close agent detail"
+          title="Close (Esc)"
+          className="absolute flex items-center justify-center rounded outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          style={{
+            top: 14,
+            right: 14,
+            width: 26,
+            height: 26,
+            background: "transparent",
+            border: "1px solid var(--il-border-soft)",
+            color: "var(--il-text3)",
+            cursor: "pointer",
+          }}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
         <Venn
           size={96}
           fill="var(--il-blue)"

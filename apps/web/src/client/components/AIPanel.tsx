@@ -1,8 +1,8 @@
-import { ArrowUp, Highlighter, Lightbulb, Sparkles, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowUp, ChevronDown, Highlighter, Lightbulb, Sparkles, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
-import { getApiProject, revertJob, submitDryRunVerdict } from "../lib/api.js";
+import { fetchAgents, getApiProject, revertJob, submitDryRunVerdict } from "../lib/api.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
@@ -387,14 +387,7 @@ export function AIPanel() {
            * agent streams.
            */}
           <Reuleaux size={10} color="var(--il-blue)" spin={isStreaming} />
-          <button
-            type="button"
-            onClick={() => useAppStore.getState().setActiveAgentSlug(activeAgent)}
-            className="il-ai-slug rounded border border-transparent px-1 py-0.5 outline-none transition-colors hover:border-border hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-            title={`Open ${activeAgent} detail page`}
-          >
-            {activeAgent}
-          </button>
+          <AgentPicker activeAgent={activeAgent} />
           {stepLabel && (
             <span
               className="font-mono"
@@ -609,6 +602,183 @@ function ToolbarIconButton({
     >
       {glyph}
     </button>
+  );
+}
+
+/**
+ * Agent picker — replaces the static slug button in the panel
+ * header with a dropdown. Click the slug → popover anchored below
+ * lists every installed agent; selecting one calls
+ * `useAIPanelStore.setActiveAgent`. A trailing "Open <slug>
+ * detail →" row keeps the prior one-click affordance for jumping
+ * to the agent's detail page.
+ *
+ * Agents loaded lazily when the popover opens — session-scoped;
+ * we don't need to keep this list fresh after the first open.
+ */
+function AgentPicker({ activeAgent }: { activeAgent: string }) {
+  const [open, setOpen] = useState(false);
+  const [agents, setAgents] = useState<Array<{ slug: string; status: "active" | "paused" }>>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open || agents.length > 0) return;
+    let cancelled = false;
+    fetchAgents()
+      .then((list) => {
+        if (!cancelled) setAgents(list);
+      })
+      .catch(() => {
+        /* silent — the active agent stays pinned even if list fails */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, agents.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      const root = rootRef.current;
+      if (!root) return;
+      if (!root.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    const t = setTimeout(() => window.addEventListener("mousedown", onClick), 0);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  // Active agent goes first so the eye lands on the current
+  //  selection; everything else alphabetic.
+  const ordered = useMemo(() => {
+    const rest = agents
+      .filter((a) => a.slug !== activeAgent)
+      .sort((a, b) => a.slug.localeCompare(b.slug));
+    const head = agents.find((a) => a.slug === activeAgent);
+    return head ? [head, ...rest] : rest;
+  }, [agents, activeAgent]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="il-ai-slug inline-flex items-center gap-1 rounded border border-transparent px-1 py-0.5 outline-none transition-colors hover:border-border hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        title="Switch agent"
+      >
+        {activeAgent}
+        <ChevronDown className="h-3 w-3" style={{ color: "var(--il-text3)" }} />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            minWidth: 220,
+            background: "var(--il-bg-raised)",
+            border: "1px solid var(--il-border-soft)",
+            borderRadius: 6,
+            boxShadow: "0 6px 20px oklch(0 0 0 / 0.35)",
+            padding: 4,
+            zIndex: 40,
+            animation: "ilSnapIn var(--motion-snap) ease-out",
+          }}
+        >
+          {ordered.length === 0 ? (
+            <div
+              style={{
+                padding: "8px 10px",
+                fontSize: 12,
+                color: "var(--il-text3)",
+                fontStyle: "italic",
+              }}
+            >
+              Loading agents…
+            </div>
+          ) : (
+            ordered.map((a) => {
+              const active = a.slug === activeAgent;
+              const paused = a.status === "paused";
+              return (
+                <button
+                  key={a.slug}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    useAIPanelStore.getState().setActiveAgent(a.slug);
+                    setOpen(false);
+                  }}
+                  className="il-popover-item flex w-full items-center gap-2 rounded text-left"
+                  data-selected={active ? "true" : undefined}
+                  style={{
+                    padding: "6px 8px",
+                    background: "transparent",
+                    color: "var(--il-text)",
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Reuleaux size={7} color={paused ? "var(--il-amber)" : "var(--il-blue)"} />
+                  <span style={{ flex: 1 }}>{a.slug}</span>
+                  {active && (
+                    <span
+                      className="font-mono uppercase"
+                      style={{
+                        fontSize: 10.5,
+                        letterSpacing: "0.06em",
+                        color: "var(--il-blue)",
+                      }}
+                    >
+                      current
+                    </span>
+                  )}
+                </button>
+              );
+            })
+          )}
+          <div
+            style={{
+              borderTop: "1px solid var(--il-border-soft)",
+              marginTop: 4,
+              paddingTop: 4,
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                useAppStore.getState().setActiveAgentSlug(activeAgent);
+                setOpen(false);
+              }}
+              className="il-popover-item flex w-full items-center gap-2 rounded text-left"
+              style={{
+                padding: "6px 8px",
+                background: "transparent",
+                color: "var(--il-text2)",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              <span style={{ flex: 1 }}>Open {activeAgent} detail</span>
+              <span className="font-mono" style={{ fontSize: 10.5, color: "var(--il-text4)" }}>
+                →
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
