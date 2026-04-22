@@ -921,16 +921,12 @@ function ProvidersTab() {
         </div>
         <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--il-text2)", lineHeight: 1.5 }}>
           Keys are written to{" "}
-          <code
-            style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--il-text)" }}
-          >
+          <code style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--il-text)" }}>
             .ironlore/providers.json
           </code>{" "}
           with restricted file permissions (mode 0600). Full encryption is a follow-up — for now,
           set{" "}
-          <code
-            style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--il-text)" }}
-          >
+          <code style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--il-text)" }}>
             ANTHROPIC_API_KEY
           </code>{" "}
           in your shell if you want env-managed credentials instead (takes precedence on boot).

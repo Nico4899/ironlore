@@ -57,7 +57,9 @@ export function readKeyStore(installRoot: string): KeyStoreShape {
     console.warn(`providers.json: unexpected shape, ignoring (${path})`);
     return emptyStore();
   } catch (err) {
-    console.warn(`providers.json: failed to parse, ignoring (${err instanceof Error ? err.message : err})`);
+    console.warn(
+      `providers.json: failed to parse, ignoring (${err instanceof Error ? err.message : err})`,
+    );
     return emptyStore();
   }
 }

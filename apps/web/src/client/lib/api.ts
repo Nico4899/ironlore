@@ -462,10 +462,7 @@ export interface AgentJournalEntry {
  * the Agent Detail `§06 Recent journal` section. Newest first;
  * defaults to 12 entries (≈ one-screen's worth).
  */
-export async function fetchAgentJournal(
-  slug: string,
-  limit = 12,
-): Promise<AgentJournalEntry[]> {
+export async function fetchAgentJournal(slug: string, limit = 12): Promise<AgentJournalEntry[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   const res = await apiFetch(`${base()}/agents/${slug}/journal?${params}`);
   if (!res.ok) throw new ApiError(res.status, await res.text());

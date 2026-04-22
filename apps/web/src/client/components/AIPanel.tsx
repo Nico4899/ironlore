@@ -2,7 +2,14 @@ import { ArrowUp, ChevronDown, Highlighter, Lightbulb, Sparkles, X } from "lucid
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
-import { fetchAgents, getApiProject, revertJob, submitDryRunVerdict } from "../lib/api.js";
+import {
+  type AgentConfigResponse,
+  fetchAgentConfig,
+  fetchAgents,
+  getApiProject,
+  revertJob,
+  submitDryRunVerdict,
+} from "../lib/api.js";
 import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
@@ -274,12 +281,52 @@ export function AIPanel() {
       // Strip the `@query` — we don't want double-reference with a pill.
       const next = inputDraft.slice(0, from) + inputDraft.slice(to);
       setInputDraft(next);
-      useAIPanelStore.getState().addContext({
-        kind: c.kind === "agent" ? "page" : "page",
-        label: c.label,
-        body: c.kind === "agent" ? `Reference to agent @${c.path}` : `Reference to page ${c.path}`,
-        path: c.path,
-      });
+
+      if (c.kind === "agent") {
+        // Agent mention — fetch the mentioned agent's persona
+        //  summary and drop a *context pill* that carries the
+        //  description / tools / scope. The active agent (still in
+        //  control of the turn) then has the mentioned agent's
+        //  capabilities as reference material, without the
+        //  conversation silently handing off. See the chunk-6 brief:
+        //  "mentions are context, not handoffs."
+        const label = `@${c.path}`;
+        // Seed the pill immediately with a terse body so the user
+        //  sees instant feedback, then upgrade it once the config
+        //  comes back from the server.
+        useAIPanelStore.getState().addContext({
+          kind: "page",
+          label,
+          body: `Reference to agent @${c.path} — loading capabilities…`,
+          path: c.path,
+        });
+        const pillIndex = useAIPanelStore.getState().contexts.length - 1;
+        fetchAgentConfig(c.path)
+          .then((cfg) => {
+            const body = buildAgentContextBody(c.path, cfg);
+            // Mutate the pill in place — store exposes array-index
+            //  helpers but no per-index replace; reach in through
+            //  the current state and reassign.
+            const state = useAIPanelStore.getState();
+            const pills = state.contexts.slice();
+            const target = pills[pillIndex];
+            if (target && target.path === c.path) {
+              pills[pillIndex] = { ...target, body };
+              useAIPanelStore.setState({ contexts: pills });
+            }
+          })
+          .catch(() => {
+            /* keep the seed body */
+          });
+      } else {
+        useAIPanelStore.getState().addContext({
+          kind: "page",
+          label: c.label,
+          body: `Reference to page ${c.path}`,
+          path: c.path,
+        });
+      }
+
       setMentionOpen(false);
       setMentionQuery("");
       setMentionRange(null);
@@ -1112,6 +1159,32 @@ function JournalCard({
 function formatClockShort(ms: number): string {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Compose the context-pill body for an agent mention. The body is
+ * the text the active agent receives as context on send — we keep
+ * it terse (first-line description, canonical tools list, scope
+ * globs) so it costs few tokens but still conveys "who this other
+ * agent is + what it's allowed to do." The mentioned agent stays a
+ * reference, not a handoff: the active agent replies with this
+ * context in mind, it doesn't forward the turn.
+ */
+function buildAgentContextBody(slug: string, cfg: AgentConfigResponse): string {
+  const lines: string[] = [`Agent @${slug}`];
+  const desc = cfg.persona?.description?.trim();
+  if (desc) lines.push(desc);
+  const tools = cfg.persona?.tools;
+  if (tools && tools.length > 0) {
+    lines.push(`Tools: ${tools.join(", ")}`);
+  }
+  const pages = cfg.persona?.scope?.pages;
+  if (pages && pages.length > 0) {
+    lines.push(`Scope: ${pages.slice(0, 4).join(", ")}${pages.length > 4 ? ", …" : ""}`);
+  }
+  const review = cfg.persona?.reviewMode;
+  if (review) lines.push(`Review mode: ${review}`);
+  return lines.join("\n");
 }
 
 /**

@@ -185,9 +185,7 @@ async function start() {
   const anthropicKey = envAnthropicKey ?? storedAnthropicKey;
   if (anthropicKey) {
     providerRegistry.registerAnthropic(anthropicKey);
-    console.log(
-      `Provider: Anthropic registered (${envAnthropicKey ? "env" : "key-store"})`,
-    );
+    console.log(`Provider: Anthropic registered (${envAnthropicKey ? "env" : "key-store"})`);
   }
   const ollamaDetected = await providerRegistry.autoDetectOllama();
   if (ollamaDetected) {

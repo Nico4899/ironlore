@@ -4,14 +4,17 @@ import { useCallback, useEffect, useState } from "react";
 import {
   type AgentConfigResponse,
   type AgentHistogramResponse,
+  type AgentJournalEntry,
   type AgentRunRecord,
   fetchAgentConfig,
   fetchAgentHistogram,
+  fetchAgentJournal,
   fetchAgentRuns,
   fetchAgentState,
   setAgentPaused,
   startAutonomousRun,
 } from "../lib/api.js";
+import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
 import { useAppStore } from "../stores/app.js";
 import { DisplayNum, Key, Meta, SectionLabel, StatusPip, Venn } from "./primitives/index.js";
 
@@ -449,10 +452,7 @@ function PersonaSection({ body }: { body: string | null }) {
   if (!body || !body.trim()) return null;
   const html = renderMarkdownSafe(body);
   return (
-    <section
-      className="px-10 py-6"
-      style={{ borderTop: "1px solid var(--il-border-soft)" }}
-    >
+    <section className="px-10 py-6" style={{ borderTop: "1px solid var(--il-border-soft)" }}>
       <SectionLabel index={5} title="Persona" meta="persona.md" />
       <div
         className="prose prose-sm mt-3 max-w-none text-primary"
@@ -489,10 +489,7 @@ function JournalSection({ slug }: { slug: string }) {
   if (entries.length === 0) return null; // no journal yet — keep the surface tight
 
   return (
-    <section
-      className="px-10 py-6"
-      style={{ borderTop: "1px solid var(--il-border-soft)" }}
-    >
+    <section className="px-10 py-6" style={{ borderTop: "1px solid var(--il-border-soft)" }}>
       <SectionLabel index={6} title="Recent journal" meta={`last ${entries.length}`} />
       <div className="mt-3 grid gap-2">
         {entries.map((entry) => (
@@ -524,9 +521,7 @@ function JournalRow({ entry }: { entry: AgentJournalEntry }) {
       >
         → journal · {formatShortDate(entry.timestamp)}
       </div>
-      <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--il-text2)" }}>
-        {entry.text}
-      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--il-text2)" }}>{entry.text}</div>
     </div>
   );
 }
