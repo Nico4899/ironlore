@@ -18,6 +18,8 @@ export type { BlockrefProps } from "./Blockref.js";
 export { Blockref } from "./Blockref.js";
 export type { DisplayNumProps } from "./DisplayNum.js";
 export { DisplayNum } from "./DisplayNum.js";
+export type { DottedHeadProps } from "./DottedHead.js";
+export { DottedHead } from "./DottedHead.js";
 export type { KeyProps } from "./Key.js";
 export { Key } from "./Key.js";
 export type { MetaProps } from "./Meta.js";

@@ -14,9 +14,15 @@ import {
   setAgentPaused,
   startAutonomousRun,
 } from "../lib/api.js";
-import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
 import { useAppStore } from "../stores/app.js";
-import { DisplayNum, Key, Meta, SectionLabel, StatusPip, Venn } from "./primitives/index.js";
+import {
+  DisplayNum,
+  DottedHead,
+  Key,
+  Meta,
+  SectionLabel,
+  StatusPip,
+} from "./primitives/index.js";
 
 /**
  * AgentDetailPage — per-agent canvas-grammar detail surface.
@@ -262,13 +268,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
         >
           <X className="h-3.5 w-3.5" />
         </button>
-        <Venn
-          size={96}
-          fill="var(--il-blue)"
-          color="var(--il-text2)"
-          lineWidth={0.7}
-          aria-label="Agent emblem"
-        />
+        <DottedHead size={96} color="var(--il-blue)" aria-label={`${slug} emblem`} />
 
         <div className="min-w-0 flex-1">
           <div className="mb-1.5">
@@ -311,21 +311,47 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
           >
             → {`${AGENTS_DIR}/${slug}/persona.md`}
           </div>
-          {config?.personaMtimeDriftSeconds != null && config.personaMtimeDriftSeconds > 0 && (
-            <div
-              className="mt-2 inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono uppercase"
+          {/* Header chips: an always-visible "open persona" button
+           *  (routes the editor to the persona.md for this slug) plus
+           *  the amber drift chip when persona.md is newer than the
+           *  rails-state mirror. Kept in one row so the hero has a
+           *  single chip strip beneath the locator path. */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                useAppStore.getState().setActivePath(`${AGENTS_DIR}/${slug}/persona.md`)
+              }
+              className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono uppercase outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
               style={{
-                borderColor: "var(--il-amber)",
-                color: "var(--il-amber)",
-                background: "color-mix(in oklch, var(--il-amber) 10%, transparent)",
+                borderColor: "var(--il-border-soft)",
+                background: "var(--il-slate)",
+                color: "var(--il-text2)",
                 fontSize: 10.5,
                 letterSpacing: "0.04em",
+                cursor: "pointer",
               }}
-              title="persona.md was edited more recently than the rails state was refreshed"
+              title={`Open ${AGENTS_DIR}/${slug}/persona.md in the editor`}
             >
-              persona drift · {formatDrift(config.personaMtimeDriftSeconds)}
-            </div>
-          )}
+              <ExternalLink className="h-3 w-3" />
+              open persona
+            </button>
+            {config?.personaMtimeDriftSeconds != null && config.personaMtimeDriftSeconds > 0 && (
+              <div
+                className="inline-flex items-center gap-1.5 rounded border px-2 py-0.5 font-mono uppercase"
+                style={{
+                  borderColor: "var(--il-amber)",
+                  color: "var(--il-amber)",
+                  background: "color-mix(in oklch, var(--il-amber) 10%, transparent)",
+                  fontSize: 10.5,
+                  letterSpacing: "0.04em",
+                }}
+                title="persona.md was edited more recently than the rails state was refreshed"
+              >
+                persona drift · {formatDrift(config.personaMtimeDriftSeconds)}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex items-start gap-7">
@@ -360,10 +386,17 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
               <ActivityHistogram histogram={histogram} />
             </div>
           </div>
+
+          {/* Recent journal shares the main column so it lines up
+           *  with Recent runs and Activity — the side rail is
+           *  reserved for dense config/controls rows. */}
+          <div className="mt-8">
+            <JournalSection slug={slug} />
+          </div>
         </div>
 
         <div className="px-6 py-6">
-          <SectionLabel index={3} title="Config" meta="" />
+          <SectionLabel index={4} title="Config" meta="" />
           <div className="mt-3 grid gap-3 text-xs">
             <ConfigRow k="slug" v={slug} />
             <ConfigRow
@@ -393,7 +426,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
           </div>
 
           <div className="mt-6">
-            <SectionLabel index={4} title="Controls" meta="" />
+            <SectionLabel index={5} title="Controls" meta="" />
             <div className="mt-3 grid gap-1.5">
               {/* Pause / Resume — `P` (unmodified) toggles.
                *  "Rotate branch" from the doc spec is intentionally
@@ -414,14 +447,6 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
                 onClick={handleRunNow}
               />
               <ControlButton
-                icon={<ExternalLink className="h-3.5 w-3.5" />}
-                label="Open persona"
-                hint={`${AGENTS_DIR}/${slug}/persona.md`}
-                onClick={() =>
-                  useAppStore.getState().setActivePath(`${AGENTS_DIR}/${slug}/persona.md`)
-                }
-              />
-              <ControlButton
                 label="Talk to agent"
                 shortcut="⌘⇧A"
                 onClick={() => useAppStore.getState().toggleAIPanel()}
@@ -430,44 +455,16 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
           </div>
         </div>
       </div>
-
-      {/* Inline persona prose + recent journal — two new sections
-       *  that keep the Agent Detail page from feeling empty below
-       *  the body grid. Persona renders the full persona.md body
-       *  (everything after the YAML frontmatter); Journal surfaces
-       *  the last N `agent.journal` events so the user can read
-       *  what the agent said about its own work without hunting. */}
-      <PersonaSection body={config?.persona?.body ?? null} />
-      <JournalSection slug={slug} />
     </main>
   );
 }
 
 /**
- * §05 — persona.md body, rendered as sanitized markdown. Bails
- * silently when the agent has no body (empty persona or unreadable
- * file) so the section doesn't leave a blank strip.
- */
-function PersonaSection({ body }: { body: string | null }) {
-  if (!body?.trim()) return null;
-  const html = renderMarkdownSafe(body);
-  return (
-    <section className="px-10 py-6" style={{ borderTop: "1px solid var(--il-border-soft)" }}>
-      <SectionLabel index={5} title="Persona" meta="persona.md" />
-      <div
-        className="prose prose-sm mt-3 max-w-none text-primary"
-        // biome-ignore lint/security/noDangerouslySetInnerHtml: output passes through renderMarkdownSafe
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
-    </section>
-  );
-}
-
-/**
- * §06 — last N agent.journal entries, newest first. Each entry
+ * §03 — last N agent.journal entries, newest first. Each entry
  * carries its own job id so users can click through to the run
- * later (not wired today — the row is read-only). When the agent
- * has never journaled anything the section hides entirely.
+ * later (not wired today — the row is read-only). Empty state is
+ * rendered (not hidden) so the section stays discoverable before
+ * the agent has journaled anything.
  */
 function JournalSection({ slug }: { slug: string }) {
   const [entries, setEntries] = useState<AgentJournalEntry[] | null>(null);
