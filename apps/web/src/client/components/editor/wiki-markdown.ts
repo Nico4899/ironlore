@@ -47,6 +47,16 @@ function parseCellAttrs(el: HTMLElement): {
 }
 
 /**
+ * Escape cell text for GFM pipe-table output. `|` is the column
+ * separator, so literal pipes in prose would shatter the row;
+ * newlines are replaced with `<br>` which is the GFM convention
+ * for multi-line cells (markdown-it re-parses that back on read).
+ */
+function escapeCellText(raw: string): string {
+  return raw.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, "<br>").trim();
+}
+
+/**
  * Render the DOM attrs for a table cell. Omits defaults so the
  * rendered HTML stays clean — `colspan="1"` is noise.
  */
@@ -282,37 +292,94 @@ export const wikiMarkdownSerializer = new MarkdownSerializer(
   {
     ...defaultMarkdownSerializer.nodes,
     table(state, node) {
-      // Collect column alignments from the first row's header cells
+      // GFM pipe-tables have no colspan/rowspan syntax, so we
+      //  flatten merges: a colspan=2 cell emits its text in the
+      //  first slot and an empty cell in the second. rowspan
+      //  likewise duplicates into subsequent rows. This keeps the
+      //  rendered markdown rectangular and valid GFM even after
+      //  the user merges cells in the editor.
+
+      // Compute column count from the first row's colspans — the
+      //  header defines the column grid.
       const firstRow = node.firstChild;
+      let columnCount = 0;
       const alignments: (string | null)[] = [];
       if (firstRow) {
         firstRow.forEach((cell) => {
-          alignments.push((cell.attrs.alignment as string | null) ?? null);
+          const span = Math.max(1, (cell.attrs.colspan as number) ?? 1);
+          const alignment = (cell.attrs.alignment as string | null) ?? null;
+          for (let i = 0; i < span; i++) {
+            alignments.push(alignment);
+            columnCount += 1;
+          }
         });
       }
+      if (columnCount === 0) {
+        state.write("\n");
+        state.closeBlock(node);
+        return;
+      }
 
-      // Render each row
-      node.forEach((row, _, rowIdx) => {
-        row.forEach((cell, _, cellIdx) => {
-          if (cellIdx > 0) state.write(" | ");
-          else state.write("| ");
-          state.write(cell.textContent);
-        });
-        state.write(" |\n");
+      // Build a rectangular grid of strings with rowspan carry-over.
+      //  `carry[col]` stores how many more rows a previous cell
+      //  spans downward. When > 0 we emit empty and decrement.
+      const rowCount = node.childCount;
+      const grid: string[][] = Array.from({ length: rowCount }, () =>
+        Array.from({ length: columnCount }, () => ""),
+      );
+      const carry = Array.from({ length: columnCount }, () => 0);
 
-        // After the first (header) row, emit the separator line
-        if (rowIdx === 0) {
-          for (let i = 0; i < alignments.length; i++) {
-            if (i > 0) state.write(" | ");
-            else state.write("| ");
-            const a = alignments[i];
-            if (a === "center") state.write(":---:");
-            else if (a === "right") state.write("---:");
-            else state.write("---");
+      for (let r = 0; r < rowCount; r++) {
+        const row = node.child(r);
+        let col = 0;
+        row.forEach((cell) => {
+          // Skip columns already occupied by a previous row's
+          //  rowspan continuation.
+          while (col < columnCount && (carry[col] ?? 0) > 0) {
+            carry[col] = (carry[col] ?? 0) - 1;
+            col += 1;
           }
-          state.write(" |\n");
+          if (col >= columnCount) return;
+          const colspan = Math.max(1, (cell.attrs.colspan as number) ?? 1);
+          const rowspan = Math.max(1, (cell.attrs.rowspan as number) ?? 1);
+          const text = escapeCellText(cell.textContent);
+          // Put content in the top-left of the span; everything
+          //  else stays empty (GFM can't render the merge anyway).
+          if (col < columnCount) {
+            const rowGrid = grid[r];
+            if (rowGrid) rowGrid[col] = text;
+          }
+          for (let k = 0; k < colspan && col + k < columnCount; k++) {
+            carry[col + k] = rowspan - 1;
+          }
+          col += colspan;
+        });
+        // If a row finished early (fewer cells than columns), mark
+        //  remaining carry positions so the next row aligns.
+        while (col < columnCount) {
+          if ((carry[col] ?? 0) > 0) carry[col] = (carry[col] ?? 0) - 1;
+          col += 1;
         }
-      });
+      }
+
+      for (let r = 0; r < rowCount; r++) {
+        const rowGrid = grid[r] ?? [];
+        state.write("|");
+        for (let c = 0; c < columnCount; c++) {
+          state.write(` ${rowGrid[c] ?? ""} |`);
+        }
+        state.write("\n");
+        if (r === 0) {
+          state.write("|");
+          for (let c = 0; c < columnCount; c++) {
+            const a = alignments[c];
+            if (a === "center") state.write(" :---: |");
+            else if (a === "right") state.write(" ---: |");
+            else state.write(" --- |");
+          }
+          state.write("\n");
+        }
+      }
       state.write("\n");
       state.closeBlock(node);
     },

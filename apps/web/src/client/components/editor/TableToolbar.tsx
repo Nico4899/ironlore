@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Minus, Plus, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Minus, Plus, Split, Square, Trash2 } from "lucide-react";
 import {
   addColumnAfter,
   addColumnBefore,
@@ -8,6 +8,8 @@ import {
   deleteRow,
   deleteTable,
   isInTable,
+  mergeCells,
+  splitCell,
 } from "prosemirror-tables";
 import type { EditorView } from "prosemirror-view";
 
@@ -85,6 +87,23 @@ export function TableToolbar({ view, anchor }: TableToolbarProps) {
         label="Delete column"
         onClick={() => run(deleteColumn)}
         icon={<Minus className="h-3 w-3" />}
+      />
+      <Divider />
+      {/* Merge / split — these DO stay in the ProseMirror model
+       *  cleanly, but GFM pipe-tables have no colspan/rowspan
+       *  syntax. The wiki-markdown serializer flattens merged
+       *  cells on save (every cell emits its own pipe-delimited
+       *  slot). The title text surfaces that trade-off so the
+       *  user isn't surprised by a round-trip. */}
+      <ToolBtn
+        label="Merge cells (flattened on save — GFM can't encode colspan/rowspan)"
+        onClick={() => run(mergeCells)}
+        icon={<Square className="h-3 w-3" />}
+      />
+      <ToolBtn
+        label="Split cell"
+        onClick={() => run(splitCell)}
+        icon={<Split className="h-3 w-3" />}
       />
       <Divider />
       <ToolBtn

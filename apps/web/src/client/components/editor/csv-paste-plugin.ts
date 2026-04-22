@@ -51,9 +51,7 @@ export function csvPastePlugin(schema: Schema): Plugin {
         const [headerRow, ...bodyRows] = grid;
         if (!headerRow) return false;
         const cols = headerRow.length;
-        const headerCells = headerRow.map((cellText) =>
-          buildCell(schema, table_header, cellText),
-        );
+        const headerCells = headerRow.map((cellText) => buildCell(schema, table_header, cellText));
         const header = table_row.create(null, headerCells);
         const bodies = bodyRows.map((row) => {
           // Pad short rows with empty cells so rectangles stay
