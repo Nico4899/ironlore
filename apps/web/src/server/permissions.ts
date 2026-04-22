@@ -17,6 +17,11 @@ const SENSITIVE_FILES = [
   "password.salt",
   "sessions.sqlite",
   "projects.sqlite",
+  // Provider key-store (see apps/web/src/server/providers/key-store.ts).
+  //  Holds Anthropic / OpenAI / etc. API keys in plaintext, so strict
+  //  0600 is the only defense. Checked at boot; server refuses to
+  //  start if permissions are broader.
+  ".ironlore/providers.json",
 ];
 
 /**
