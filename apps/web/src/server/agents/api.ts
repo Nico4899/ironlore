@@ -4,7 +4,12 @@ import type { WorkerPool } from "../jobs/worker.js";
 import { estimateRunCost } from "./cost-estimate.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
 import type { AgentInbox } from "./inbox.js";
-import { getAgentConfig, getHourlyHistogram, getRecentRuns } from "./observability.js";
+import {
+  getAgentConfig,
+  getHourlyHistogram,
+  getRecentJournalEntries,
+  getRecentRuns,
+} from "./observability.js";
 import type { AgentRails } from "./rails.js";
 import { revertAgentRun } from "./revert-run.js";
 
@@ -159,6 +164,27 @@ export function createAgentApi(
     const config = getAgentConfig(jobsDb, projectId, slug, projectDir ?? null);
     if (!config) return c.json({ error: "Agent not found" }, 404);
     return c.json(config);
+  });
+
+  /**
+   * Recent journal entries for an agent — the `agent.journal`
+   * events the executor emits when an autonomous run finalizes.
+   * Drives the Agent Detail `§06 Recent journal` section so the
+   * user can read what the agent said about its work without
+   * opening each run in the inbox.
+   */
+  api.get("/:slug/journal", (c) => {
+    const slug = c.req.param("slug") ?? "";
+    if (!slug) return c.json({ error: "Agent slug required" }, 400);
+    const limitParam = c.req.query("limit");
+    const limit = limitParam ? Number.parseInt(limitParam, 10) : 12;
+    const entries = getRecentJournalEntries(
+      jobsDb,
+      projectId,
+      slug,
+      Number.isFinite(limit) ? limit : 12,
+    );
+    return c.json({ entries });
   });
 
   // -----------------------------------------------------------------------

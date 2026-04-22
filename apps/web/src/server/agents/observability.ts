@@ -29,6 +29,15 @@ export interface AgentRunRecord {
   commitShaEnd: string | null;
 }
 
+export interface AgentJournalEntry {
+  /** Body of the journal note as written by the agent. */
+  text: string;
+  /** Epoch-ms — the moment the agent emitted the journal event. */
+  timestamp: number;
+  /** The job (run) the entry belongs to. Groups the UI's rendering. */
+  jobId: string;
+}
+
 export interface AgentHistogramResponse {
   /** Inclusive window bound in ms since epoch. */
   windowStart: number;
@@ -304,6 +313,59 @@ export function getRecentRuns(
     commitShaStart: r.commitShaStart,
     commitShaEnd: r.commitShaEnd,
   }));
+}
+
+/**
+ * Last N `agent.journal` entries for an agent, newest first.
+ * Joins `agent_runs` (to scope by slug + project) with `job_events`
+ * (filtered by kind) so we only read the events that matter. Each
+ * entry's `data` column is the JSON payload written by the
+ * `agent.journal` tool — `{ text, timestamp }` — plus the run's
+ * job id so the UI can group.
+ *
+ * Fails closed on malformed JSON: a single corrupt row is skipped
+ * rather than breaking the whole list.
+ */
+export function getRecentJournalEntries(
+  db: Database.Database,
+  projectId: string,
+  slug: string,
+  limit = 12,
+): AgentJournalEntry[] {
+  const clamped = Math.max(1, Math.min(100, Math.floor(limit)));
+  const rows = db
+    .prepare(
+      `SELECT
+         je.job_id AS jobId,
+         je.data   AS data,
+         je.ts     AS ts
+       FROM job_events je
+       JOIN agent_runs ar ON ar.job_id = je.job_id
+       WHERE ar.project_id = ?
+         AND ar.slug = ?
+         AND je.kind = 'agent.journal'
+       ORDER BY je.ts DESC
+       LIMIT ?`,
+    )
+    .all(projectId, slug, clamped) as Array<{
+    jobId: string;
+    data: string;
+    ts: number;
+  }>;
+
+  const out: AgentJournalEntry[] = [];
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.data) as { text?: unknown; timestamp?: unknown };
+      if (typeof parsed.text !== "string") continue;
+      const text = parsed.text;
+      const stamp = typeof parsed.timestamp === "number" ? parsed.timestamp : row.ts;
+      out.push({ text, timestamp: stamp, jobId: row.jobId });
+    } catch {
+      /* skip corrupt row */
+    }
+  }
+  return out;
 }
 
 /**

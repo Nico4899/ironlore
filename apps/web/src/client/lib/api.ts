@@ -450,6 +450,84 @@ export async function fetchAgentConfig(slug: string): Promise<AgentConfigRespons
   return res.json();
 }
 
+/** One `agent.journal` event the AgentDetail §06 Recent journal renders. */
+export interface AgentJournalEntry {
+  text: string;
+  timestamp: number;
+  jobId: string;
+}
+
+/**
+ * Fetch the last N `agent.journal` entries for an agent. Used on
+ * the Agent Detail `§06 Recent journal` section. Newest first;
+ * defaults to 12 entries (≈ one-screen's worth).
+ */
+export async function fetchAgentJournal(
+  slug: string,
+  limit = 12,
+): Promise<AgentJournalEntry[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await apiFetch(`${base()}/agents/${slug}/journal?${params}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { entries: AgentJournalEntry[] };
+  return data.entries;
+}
+
+// ---------------------------------------------------------------------------
+// Providers (Settings → Providers tab)
+// ---------------------------------------------------------------------------
+
+export type ProviderStatus = "connected" | "needs-key" | "unreachable";
+
+export interface ProviderSummary {
+  name: string;
+  status: ProviderStatus;
+  keyConfigured: boolean;
+  models: string[];
+}
+
+export interface ProviderTestResult {
+  ok: boolean;
+  detail: string;
+}
+
+/** List every known LLM provider + its connection status. */
+export async function fetchProviders(): Promise<ProviderSummary[]> {
+  const res = await apiFetch("/api/providers");
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { providers: ProviderSummary[] };
+  return data.providers;
+}
+
+/**
+ * Save (or clear) a provider's API key. Passing an empty string
+ * clears the key; the server keeps other fields (endpoint,
+ * defaultModel) around so sibling settings survive.
+ */
+export async function saveProviderKey(
+  name: string,
+  apiKey: string,
+): Promise<{ ok: boolean; provider: ProviderSummary }> {
+  const res = await apiFetch(`/api/providers/${name}/key`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ apiKey }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/**
+ * Probe the provider with a minimal round-trip. Returns the
+ * structured result so the UI can render a green tick or the
+ * upstream error verbatim.
+ */
+export async function testProvider(name: string): Promise<ProviderTestResult> {
+  const res = await apiFetch(`/api/providers/${name}/test`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
 export interface AgentListEntry {
   slug: string;
   status: "active" | "paused";
