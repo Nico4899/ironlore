@@ -17,6 +17,7 @@ import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../stores/app.js";
 import { useTreeStore } from "../../stores/tree.js";
+import { CodeBlockView, codeHighlightPlugin } from "./code-block-view.js";
 import { type EditorCommands, registerEditorCommands } from "./editor-commands.js";
 import {
   buildSlashItems,
@@ -24,6 +25,7 @@ import {
   getSlashContext,
   type SlashItem,
 } from "./slash-menu.js";
+import { isInTable, TableToolbar } from "./TableToolbar.js";
 import {
   filterWikiLinkCandidates,
   getWikiLinkContext,
@@ -227,6 +229,12 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
   const wikiMenuRef = useRef<WikiLinkMenuState | null>(null);
   wikiMenuRef.current = wikiMenu;
 
+  // Anchor for the floating TableToolbar. Populated by the
+  //  dispatch-transaction scanner below when the caret moves into
+  //  a table cell; null otherwise. Viewport-relative coordinates so
+  //  the toolbar can use `position: fixed`.
+  const [tableAnchor, setTableAnchor] = useState<{ top: number; left: number } | null>(null);
+
   // Keep callback refs current without recreating the editor
   onChangeRef.current = onChange;
   onSelectionChangeRef.current = onSelectionChange;
@@ -321,6 +329,10 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
         keymap(baseKeymap),
         columnResizing(),
         tableEditing(),
+        // Prism-backed syntax highlighting for code_block nodes —
+        //  emits Decoration.inline ranges so ProseMirror keeps
+        //  full ownership of text + selection.
+        codeHighlightPlugin(),
         history(),
       ],
     });
@@ -447,6 +459,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           });
           return { dom };
         },
+        code_block: (node, nvView, getPos) => new CodeBlockView(node, nvView, getPos),
       },
       dispatchTransaction(tr) {
         const newState = view.state.apply(tr);
@@ -461,6 +474,33 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
         if (tr.selectionSet && onSelectionChangeRef.current) {
           const { from, to } = newState.selection;
           onSelectionChangeRef.current(from === to ? null : { from, to });
+        }
+
+        // Table-toolbar anchor — surfaces only when the selection
+        //  sits inside a table. We compute the viewport coords of
+        //  the table's DOM rect so the toolbar can float above it.
+        if (isInTable(newState)) {
+          const $head = newState.selection.$head;
+          // Walk up the ancestor chain to find the `table` node.
+          let depth = $head.depth;
+          let tablePos = -1;
+          while (depth > 0) {
+            if ($head.node(depth).type.name === "table") {
+              tablePos = $head.before(depth);
+              break;
+            }
+            depth -= 1;
+          }
+          if (tablePos >= 0) {
+            const dom = view.domAtPos(tablePos + 1).node as HTMLElement | null;
+            const tableEl = dom?.closest?.("table") ?? null;
+            if (tableEl) {
+              const rect = tableEl.getBoundingClientRect();
+              setTableAnchor({ top: rect.top, left: rect.left });
+            }
+          }
+        } else if (tableAnchor) {
+          setTableAnchor(null);
         }
 
         // Recompute wiki-link + slash menu state after every transaction
@@ -739,6 +779,10 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
             </button>
           ))}
         </div>
+      )}
+
+      {tableAnchor && viewRef.current && (
+        <TableToolbar view={viewRef.current} anchor={tableAnchor} />
       )}
     </div>
   );

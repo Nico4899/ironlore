@@ -7,6 +7,7 @@ import {
   ListOrdered,
   Minus,
   Quote,
+  Table as TableIcon,
   Type,
 } from "lucide-react";
 import { setBlockType, wrapIn } from "prosemirror-commands";
@@ -112,6 +113,10 @@ export function buildSlashItems(schema: Schema): SlashItem[] {
     blockquote,
     code_block,
     horizontal_rule,
+    table,
+    table_row,
+    table_header,
+    table_cell,
   } = schema.nodes;
   const items: SlashItem[] = [];
 
@@ -204,6 +209,16 @@ export function buildSlashItems(schema: Schema): SlashItem[] {
     });
   }
 
+  if (table && table_row && table_header && table_cell && paragraph) {
+    items.push({
+      title: "Table",
+      description: "3-column table with a header row",
+      icon: <TableIcon className="h-4 w-4" />,
+      keywords: ["table", "grid"],
+      run: insertTableCommand(table, table_row, table_header, table_cell, paragraph),
+    });
+  }
+
   return items;
 }
 
@@ -233,6 +248,46 @@ function insertListCommand(listType: NodeType, itemType: NodeType, paragraphType
     const list = listType.create(null, item);
     if (dispatch) {
       dispatch(state.tr.replaceSelectionWith(list).scrollIntoView());
+    }
+    return true;
+  };
+}
+
+/**
+ * Insert a 3-column × 2-row starter table (one header row + one
+ * body row). Each cell starts with a single empty paragraph so the
+ * caret can land inside it cleanly. prosemirror-tables' `Tab`
+ * keymap handles cell-to-cell navigation from there.
+ */
+function insertTableCommand(
+  tableType: NodeType,
+  rowType: NodeType,
+  headerType: NodeType,
+  cellType: NodeType,
+  paragraphType: NodeType,
+) {
+  return (state: EditorState, dispatch?: (tr: Transaction) => void): boolean => {
+    const cols = 3;
+    const emptyCell = cellType.createAndFill();
+    const emptyHeader = headerType.createAndFill();
+    if (!emptyCell || !emptyHeader) return false;
+    const headerCells = Array.from({ length: cols }, () => emptyHeader);
+    const bodyCells = Array.from({ length: cols }, () => emptyCell);
+    const headerRow = rowType.create(null, headerCells);
+    const bodyRow = rowType.create(null, bodyCells);
+    const table = tableType.create(null, [headerRow, bodyRow]);
+
+    if (dispatch) {
+      // Append a trailing empty paragraph so the user can escape
+      //  the table without pressing Enter twice — landing back in
+      //  prose is the expected flow after inserting a new table.
+      const tailParagraph = paragraphType.create();
+      dispatch(
+        state.tr
+          .replaceSelectionWith(table)
+          .insert(state.selection.to + table.nodeSize, tailParagraph)
+          .scrollIntoView(),
+      );
     }
     return true;
   };
