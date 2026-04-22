@@ -263,6 +263,19 @@ html[data-type-display="serif"] .ProseMirror h1 {
   text-align: left;
   vertical-align: top;
   position: relative;
+  /* Empty cells (the default state of a freshly-inserted table)
+   *  collapse to 0 height when `content: "inline*"` is empty and
+   *  nothing but padding is left. `min-height` via line-height
+   *  guarantees the cell has a visible strike even when empty, so
+   *  the user can see the table grid and click into a cell. */
+  min-width: 2em;
+  line-height: 1.5;
+}
+.ProseMirror th:empty::before,
+.ProseMirror td:empty::before {
+  /* Zero-width space keeps the cell one line tall without showing
+   *  any visible content — a `&nbsp;` would look like a dot. */
+  content: "\200B";
 }
 
 .ProseMirror th {

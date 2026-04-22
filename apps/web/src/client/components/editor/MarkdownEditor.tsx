@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../stores/app.js";
 import { useTreeStore } from "../../stores/tree.js";
 import { CodeBlockView, codeHighlightPlugin } from "./code-block-view.js";
+import { csvPastePlugin } from "./csv-paste-plugin.js";
 import { type EditorCommands, registerEditorCommands } from "./editor-commands.js";
 import {
   buildSlashItems,
@@ -329,6 +330,10 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
         keymap(baseKeymap),
         columnResizing(),
         tableEditing(),
+        // CSV/TSV clipboard → table on paste. Plugin is inert on
+        //  non-tabular text so ordinary prose pastes fall through
+        //  to ProseMirror's default clipboard path.
+        csvPastePlugin(schema),
         // Prism-backed syntax highlighting for code_block nodes —
         //  emits Decoration.inline ranges so ProseMirror keeps
         //  full ownership of text + selection.

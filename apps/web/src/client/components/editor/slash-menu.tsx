@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { setBlockType, wrapIn } from "prosemirror-commands";
 import type { NodeType, Schema } from "prosemirror-model";
-import type { EditorState, Transaction } from "prosemirror-state";
+import { type EditorState, TextSelection, type Transaction } from "prosemirror-state";
 import type { ReactNode } from "react";
 
 /**
@@ -209,13 +209,13 @@ export function buildSlashItems(schema: Schema): SlashItem[] {
     });
   }
 
-  if (table && table_row && table_header && table_cell && paragraph) {
+  if (table && table_row && table_header && table_cell) {
     items.push({
       title: "Table",
       description: "3-column table with a header row",
       icon: <TableIcon className="h-4 w-4" />,
       keywords: ["table", "grid"],
-      run: insertTableCommand(table, table_row, table_header, table_cell, paragraph),
+      run: insertTableCommand(table, table_row, table_header, table_cell),
     });
   }
 
@@ -255,16 +255,24 @@ function insertListCommand(listType: NodeType, itemType: NodeType, paragraphType
 
 /**
  * Insert a 3-column × 2-row starter table (one header row + one
- * body row). Each cell starts with a single empty paragraph so the
- * caret can land inside it cleanly. prosemirror-tables' `Tab`
- * keymap handles cell-to-cell navigation from there.
+ * body row). After insertion, the caret lands inside the first
+ * header cell so the user can start typing immediately.
+ *
+ * Why no tail paragraph: `replaceSelectionWith` already handles
+ * landing the table cleanly in the surrounding block (empty
+ * paragraph case: the paragraph is replaced; non-empty case: the
+ * paragraph is split). Adding a trailing paragraph via position
+ * math was brittle — positions shift after the replace and
+ * inserting into the freshly-created table's content range failed
+ * the schema check, so nothing rendered. The tableEditing plugin's
+ * arrow-key + Tab navigation gets the user out of the table
+ * without needing a pre-seeded tail.
  */
 function insertTableCommand(
   tableType: NodeType,
   rowType: NodeType,
   headerType: NodeType,
   cellType: NodeType,
-  paragraphType: NodeType,
 ) {
   return (state: EditorState, dispatch?: (tr: Transaction) => void): boolean => {
     const cols = 3;
@@ -278,16 +286,21 @@ function insertTableCommand(
     const table = tableType.create(null, [headerRow, bodyRow]);
 
     if (dispatch) {
-      // Append a trailing empty paragraph so the user can escape
-      //  the table without pressing Enter twice — landing back in
-      //  prose is the expected flow after inserting a new table.
-      const tailParagraph = paragraphType.create();
-      dispatch(
-        state.tr
-          .replaceSelectionWith(table)
-          .insert(state.selection.to + table.nodeSize, tailParagraph)
-          .scrollIntoView(),
-      );
+      const tr = state.tr.replaceSelectionWith(table).scrollIntoView();
+      // Drop the caret into the first header cell's inline content
+      //  so the user can start typing. `tr.mapping.map(from)` gives
+      //  the position where the inserted table starts; `+ 2` steps
+      //  past the table opening + the first row opening to land
+      //  inside the first cell's text span.
+      const tableStart = tr.mapping.map(state.selection.from);
+      try {
+        const sel = TextSelection.near(tr.doc.resolve(tableStart + 2), 1);
+        tr.setSelection(sel);
+      } catch {
+        // If resolution fails for any reason, leave the default
+        //  selection as-is — the table still rendered correctly.
+      }
+      dispatch(tr);
     }
     return true;
   };
