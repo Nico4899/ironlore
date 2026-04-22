@@ -1,5 +1,5 @@
 import { Upload } from "lucide-react";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useAutoSave } from "../hooks/useAutoSave.js";
 import type { ConflictResponse } from "../lib/api.js";
 import { fetchPage, fetchRaw, uploadFile } from "../lib/api.js";
@@ -15,7 +15,7 @@ import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
 import { HomePanel } from "./HomePanel.js";
 import { InboxPanel } from "./InboxPanel.js";
-import { Meta, Reuleaux, StatusPip } from "./primitives/index.js";
+import { Meta, StatusPip } from "./primitives/index.js";
 import { SplitPane } from "./SplitPane.js";
 import { TabBar } from "./TabBar.js";
 import { ViewerErrorBoundary } from "./ViewerErrorBoundary.js";
@@ -263,31 +263,10 @@ export function ContentArea() {
     >
       <TabBar />
 
-      {/* Breadcrumb path */}
-      {filePath && (
-        <div className="flex items-center gap-1 border-b border-border px-4 py-1 text-xs text-secondary">
-          {filePath.split("/").map((seg, i, arr) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: breadcrumb segments are path-derived
-            <span key={`${seg}-${i}`} className="flex items-center gap-1">
-              {i > 0 && <span className="text-border">/</span>}
-              {i < arr.length - 1 ? (
-                <button
-                  type="button"
-                  className="hover:text-primary"
-                  onClick={() => {
-                    const folderPath = arr.slice(0, i + 1).join("/");
-                    useAppStore.getState().setSidebarFolder(folderPath);
-                  }}
-                >
-                  {seg}
-                </button>
-              ) : (
-                <span className="font-medium text-primary">{seg}</span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
+      {/* Editor breadcrumb dropped — the AppHeader carries the
+       *  breadcrumb for the whole app now, so surfacing a second
+       *  one above the editor was redundant and ate vertical space.
+       *  Path still appears in StatusBar at the bottom. */}
 
       {/* Conflict banner (markdown + CSV) */}
       {conflict && <ConflictBanner conflict={conflict} onResolved={handleConflictResolved} />}
@@ -400,29 +379,6 @@ interface MarkdownContentProps {
 }
 
 /**
- * Count block IDs in the raw markdown (which still carries the
- * `<!-- #blk_ULID -->` comments — ProseMirror strips them for render
- * but the editor store holds the un-stripped text).
- */
-const BLOCK_ID_RE = /<!-- #blk_[A-Z0-9]{26} -->/g;
-
-function countBlocks(markdown: string): number {
-  return markdown.match(BLOCK_ID_RE)?.length ?? 0;
-}
-
-/** Short relative-time label for the page metadata strip. */
-function formatRelative(ms: number, now: number): string {
-  const sec = Math.max(0, Math.floor((now - ms) / 1000));
-  if (sec < 5) return "just now";
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.floor(hr / 24)}d ago`;
-}
-
-/**
  * Squeeze a full 16-char ETag into `<first-4>·<last-3>` — the canvas
  * grammar from docs/09-ui-and-brand.md §Editor toolbar. Keeps the
  * chip uniform width without leaking commit-hash-like meaning.
@@ -458,21 +414,16 @@ function MarkdownContent({
   onChange,
   onSelectionChange,
 }: MarkdownContentProps) {
-  const filePath = useEditorStore((s) => s.filePath);
   const etag = useEditorStore((s) => s.etag);
-  const lastSavedAt = useEditorStore((s) => s.lastSavedAt);
+  // Force WYSIWYG when developer mode is off — a user who toggled
+  //  source mode while dev-mode was on shouldn't be trapped in the
+  //  raw markdown view after they flip the switch back. This is a
+  //  render-time guard; the stored mode in `useEditorStore` stays
+  //  whatever the user last chose so turning dev-mode on again
+  //  restores their preference.
+  const devMode = useAppStore((s) => s.devMode);
+  const effectiveMode = devMode ? mode : "wysiwyg";
 
-  // Tick once a minute so the "saved Xm ago" label stays approximately
-  //  fresh. Finer granularity is noise; coarser drops "just now" off
-  //  the clock.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(t);
-  }, []);
-
-  const blockCount = useMemo(() => countBlocks(markdown), [markdown]);
-  const savedLabel = lastSavedAt != null ? `saved ${formatRelative(lastSavedAt, now)}` : null;
   const pip = statusToPip(status);
 
   return (
@@ -551,32 +502,14 @@ function MarkdownContent({
        * in the backend; the strip drops quietly when there's nothing
        * real to say (no file open).
        */}
-      {filePath && (
-        <div
-          className="il-editor-meta flex items-center gap-2 pt-6 font-mono uppercase"
-          style={{
-            fontSize: 10.5,
-            letterSpacing: "0.06em",
-            color: "var(--il-text3)",
-          }}
-        >
-          <Reuleaux size={7} color="var(--il-blue)" aria-label="Page metadata" />
-          <span>page</span>
-          <span style={{ color: "var(--il-text4)" }}>/</span>
-          <span style={{ color: "var(--il-text2)" }}>
-            {blockCount} {blockCount === 1 ? "block" : "blocks"}
-          </span>
-          {savedLabel && (
-            <>
-              <span style={{ color: "var(--il-text4)" }}>/</span>
-              <span style={{ color: "var(--il-text2)" }}>{savedLabel}</span>
-            </>
-          )}
-        </div>
-      )}
+      {/* `page · N blocks · saved` overline retired — block count
+       *  was decorative metadata that ate a line above the title;
+       *  save state still surfaces in the StatusBar's pip. */}
 
-      {/* Editor */}
-      {mode === "wysiwyg" ? (
+      {/* Editor — render based on `effectiveMode`, which collapses
+       *  to WYSIWYG when dev-mode is off (source is a power-user
+       *  surface). */}
+      {effectiveMode === "wysiwyg" ? (
         <MarkdownEditor
           markdown={markdown}
           onChange={onChange}
@@ -782,6 +715,13 @@ function runCommand(name: InlineFormatCommand): void {
 }
 
 function ModeToggle({ mode }: { mode: "wysiwyg" | "source" }) {
+  // Source mode is a power-user view that exposes the raw
+  //  markdown (including block-ID comments + frontmatter) and
+  //  would confuse non-technical users. Gated behind
+  //  Settings → General → Developer mode; when off the toggle
+  //  simply doesn't render and the editor stays in WYSIWYG.
+  const devMode = useAppStore((s) => s.devMode);
+  if (!devMode) return null;
   return (
     <div
       style={{
