@@ -15,14 +15,7 @@ import {
   startAutonomousRun,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
-import {
-  DisplayNum,
-  DottedHead,
-  Key,
-  Meta,
-  SectionLabel,
-  StatusPip,
-} from "./primitives/index.js";
+import { DisplayNum, DottedHead, Key, Meta, SectionLabel, StatusPip } from "./primitives/index.js";
 
 /**
  * AgentDetailPage — per-agent canvas-grammar detail surface.
@@ -491,9 +484,9 @@ function JournalSection({ slug }: { slug: string }) {
   const isEmpty = entries.length === 0;
 
   return (
-    <section className="px-10 py-6" style={{ borderTop: "1px solid var(--il-border-soft)" }}>
+    <div>
       <SectionLabel
-        index={6}
+        index={3}
         title="Recent journal"
         meta={isEmpty ? "none yet" : `last ${entries.length}`}
       />
@@ -519,7 +512,7 @@ function JournalSection({ slug }: { slug: string }) {
           ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }
 

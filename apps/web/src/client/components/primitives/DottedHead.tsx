@@ -75,9 +75,7 @@ function resolveColor(input: string, fallback = "#6aa0ff"): string {
   if (!input.startsWith("var(")) return input;
   const match = /var\(\s*(--[\w-]+)/.exec(input);
   if (!match?.[1]) return fallback;
-  const resolved = getComputedStyle(document.documentElement)
-    .getPropertyValue(match[1])
-    .trim();
+  const resolved = getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim();
   return resolved || fallback;
 }
 
