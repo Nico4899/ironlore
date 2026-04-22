@@ -19,6 +19,50 @@ import { Schema } from "prosemirror-model";
  */
 const baseSchema = defaultMarkdownParser.schema;
 
+/**
+ * Parse DOM attrs into the shape `prosemirror-tables` expects. We
+ * read `style="text-align: …"` for alignment, plus `colspan` /
+ * `rowspan` / `data-colwidth` so pasted HTML tables survive their
+ * original geometry.
+ */
+function parseCellAttrs(el: HTMLElement): {
+  alignment: string | null;
+  colspan: number;
+  rowspan: number;
+  colwidth: number[] | null;
+} {
+  const colspan = Number.parseInt(el.getAttribute("colspan") ?? "1", 10) || 1;
+  const rowspan = Number.parseInt(el.getAttribute("rowspan") ?? "1", 10) || 1;
+  const widthAttr = el.getAttribute("data-colwidth");
+  const colwidth =
+    widthAttr && /^\d+(,\d+)*$/.test(widthAttr)
+      ? widthAttr.split(",").map((n) => Number.parseInt(n, 10))
+      : null;
+  return {
+    alignment: el.style.textAlign || null,
+    colspan,
+    rowspan,
+    colwidth: colwidth && colwidth.length === colspan ? colwidth : null,
+  };
+}
+
+/**
+ * Render the DOM attrs for a table cell. Omits defaults so the
+ * rendered HTML stays clean — `colspan="1"` is noise.
+ */
+function cellDomAttrs(attrs: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  const align = attrs.alignment as string | null;
+  if (align) out.style = `text-align: ${align}`;
+  const colspan = attrs.colspan as number;
+  const rowspan = attrs.rowspan as number;
+  const colwidth = attrs.colwidth as number[] | null;
+  if (colspan && colspan !== 1) out.colspan = String(colspan);
+  if (rowspan && rowspan !== 1) out.rowspan = String(rowspan);
+  if (colwidth) out["data-colwidth"] = colwidth.join(",");
+  return out;
+}
+
 export const wikiSchema: Schema = new Schema({
   nodes: baseSchema.spec.nodes
     .addToEnd("table", {
@@ -41,38 +85,48 @@ export const wikiSchema: Schema = new Schema({
     })
     .addToEnd("table_header", {
       content: "inline*",
-      attrs: { alignment: { default: null } },
+      // prosemirror-tables reads colspan / rowspan / colwidth on
+      //  every cell when executing its editing commands (addColumn,
+      //  deleteRow, mergeCells, etc). Ironlore's GFM serializer
+      //  flattens merges on save — the markdown output never emits
+      //  span > 1 — but the attrs must exist so the commands run
+      //  without asserting on undefined.
+      attrs: {
+        alignment: { default: null },
+        colspan: { default: 1 },
+        rowspan: { default: 1 },
+        colwidth: { default: null },
+      },
       tableRole: "header_cell",
       isolating: true,
       parseDOM: [
         {
           tag: "th",
-          getAttrs: (el) => ({
-            alignment: (el as HTMLElement).style.textAlign || null,
-          }),
+          getAttrs: (el) => parseCellAttrs(el as HTMLElement),
         },
       ],
       toDOM(node) {
-        const align = node.attrs.alignment as string | null;
-        return align ? ["th", { style: `text-align: ${align}` }, 0] : ["th", 0];
+        return ["th", cellDomAttrs(node.attrs), 0];
       },
     })
     .addToEnd("table_cell", {
       content: "inline*",
-      attrs: { alignment: { default: null } },
+      attrs: {
+        alignment: { default: null },
+        colspan: { default: 1 },
+        rowspan: { default: 1 },
+        colwidth: { default: null },
+      },
       tableRole: "cell",
       isolating: true,
       parseDOM: [
         {
           tag: "td",
-          getAttrs: (el) => ({
-            alignment: (el as HTMLElement).style.textAlign || null,
-          }),
+          getAttrs: (el) => parseCellAttrs(el as HTMLElement),
         },
       ],
       toDOM(node) {
-        const align = node.attrs.alignment as string | null;
-        return align ? ["td", { style: `text-align: ${align}` }, 0] : ["td", 0];
+        return ["td", cellDomAttrs(node.attrs), 0];
       },
     })
     .addToEnd("wikilink", {
@@ -197,12 +251,18 @@ export const wikiMarkdownParser = new MarkdownParser(wikiSchema, md, {
     block: "table_header",
     getAttrs: (tok) => ({
       alignment: (tok.attrGet?.("style")?.match(/text-align:\s*(\w+)/) ?? [])[1] ?? null,
+      colspan: 1,
+      rowspan: 1,
+      colwidth: null,
     }),
   },
   td: {
     block: "table_cell",
     getAttrs: (tok) => ({
       alignment: (tok.attrGet?.("style")?.match(/text-align:\s*(\w+)/) ?? [])[1] ?? null,
+      colspan: 1,
+      rowspan: 1,
+      colwidth: null,
     }),
   },
   wikilink: {

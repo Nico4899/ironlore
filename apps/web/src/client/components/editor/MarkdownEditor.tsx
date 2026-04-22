@@ -12,6 +12,7 @@ import { keymap } from "prosemirror-keymap";
 import type { Schema } from "prosemirror-model";
 import { liftListItem, sinkListItem, splitListItem } from "prosemirror-schema-list";
 import { EditorState, type Transaction } from "prosemirror-state";
+import { columnResizing, goToNextCell, tableEditing } from "prosemirror-tables";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../stores/app.js";
@@ -297,6 +298,10 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
       listKeys["Shift-Tab"] = liftListItem(list_item);
     }
 
+    // Table editing — arrow-key + Tab navigation across cells,
+    //  add/remove row/col commands, column-resize drag handle.
+    //  `tableEditing` plugin also hooks selection so partial-cell
+    //  selections behave sensibly.
     const state = EditorState.create({
       doc,
       plugins: [
@@ -306,9 +311,16 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           "Mod-Shift-z": redo,
           "Mod-y": redo,
           ...markKeys,
+          // Tab inside a table moves to the next cell (Shift-Tab →
+          //  previous). prosemirror-tables' keymap goes on top of
+          //  the list keys so cell navigation wins inside tables.
+          Tab: goToNextCell(1),
+          "Shift-Tab": goToNextCell(-1),
         }),
         keymap(listKeys),
         keymap(baseKeymap),
+        columnResizing(),
+        tableEditing(),
         history(),
       ],
     });
