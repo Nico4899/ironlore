@@ -76,6 +76,15 @@ export interface AgentConfigResponse {
     tools: string[] | null;
     budget: { tokens: number | null; toolCalls: number | null; fsyncMs: number | null } | null;
     scope: { pages: string[] | null; writableKinds: string[] | null } | null;
+    /**
+     * The prose body of persona.md — everything after the closing
+     * `---` of the YAML frontmatter. Surfaces in the Agent-detail
+     * `§05 Persona` section so the user can read the full
+     * instructions inline without opening the file. Null when the
+     * file is unreadable; empty string when the file has no body
+     * past the frontmatter.
+     */
+    body: string | null;
   } | null;
 }
 
@@ -162,7 +171,15 @@ function parsePersonaFrontmatter(raw: string): AgentConfigResponse["persona"] {
       ? { pages: scopePages, writableKinds: scopeWritable }
       : null;
 
-  return { description, heartbeat, reviewMode, tools, budget, scope };
+  // Body — everything after the closing `---` fence, with a single
+  //  leading newline trimmed so the client renders clean markdown.
+  //  Empty string is returned (not null) when the file has a
+  //  frontmatter but no prose below it, so the UI knows the parse
+  //  succeeded even if the body is empty.
+  const afterFm = raw.slice(match.index + match[0].length);
+  const body = afterFm.replace(/^\r?\n/, "");
+
+  return { description, heartbeat, reviewMode, tools, budget, scope, body };
 }
 
 function pickNumber(v: unknown): number | null {

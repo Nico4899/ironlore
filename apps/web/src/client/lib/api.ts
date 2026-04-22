@@ -408,6 +408,13 @@ export interface AgentConfigResponse {
     tools: string[] | null;
     budget: { tokens: number | null; toolCalls: number | null; fsyncMs: number | null } | null;
     scope: { pages: string[] | null; writableKinds: string[] | null } | null;
+    /**
+     * Prose body of persona.md after the YAML frontmatter — used
+     * by the Agent Detail `§05 Persona` section. Empty string when
+     * the persona file has no prose; `null` when the file is
+     * unreadable.
+     */
+    body: string | null;
   } | null;
 }
 

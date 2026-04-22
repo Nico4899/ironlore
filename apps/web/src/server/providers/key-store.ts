@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -73,8 +73,9 @@ export function writeKeyStore(installRoot: string, store: KeyStoreShape): void {
   // Write through a tmp file + rename for atomicity.
   const tmp = `${path}.tmp`;
   writeFileSync(tmp, JSON.stringify(store, null, 2), { mode: 0o600 });
-  // `rename` on POSIX is atomic within the same filesystem.
-  const { renameSync } = require("node:fs") as typeof import("node:fs");
+  // `rename` on POSIX is atomic within the same filesystem, which
+  //  makes this writer safe against a torn half-file if the server
+  //  crashes mid-write.
   renameSync(tmp, path);
 }
 

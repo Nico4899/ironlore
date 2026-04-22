@@ -33,7 +33,9 @@ import { createPagesApi, createRawApi } from "./pages-api.js";
 import { checkPermissions } from "./permissions.js";
 import { ProjectRegistry } from "./project-registry.js";
 import { ProjectServices } from "./project-services.js";
+import { getProviderKey } from "./providers/key-store.js";
 import { ProviderRegistry } from "./providers/registry.js";
+import { createProvidersApi } from "./providers-api.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { createSearchApi } from "./search-api.js";
 import { TerminalManager } from "./terminal.js";
@@ -155,6 +157,10 @@ async function start() {
 
   // Protect all non-auth API routes with session middleware
   app.use("/api/projects/*", authMiddleware);
+  // `/api/providers` is install-global (one registry across all
+  //  projects) but carries credentials and therefore requires
+  //  auth just like the per-project routes.
+  app.use("/api/providers/*", authMiddleware);
 
   // ─── Jobs + agents engine (install-global; all rows carry project_id) ───
   const jobsDbPath = join(installRoot, "jobs.sqlite");
@@ -170,10 +176,18 @@ async function start() {
 
   // Provider registry — auto-detect Ollama, register Anthropic from env.
   const providerRegistry = new ProviderRegistry();
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  // Anthropic key sourced from env > key-store. Env wins so
+  //  operators running under systemd / launchd can rotate keys
+  //  without touching the install-local file. Key-store fills in
+  //  for installs that configure credentials through the UI.
+  const envAnthropicKey = process.env.ANTHROPIC_API_KEY;
+  const storedAnthropicKey = envAnthropicKey ? null : getProviderKey(installRoot, "anthropic");
+  const anthropicKey = envAnthropicKey ?? storedAnthropicKey;
   if (anthropicKey) {
     providerRegistry.registerAnthropic(anthropicKey);
-    console.log("Provider: Anthropic registered");
+    console.log(
+      `Provider: Anthropic registered (${envAnthropicKey ? "env" : "key-store"})`,
+    );
   }
   const ollamaDetected = await providerRegistry.autoDetectOllama();
   if (ollamaDetected) {
@@ -363,6 +377,10 @@ async function start() {
     const list = projectRegistry.list();
     return c.json({ projects: list });
   });
+
+  // Install-global providers API (list / save key / test) —
+  //  protected by the auth middleware above.
+  app.route("/api/providers", createProvidersApi({ registry: providerRegistry, installRoot }));
 
   /**
    * Create a new project — parity with `ironlore new-project`.
