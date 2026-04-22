@@ -15,6 +15,7 @@ import { EditorState, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../stores/app.js";
+import { useTreeStore } from "../../stores/tree.js";
 import { type EditorCommands, registerEditorCommands } from "./editor-commands.js";
 import {
   buildSlashItems,
@@ -22,13 +23,12 @@ import {
   getSlashContext,
   type SlashItem,
 } from "./slash-menu.js";
-import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
 import {
   filterWikiLinkCandidates,
   getWikiLinkContext,
   type WikiLinkCandidate,
 } from "./wiki-link-menu.js";
-import { useTreeStore } from "../../stores/tree.js";
+import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
 import "./editor.css";
 
 // ---------------------------------------------------------------------------
@@ -251,22 +251,19 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
    * to `[[<path>]]` on save, so the on-disk format is plain
    * markdown — no custom HTML payload escapes the document.
    */
-  const runWikiLinkItem = useCallback(
-    (candidate: WikiLinkCandidate, from: number, to: number) => {
-      const view = viewRef.current;
-      if (!view) return;
-      const wikilinkType = view.state.schema.nodes.wikilink;
-      if (!wikilinkType) {
-        setWikiMenu(null);
-        return;
-      }
-      const node = wikilinkType.create({ target: candidate.path });
-      view.dispatch(view.state.tr.replaceWith(from, to, node));
-      view.focus();
+  const runWikiLinkItem = useCallback((candidate: WikiLinkCandidate, from: number, to: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const wikilinkType = view.state.schema.nodes.wikilink;
+    if (!wikilinkType) {
       setWikiMenu(null);
-    },
-    [],
-  );
+      return;
+    }
+    const node = wikilinkType.create({ target: candidate.path });
+    view.dispatch(view.state.tr.replaceWith(from, to, node));
+    view.focus();
+    setWikiMenu(null);
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only callback; external markdown sync handled by separate useEffect
   const createView = useCallback((container: HTMLDivElement) => {
