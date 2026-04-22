@@ -46,10 +46,18 @@ export type TypeDisplaySetting = "sans" | "serif";
  * `Account & usage` deep-link by passing the target tab to
  * `toggleSettings`.
  */
-export type SettingsTab = "general" | "projects" | "agents" | "security" | "storage" | "appearance";
+export type SettingsTab =
+  | "general"
+  | "providers"
+  | "projects"
+  | "agents"
+  | "security"
+  | "storage"
+  | "appearance";
 
 const SETTINGS_TABS: readonly SettingsTab[] = [
   "general",
+  "providers",
   "projects",
   "agents",
   "security",

@@ -427,8 +427,114 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
           </div>
         </div>
       </div>
+
+      {/* Inline persona prose + recent journal — two new sections
+       *  that keep the Agent Detail page from feeling empty below
+       *  the body grid. Persona renders the full persona.md body
+       *  (everything after the YAML frontmatter); Journal surfaces
+       *  the last N `agent.journal` events so the user can read
+       *  what the agent said about its own work without hunting. */}
+      <PersonaSection body={config?.persona?.body ?? null} />
+      <JournalSection slug={slug} />
     </main>
   );
+}
+
+/**
+ * §05 — persona.md body, rendered as sanitized markdown. Bails
+ * silently when the agent has no body (empty persona or unreadable
+ * file) so the section doesn't leave a blank strip.
+ */
+function PersonaSection({ body }: { body: string | null }) {
+  if (!body || !body.trim()) return null;
+  const html = renderMarkdownSafe(body);
+  return (
+    <section
+      className="px-10 py-6"
+      style={{ borderTop: "1px solid var(--il-border-soft)" }}
+    >
+      <SectionLabel index={5} title="Persona" meta="persona.md" />
+      <div
+        className="prose prose-sm mt-3 max-w-none text-primary"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: output passes through renderMarkdownSafe
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </section>
+  );
+}
+
+/**
+ * §06 — last N agent.journal entries, newest first. Each entry
+ * carries its own job id so users can click through to the run
+ * later (not wired today — the row is read-only). When the agent
+ * has never journaled anything the section hides entirely.
+ */
+function JournalSection({ slug }: { slug: string }) {
+  const [entries, setEntries] = useState<AgentJournalEntry[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchAgentJournal(slug, 12)
+      .then((list) => {
+        if (!cancelled) setEntries(list);
+      })
+      .catch(() => {
+        if (!cancelled) setEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  if (entries === null) return null; // loading — avoid layout jank
+  if (entries.length === 0) return null; // no journal yet — keep the surface tight
+
+  return (
+    <section
+      className="px-10 py-6"
+      style={{ borderTop: "1px solid var(--il-border-soft)" }}
+    >
+      <SectionLabel index={6} title="Recent journal" meta={`last ${entries.length}`} />
+      <div className="mt-3 grid gap-2">
+        {entries.map((entry) => (
+          <JournalRow key={`${entry.jobId}-${entry.timestamp}`} entry={entry} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function JournalRow({ entry }: { entry: AgentJournalEntry }) {
+  return (
+    <div
+      style={{
+        padding: "10px 12px",
+        borderLeft: "2px solid var(--il-blue)",
+        background: "color-mix(in oklch, var(--il-blue) 7%, transparent)",
+        borderRadius: "0 3px 3px 0",
+      }}
+    >
+      <div
+        className="font-mono uppercase"
+        style={{
+          fontSize: 10.5,
+          letterSpacing: "0.06em",
+          color: "var(--il-blue)",
+          marginBottom: 4,
+        }}
+      >
+        → journal · {formatShortDate(entry.timestamp)}
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--il-text2)" }}>
+        {entry.text}
+      </div>
+    </div>
+  );
+}
+
+function formatShortDate(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 // ───────────────────────── subcomponents ─────────────────────────

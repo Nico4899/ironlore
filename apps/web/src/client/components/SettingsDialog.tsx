@@ -7,9 +7,13 @@ import {
   fetchAgentConfig,
   fetchAgents,
   fetchProjects,
+  fetchProviders,
   logout,
   type ProjectListEntry,
+  type ProviderSummary,
+  saveProviderKey,
   setAgentPaused,
+  testProvider,
 } from "../lib/api.js";
 import { useAIPanelStore } from "../stores/ai-panel.js";
 import {
@@ -108,6 +112,7 @@ export function SettingsDialog() {
           {(
             [
               ["general", "General"],
+              ["providers", "Providers"],
               ["projects", "Projects"],
               ["agents", "Agents"],
               ["security", "Security"],
@@ -172,6 +177,7 @@ export function SettingsDialog() {
 
           <div className="flex-1 overflow-y-auto" style={{ padding: "32px 48px" }}>
             {activeTab === "general" && <GeneralTab />}
+            {activeTab === "providers" && <ProvidersTab />}
             {activeTab === "projects" && <ProjectsTab />}
             {activeTab === "agents" && <AgentsTab />}
             {activeTab === "security" && <SecurityTab />}
@@ -855,6 +861,354 @@ function AccountRow() {
         <LogOut className="h-3.5 w-3.5" />
         {loggingOut ? "Logging out…" : "Log out"}
       </button>
+    </div>
+  );
+}
+
+/**
+ * Providers tab — LLM provider credentials + connection status.
+ *
+ * Lists every known provider (Anthropic, Ollama today) with a
+ * live status pip and, per row, an `Edit key` / `Test` pair. Keys
+ * are persisted to `<installRoot>/.ironlore/providers.json` with
+ * mode 0600 by the server; this tab is the UI front for that
+ * store. Full Argon2id-vault encryption is a follow-up — the
+ * amber strip below names that limitation honestly so the user
+ * can decide whether to configure via env vars instead.
+ */
+function ProvidersTab() {
+  const [providers, setProviders] = useState<ProviderSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const list = await fetchProviders();
+      setProviders(list);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return (
+    <>
+      <TabHero
+        title="Providers"
+        blurb="LLM providers that power your agents. Set an API key to connect a provider, click Test to verify a round-trip, or remove the key to disconnect."
+      />
+
+      {/* Honest security note — keys sit in a mode-0600 JSON file,
+       *  not in an Argon2id vault. Env vars take precedence when
+       *  set, so operators can opt out of the UI path entirely. */}
+      <div
+        style={{
+          borderLeft: "3px solid var(--il-amber)",
+          background: "color-mix(in oklch, var(--il-amber) 8%, transparent)",
+          padding: "10px 14px",
+          borderRadius: "0 3px 3px 0",
+          marginBottom: 18,
+        }}
+      >
+        <div
+          className="font-mono uppercase"
+          style={{ fontSize: 10.5, color: "var(--il-amber)", letterSpacing: "0.08em" }}
+        >
+          local storage
+        </div>
+        <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "var(--il-text2)", lineHeight: 1.5 }}>
+          Keys are written to{" "}
+          <code
+            style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--il-text)" }}
+          >
+            .ironlore/providers.json
+          </code>{" "}
+          with restricted file permissions (mode 0600). Full encryption is a follow-up — for now,
+          set{" "}
+          <code
+            style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--il-text)" }}
+          >
+            ANTHROPIC_API_KEY
+          </code>{" "}
+          in your shell if you want env-managed credentials instead (takes precedence on boot).
+        </p>
+      </div>
+
+      {error && (
+        <div style={{ fontSize: 12.5, color: "var(--il-red)" }}>
+          Failed to load providers: {error}
+        </div>
+      )}
+      {providers === null && !error && (
+        <span style={{ fontSize: 12.5, color: "var(--il-text3)" }}>Loading…</span>
+      )}
+      {providers && (
+        <div style={{ display: "grid", gap: 10 }}>
+          {providers.map((p) => (
+            <ProviderRow
+              key={p.name}
+              provider={p}
+              editing={editing === p.name}
+              onEdit={() => setEditing(p.name)}
+              onClose={() => setEditing(null)}
+              onSaved={(next) => {
+                setProviders((prev) =>
+                  prev ? prev.map((x) => (x.name === next.name ? next : x)) : prev,
+                );
+                setEditing(null);
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ProviderRow({
+  provider,
+  editing,
+  onEdit,
+  onClose,
+  onSaved,
+}: {
+  provider: ProviderSummary;
+  editing: boolean;
+  onEdit: () => void;
+  onClose: () => void;
+  onSaved: (next: ProviderSummary) => void;
+}) {
+  const [keyDraft, setKeyDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; detail: string } | null>(null);
+  const pipColor =
+    provider.status === "connected"
+      ? "var(--il-green)"
+      : provider.status === "needs-key"
+        ? "var(--il-text3)"
+        : "var(--il-amber)";
+  const statusLabel = {
+    connected: "connected",
+    "needs-key": "needs key",
+    unreachable: "unreachable",
+  }[provider.status];
+
+  const save = async (value: string) => {
+    setSaving(true);
+    try {
+      const result = await saveProviderKey(provider.name, value);
+      onSaved(result.provider);
+      setKeyDraft("");
+    } catch (err) {
+      setTestResult({ ok: false, detail: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const test = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await testProvider(provider.name);
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({ ok: false, detail: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        padding: "14px 16px",
+        border: "1px solid var(--il-border-soft)",
+        borderRadius: 4,
+        background: "var(--il-slate-elev)",
+      }}
+    >
+      <div className="flex items-baseline gap-3">
+        <span
+          aria-hidden="true"
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: pipColor,
+            marginTop: 2,
+          }}
+        />
+        <span style={{ fontSize: 14, fontWeight: 500, color: "var(--il-text)" }}>
+          {provider.name}
+        </span>
+        <span
+          className="font-mono uppercase"
+          style={{ fontSize: 10.5, letterSpacing: "0.06em", color: pipColor }}
+        >
+          {statusLabel}
+        </span>
+        <span className="flex-1" />
+        {provider.name === "anthropic" && !editing && (
+          <button
+            type="button"
+            onClick={onEdit}
+            style={{
+              padding: "5px 12px",
+              fontSize: 12,
+              fontFamily: "var(--font-sans)",
+              fontWeight: 500,
+              background: "transparent",
+              color: "var(--il-text2)",
+              border: "1px solid var(--il-border)",
+              borderRadius: 3,
+              cursor: "pointer",
+            }}
+          >
+            {provider.keyConfigured ? "Edit key" : "Add key"}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={test}
+          disabled={testing}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            fontFamily: "var(--font-sans)",
+            fontWeight: 500,
+            background: "transparent",
+            color: "var(--il-text2)",
+            border: "1px solid var(--il-border)",
+            borderRadius: 3,
+            cursor: testing ? "progress" : "pointer",
+            opacity: testing ? 0.6 : 1,
+          }}
+        >
+          {testing ? "Testing…" : "Test"}
+        </button>
+      </div>
+
+      {editing && (
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="password"
+            placeholder={provider.keyConfigured ? "(key already saved — replace)" : "sk-ant-…"}
+            value={keyDraft}
+            onChange={(e) => setKeyDraft(e.target.value)}
+            className="outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            style={{
+              flex: 1,
+              padding: "6px 10px",
+              fontFamily: "var(--font-mono)",
+              fontSize: 12,
+              background: "var(--il-bg)",
+              border: "1px solid var(--il-border)",
+              borderRadius: 3,
+              color: "var(--il-text)",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => void save(keyDraft.trim())}
+            disabled={saving || keyDraft.trim().length === 0}
+            style={{
+              padding: "6px 12px",
+              fontSize: 12,
+              fontFamily: "var(--font-sans)",
+              fontWeight: 500,
+              background: "var(--il-blue)",
+              color: "var(--il-bg)",
+              border: "none",
+              borderRadius: 3,
+              cursor: saving ? "progress" : "pointer",
+              opacity: keyDraft.trim().length === 0 ? 0.4 : 1,
+              boxShadow: keyDraft.trim().length === 0 ? "none" : "0 0 10px var(--il-blue-glow)",
+            }}
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          {provider.keyConfigured && (
+            <button
+              type="button"
+              onClick={() => void save("")}
+              disabled={saving}
+              style={{
+                padding: "6px 12px",
+                fontSize: 12,
+                fontFamily: "var(--font-sans)",
+                fontWeight: 500,
+                background: "transparent",
+                color: "var(--il-red)",
+                border: "1px solid color-mix(in oklch, var(--il-red) 40%, transparent)",
+                borderRadius: 3,
+                cursor: "pointer",
+              }}
+            >
+              Remove
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: "6px 12px",
+              fontSize: 12,
+              fontFamily: "var(--font-sans)",
+              fontWeight: 500,
+              background: "transparent",
+              color: "var(--il-text3)",
+              border: "1px solid var(--il-border-soft)",
+              borderRadius: 3,
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {testResult && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "6px 10px",
+            borderRadius: 3,
+            fontSize: 12,
+            fontFamily: "var(--font-mono)",
+            color: testResult.ok ? "var(--il-green)" : "var(--il-red)",
+            background: testResult.ok
+              ? "color-mix(in oklch, var(--il-green) 10%, transparent)"
+              : "color-mix(in oklch, var(--il-red) 10%, transparent)",
+            border: `1px solid ${
+              testResult.ok
+                ? "color-mix(in oklch, var(--il-green) 40%, transparent)"
+                : "color-mix(in oklch, var(--il-red) 40%, transparent)"
+            }`,
+          }}
+        >
+          {testResult.detail}
+        </div>
+      )}
+
+      {provider.models.length > 0 && (
+        <div
+          className="mt-3 font-mono"
+          style={{
+            fontSize: 11,
+            color: "var(--il-text3)",
+            letterSpacing: "0.02em",
+            lineHeight: 1.6,
+          }}
+        >
+          models: {provider.models.slice(0, 6).join(" · ")}
+          {provider.models.length > 6 && ` · +${provider.models.length - 6}`}
+        </div>
+      )}
     </div>
   );
 }
