@@ -9,7 +9,7 @@ import {
   diffBlocks,
   type MergeSegment,
 } from "../../lib/merge-blocks.js";
-import { useEditorStore } from "../../stores/editor.js";
+import { splitFrontmatter, useEditorStore } from "../../stores/editor.js";
 
 interface ConflictBannerProps {
   conflict: ConflictResponse;
@@ -31,9 +31,19 @@ interface ConflictBannerProps {
 export function ConflictBanner({ conflict, onResolved }: ConflictBannerProps) {
   const localMarkdown = useEditorStore((s) => s.markdown);
 
+  // `localMarkdown` is body-only (the editor store stripped the
+  //  frontmatter on load). `conflict.currentContent` is the full
+  //  server-side page including frontmatter. Strip the server copy
+  //  too so the block-diff compares body-to-body rather than
+  //  flagging a synthetic frontmatter "change" every time.
+  const serverBody = useMemo(
+    () => splitFrontmatter(conflict.currentContent).body,
+    [conflict.currentContent],
+  );
+
   const segments = useMemo(
-    () => diffBlocks(localMarkdown, conflict.currentContent),
-    [localMarkdown, conflict.currentContent],
+    () => diffBlocks(localMarkdown, serverBody),
+    [localMarkdown, serverBody],
   );
   const conflictSegments = segments.filter((s) => s.kind === "conflict");
 
@@ -49,11 +59,17 @@ export function ConflictBanner({ conflict, onResolved }: ConflictBannerProps) {
   };
 
   const handleSaveMerged = async () => {
-    const { filePath, setEtag, setStatus, setMarkdown } = useEditorStore.getState();
+    const { filePath, frontmatter, setEtag, setStatus, setMarkdown } = useEditorStore.getState();
     if (!filePath) return;
 
     const { markdown, hasUnresolvedConflicts } = applyResolutions(segments, resolutions);
     if (hasUnresolvedConflicts) return;
+
+    // Re-prepend the local frontmatter so the on-disk copy keeps
+    //  its YAML block. A frontmatter *conflict* is out of scope
+    //  for the block-level merge UI; using the local copy here
+    //  matches "Keep mine" semantics for metadata specifically.
+    const payload = frontmatter + markdown;
 
     const res = await fetch(`/api/projects/${getApiProject()}/pages/${filePath}`, {
       method: "PUT",
@@ -61,11 +77,13 @@ export function ConflictBanner({ conflict, onResolved }: ConflictBannerProps) {
         "Content-Type": "application/json",
         "If-Match": conflict.currentEtag,
       },
-      body: JSON.stringify({ markdown }),
+      body: JSON.stringify({ markdown: payload }),
     });
 
     if (res.ok) {
       const { etag } = (await res.json()) as { etag: string };
+      // Store body-only in the editor — the store's `markdown`
+      //  field is semantically body-only now.
       setMarkdown(markdown);
       setEtag(etag);
       setStatus("clean");
@@ -74,8 +92,12 @@ export function ConflictBanner({ conflict, onResolved }: ConflictBannerProps) {
   };
 
   const handleKeepMine = async () => {
-    const { filePath, markdown, setEtag, setStatus } = useEditorStore.getState();
+    const { filePath, getFullContent, setEtag, setStatus } = useEditorStore.getState();
     if (!filePath) return;
+
+    // Full on-disk shape (frontmatter + body) so a "keep mine"
+    //  never clobbers the YAML block.
+    const payload = getFullContent();
 
     const res = await fetch(`/api/projects/${getApiProject()}/pages/${filePath}`, {
       method: "PUT",
@@ -83,7 +105,7 @@ export function ConflictBanner({ conflict, onResolved }: ConflictBannerProps) {
         "Content-Type": "application/json",
         "If-Match": conflict.currentEtag,
       },
-      body: JSON.stringify({ markdown }),
+      body: JSON.stringify({ markdown: payload }),
     });
 
     if (res.ok) {

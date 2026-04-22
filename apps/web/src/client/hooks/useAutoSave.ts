@@ -20,7 +20,7 @@ export function useAutoSave(onConflict: (conflict: ConflictResponse) => void) {
   onConflictRef.current = onConflict;
 
   const save = useCallback(async () => {
-    const { filePath, fileType, markdown, etag, status, setStatus, setEtag } =
+    const { filePath, fileType, markdown, etag, status, setStatus, setEtag, getFullContent } =
       useEditorStore.getState();
 
     if (!filePath || status !== "dirty") return;
@@ -31,10 +31,15 @@ export function useAutoSave(onConflict: (conflict: ConflictResponse) => void) {
     setStatus("syncing");
 
     try {
+      // For markdown, re-prepend the stored frontmatter so the
+      //  server receives the full on-disk representation. CSV has
+      //  no frontmatter split — `getFullContent` returns the body
+      //  unchanged since `frontmatter === ""` for that kind.
+      const payload = fileType === "csv" ? markdown : getFullContent();
       const result =
         fileType === "csv"
-          ? await saveCsv(filePath, markdown, etag)
-          : await savePage(filePath, markdown, etag);
+          ? await saveCsv(filePath, payload, etag)
+          : await savePage(filePath, payload, etag);
 
       if ("error" in result && result.error === "Conflict") {
         setStatus("conflict");
