@@ -10,6 +10,7 @@ import {
 } from "prosemirror-inputrules";
 import { keymap } from "prosemirror-keymap";
 import type { Schema } from "prosemirror-model";
+import { liftListItem, sinkListItem, splitListItem } from "prosemirror-schema-list";
 import { EditorState, type Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -235,6 +236,23 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     if (em) markKeys["Mod-i"] = toggleMark(em);
     if (code) markKeys["Mod-`"] = toggleMark(code);
 
+    // List keymap — `Enter` inside a list item splits it so the
+    //  next line continues the list (fixes "pressing Enter drops
+    //  out of the list"), Tab/Shift-Tab indent/outdent. Mounted
+    //  BEFORE `baseKeymap` so the list commands claim Enter first
+    //  when the caret is in a list item; outside lists the splits
+    //  fall through to the default block-split behaviour.
+    const { list_item } = schema.nodes;
+    const listKeys: Record<
+      string,
+      (s: EditorState, d?: (tr: Transaction) => void) => boolean
+    > = {};
+    if (list_item) {
+      listKeys.Enter = splitListItem(list_item);
+      listKeys.Tab = sinkListItem(list_item);
+      listKeys["Shift-Tab"] = liftListItem(list_item);
+    }
+
     const state = EditorState.create({
       doc,
       plugins: [
@@ -245,6 +263,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           "Mod-y": redo,
           ...markKeys,
         }),
+        keymap(listKeys),
         keymap(baseKeymap),
         history(),
       ],

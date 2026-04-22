@@ -40,26 +40,60 @@ export interface SlashContext {
 }
 
 /**
- * Detect a slash-menu trigger at the current cursor. Returns a context
- * when the cursor sits in a paragraph whose entire text starts with "/",
- * so arbitrary prose isn't misinterpreted as a slash command.
+ * Detect a slash-menu trigger at the current cursor.
+ *
+ * The trigger is a `/` followed by an optional run of command-name
+ * characters (no whitespace) immediately before the caret. Works
+ * **anywhere in a paragraph**, not just at the start — so the user
+ * can drop a command in the middle of a sentence without retyping
+ * the line. Bails when the trigger is preceded by a
+ * non-word/non-whitespace character (e.g. `a/b` in a URL) so prose
+ * isn't misinterpreted as a command.
+ *
+ * Returns the `from/to` span of the `/query` run so the caller can
+ * replace just that substring when the user picks a command, rather
+ * than clobbering the whole line.
  */
 export function getSlashContext(state: EditorState): SlashContext | null {
   const { $from, empty } = state.selection;
   if (!empty) return null;
   const parent = $from.parent;
+  // Still limit to paragraphs — code fences, headings, list items,
+  //  etc. aren't slash-command surfaces. Paragraphs cover the
+  //  common authoring case without overfiring.
   if (parent.type.name !== "paragraph") return null;
+
+  // Look back from the caret for the nearest `/` that's preceded
+  //  by start-of-line or whitespace. `$from.parentOffset` is the
+  //  caret's offset into the paragraph's text content.
   const text = parent.textContent;
-  if (!text.startsWith("/")) return null;
-  // Bail if the "prose" grew beyond a plausible command name — a paragraph
-  // literally beginning with `/foo bar baz ...` is more likely a URL or
-  // regex than a pending command.
-  const query = text.slice(1);
+  const caretOffset = $from.parentOffset;
+  let slashOffset = -1;
+  for (let i = caretOffset - 1; i >= 0; i--) {
+    const ch = text[i];
+    if (ch === undefined) break;
+    if (ch === "/") {
+      const prev = i === 0 ? " " : text[i - 1];
+      if (prev === " " || prev === "\t" || prev === undefined) {
+        slashOffset = i;
+      }
+      break;
+    }
+    // Any whitespace before we find the `/` means no active
+    //  trigger (e.g. `hello /foo world|` — we're past the command).
+    if (/\s/.test(ch)) break;
+  }
+  if (slashOffset < 0) return null;
+
+  const query = text.slice(slashOffset + 1, caretOffset);
+  // Same guard as before: commands are short tokens.
   if (query.length > 24 || /\s/.test(query)) return null;
+
+  const startOfParagraph = $from.start();
   return {
     query,
-    from: $from.start(),
-    to: $from.start() + text.length,
+    from: startOfParagraph + slashOffset,
+    to: startOfParagraph + caretOffset,
   };
 }
 
