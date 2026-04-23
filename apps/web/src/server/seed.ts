@@ -1118,13 +1118,17 @@ by the General agent on demand ("run the lint skill").
 
 ### 1. Orphans — pages with zero inbound wiki-links
 
-Real check. Call \`kb.search\` with an empty-ish query to enumerate
-pages, then for each candidate check whether any other page links to it
-via \`[[page]]\` syntax. Skip pages with \`kind: source\` (sources are
-expected to be inbound-only) and any page in the \`_maintenance/\` or
-\`getting-started/\` folders (self-documentation).
+Real check. Call \`kb.lint_orphans\` with default arguments — it
+returns an array of \`{ path, updatedAt }\` for every markdown page
+with no inbound wiki-link, automatically excluding
+\`_maintenance/\`, \`getting-started/\`, and \`.agents/\`. The tool is
+read-only and cheap; no pagination needed.
 
-Report each orphan as a row: \`| path | kind | last-modified |\`.
+Report each orphan as a row: \`| path | kind | last-modified |\`. Read
+each orphan's frontmatter via \`kb.read_page\` to pull its \`kind\` —
+pages with \`kind: source\` are expected to be inbound-only, so
+demote them to a "sources (expected orphans)" sub-table or drop them
+from the report, depending on report verbosity preference.
 
 ### 2. Stale sources — wiki pages older than their cited sources
 
