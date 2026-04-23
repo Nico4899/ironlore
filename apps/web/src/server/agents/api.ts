@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
+import { activateAgent } from "./activate.js";
 import { estimateRunCost } from "./cost-estimate.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
 import type { AgentInbox } from "./inbox.js";
@@ -268,6 +269,25 @@ export function createAgentApi(
     }
 
     return c.json({ ok: true, updated });
+  });
+
+  // -----------------------------------------------------------------------
+  // Activate a library persona template — copies
+  // `.library/<slug>.md` to `.agents/<slug>/persona.md`, flips
+  // `active: true`, creates the agent_state row. 409 if the agent is
+  // already activated; 404 if no template exists for the slug. See
+  // docs/04-ai-and-agents.md §Wiki-gardener agent and the Phase 11
+  // roadmap.
+  // -----------------------------------------------------------------------
+  api.post("/:slug/activate", (c) => {
+    const slug = c.req.param("slug") ?? "";
+    if (!slug) return c.json({ ok: false, error: "Agent slug required" }, 400);
+    if (!projectDir) return c.json({ ok: false, error: "No project dir" }, 500);
+
+    const dataDir = `${projectDir}/data`;
+    const result = activateAgent(dataDir, jobsDb, projectId, slug);
+    if (!result.ok) return c.json({ ok: false, error: result.error }, result.code);
+    return c.json({ ok: true, personaPath: result.personaPath });
   });
 
   // -----------------------------------------------------------------------
