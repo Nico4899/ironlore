@@ -7,6 +7,7 @@ import type { ChatMessage, ProjectContext, Provider } from "../providers/types.j
 import type { ToolDispatcher } from "../tools/dispatcher.js";
 import type { RunBudget, ToolCallContext } from "../tools/types.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
+import { loadSkills } from "./skill-loader.js";
 
 /**
  * Agent execution loop.
@@ -116,8 +117,13 @@ export async function executeAgentRun(
     usedToolCalls: 0,
   };
 
-  // Build system prompt from persona.
-  const systemPrompt = loadPersona(dataRoot, agentSlug);
+  // Build system prompt from persona + any declared workflow skills.
+  // Persona body is the voice; skills are prompt fragments the author
+  // opted into via `skills: [...]` frontmatter. Resolution is
+  // agent-local first, then `.shared/` — see skill-loader.ts.
+  const persona = loadPersona(dataRoot, agentSlug);
+  const skillsBlock = loadSkills(dataRoot, agentSlug, persona.skills);
+  const systemPrompt = skillsBlock ? `${persona.body}${skillsBlock}` : persona.body;
 
   // Build tool context.
   const toolCtx: ToolCallContext = {
@@ -366,21 +372,68 @@ export async function executeAgentRun(
   };
 }
 
+interface LoadedPersona {
+  /** System-prompt body (frontmatter stripped). */
+  body: string;
+  /**
+   * Skills declared under `skills:` in frontmatter, or null when the
+   * field is absent. Empty array is meaningful — it means the persona
+   * explicitly opts into zero skills. Resolved to file content by
+   * `loadSkills()` at the callsite.
+   */
+  skills: string[] | null;
+}
+
 /**
  * Load an agent's persona from its filesystem layout.
- * Falls back to a minimal system prompt if the persona file is missing.
+ * Falls back to a minimal prompt and null skills if the persona file
+ * is missing.
  */
-function loadPersona(dataRoot: string, slug: string): string {
+function loadPersona(dataRoot: string, slug: string): LoadedPersona {
   const personaPath = join(dataRoot, ".agents", slug, "persona.md");
   if (!existsSync(personaPath)) {
-    return `You are the ${slug} assistant for this Ironlore knowledge base.`;
+    return {
+      body: `You are the ${slug} assistant for this Ironlore knowledge base.`,
+      skills: null,
+    };
   }
 
   const raw = readFileSync(personaPath, "utf-8");
 
   // Strip YAML frontmatter — the persona body is the system prompt.
   const stripped = raw.replace(/^---[\s\S]*?^---\r?\n?/m, "").trim();
-  return stripped || `You are the ${slug} assistant for this Ironlore knowledge base.`;
+  const body =
+    stripped || `You are the ${slug} assistant for this Ironlore knowledge base.`;
+
+  return { body, skills: parseDeclaredSkills(raw) };
+}
+
+/**
+ * Extract the `skills: [...]` list from persona frontmatter without
+ * pulling in the full observability projection (the executor only
+ * needs the skill names, not the UI rail's null-tolerant shape).
+ */
+function parseDeclaredSkills(raw: string): string[] | null {
+  const match = /^---[^\n]*\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+  if (!match?.[1]) return null;
+  // Flow style: `skills: [a, b]` or `skills: [a.md, b.md]`.
+  const flow = /^skills\s*:\s*\[([^\]]*)\]\s*$/m.exec(match[1]);
+  if (flow?.[1] !== undefined) {
+    return flow[1]
+      .split(",")
+      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean);
+  }
+  // Block style: `skills:\n  - a\n  - b`.
+  const block = /^skills\s*:\s*\r?\n((?:[ \t]+-[^\n]*\r?\n?)+)/m.exec(match[1]);
+  if (block?.[1]) {
+    return block[1]
+      .split(/\r?\n/)
+      .map((line) => /^\s*-\s*(.+?)\s*$/.exec(line)?.[1])
+      .filter((s): s is string => Boolean(s))
+      .map((s) => s.replace(/^["']|["']$/g, ""));
+  }
+  return null;
 }
 
 /**
