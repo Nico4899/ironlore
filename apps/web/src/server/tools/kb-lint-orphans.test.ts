@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SearchIndex } from "../search-index.js";
-import type { ToolCallContext } from "./types.js";
 import { createKbLintOrphans } from "./kb-lint-orphans.js";
+import type { ToolCallContext } from "./types.js";
 
 /**
  * `kb.lint_orphans` + `SearchIndex.findOrphans` together. Real
@@ -86,10 +86,7 @@ describe("SearchIndex.findOrphans + kb.lint_orphans", () => {
     index.indexPage("notes/foo.md", "# Foo", "user");
 
     const orphans = index.findOrphans({ excludePrefixes: [] });
-    expect(orphans.map((o) => o.path).sort()).toEqual([
-      "_maintenance/report.md",
-      "notes/foo.md",
-    ]);
+    expect(orphans.map((o) => o.path).sort()).toEqual(["_maintenance/report.md", "notes/foo.md"]);
   });
 
   it("kb.lint_orphans tool returns a JSON envelope with count + orphans", async () => {
@@ -128,9 +125,10 @@ describe("SearchIndex.findOrphans + kb.lint_orphans", () => {
     index.indexPage("notes/y.md", "# y", "user");
 
     const tool = createKbLintOrphans(index);
-    const out = JSON.parse(
-      await tool.execute({ excludePrefixes: ["temp/"] }, NO_CTX),
-    ) as { count: number; orphans: Array<{ path: string }> };
+    const out = JSON.parse(await tool.execute({ excludePrefixes: ["temp/"] }, NO_CTX)) as {
+      count: number;
+      orphans: Array<{ path: string }>;
+    };
     expect(out.orphans.map((o) => o.path)).toEqual(["notes/y.md"]);
   });
 });

@@ -162,9 +162,7 @@ describe("HeartbeatScheduler", () => {
     fx.scheduler.tick();
 
     const row = fx.db
-      .prepare(
-        "SELECT last_heartbeat_at FROM agent_state WHERE project_id = ? AND slug = ?",
-      )
+      .prepare("SELECT last_heartbeat_at FROM agent_state WHERE project_id = ? AND slug = ?")
       .get("main", "wiki-gardener") as { last_heartbeat_at: number } | undefined;
     expect(row?.last_heartbeat_at).toBeGreaterThanOrEqual(before);
   });

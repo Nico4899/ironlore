@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { AGENTS_DIR } from "@ironlore/core";
 import type Database from "better-sqlite3";
@@ -98,7 +98,7 @@ export class HeartbeatScheduler {
 
     for (const slug of listActiveSlugs(agentsDir)) {
       const persona = readPersonaMeta(agentsDir, slug);
-      if (!persona || !persona.active || !persona.heartbeat) continue;
+      if (!persona?.active || !persona.heartbeat) continue;
 
       let cron: CronFields;
       try {

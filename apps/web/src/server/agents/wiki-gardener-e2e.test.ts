@@ -3,15 +3,15 @@ import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { seed } from "../seed.js";
-import { SearchIndex } from "../search-index.js";
 import { openJobsDb } from "../jobs/schema.js";
 import { WorkerPool } from "../jobs/worker.js";
+import { SearchIndex } from "../search-index.js";
+import { seed } from "../seed.js";
 import { createKbLintOrphans } from "../tools/kb-lint-orphans.js";
 import { activateAgent } from "./activate.js";
 import { HeartbeatScheduler } from "./heartbeat.js";
-import { loadSkills } from "./skill-loader.js";
 import { AgentRails } from "./rails.js";
+import { loadSkills } from "./skill-loader.js";
 
 /**
  * End-to-end wiki-gardener path — exercises the full iter-1/2/3 glue
@@ -74,10 +74,7 @@ describe("Wiki Gardener end-to-end (seed → activate → schedule)", () => {
     expect(() => readFileSync(join(fx.dataDir, "_index.md"), "utf-8")).not.toThrow();
     expect(() => readFileSync(join(fx.dataDir, "_log.md"), "utf-8")).not.toThrow();
     // Shared lint skill.
-    const lint = readFileSync(
-      join(fx.dataDir, ".agents", ".shared", "skills", "lint.md"),
-      "utf-8",
-    );
+    const lint = readFileSync(join(fx.dataDir, ".agents", ".shared", "skills", "lint.md"), "utf-8");
     expect(lint).toContain("kb.lint_orphans");
     // Library template declares the skill dependency.
     const template = readFileSync(
@@ -127,9 +124,7 @@ describe("Wiki Gardener end-to-end (seed → activate → schedule)", () => {
     fx.scheduler.tick(sundaySixAM);
 
     const jobs = fx.db
-      .prepare(
-        "SELECT kind, mode, owner_id AS ownerId, payload FROM jobs WHERE status = 'queued'",
-      )
+      .prepare("SELECT kind, mode, owner_id AS ownerId, payload FROM jobs WHERE status = 'queued'")
       .all() as Array<{ kind: string; mode: string; ownerId: string; payload: string }>;
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({

@@ -99,7 +99,10 @@ export function matches(fields: CronFields, date: Date): boolean {
  */
 export function shouldFire(fields: CronFields, now: Date, lastFiredAt: number | null): boolean {
   const maxLookback = 31 * 24 * 60; // 31 days in minutes.
-  const start = lastFiredAt !== null ? new Date(lastFiredAt + 60_000) : new Date(now.getTime() - maxLookback * 60_000);
+  const start =
+    lastFiredAt !== null
+      ? new Date(lastFiredAt + 60_000)
+      : new Date(now.getTime() - maxLookback * 60_000);
 
   // Floor to minute boundary to avoid sub-minute drift.
   const cursor = new Date(start);
