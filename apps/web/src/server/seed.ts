@@ -1132,11 +1132,17 @@ from the report, depending on report verbosity preference.
 
 ### 2. Stale sources — wiki pages older than their cited sources
 
-Stub check. The infrastructure to compare source-page \`modified\`
-timestamps against the wiki pages that cite them is not yet wired up
-(tracked in the Phase 11 roadmap). For now, produce a stub section with
-a one-line note so the report shape stays stable across releases. Do
-**not** hallucinate findings.
+Real check. Call \`kb.lint_stale_sources\` with no arguments — it
+returns \`{ count, stale: Array<{ wikiPath, sourcePath, wikiUpdatedAt, sourceUpdatedAt }> }\`
+for every wiki page with an outbound wiki-link to a \`kind: source\`
+page that has been modified more recently than the wiki itself.
+
+Report each pair as a row: \`| wiki | source | staleness |\` where
+staleness is a human-readable delta between the two timestamps
+(\`sourceUpdatedAt - wikiUpdatedAt\`). A stale row is a prompt for
+human review — the source may have new facts that invalidate the
+synthesis, or the change may be cosmetic and require no action.
+Flag; do not auto-fix.
 
 ### 3. Contradiction flags — peer claims that disagree
 
@@ -1160,7 +1166,7 @@ frontmatter \`kind: wiki\`, \`created\` = today's ISO date. Structure:
 
 ## Summary
 - Orphans: N
-- Stale sources: — (detector not yet available)
+- Stale sources: N
 - Contradiction flags: — (detector not yet available)
 - Provenance gaps: — (detector not yet available)
 
@@ -1168,7 +1174,7 @@ frontmatter \`kind: wiki\`, \`created\` = today's ISO date. Structure:
 <table of orphan rows or "None.">
 
 ## Stale sources
-_Detector not yet available — tracked in Phase 11 roadmap._
+<table of stale-source rows or "None.">
 
 ## Contradiction flags
 _Detector not yet available — tracked in Phase 11 roadmap._
