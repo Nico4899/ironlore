@@ -46,6 +46,7 @@ import { createKbCreatePage } from "./tools/kb-create-page.js";
 import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
 import { createKbInsertAfter } from "./tools/kb-insert-after.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
+import { createKbLintStaleSources } from "./tools/kb-lint-stale-sources.js";
 import { createKbReadBlock } from "./tools/kb-read-block.js";
 import { createKbReadPage } from "./tools/kb-read-page.js";
 import { createKbReplaceBlock } from "./tools/kb-replace-block.js";
