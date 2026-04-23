@@ -643,6 +643,46 @@ export class SearchIndex {
   // -------------------------------------------------------------------------
 
   /**
+   * BM25 prefilter for the hybrid-retrieval path. Runs a chunk-level
+   * FTS5 match against `query`, returning the first `limit` distinct
+   * page paths along with their best rank (lowest = most relevant).
+   * The caller then runs `vectorSearch` against this candidate list
+   * so cosine sweeps stay O(1) in vault size.
+   *
+   * The rank map doubles as a BM25-side input for the final RRF merge
+   * so the caller doesn't have to re-query.
+   */
+  bm25PrefilterPaths(query: string, limit = 50): Map<string, number> {
+    const tokens = query
+      .split(/\s+/)
+      .map((t) => t.replace(/"/g, ""))
+      .filter((t) => t.length > 0);
+    if (tokens.length === 0) return new Map();
+    const ftsQuery = tokens.map((t) => `"${t}"*`).join(" ");
+
+    const rows = this.db
+      .prepare(
+        `SELECT path, rank
+         FROM pages_chunks_fts
+         WHERE pages_chunks_fts MATCH ?
+         ORDER BY rank
+         LIMIT ?`,
+      )
+      .all(ftsQuery, limit * 3) as Array<{ path: string; rank: number }>;
+
+    // Keep each path at its best chunk-level rank — pages with many
+    // chunk matches shouldn't surface multiple times in the prefilter.
+    const pathRank = new Map<string, number>();
+    let idx = 0;
+    for (const row of rows) {
+      if (pathRank.has(row.path)) continue;
+      pathRank.set(row.path, idx++);
+      if (pathRank.size >= limit) break;
+    }
+    return pathRank;
+  }
+
+  /**
    * Write an embedding for a single chunk. The `embedding` array is
    * converted to a little-endian Float32 BLOB; `dims` must match
    * `embedding.length` and is stored alongside so a mid-stream model
