@@ -66,6 +66,21 @@ export interface AgentConfigResponse {
    */
   personaMtimeDriftSeconds: number | null;
   /**
+   * Wall-clock ms at which the heartbeat scheduler last enqueued a
+   * fire for this agent. Null when the agent has never fired (freshly
+   * activated, or `heartbeat:` absent). Mirrors
+   * `agent_state.last_heartbeat_at`.
+   */
+  lastHeartbeatAt: number | null;
+  /**
+   * Computed server-side from the persona's `heartbeat:` cron + the
+   * current wall clock. Null when no `heartbeat` is declared, when
+   * the cron is malformed, or when no match falls within the next
+   * 31 days. Stale by the time the client renders it, but only by a
+   * poll cycle — fine for the "next fire ~ in 6d" chip.
+   */
+  nextHeartbeatAt: number | null;
+  /**
    * Persona-frontmatter projection — only populated when the file is
    * readable. Every field is independently nullable so a persona that
    * omits (say) `heartbeat` still renders the rest of the rail. The
@@ -494,7 +509,8 @@ export function getAgentConfig(
               max_runs_per_day AS maxRunsPerDay,
               failure_streak  AS failureStreak,
               pause_reason    AS pauseReason,
-              updated_at      AS updatedAt
+              updated_at      AS updatedAt,
+              last_heartbeat_at AS lastHeartbeatAt
        FROM agent_state WHERE project_id = ? AND slug = ?`,
     )
     .get(projectId, slug) as
@@ -506,6 +522,7 @@ export function getAgentConfig(
         failureStreak: number;
         pauseReason: string | null;
         updatedAt: number;
+        lastHeartbeatAt: number | null;
       }
     | undefined;
 
@@ -540,6 +557,23 @@ export function getAgentConfig(
     }
   }
 
+  // Next fire is a read-only projection — stale by the time the
+  // client renders it, but only by a poll cycle. We compute it here
+  // rather than pushing cron parsing into the client because the
+  // scheduler + executor both already live server-side.
+  let nextHeartbeatAt: number | null = null;
+  if (persona?.heartbeat) {
+    try {
+      const fields = parseCron(persona.heartbeat);
+      const next = nextFireAt(fields, new Date());
+      nextHeartbeatAt = next ? next.getTime() : null;
+    } catch {
+      // Malformed cron — match the scheduler's own silent-skip
+      // behavior rather than 500-ing the config endpoint.
+      nextHeartbeatAt = null;
+    }
+  }
+
   return {
     slug: row.slug,
     status: row.status,
@@ -549,6 +583,8 @@ export function getAgentConfig(
     failureStreak: row.failureStreak,
     personaPath,
     personaMtimeDriftSeconds,
+    lastHeartbeatAt: row.lastHeartbeatAt,
+    nextHeartbeatAt,
     persona,
   };
 }
