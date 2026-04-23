@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { activateAgent } from "./activate.js";
+import { listLibraryTemplates } from "./library.js";
 import { estimateRunCost } from "./cost-estimate.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
 import type { AgentInbox } from "./inbox.js";
@@ -203,6 +204,18 @@ export function createAgentApi(
       .prepare("SELECT slug, status FROM agent_state WHERE project_id = ? ORDER BY slug")
       .all(projectId) as Array<{ slug: string; status: "active" | "paused" }>;
     return c.json({ agents: rows });
+  });
+
+  // -----------------------------------------------------------------------
+  // Library templates — inert personas under `.agents/.library/` that
+  // the user can activate. Filtered to exclude slugs that already have
+  // a running counterpart (activation would 409 server-side anyway).
+  // Consumed by the Settings → Agents "Library" section.
+  // -----------------------------------------------------------------------
+  api.get("/library", (c) => {
+    if (!projectDir) return c.json({ ok: false, error: "No project dir" }, 500);
+    const templates = listLibraryTemplates(`${projectDir}/data`);
+    return c.json({ templates });
   });
 
   // -----------------------------------------------------------------------
