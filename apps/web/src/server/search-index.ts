@@ -469,6 +469,93 @@ export class SearchIndex {
   }
 
   /**
+   * Wiki pages whose cited sources were modified more recently — the
+   * Phase-11 stale-source check from the Wiki Gardener's lint skill.
+   *
+   * A wiki page W is considered stale relative to source S when:
+   *   (1) `W.kind = 'wiki'`
+   *   (2) W has an outbound wiki-link that resolves to S
+   *   (3) `S.kind = 'source'`
+   *   (4) `S.updated_at > W.updated_at`
+   *
+   * Link resolution mirrors `findOrphans`: the `backlinks` table
+   * stores raw `[[target]]` text, so we compare against the three
+   * common spellings of each source's path (full, stripped `.md`,
+   * basename stem).
+   *
+   * Timestamps in the `pages` table are ISO-8601 strings produced by
+   * `datetime('now')`, so lexical comparison is chronological. Strict
+   * greater-than avoids flagging the identical-mtime case produced by
+   * a bulk reindex.
+   *
+   * One row per (wiki, source) pair. A wiki citing three stale
+   * sources emits three rows so the report shows each pairing.
+   */
+  findStaleSources(): Array<{
+    wikiPath: string;
+    wikiUpdatedAt: string;
+    sourcePath: string;
+    sourceUpdatedAt: string;
+  }> {
+    const wikis = this.db
+      .prepare(
+        "SELECT path, updated_at AS updatedAt FROM pages WHERE kind = 'wiki' AND file_type = 'markdown'",
+      )
+      .all() as Array<{ path: string; updatedAt: string }>;
+    if (wikis.length === 0) return [];
+
+    const sources = this.db
+      .prepare(
+        "SELECT path, updated_at AS updatedAt FROM pages WHERE kind = 'source' AND file_type = 'markdown'",
+      )
+      .all() as Array<{ path: string; updatedAt: string }>;
+    if (sources.length === 0) return [];
+
+    // Index sources by every linkable spelling so wiki outbound links
+    // resolve with the same semantics the user uses when authoring.
+    const sourceByKey = new Map<string, { path: string; updatedAt: string }>();
+    for (const s of sources) {
+      for (const key of linkTargetCandidates(s.path)) sourceByKey.set(key, s);
+    }
+
+    const getOutlinks = this.db.prepare(
+      "SELECT DISTINCT target_path AS target FROM backlinks WHERE source_path = ?",
+    );
+
+    const out: Array<{
+      wikiPath: string;
+      wikiUpdatedAt: string;
+      sourcePath: string;
+      sourceUpdatedAt: string;
+    }> = [];
+    for (const wiki of wikis) {
+      const links = getOutlinks.all(wiki.path) as Array<{ target: string }>;
+      const seen = new Set<string>();
+      for (const { target } of links) {
+        const source = sourceByKey.get(target);
+        if (!source) continue;
+        if (seen.has(source.path)) continue;
+        seen.add(source.path);
+        if (source.updatedAt > wiki.updatedAt) {
+          out.push({
+            wikiPath: wiki.path,
+            wikiUpdatedAt: wiki.updatedAt,
+            sourcePath: source.path,
+            sourceUpdatedAt: source.updatedAt,
+          });
+        }
+      }
+    }
+    // Stable ordering: wiki path then source path so repeat runs
+    // produce identical diffs when nothing has moved.
+    out.sort(
+      (a, b) =>
+        a.wikiPath.localeCompare(b.wikiPath) || a.sourcePath.localeCompare(b.sourcePath),
+    );
+    return out;
+  }
+
+  /**
    * Pages with zero inbound wiki-links, ordered by path. Consumed by
    * the Wiki Gardener's `kb.lint_orphans` tool (Phase 11). Callers pass
    * a list of path prefixes to skip — by default `_maintenance/`,
