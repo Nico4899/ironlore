@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -184,7 +184,6 @@ describe("Wiki Gardener end-to-end (seed → activate → schedule)", () => {
 /** Recursively enumerate `*.md` files under `root`, returning relative paths. */
 function walkMarkdown(root: string): Array<{ relPath: string; content: string }> {
   const out: Array<{ relPath: string; content: string }> = [];
-  const { readdirSync, statSync } = require("node:fs") as typeof import("node:fs");
   function recurse(dir: string, prefix: string): void {
     for (const entry of readdirSync(dir)) {
       const full = join(dir, entry);

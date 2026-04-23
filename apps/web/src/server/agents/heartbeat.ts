@@ -75,7 +75,6 @@ export class HeartbeatScheduler {
         this.tick();
       } catch (err) {
         // A crash in one tick must not take down the dispatcher.
-        // eslint-disable-next-line no-console
         console.error("[heartbeat] tick failed:", err);
       }
     }, this.intervalMs);
