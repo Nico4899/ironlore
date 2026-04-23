@@ -22,6 +22,9 @@ export const AGENTS_LIBRARY_DIR = ".agents/.library";
 /** Shared skills directory. */
 export const AGENTS_SHARED_DIR = ".agents/.shared";
 
+/** Skill-file subdirectory name, under both agent-local and shared roots. */
+export const SKILLS_SUBDIR = "skills";
+
 /** IPC token file name. */
 export const IPC_TOKEN_FILE = "ipc.token";
 
