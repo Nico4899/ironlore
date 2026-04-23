@@ -85,6 +85,17 @@ function initSchema(db: Database.Database): void {
     )
   `);
 
+  // Phase 11: `last_heartbeat_at` added by the heartbeat scheduler to
+  // prevent double-fires across ticks and server restarts. Additive
+  // migration so upgraded installs pick it up without a schema
+  // rewrite. Mirrors the `inbox_entries.file_decisions` pattern.
+  const agentStateCols = db.prepare("PRAGMA table_info(agent_state)").all() as Array<{
+    name: string;
+  }>;
+  if (!agentStateCols.some((c) => c.name === "last_heartbeat_at")) {
+    db.exec("ALTER TABLE agent_state ADD COLUMN last_heartbeat_at INTEGER");
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS agent_runs (
       project_id  TEXT NOT NULL,
