@@ -261,7 +261,7 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
         >
           <X className="h-3.5 w-3.5" />
         </button>
-        <DottedHead size={96} color="var(--il-blue)" aria-label={`${slug} emblem`} />
+        <DottedHead size={128} color="var(--il-blue)" aria-label={`${slug} emblem`} />
 
         <div className="min-w-0 flex-1">
           <div className="mb-1.5">
