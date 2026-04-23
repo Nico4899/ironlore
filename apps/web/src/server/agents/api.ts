@@ -2,10 +2,10 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { activateAgent } from "./activate.js";
-import { listLibraryTemplates } from "./library.js";
 import { estimateRunCost } from "./cost-estimate.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
 import type { AgentInbox } from "./inbox.js";
+import { listLibraryTemplates } from "./library.js";
 import {
   getAgentConfig,
   getHourlyHistogram,

@@ -2,9 +2,9 @@ import { LogOut, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
 import {
-  activateAgent,
   type AgentConfigResponse,
   type AgentListEntry,
+  activateAgent,
   fetchAgentConfig,
   fetchAgents,
   fetchLibraryTemplates,
@@ -1418,40 +1418,49 @@ function formatProjectDate(iso: string): string {
 function AgentsTab() {
   const [agents, setAgents] = useState<AgentListEntry[] | null>(null);
   const [configs, setConfigs] = useState<Record<string, AgentConfigResponse | "error">>({});
+  const [library, setLibrary] = useState<LibraryTemplate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Local pause-state mirror so the toggle responds instantly; the
   //  next `fetchAgents()` pass will rehydrate from the server.
   const [pausedLocal, setPausedLocal] = useState<Record<string, boolean>>({});
+  // Per-row activation state: slug currently being activated + the
+  // last activation error per slug, surfaced inline rather than as a
+  // toast so the mistake stays anchored to the card it came from.
+  const [activating, setActivating] = useState<string | null>(null);
+  const [activateErr, setActivateErr] = useState<Record<string, string>>({});
+
+  const reload = useCallback(async () => {
+    try {
+      const [list, templates] = await Promise.all([fetchAgents(), fetchLibraryTemplates()]);
+      setAgents(list);
+      setLibrary(templates);
+      setPausedLocal(Object.fromEntries(list.map((a) => [a.slug, a.status === "paused"])));
+      const entries = await Promise.all(
+        list.map(async (a) => {
+          try {
+            const cfg = await fetchAgentConfig(a.slug);
+            return [a.slug, cfg] as const;
+          } catch {
+            return [a.slug, "error"] as const;
+          }
+        }),
+      );
+      setConfigs(Object.fromEntries(entries));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const list = await fetchAgents();
-        if (cancelled) return;
-        setAgents(list);
-        setPausedLocal(Object.fromEntries(list.map((a) => [a.slug, a.status === "paused"])));
-        const entries = await Promise.all(
-          list.map(async (a) => {
-            try {
-              const cfg = await fetchAgentConfig(a.slug);
-              return [a.slug, cfg] as const;
-            } catch {
-              return [a.slug, "error"] as const;
-            }
-          }),
-        );
-        if (cancelled) return;
-        setConfigs(Object.fromEntries(entries));
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
-      }
+    void (async () => {
+      if (cancelled) return;
+      await reload();
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reload]);
 
   const handleToggle = async (slug: string) => {
     const next = !pausedLocal[slug];
@@ -1464,11 +1473,33 @@ function AgentsTab() {
     }
   };
 
+  const handleActivate = async (slug: string) => {
+    if (activating) return; // one activation at a time
+    setActivating(slug);
+    setActivateErr((prev) => {
+      const { [slug]: _, ...rest } = prev;
+      return rest;
+    });
+    try {
+      await activateAgent(slug);
+      await reload();
+      useAppStore.getState().toggleSettings();
+      useAppStore.getState().setActiveAgentSlug(slug);
+    } catch (err) {
+      setActivateErr((prev) => ({
+        ...prev,
+        [slug]: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      setActivating(null);
+    }
+  };
+
   return (
     <>
       <TabHero
         title="Agents"
-        blurb="Pause or resume installed agents and jump to each detail page. Scope (what files an agent may touch) is audited on the Security tab."
+        blurb="Pause or resume installed agents and jump to each detail page. Activate a library template to add it to this project. Scope is audited on the Security tab."
       />
 
       {error && (
@@ -1491,6 +1522,7 @@ function AgentsTab() {
         </div>
       )}
 
+      {agents && agents.length > 0 && <SectionLabel>Installed</SectionLabel>}
       <div style={{ display: "grid", gap: 10 }}>
         {agents?.map((a) => {
           const cfg = configs[a.slug];
@@ -1578,7 +1610,140 @@ function AgentsTab() {
           );
         })}
       </div>
+
+      {library && library.length > 0 && (
+        <>
+          <SectionLabel>Library</SectionLabel>
+          <div style={{ display: "grid", gap: 10 }}>
+            {library.map((t) => (
+              <LibraryTemplateRow
+                key={t.slug}
+                template={t}
+                activating={activating === t.slug}
+                disabled={activating !== null && activating !== t.slug}
+                error={activateErr[t.slug] ?? null}
+                onActivate={() => handleActivate(t.slug)}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </>
+  );
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="font-mono"
+      style={{
+        fontSize: 10.5,
+        letterSpacing: "0.08em",
+        textTransform: "uppercase",
+        color: "var(--il-text3)",
+        marginTop: 18,
+        marginBottom: 8,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function LibraryTemplateRow({
+  template,
+  activating,
+  disabled,
+  error,
+  onActivate,
+}: {
+  template: LibraryTemplate;
+  activating: boolean;
+  disabled: boolean;
+  error: string | null;
+  onActivate: () => void;
+}) {
+  const heading = template.name ?? template.slug;
+  const meta = [template.department, template.heartbeat].filter(Boolean).join(" · ");
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr auto",
+        gap: 14,
+        alignItems: "center",
+        padding: "12px 14px",
+        background: "var(--il-slate-elev)",
+        border: "1px solid var(--il-border-soft)",
+        borderRadius: 4,
+        // Muted rail on the left so the library section reads as
+        // "not live yet" next to the installed section above.
+        borderLeft: "2px solid var(--il-border)",
+      }}
+    >
+      <div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          {template.emoji && (
+            <span style={{ fontSize: 14, lineHeight: 1 }} aria-hidden="true">
+              {template.emoji}
+            </span>
+          )}
+          <span style={{ fontSize: 14, fontWeight: 500, color: "var(--il-text)" }}>{heading}</span>
+          <span
+            className="font-mono"
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "var(--il-text3)",
+            }}
+          >
+            {template.slug}
+          </span>
+        </div>
+        {template.description && (
+          <div style={{ fontSize: 12.5, color: "var(--il-text2)", marginTop: 3 }}>
+            {template.description}
+          </div>
+        )}
+        {meta && (
+          <div
+            className="font-mono"
+            style={{
+              fontSize: 10.5,
+              letterSpacing: "0.04em",
+              color: "var(--il-text3)",
+              marginTop: 4,
+            }}
+          >
+            {meta}
+          </div>
+        )}
+        {error && (
+          <div style={{ fontSize: 11.5, color: "var(--il-red)", marginTop: 3 }}>{error}</div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onActivate}
+        disabled={activating || disabled}
+        style={{
+          padding: "5px 12px",
+          fontSize: 12,
+          fontFamily: "var(--font-sans)",
+          fontWeight: 500,
+          background: "var(--il-blue)",
+          color: "var(--il-bg)",
+          border: "none",
+          borderRadius: 3,
+          boxShadow: "0 0 10px var(--il-blue-glow)",
+          cursor: activating || disabled ? "default" : "pointer",
+          opacity: disabled && !activating ? 0.45 : 1,
+        }}
+      >
+        {activating ? "Activating…" : "Activate"}
+      </button>
+    </div>
   );
 }
 
