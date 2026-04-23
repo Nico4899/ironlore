@@ -13,12 +13,14 @@
  * timestamps, keyboard chips, locators) is also English-only.
  */
 export function formatRelative(targetMs: number, now: number): string {
-  const deltaSec = Math.floor((targetMs - now) / 1000);
-  const absSec = Math.abs(deltaSec);
+  // Floor the absolute delta so `Math.floor(-4.999) === -5` can't push
+  // a 4.9-second-old target past the 5s `"just now"` window.
+  const deltaMs = targetMs - now;
+  const absSec = Math.floor(Math.abs(deltaMs) / 1000);
   if (absSec < 5) return "just now";
 
   const [value, unit] = pickUnit(absSec);
-  return deltaSec < 0 ? `${value}${unit} ago` : `in ${value}${unit}`;
+  return deltaMs < 0 ? `${value}${unit} ago` : `in ${value}${unit}`;
 }
 
 function pickUnit(absSec: number): [number, "s" | "m" | "h" | "d"] {

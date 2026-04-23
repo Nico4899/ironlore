@@ -406,6 +406,70 @@ skills: []
     expect(cfg?.persona?.skills).toEqual([]);
   });
 
+  it("reports null lastHeartbeatAt + nextHeartbeatAt when the persona has no cron", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    // No `heartbeat:` line, no stored `last_heartbeat_at`.
+    writeFileSync(join(personaDir, "persona.md"), "---\nslug: a\n---\n", "utf-8");
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    expect(cfg?.lastHeartbeatAt).toBeNull();
+    expect(cfg?.nextHeartbeatAt).toBeNull();
+  });
+
+  it("surfaces last_heartbeat_at from the agent_state row", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const stamped = 1_700_000_000_000;
+    db.prepare("UPDATE agent_state SET last_heartbeat_at = ? WHERE slug = 'a'").run(stamped);
+    const cfg = getAgentConfig(db, "main", "a", null);
+    expect(cfg?.lastHeartbeatAt).toBe(stamped);
+  });
+
+  it("computes nextHeartbeatAt from a valid heartbeat cron", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(
+      join(personaDir, "persona.md"),
+      `---
+slug: a
+heartbeat: "*/5 * * * *"
+---
+`,
+      "utf-8",
+    );
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    expect(cfg?.nextHeartbeatAt).not.toBeNull();
+    // The next 5-minute-boundary is at most 5 minutes away.
+    const deltaMs = (cfg?.nextHeartbeatAt ?? 0) - Date.now();
+    expect(deltaMs).toBeGreaterThanOrEqual(0);
+    expect(deltaMs).toBeLessThanOrEqual(5 * 60_000);
+  });
+
+  it("returns null nextHeartbeatAt for a malformed cron (matches scheduler's silent-skip)", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(
+      join(personaDir, "persona.md"),
+      `---
+slug: a
+heartbeat: "not a cron"
+---
+`,
+      "utf-8",
+    );
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    expect(cfg?.nextHeartbeatAt).toBeNull();
+    // Persona projection still surfaces so the UI shows "not a cron"
+    // as the literal schedule string rather than "—".
+    expect(cfg?.persona?.heartbeat).toBe("not a cron");
+  });
+
   it("falls back to an all-null persona shell when the YAML is malformed", () => {
     const rails = new AgentRails(db);
     rails.ensureState("main", "a");
