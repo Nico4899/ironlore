@@ -9,6 +9,7 @@ import {
   rejectInboxEntry,
   setInboxFileDecision,
 } from "../lib/api.js";
+import { formatRelative } from "../lib/relative-time.js";
 import { useAppStore } from "../stores/app.js";
 import { Key, Meta, Reuleaux, StatusPip, Venn } from "./primitives/index.js";
 
@@ -852,17 +853,6 @@ function DiffPre({ diff }: { diff: string }) {
       })}
     </pre>
   );
-}
-
-function formatRelative(ms: number, now: number): string {
-  const sec = Math.max(0, Math.floor((now - ms) / 1000));
-  if (sec < 5) return "just now";
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.floor(hr / 24)}d ago`;
 }
 
 /**
