@@ -626,10 +626,16 @@ export class SearchIndex {
   // -------------------------------------------------------------------------
 
   /**
-   * Insert or update a page entry in the pages table.
+   * Insert or update a page entry in the pages table. `kind` mirrors
+   * the frontmatter value when the caller parsed it (markdown pages);
+   * pass null for directories or non-markdown files.
    * Also ensures all ancestor directories exist as entries.
    */
-  upsertPage(pagePath: string, fileType: PageType | "directory"): void {
+  upsertPage(
+    pagePath: string,
+    fileType: PageType | "directory",
+    kind: "page" | "source" | "wiki" | null = null,
+  ): void {
     const name = basename(pagePath);
     const parentDir = dirname(pagePath);
     const parent = parentDir === "." ? null : parentDir;
@@ -641,15 +647,16 @@ export class SearchIndex {
 
     this.db
       .prepare(
-        `INSERT INTO pages (path, name, parent, file_type, updated_at)
-         VALUES (?, ?, ?, ?, datetime('now'))
+        `INSERT INTO pages (path, name, parent, file_type, kind, updated_at)
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT(path) DO UPDATE SET
            name = excluded.name,
            parent = excluded.parent,
            file_type = excluded.file_type,
+           kind = excluded.kind,
            updated_at = datetime('now')`,
       )
-      .run(pagePath, name, parent, fileType);
+      .run(pagePath, name, parent, fileType, kind);
   }
 
   /**
