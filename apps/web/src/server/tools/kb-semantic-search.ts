@@ -49,8 +49,7 @@ export function createKbSemanticSearch(
   projectId: string,
   projectDir: string,
 ): ToolImplementation {
-  const fetchFn = (url: string | URL, init?: RequestInit) =>
-    fetchForProject(projectDir, url, init);
+  const fetchFn = (url: string | URL, init?: RequestInit) => fetchForProject(projectDir, url, init);
   const ctx = ProviderRegistry.buildContext(projectId, fetchFn);
 
   return {
