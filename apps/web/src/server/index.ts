@@ -209,6 +209,7 @@ async function start() {
     dispatcher.register(createKbDeleteBlock(services.writer, services.searchIndex));
     dispatcher.register(createKbCreatePage(services.writer, services.searchIndex));
     dispatcher.register(createKbLintOrphans(services.searchIndex));
+    dispatcher.register(createKbLintStaleSources(services.searchIndex));
     dispatcher.register(createAgentJournal(services.getDataRoot()));
     dispatchersById.set(projectId, dispatcher);
   }
