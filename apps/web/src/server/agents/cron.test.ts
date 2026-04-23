@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type CronFields, matches, parseCron, shouldFire } from "./cron.js";
+import { type CronFields, matches, nextFireAt, parseCron, shouldFire } from "./cron.js";
 
 /**
  * Cron parser tests. Exercises every syntax the scheduler must
@@ -145,5 +145,63 @@ describe("shouldFire", () => {
     // 12:15 should see the 12:10 miss and fire once.
     const lastAt = at(2026, 1, 1, 12, 0).getTime();
     expect(shouldFire(f, at(2026, 1, 1, 12, 15), lastAt)).toBe(true);
+  });
+});
+
+describe("nextFireAt", () => {
+  it("returns the current minute when it already matches", () => {
+    const f = parseCron("*/10 * * * *");
+    // 12:00 is on a 10-minute boundary.
+    const result = nextFireAt(f, at(2026, 1, 1, 12, 0));
+    expect(result?.getTime()).toBe(at(2026, 1, 1, 12, 0).getTime());
+  });
+
+  it("advances to the next matching minute when the current one doesn't match", () => {
+    const f = parseCron("*/10 * * * *");
+    // 12:03 → next match is 12:10.
+    const result = nextFireAt(f, at(2026, 1, 1, 12, 3));
+    expect(result?.getTime()).toBe(at(2026, 1, 1, 12, 10).getTime());
+  });
+
+  it("finds the next Sunday 06:00 for a weekly gardener cron", () => {
+    const f = parseCron("0 6 * * 0"); // Sunday 6am
+    // Wednesday 2026-01-07 12:00 → next Sunday is 2026-01-11 06:00.
+    const result = nextFireAt(f, at(2026, 1, 7, 12, 0));
+    expect(result?.getFullYear()).toBe(2026);
+    expect(result?.getMonth()).toBe(0); // January
+    expect(result?.getDate()).toBe(11);
+    expect(result?.getDay()).toBe(0); // Sunday
+    expect(result?.getHours()).toBe(6);
+    expect(result?.getMinutes()).toBe(0);
+  });
+
+  it("crosses month boundaries", () => {
+    const f = parseCron("0 0 1 * *"); // first of every month at midnight
+    // 2026-01-15 → next match is 2026-02-01 00:00.
+    const result = nextFireAt(f, at(2026, 1, 15, 0, 0));
+    expect(result?.getMonth()).toBe(1); // February
+    expect(result?.getDate()).toBe(1);
+  });
+
+  it("advances past sub-minute offsets without re-firing the current minute", () => {
+    const f = parseCron("*/10 * * * *");
+    // 12:00:30 — the :00 slot has technically passed as a firing
+    // moment, but the minute 12:00 itself still matches. We want
+    // the next match strictly >= `from`, so :00:30 → 12:10.
+    const from = new Date(2026, 0, 1, 12, 0, 30);
+    const result = nextFireAt(f, from);
+    expect(result?.getTime()).toBe(at(2026, 1, 1, 12, 10).getTime());
+  });
+
+  it("returns null when no match occurs within the 31-day lookahead", () => {
+    // Feb-30 doesn't exist. A cron pinned to Feb-30 would never fire
+    // except that Vixie DOM/DOW OR semantics and month rollover
+    // make plain "Feb 30" unreachable in isolation. Easier pathological
+    // case: Feb 29 + non-leap-year stretch. 2026 is non-leap, 2027 is
+    // non-leap, 2028 IS leap — so from 2026-03-01 the next Feb 29 is
+    // 2028-02-29, which is >31 days away.
+    const f = parseCron("0 0 29 2 *"); // Feb 29 midnight
+    const result = nextFireAt(f, at(2026, 3, 1, 0, 0));
+    expect(result).toBeNull();
   });
 });

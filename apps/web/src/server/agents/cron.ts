@@ -121,6 +121,34 @@ export function shouldFire(fields: CronFields, now: Date, lastFiredAt: number | 
 }
 
 /**
+ * Return the timestamp of the next minute at or after `from` that
+ * matches the cron, or `null` if no match in the next 31 days. Used by
+ * the observability API to surface "next fire" on the Agent-detail
+ * §04 Config row.
+ *
+ * The 31-day cap matches `shouldFire`'s lookback: no cron with a
+ * sensible cadence will skip a month without firing, so returning null
+ * for the "never fires in the next month" case is the honest answer.
+ * Floors to the minute boundary — seconds are ignored, matching
+ * standard cron.
+ */
+export function nextFireAt(fields: CronFields, from: Date): Date | null {
+  const maxLookahead = 31 * 24 * 60;
+  const cursor = new Date(from);
+  cursor.setSeconds(0, 0);
+  // If `from` itself has a sub-minute offset, it's already past that
+  // minute's firing moment — advance one minute so the result is
+  // strictly >= `from` without re-firing the current minute.
+  if (cursor.getTime() < from.getTime()) cursor.setTime(cursor.getTime() + 60_000);
+
+  for (let i = 0; i <= maxLookahead; i++) {
+    if (matches(fields, cursor)) return new Date(cursor);
+    cursor.setTime(cursor.getTime() + 60_000);
+  }
+  return null;
+}
+
+/**
  * Expand a single cron field — wildcard `*`, literal `7`, range `0-8`,
  * list `1,3,5`, step-on-wildcard `<star>/5`, or step-on-range `0-12/2` —
  * to the set of numeric values within [min, max]. Throws on malformed
