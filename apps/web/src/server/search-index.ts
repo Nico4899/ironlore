@@ -738,6 +738,50 @@ export class SearchIndex {
   }
 
   /**
+   * Look up page titles for a batch of paths in one query. Falls back
+   * to the path itself when the page is unindexed.
+   */
+  getPageTitles(paths: readonly string[]): Map<string, string> {
+    if (paths.length === 0) return new Map();
+    const placeholders = paths.map(() => "?").join(",");
+    const rows = this.db
+      .prepare(`SELECT path, title FROM pages_fts WHERE path IN (${placeholders})`)
+      .all(...paths) as Array<{ path: string; title: string }>;
+    const map = new Map<string, string>();
+    for (const row of rows) map.set(row.path, row.title);
+    return map;
+  }
+
+  /**
+   * First (lowest chunk_idx) chunk for a page — used as a snippet
+   * fallback when a semantic-search result surfaced via BM25 only
+   * and we don't already have a block-ID pin.
+   */
+  getBestChunk(
+    pagePath: string,
+  ): { chunkIdx: number; blockIdStart: string | null; blockIdEnd: string | null } | null {
+    const row = this.db
+      .prepare(
+        `SELECT chunk_idx AS chunkIdx,
+                block_id_start AS blockIdStart,
+                block_id_end AS blockIdEnd
+         FROM pages_chunks_fts WHERE path = ? ORDER BY chunk_idx LIMIT 1`,
+      )
+      .get(pagePath) as
+      | { chunkIdx: number; blockIdStart: string | null; blockIdEnd: string | null }
+      | undefined;
+    return row ?? null;
+  }
+
+  /** Raw text of a specific chunk — used to build semantic-search snippets. */
+  getChunkText(pagePath: string, chunkIdx: number): string {
+    const row = this.db
+      .prepare("SELECT content FROM pages_chunks_fts WHERE path = ? AND chunk_idx = ?")
+      .get(pagePath, chunkIdx) as { content: string } | undefined;
+    return row?.content ?? "";
+  }
+
+  /**
    * Vector-search a prepared query embedding against the chunks
    * belonging to `candidatePaths` (the BM25-prefilter output).
    * Returns the top-`topK` matches sorted by cosine similarity
