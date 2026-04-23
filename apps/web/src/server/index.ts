@@ -34,6 +34,7 @@ import { createPagesApi, createRawApi } from "./pages-api.js";
 import { checkPermissions } from "./permissions.js";
 import { ProjectRegistry } from "./project-registry.js";
 import { ProjectServices } from "./project-services.js";
+import { EmbeddingProviderRegistry } from "./providers/embedding-registry.js";
 import { getProviderKey } from "./providers/key-store.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import { createProvidersApi } from "./providers-api.js";
@@ -193,6 +194,22 @@ async function start() {
   const ollamaDetected = await providerRegistry.autoDetectOllama();
   if (ollamaDetected) {
     console.log(`Provider: Ollama detected (${providerRegistry.getOllamaModels().length} models)`);
+  }
+
+  // Embedding-provider registry — sibling to the chat registry, only
+  //  populated when the user opts into hybrid retrieval by configuring
+  //  an embedding API key. Absent → `kb.semantic_search` stays
+  //  unavailable and every caller gracefully degrades to BM25-only
+  //  (docs/04-ai-and-agents.md §Graceful degradation).
+  const embeddingRegistry = new EmbeddingProviderRegistry();
+  const envOpenAiKey = process.env.OPENAI_API_KEY;
+  const storedOpenAiKey = envOpenAiKey ? null : getProviderKey(installRoot, "openai");
+  const openAiKey = envOpenAiKey ?? storedOpenAiKey;
+  if (openAiKey) {
+    embeddingRegistry.registerOpenAI({ apiKey: openAiKey });
+    console.log(
+      `Embedding provider: OpenAI registered (${envOpenAiKey ? "env" : "key-store"})`,
+    );
   }
 
   // Per-project tool dispatchers — tools close over that project's
