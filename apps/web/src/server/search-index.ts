@@ -290,6 +290,10 @@ export class SearchIndex {
 
       // FTS5 chunk-level: split at block-ID boundaries, ~800 tokens per chunk.
       this.db.prepare("DELETE FROM pages_chunks_fts WHERE path = ?").run(pagePath);
+      // Phase-11: chunk boundaries may have shifted with the rewrite,
+      // so old embeddings no longer align with the new chunk_idx
+      // numbering. Drop them — the backfill pass re-embeds.
+      this.db.prepare("DELETE FROM chunk_vectors WHERE path = ?").run(pagePath);
       const blocks = parseBlocks(content);
       if (blocks.length > 0) {
         const insertChunk = this.db.prepare(
@@ -632,6 +636,149 @@ export class SearchIndex {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // Phase-11 hybrid retrieval — chunk_vectors read/write + cosine search.
+  // The BM25-prefilter caps search to ~250 chunks, so an in-JS cosine loop
+  // over prepared Float32Arrays is fast enough; no sqlite-vec dependency.
+  // Docs: 04-ai-and-agents.md §Phase 11 additions,
+  //       06-implementation-roadmap.md §Hybrid retrieval.
+  // -------------------------------------------------------------------------
+
+  /**
+   * Write an embedding for a single chunk. The `embedding` array is
+   * converted to a little-endian Float32 BLOB; `dims` must match
+   * `embedding.length` and is stored alongside so a mid-stream model
+   * swap fails loudly on read. Upserts on conflict so re-embedding
+   * after a provider change works without an explicit delete.
+   */
+  storeChunkEmbedding(
+    pagePath: string,
+    chunkIdx: number,
+    embedding: readonly number[],
+    model: string,
+  ): void {
+    const blob = Buffer.from(new Float32Array(embedding).buffer);
+    this.db
+      .prepare(
+        `INSERT INTO chunk_vectors (path, chunk_idx, dims, model, embedding)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(path, chunk_idx) DO UPDATE SET
+           dims = excluded.dims,
+           model = excluded.model,
+           embedding = excluded.embedding`,
+      )
+      .run(pagePath, chunkIdx, embedding.length, model, blob);
+  }
+
+  /** Enumerate chunks that have FTS content but no embedding yet. */
+  getChunksMissingEmbeddings(
+    limit = 100,
+  ): Array<{ path: string; chunkIdx: number; content: string }> {
+    return this.db
+      .prepare(
+        `SELECT c.path AS path, c.chunk_idx AS chunkIdx, c.content AS content
+         FROM pages_chunks_fts c
+         LEFT JOIN chunk_vectors v
+           ON v.path = c.path AND v.chunk_idx = c.chunk_idx
+         WHERE v.path IS NULL
+         LIMIT ?`,
+      )
+      .all(limit) as Array<{ path: string; chunkIdx: number; content: string }>;
+  }
+
+  /** How many chunks are indexed but haven't been embedded yet. */
+  countChunksMissingEmbeddings(): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM pages_chunks_fts c
+         LEFT JOIN chunk_vectors v
+           ON v.path = c.path AND v.chunk_idx = c.chunk_idx
+         WHERE v.path IS NULL`,
+      )
+      .get() as { n: number };
+    return row.n;
+  }
+
+  /**
+   * Vector-search a prepared query embedding against the chunks
+   * belonging to `candidatePaths` (the BM25-prefilter output).
+   * Returns the top-`topK` matches sorted by cosine similarity
+   * descending.
+   *
+   * Enforces dimensionality: if any stored chunk's `dims` disagrees
+   * with the query's length, it's skipped rather than compared across
+   * spaces. A vault with partial embeddings (e.g. mid-backfill) returns
+   * whatever's already there — callers can combine with BM25 results to
+   * fill the gap.
+   */
+  vectorSearch(
+    queryEmbedding: readonly number[],
+    candidatePaths: readonly string[],
+    topK: number,
+  ): Array<{
+    path: string;
+    chunkIdx: number;
+    blockIdStart: string | null;
+    blockIdEnd: string | null;
+    score: number;
+  }> {
+    if (candidatePaths.length === 0 || queryEmbedding.length === 0 || topK <= 0) {
+      return [];
+    }
+
+    const placeholders = candidatePaths.map(() => "?").join(",");
+    const rows = this.db
+      .prepare(
+        `SELECT v.path AS path,
+                v.chunk_idx AS chunkIdx,
+                v.dims AS dims,
+                v.embedding AS embedding,
+                c.block_id_start AS blockIdStart,
+                c.block_id_end AS blockIdEnd
+         FROM chunk_vectors v
+         JOIN pages_chunks_fts c
+           ON c.path = v.path AND c.chunk_idx = v.chunk_idx
+         WHERE v.path IN (${placeholders})`,
+      )
+      .all(...candidatePaths) as Array<{
+      path: string;
+      chunkIdx: number;
+      dims: number;
+      embedding: Buffer;
+      blockIdStart: string | null;
+      blockIdEnd: string | null;
+    }>;
+
+    const queryNorm = vectorNorm(queryEmbedding);
+    if (queryNorm === 0) return [];
+
+    const scored: Array<{
+      path: string;
+      chunkIdx: number;
+      blockIdStart: string | null;
+      blockIdEnd: string | null;
+      score: number;
+    }> = [];
+    for (const row of rows) {
+      if (row.dims !== queryEmbedding.length) continue;
+      const stored = new Float32Array(
+        row.embedding.buffer,
+        row.embedding.byteOffset,
+        row.embedding.byteLength / 4,
+      );
+      const score = cosineSimilarity(queryEmbedding, stored, queryNorm);
+      scored.push({
+        path: row.path,
+        chunkIdx: row.chunkIdx,
+        blockIdStart: row.blockIdStart,
+        blockIdEnd: row.blockIdEnd,
+        score,
+      });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, topK);
+  }
+
   /**
    * Get pages by tag.
    */
@@ -671,6 +818,7 @@ export class SearchIndex {
       this.db.prepare("DELETE FROM tags").run();
       this.db.prepare("DELETE FROM recent_edits").run();
       this.db.prepare("DELETE FROM pages").run();
+      this.db.prepare("DELETE FROM chunk_vectors").run();
     });
     clear();
 
@@ -813,6 +961,44 @@ export class SearchIndex {
   close(): void {
     this.db.close();
   }
+}
+
+/**
+ * L2 norm (magnitude) of an embedding. Split out so the query side
+ * computes it once per `vectorSearch` call instead of N times.
+ */
+function vectorNorm(v: ArrayLike<number>): number {
+  let sum = 0;
+  for (let i = 0; i < v.length; i++) {
+    const x = v[i] ?? 0;
+    sum += x * x;
+  }
+  return Math.sqrt(sum);
+}
+
+/**
+ * Cosine similarity between a query and a stored chunk embedding.
+ * Caller supplies the precomputed `queryNorm` to avoid recomputing it
+ * across a prefilter sweep. Assumes the stored vector is non-zero;
+ * returns 0 for the degenerate case so the chunk simply ranks last.
+ */
+function cosineSimilarity(
+  query: ArrayLike<number>,
+  stored: ArrayLike<number>,
+  queryNorm: number,
+): number {
+  let dot = 0;
+  let storedSumSq = 0;
+  const n = Math.min(query.length, stored.length);
+  for (let i = 0; i < n; i++) {
+    const a = query[i] ?? 0;
+    const b = stored[i] ?? 0;
+    dot += a * b;
+    storedSumSq += b * b;
+  }
+  const storedNorm = Math.sqrt(storedSumSq);
+  if (storedNorm === 0 || queryNorm === 0) return 0;
+  return dot / (queryNorm * storedNorm);
 }
 
 /**
