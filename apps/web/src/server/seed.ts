@@ -292,6 +292,61 @@ substitute \`Ctrl\` for \`Cmd\`.
   );
 
   // -------------------------------------------------------------------------
+  // Convention pages — seeded empty so the Wiki Gardener has somewhere to
+  // write. Described in docs/04-ai-and-agents.md §Convention pages. Both are
+  // non-destructive: a user who already has these files keeps them.
+  // -------------------------------------------------------------------------
+  seedFile(
+    join(dataDir, "_index.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Vault Index
+kind: wiki
+created: ${now}
+modified: ${now}
+tags: [meta]
+icon: lucide:list-tree
+---
+
+# Vault Index
+
+The current map of this vault's \`kind: wiki\` pages. Maintained by the
+Wiki Gardener on its weekly heartbeat; safe to edit by hand — the
+gardener merges rather than overwrites.
+
+## Maintenance
+
+_Populated once the Wiki Gardener lint skill runs._
+`,
+  );
+
+  seedFile(
+    join(dataDir, "_log.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Activity Log
+kind: wiki
+created: ${now}
+modified: ${now}
+tags: [meta]
+icon: lucide:scroll-text
+---
+
+# Activity Log
+
+Append-only record of agent runs and maintenance actions against this
+vault. Newest entries go on top. Each entry is one line:
+
+\`- <ISO timestamp> · <action> · <short summary> · <optional block-ref>\`
+
+Readable at a glance; grep-friendly for the Wiki Gardener's lint skill
+to scope each run to recent changes.
+`,
+  );
+
+  // -------------------------------------------------------------------------
   // Carousel — showcase of supported file types
   // -------------------------------------------------------------------------
   seedFile(
@@ -873,9 +928,7 @@ explicit "edit this page" instructions from the user.
   ];
 
   for (const p of personas) {
-    seedFile(
-      join(agentLibDir, `${p.slug}.md`),
-      `---
+    const frontmatter = `---
 name: ${p.name}
 slug: ${p.slug}
 emoji: "${p.emoji}"
@@ -890,8 +943,49 @@ scope:
   pages: ["${p.scope}"]
   tags: []
   writable_kinds: [page, wiki]
----
+---`;
 
+    // The wiki-gardener is a maintenance persona rather than a domain
+    // specialist — it gets a body that names the `lint.md` workflow skill
+    // and the two convention pages it reads each run, so the skill +
+    // convention-page dependency is declared from day one. See
+    // docs/04-ai-and-agents.md §Wiki-gardener agent.
+    const body =
+      p.slug === "wiki-gardener"
+        ? `
+You are the Wiki Gardener for this Ironlore vault. Your job is
+maintenance: keeping the wiki healthy as it grows, not producing new
+domain content.
+
+## Responsibilities
+
+${p.role}.
+
+## How you work
+
+1. Load the \`lint.md\` shared skill. It defines the four-class health
+   check (orphans, stale sources, contradiction flags, provenance gaps)
+   and the exact report shape.
+2. Read \`_log.md\` at the vault root to scope each run to recent
+   activity before widening to the full vault.
+3. Read \`_index.md\` at the vault root as the authoritative map of
+   \`kind: wiki\` pages.
+4. Run the lint check. Write exactly one report page at
+   \`_maintenance/lint-<YYYY-MM-DD>.md\` with \`kind: wiki\`.
+5. Append a one-line entry to \`_log.md\` and a backlink entry under
+   \`_index.md\` § Maintenance.
+6. Close with \`agent.journal\` summarising counts and the report path.
+
+## Guidelines
+
+- Work within your assigned scope: \`${p.scope}\`
+- Use structured kb.* tools for all edits
+- Never modify \`kind: source\` pages (writable_kinds restricts this
+  at the tool layer, but treat it as a design rule too)
+- Flag findings; do not auto-fix — the user reviews the report and
+  decides what to act on
+`
+        : `
 You are {{company_name}}'s ${p.name}. Company description: {{company_description}}.
 Current goals: {{goals}}.
 
@@ -905,8 +999,9 @@ ${p.role}.
 - Use structured kb.* tools for all edits
 - File a journal entry at the end of each run
 - Respect page kinds: never modify \`kind: source\` pages
-`,
-    );
+`;
+
+    seedFile(join(agentLibDir, `${p.slug}.md`), `${frontmatter}\n${body}`);
   }
 
   // Shared skill: file-answer (single + multi-extraction modes)
@@ -976,6 +1071,110 @@ If no brand voice page exists, use a professional, concise tone:
 - Active voice over passive
 - Short paragraphs (2-3 sentences)
 - Technical accuracy without jargon overload
+`,
+  );
+
+  // Shared skill: lint — wiki health check loaded by the Wiki Gardener.
+  // Implements the four-class lint contract from docs/04-ai-and-agents.md
+  // §Workflow skills — lint.md. Orphans use a real primitive today;
+  // stale sources, contradiction flags, and provenance gaps document
+  // honest stub status so the model does not fabricate findings.
+  seedFile(
+    join(sharedSkillsDir, "lint.md"),
+    `---
+name: Lint
+description: Wiki health check — orphans, stale sources, contradiction flags, provenance gaps
+---
+
+# Lint Skill
+
+A periodic health check over the whole vault. Produces a single \`kind: wiki\`
+report page; never rewrites source pages, never auto-fixes. The user reads
+the report and decides what to act on.
+
+## When to run
+
+Loaded by the Wiki Gardener on its weekly heartbeat. Can also be invoked
+by the General agent on demand ("run the lint skill").
+
+## Inputs you always read first
+
+1. \`_log.md\` at the vault root — the append-only activity log. Skim the
+   tail to see what has changed since the last lint run; scope your checks
+   to recently-modified neighborhoods before widening to the full vault if
+   budget allows.
+2. \`_index.md\` at the vault root — the current map of \`kind: wiki\`
+   pages. Use it as the authoritative list of wiki pages to cross-check
+   against findings.
+3. The previous lint report at \`_maintenance/lint-<latest-date>.md\` if
+   one exists, so repeat findings are marked as such.
+
+## The four checks
+
+### 1. Orphans — pages with zero inbound wiki-links
+
+Real check. Call \`kb.search\` with an empty-ish query to enumerate
+pages, then for each candidate check whether any other page links to it
+via \`[[page]]\` syntax. Skip pages with \`kind: source\` (sources are
+expected to be inbound-only) and any page in the \`_maintenance/\` or
+\`getting-started/\` folders (self-documentation).
+
+Report each orphan as a row: \`| path | kind | last-modified |\`.
+
+### 2. Stale sources — wiki pages older than their cited sources
+
+Stub check. The infrastructure to compare source-page \`modified\`
+timestamps against the wiki pages that cite them is not yet wired up
+(tracked in the Phase 11 roadmap). For now, produce a stub section with
+a one-line note so the report shape stays stable across releases. Do
+**not** hallucinate findings.
+
+### 3. Contradiction flags — peer claims that disagree
+
+Stub check. \`kb.check_contradictions\` is scheduled for a later phase.
+Produce the stub section exactly like §2 above; do not invent
+contradictions.
+
+### 4. Provenance gaps — agent-authored blocks missing \`derived_from\`
+
+Stub check. \`.blocks.json\` sidecars do not yet carry the
+\`derived_from\` field in their schema. Produce the stub section; do
+not flag blocks without real evidence.
+
+## Report output
+
+Write **exactly one** page at \`_maintenance/lint-<YYYY-MM-DD>.md\` with
+frontmatter \`kind: wiki\`, \`created\` = today's ISO date. Structure:
+
+\`\`\`markdown
+# Lint report — <YYYY-MM-DD>
+
+## Summary
+- Orphans: N
+- Stale sources: — (detector not yet available)
+- Contradiction flags: — (detector not yet available)
+- Provenance gaps: — (detector not yet available)
+
+## Orphans
+<table of orphan rows or "None.">
+
+## Stale sources
+_Detector not yet available — tracked in Phase 11 roadmap._
+
+## Contradiction flags
+_Detector not yet available — tracked in Phase 11 roadmap._
+
+## Provenance gaps
+_Detector not yet available — tracked in Phase 11 roadmap._
+\`\`\`
+
+After writing the report, append a one-line entry to \`_log.md\`:
+\`- <ISO timestamp> · lint · <N> orphans · [[_maintenance/lint-<date>]]\`.
+Then add a backlink entry in \`_index.md\` under a "Maintenance" heading
+if the heading exists, otherwise create it.
+
+Close the run with \`agent.journal\` summarising counts and the report
+path.
 `,
   );
 }
