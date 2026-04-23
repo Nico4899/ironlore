@@ -14,6 +14,7 @@ import {
   setAgentPaused,
   startAutonomousRun,
 } from "../lib/api.js";
+import { formatRelative } from "../lib/relative-time.js";
 import { useAppStore } from "../stores/app.js";
 import { DisplayNum, DottedHead, Key, Meta, SectionLabel, StatusPip } from "./primitives/index.js";
 
@@ -405,6 +406,8 @@ export function AgentDetailPage({ slug }: AgentDetailPageProps) {
               }
             />
             <ConfigRow k="schedule" v={formatHeartbeat(config?.persona?.heartbeat)} mono />
+            <ConfigRow k="last fire" v={formatFireTime(config?.lastHeartbeatAt ?? null)} mono />
+            <ConfigRow k="next fire" v={formatFireTime(config?.nextHeartbeatAt ?? null)} mono />
             <ConfigRow k="review mode" v={config?.persona?.reviewMode ?? "—"} mono />
             <ConfigRow k="tools" v={formatTools(config?.persona?.tools)} mono />
             <ConfigRow k="budget" v={formatBudget(config?.persona?.budget)} mono />
@@ -822,6 +825,17 @@ function formatDrift(seconds: number): string {
   if (seconds < 3_600) return `${Math.floor(seconds / 60)}m`;
   if (seconds < 86_400) return `${Math.floor(seconds / 3_600)}h`;
   return `${Math.floor(seconds / 86_400)}d`;
+}
+
+/**
+ * Relative-time or em-dash for the `last fire` / `next fire` config
+ * rows. `null` means the scheduler has never fired the agent, or the
+ * persona declares no `heartbeat` — in either case the dash is the
+ * honest answer rather than a fabricated "never."
+ */
+function formatFireTime(ms: number | null): string {
+  if (ms === null) return "—";
+  return formatRelative(ms, Date.now());
 }
 
 /**
