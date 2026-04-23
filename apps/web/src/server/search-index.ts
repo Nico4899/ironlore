@@ -69,6 +69,22 @@ function extractTags(markdown: string): string[] {
   return tags;
 }
 
+/**
+ * Extract the `kind:` frontmatter value — one of "page", "source",
+ * "wiki", matching `packages/core/src/schemas.ts`. Returns null when
+ * the key is absent or the value is not a recognized member; callers
+ * treat null as "no kind declared" rather than flagging a parse error,
+ * because unlabelled pages are legitimate.
+ */
+function extractKind(markdown: string): "page" | "source" | "wiki" | null {
+  if (!markdown.startsWith("---")) return null;
+  const endIdx = markdown.indexOf("\n---", 3);
+  if (endIdx === -1) return null;
+  const frontmatter = markdown.slice(4, endIdx);
+  const match = /^kind\s*:\s*"?(page|source|wiki)"?\s*$/m.exec(frontmatter);
+  return (match?.[1] as "page" | "source" | "wiki" | undefined) ?? null;
+}
+
 export interface WikiLink {
   target: string;
   /** Optional relation type from the `[[target | rel]]` pipe form. */
@@ -201,6 +217,19 @@ export class SearchIndex {
       ON pages(parent)
     `);
 
+    // Phase-11: `kind` column mirrors the frontmatter `kind:` field
+    // ("page" | "source" | "wiki") for pages that declare one. Null
+    // otherwise — directory rows and pages without frontmatter stay
+    // null. Additive migration so existing installs pick it up
+    // silently; `ironlore reindex` repopulates it.
+    const pagesCols = this.db.prepare("PRAGMA table_info(pages)").all() as Array<{
+      name: string;
+    }>;
+    if (!pagesCols.some((c) => c.name === "kind")) {
+      this.db.exec("ALTER TABLE pages ADD COLUMN kind TEXT");
+    }
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_pages_kind ON pages(kind)");
+
     // Chunk-level FTS5 — ~800-token chunks split at block-ID seams.
     // Enables paragraph-level search results with block-ID citations
     // ([[page#blk_...]]) instead of page-level matches. Additive to
@@ -290,9 +319,12 @@ export class SearchIndex {
 
     txn();
 
-    // Update pages table (outside FTS transaction for simplicity)
+    // Update pages table (outside FTS transaction for simplicity).
+    // `kind` is mirrored from frontmatter for use by the stale-source
+    // detector (docs/04-ai-and-agents.md §Wiki-gardener) — null when
+    // the file has no frontmatter or no `kind:` key.
     const fileType = detectPageType(pagePath);
-    this.upsertPage(pagePath, fileType);
+    this.upsertPage(pagePath, fileType, extractKind(content));
   }
 
   /**
