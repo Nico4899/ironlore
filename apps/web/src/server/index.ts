@@ -48,6 +48,7 @@ import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
 import { createKbInsertAfter } from "./tools/kb-insert-after.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
 import { createKbLintStaleSources } from "./tools/kb-lint-stale-sources.js";
+import { createKbSemanticSearch } from "./tools/kb-semantic-search.js";
 import { createKbReadBlock } from "./tools/kb-read-block.js";
 import { createKbReadPage } from "./tools/kb-read-page.js";
 import { createKbReplaceBlock } from "./tools/kb-replace-block.js";
@@ -225,6 +226,22 @@ async function start() {
     dispatcher.register(createKbCreatePage(services.writer, services.searchIndex));
     dispatcher.register(createKbLintOrphans(services.searchIndex));
     dispatcher.register(createKbLintStaleSources(services.searchIndex));
+    // Hybrid retrieval — register `kb.semantic_search` only when an
+    // embedding provider is configured. Absent a provider, the tool
+    // stays off the agent's palette and every caller gracefully
+    // degrades to `kb.search`. See docs/04-ai-and-agents.md §Graceful
+    // degradation.
+    const embeddingProvider = embeddingRegistry.resolve();
+    if (embeddingProvider) {
+      dispatcher.register(
+        createKbSemanticSearch(
+          services.searchIndex,
+          embeddingProvider,
+          projectId,
+          services.projectDir,
+        ),
+      );
+    }
     dispatcher.register(createAgentJournal(services.getDataRoot()));
     dispatchersById.set(projectId, dispatcher);
   }
