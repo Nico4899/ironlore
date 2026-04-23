@@ -549,8 +549,7 @@ export class SearchIndex {
     // Stable ordering: wiki path then source path so repeat runs
     // produce identical diffs when nothing has moved.
     out.sort(
-      (a, b) =>
-        a.wikiPath.localeCompare(b.wikiPath) || a.sourcePath.localeCompare(b.sourcePath),
+      (a, b) => a.wikiPath.localeCompare(b.wikiPath) || a.sourcePath.localeCompare(b.sourcePath),
     );
     return out;
   }
