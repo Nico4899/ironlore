@@ -268,9 +268,7 @@ export class SearchIndex {
         PRIMARY KEY (path, chunk_idx)
       )
     `);
-    this.db.exec(
-      "CREATE INDEX IF NOT EXISTS idx_chunk_vectors_path ON chunk_vectors(path)",
-    );
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_chunk_vectors_path ON chunk_vectors(path)");
   }
 
   /**

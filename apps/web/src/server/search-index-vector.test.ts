@@ -85,11 +85,7 @@ describe("SearchIndex.vectorSearch (Phase-11 hybrid retrieval)", () => {
     indexWithEmbedding(index, "medium.md", "# Medium", [0.5, 0.5, 0, 0]);
     indexWithEmbedding(index, "far.md", "# Far", [0, 1, 0, 0]);
 
-    const hits = index.vectorSearch(
-      [1, 0, 0, 0],
-      ["near.md", "medium.md", "far.md"],
-      3,
-    );
+    const hits = index.vectorSearch([1, 0, 0, 0], ["near.md", "medium.md", "far.md"], 3);
     expect(hits.map((h) => h.path)).toEqual(["near.md", "medium.md", "far.md"]);
     // Scores strictly decreasing — the BM25 re-rank blend depends on it.
     for (let i = 1; i < hits.length; i++) {
@@ -127,11 +123,7 @@ describe("SearchIndex.vectorSearch (Phase-11 hybrid retrieval)", () => {
     index.indexPage("mismatch.md", "# Mismatch", "user");
     index.storeChunkEmbedding("mismatch.md", 0, [1, 0, 0], "model-3d");
 
-    const hits = index.vectorSearch(
-      [1, 0, 0, 0],
-      ["match.md", "mismatch.md"],
-      5,
-    );
+    const hits = index.vectorSearch([1, 0, 0, 0], ["match.md", "mismatch.md"], 5);
     expect(hits.map((h) => h.path)).toEqual(["match.md"]);
   });
 

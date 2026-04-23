@@ -207,9 +207,7 @@ async function start() {
   const openAiKey = envOpenAiKey ?? storedOpenAiKey;
   if (openAiKey) {
     embeddingRegistry.registerOpenAI({ apiKey: openAiKey });
-    console.log(
-      `Embedding provider: OpenAI registered (${envOpenAiKey ? "env" : "key-store"})`,
-    );
+    console.log(`Embedding provider: OpenAI registered (${envOpenAiKey ? "env" : "key-store"})`);
   }
 
   // Per-project tool dispatchers — tools close over that project's
