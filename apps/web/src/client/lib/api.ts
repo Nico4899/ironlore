@@ -394,6 +394,19 @@ export interface AgentConfigResponse {
   failureStreak: number;
   personaPath: string | null;
   personaMtimeDriftSeconds: number | null;
+  /**
+   * Wall-clock ms at which the heartbeat scheduler last enqueued a
+   * fire for this agent. Null when the agent has never fired or
+   * declares no `heartbeat:` cron.
+   */
+  lastHeartbeatAt: number | null;
+  /**
+   * Next wall-clock ms at which the heartbeat cron will match.
+   * Computed server-side from the persona's `heartbeat:` and the
+   * current time. Null when the persona has no heartbeat, the cron
+   * is malformed, or no match lands within the next 31 days.
+   */
+  nextHeartbeatAt: number | null;
   /** Persona-frontmatter projection — null when file missing / malformed. */
   persona: {
     /**
@@ -406,6 +419,13 @@ export interface AgentConfigResponse {
     heartbeat: string | null;
     reviewMode: "auto-commit" | "inbox" | null;
     tools: string[] | null;
+    /**
+     * Names of workflow / shared skills the persona opts into —
+     * resolved by the executor against agent-local `skills/` then
+     * `.shared/skills/`. Null when the frontmatter omits the field;
+     * empty array when the author explicitly declares zero skills.
+     */
+    skills: string[] | null;
     budget: { tokens: number | null; toolCalls: number | null; fsyncMs: number | null } | null;
     scope: { pages: string[] | null; writableKinds: string[] | null } | null;
     /**
