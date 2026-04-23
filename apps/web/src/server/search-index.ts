@@ -244,6 +244,33 @@ export class SearchIndex {
         content
       )
     `);
+
+    // Phase-11: chunk-level embeddings for hybrid retrieval. Keyed by
+    // (path, chunk_idx) to align with pages_chunks_fts. `dims` stored
+    // per-row so a mid-stream provider swap (e.g. text-embedding-3-small
+    // → 3-large) fails loudly rather than silently comparing vectors
+    // in different spaces. `model` is informational — surfaces on the
+    // "reindex needed" chip when the configured model doesn't match.
+    //
+    // Embeddings are stored as raw Float32 BLOBs (little-endian native)
+    // rather than through sqlite-vec. Cosine is computed in JS against
+    // the BM25-prefilter's ~250-chunk working set — the native extension
+    // becomes worthwhile only at vault scales where full-vault ANN
+    // matters, which the prefilter explicitly avoids. See
+    // docs/06-implementation-roadmap.md §Phase 11 → Hybrid retrieval.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS chunk_vectors (
+        path       TEXT NOT NULL,
+        chunk_idx  INTEGER NOT NULL,
+        dims       INTEGER NOT NULL,
+        model      TEXT NOT NULL,
+        embedding  BLOB NOT NULL,
+        PRIMARY KEY (path, chunk_idx)
+      )
+    `);
+    this.db.exec(
+      "CREATE INDEX IF NOT EXISTS idx_chunk_vectors_path ON chunk_vectors(path)",
+    );
   }
 
   /**
@@ -337,6 +364,9 @@ export class SearchIndex {
       this.db.prepare("DELETE FROM backlinks WHERE source_path = ?").run(pagePath);
       this.db.prepare("DELETE FROM tags WHERE path = ?").run(pagePath);
       this.db.prepare("DELETE FROM recent_edits WHERE path = ?").run(pagePath);
+      // Cascade hybrid-retrieval embeddings alongside the FTS rows —
+      // a deleted page must not linger as ghost vectors.
+      this.db.prepare("DELETE FROM chunk_vectors WHERE path = ?").run(pagePath);
     });
     txn();
 
