@@ -402,8 +402,7 @@ function loadPersona(dataRoot: string, slug: string): LoadedPersona {
 
   // Strip YAML frontmatter — the persona body is the system prompt.
   const stripped = raw.replace(/^---[\s\S]*?^---\r?\n?/m, "").trim();
-  const body =
-    stripped || `You are the ${slug} assistant for this Ironlore knowledge base.`;
+  const body = stripped || `You are the ${slug} assistant for this Ironlore knowledge base.`;
 
   return { body, skills: parseDeclaredSkills(raw) };
 }

@@ -343,8 +343,67 @@ review_mode: auto-commit
     expect(cfg?.persona?.reviewMode).toBe("auto-commit");
     expect(cfg?.persona?.heartbeat).toBeNull();
     expect(cfg?.persona?.tools).toBeNull();
+    expect(cfg?.persona?.skills).toBeNull();
     expect(cfg?.persona?.budget).toBeNull();
     expect(cfg?.persona?.scope).toBeNull();
+  });
+
+  it("parses skills in flow style (`skills: [lint]`)", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(
+      join(personaDir, "persona.md"),
+      `---
+slug: a
+skills: [lint, brand-voice]
+---
+`,
+      "utf-8",
+    );
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    expect(cfg?.persona?.skills).toEqual(["lint", "brand-voice"]);
+  });
+
+  it("parses skills in block style (`skills:\\n  - lint`)", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(
+      join(personaDir, "persona.md"),
+      `---
+slug: a
+skills:
+  - lint
+  - brand-voice
+---
+`,
+      "utf-8",
+    );
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    expect(cfg?.persona?.skills).toEqual(["lint", "brand-voice"]);
+  });
+
+  it("returns an empty array when skills is explicitly `[]`", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    const personaDir = join(dir, "data", ".agents", "a");
+    mkdirSync(personaDir, { recursive: true });
+    writeFileSync(
+      join(personaDir, "persona.md"),
+      `---
+slug: a
+skills: []
+---
+`,
+      "utf-8",
+    );
+    const cfg = getAgentConfig(db, "main", "a", dir);
+    // Empty array is meaningful: "this persona opts into zero skills,"
+    // distinct from the `skills` field being absent (which is null).
+    expect(cfg?.persona?.skills).toEqual([]);
   });
 
   it("falls back to an all-null persona shell when the YAML is malformed", () => {

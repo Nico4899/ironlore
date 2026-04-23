@@ -81,6 +81,9 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).toMatch(/\nactive: false\n/);
     expect(content).toMatch(/\nheartbeat: "0 6 \* \* 0"\n/);
     expect(content).toMatch(/writable_kinds: \[page, wiki\]/);
+    // Iter 2: the gardener declares the lint workflow skill so the
+    // executor's skill loader picks it up on each run.
+    expect(content).toMatch(/\nskills: \[lint\]\n/);
 
     // Body declares the Phase-11 dependency surface
     expect(content).toContain("`lint.md`");
@@ -100,8 +103,9 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).toContain("{{company_name}}");
     expect(content).toContain("{{company_description}}");
     // Regression guard: generic personas must not pick up the gardener
-    // body by accident.
+    // body or its `skills: [lint]` declaration by accident.
     expect(content).not.toContain("lint.md");
+    expect(content).not.toMatch(/skills: \[/);
   });
 
   it("is idempotent — running seed() twice does not modify existing files", async () => {
