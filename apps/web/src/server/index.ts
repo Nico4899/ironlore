@@ -26,6 +26,7 @@ import { createCrossProjectCopyApi } from "./cross-project-copy.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { BackpressureController } from "./jobs/backpressure.js";
 import { openJobsDb } from "./jobs/schema.js";
+import { HeartbeatScheduler } from "./agents/heartbeat.js";
 import { WorkerPool } from "./jobs/worker.js";
 import { createMetricsEndpoint, metricsMiddleware } from "./metrics.js";
 import { validateBind } from "./network.js";
@@ -47,6 +48,7 @@ import { createKbInsertAfter } from "./tools/kb-insert-after.js";
 import { createKbReadBlock } from "./tools/kb-read-block.js";
 import { createKbReadPage } from "./tools/kb-read-page.js";
 import { createKbReplaceBlock } from "./tools/kb-replace-block.js";
+import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
 import { createKbSearch } from "./tools/kb-search.js";
 import { sweepStagingOnBoot } from "./uploads.js";
 import { createUploadsApi } from "./uploads-api.js";
@@ -205,6 +207,7 @@ async function start() {
     dispatcher.register(createKbInsertAfter(services.writer, services.searchIndex));
     dispatcher.register(createKbDeleteBlock(services.writer, services.searchIndex));
     dispatcher.register(createKbCreatePage(services.writer, services.searchIndex));
+    dispatcher.register(createKbLintOrphans(services.searchIndex));
     dispatcher.register(createAgentJournal(services.getDataRoot()));
     dispatchersById.set(projectId, dispatcher);
   }
@@ -286,6 +289,28 @@ async function start() {
   pool.start();
   workerPool = pool;
   console.log("Worker pool started");
+
+  // Start one heartbeat scheduler per project. Each scheduler reads
+  //  its own `.agents/` tree, parses each persona's cron, and enqueues
+  //  autonomous `agent.run` jobs when a heartbeat fires. Single-process
+  //  deployment only — a second server running the same `jobs.sqlite`
+  //  would race on fires (see docs/05-jobs-and-security.md §Durable
+  //  Jobs).
+  const schedulers: HeartbeatScheduler[] = [];
+  for (const [projectId, services] of servicesById) {
+    const scheduler = new HeartbeatScheduler(
+      jobsDb,
+      rails,
+      pool,
+      projectId,
+      services.getDataRoot(),
+    );
+    scheduler.onFire = (slug, jobId) =>
+      console.log(`[heartbeat] ${projectId}/${slug} fired → job ${jobId}`);
+    scheduler.start();
+    schedulers.push(scheduler);
+  }
+  console.log(`Heartbeat scheduler started for ${schedulers.length} project(s)`);
 
   // Create broadcast callback that forwards to the WebSocket manager
   // (wsManager is assigned below; the closure reads the module-level

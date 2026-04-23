@@ -445,8 +445,14 @@ export class SearchIndex {
    *
    * Markdown-only: binaries (pdf/csv/img) are not expected to carry
    * wiki-links and would always appear as "orphans," drowning real
-   * signal. A page with `file_type = 'markdown'` but no inbound link
-   * is the real target.
+   * signal.
+   *
+   * Link-target resolution: the `backlinks` table stores the raw
+   * target text from `[[...]]` (e.g. `[[spoke]]` → `target_path =
+   * "spoke"`), not a filesystem path. A page at `notes/spoke.md` is
+   * considered linked if any backlink target equals the full path, the
+   * path without `.md`, or just the basename stem — matching the three
+   * common ways a user writes a wiki-link.
    */
   findOrphans(opts?: { excludePrefixes?: readonly string[] }): Array<{
     path: string;
@@ -457,24 +463,25 @@ export class SearchIndex {
       "getting-started/",
       ".agents/",
     ];
-    // Build a NOT-LIKE clause per prefix. `?` placeholders keep the
-    // query injection-safe; prefixes end with `/` so we match directory
-    // segments, not substrings.
-    const notLikes = excludePrefixes.map(() => "p.path NOT LIKE ?").join(" AND ");
-    const sql = `
-      SELECT p.path AS path, p.updated_at AS updatedAt
-      FROM pages p
-      LEFT JOIN backlinks b ON b.target_path = p.path
-      WHERE b.target_path IS NULL
-        AND p.file_type = 'markdown'
-        ${excludePrefixes.length > 0 ? `AND ${notLikes}` : ""}
-      ORDER BY p.path
-    `;
-    const params = excludePrefixes.map((p) => `${p}%`);
-    return this.db.prepare(sql).all(...params) as Array<{
-      path: string;
-      updatedAt: string;
-    }>;
+
+    const pages = this.db
+      .prepare("SELECT path, updated_at AS updatedAt FROM pages WHERE file_type = 'markdown'")
+      .all() as Array<{ path: string; updatedAt: string }>;
+
+    const targetRows = this.db
+      .prepare("SELECT DISTINCT target_path AS target FROM backlinks")
+      .all() as Array<{ target: string }>;
+    const targets = new Set(targetRows.map((r) => r.target));
+
+    const out: Array<{ path: string; updatedAt: string }> = [];
+    for (const page of pages) {
+      if (excludePrefixes.some((pre) => page.path.startsWith(pre))) continue;
+      const candidates = linkTargetCandidates(page.path);
+      const linked = candidates.some((c) => targets.has(c));
+      if (!linked) out.push(page);
+    }
+    out.sort((a, b) => a.path.localeCompare(b.path));
+    return out;
   }
 
   /**
@@ -651,4 +658,19 @@ export class SearchIndex {
   close(): void {
     this.db.close();
   }
+}
+
+/**
+ * The three ways a user commonly writes a wiki-link to a page at
+ * `notes/spoke.md`: the full path (`notes/spoke.md`), the path minus
+ * `.md` (`notes/spoke`), and just the basename stem (`spoke`). Used by
+ * `findOrphans` to decide whether a page has any inbound link under
+ * any of those spellings.
+ */
+function linkTargetCandidates(pagePath: string): string[] {
+  const noExt = pagePath.replace(/\.md$/, "");
+  const slashIdx = noExt.lastIndexOf("/");
+  const basename = slashIdx === -1 ? noExt : noExt.slice(slashIdx + 1);
+  const candidates = new Set<string>([pagePath, noExt, basename]);
+  return [...candidates];
 }
