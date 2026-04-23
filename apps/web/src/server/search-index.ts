@@ -437,6 +437,47 @@ export class SearchIndex {
   }
 
   /**
+   * Pages with zero inbound wiki-links, ordered by path. Consumed by
+   * the Wiki Gardener's `kb.lint_orphans` tool (Phase 11). Callers pass
+   * a list of path prefixes to skip — by default `_maintenance/`,
+   * `getting-started/`, and `.agents/` are excluded so the report
+   * doesn't flag self-documentation or agent-local pages.
+   *
+   * Markdown-only: binaries (pdf/csv/img) are not expected to carry
+   * wiki-links and would always appear as "orphans," drowning real
+   * signal. A page with `file_type = 'markdown'` but no inbound link
+   * is the real target.
+   */
+  findOrphans(opts?: { excludePrefixes?: readonly string[] }): Array<{
+    path: string;
+    updatedAt: string;
+  }> {
+    const excludePrefixes = opts?.excludePrefixes ?? [
+      "_maintenance/",
+      "getting-started/",
+      ".agents/",
+    ];
+    // Build a NOT-LIKE clause per prefix. `?` placeholders keep the
+    // query injection-safe; prefixes end with `/` so we match directory
+    // segments, not substrings.
+    const notLikes = excludePrefixes.map(() => "p.path NOT LIKE ?").join(" AND ");
+    const sql = `
+      SELECT p.path AS path, p.updated_at AS updatedAt
+      FROM pages p
+      LEFT JOIN backlinks b ON b.target_path = p.path
+      WHERE b.target_path IS NULL
+        AND p.file_type = 'markdown'
+        ${excludePrefixes.length > 0 ? `AND ${notLikes}` : ""}
+      ORDER BY p.path
+    `;
+    const params = excludePrefixes.map((p) => `${p}%`);
+    return this.db.prepare(sql).all(...params) as Array<{
+      path: string;
+      updatedAt: string;
+    }>;
+  }
+
+  /**
    * Get pages by tag.
    */
   getPagesByTag(tag: string): string[] {
