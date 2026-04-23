@@ -83,6 +83,13 @@ export interface AgentConfigResponse {
     heartbeat: string | null;
     reviewMode: "auto-commit" | "inbox" | null;
     tools: string[] | null;
+    /**
+     * Names of workflow / shared skills the persona opts into. Resolved
+     * by the executor against agent-local `skills/` then `.shared/skills/`
+     * (local shadows shared). Null when the frontmatter omits the field;
+     * empty array when the author explicitly declares "no skills."
+     */
+    skills: string[] | null;
     budget: { tokens: number | null; toolCalls: number | null; fsyncMs: number | null } | null;
     scope: { pages: string[] | null; writableKinds: string[] | null } | null;
     /**
@@ -116,6 +123,7 @@ function bodyOnly(body: string): AgentConfigResponse["persona"] {
     heartbeat: null,
     reviewMode: null,
     tools: null,
+    skills: null,
     budget: null,
     scope: null,
     body,
@@ -180,6 +188,13 @@ function parsePersonaFrontmatter(raw: string): AgentConfigResponse["persona"] {
     ? (doc.tools.filter((t: unknown): t is string => typeof t === "string") as string[])
     : null;
 
+  // Skills: same shape as `tools` (string[] | null). Empty array is
+  //  meaningful — it says "this persona explicitly opts into zero
+  //  skills," distinct from a missing field.
+  const skills = Array.isArray(doc.skills)
+    ? (doc.skills.filter((s: unknown): s is string => typeof s === "string") as string[])
+    : null;
+
   // Budget can live either as three top-level keys (token_budget,
   //  tool_call_cap, fsync_ms) or nested under `budget:`. Accept both.
   const budgetNested =
@@ -216,7 +231,7 @@ function parsePersonaFrontmatter(raw: string): AgentConfigResponse["persona"] {
   //  leading newline trimmed). Empty string is returned (not null)
   //  when the file has frontmatter but no prose below it, so the UI
   //  knows the parse succeeded even if the body is empty.
-  return { description, heartbeat, reviewMode, tools, budget, scope, body: afterFm };
+  return { description, heartbeat, reviewMode, tools, skills, budget, scope, body: afterFm };
 }
 
 function pickNumber(v: unknown): number | null {
