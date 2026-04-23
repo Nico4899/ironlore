@@ -538,6 +538,52 @@ export async function fetchAgents(): Promise<AgentListEntry[]> {
   return data.agents;
 }
 
+/**
+ * One row from `GET /agents/library`. Every field beyond `slug` is
+ * optional — sparse personas still surface so the user can recognize
+ * and hand-edit them.
+ */
+export interface LibraryTemplate {
+  slug: string;
+  name: string | null;
+  emoji: string | null;
+  role: string | null;
+  department: string | null;
+  heartbeat: string | null;
+  description: string | null;
+}
+
+/**
+ * List inert library personas available for activation. Excludes
+ * slugs that already have a running counterpart (activation would
+ * 409 for those).
+ */
+export async function fetchLibraryTemplates(): Promise<LibraryTemplate[]> {
+  const res = await apiFetch(`${base()}/agents/library`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { templates: LibraryTemplate[] };
+  return data.templates;
+}
+
+/**
+ * Activate a library persona template. On success the agent is live
+ * under `data/.agents/<slug>/` with `active: true` in its frontmatter
+ * and a corresponding `agent_state` row. 409 when already activated,
+ * 404 when the template slug is unknown.
+ */
+export async function activateAgent(slug: string): Promise<{ personaPath: string }> {
+  const res = await apiFetch(`${base()}/agents/${slug}/activate`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({ error: res.statusText }))) as {
+      error?: string;
+    };
+    throw new ApiError(res.status, body.error ?? res.statusText);
+  }
+  return res.json() as Promise<{ personaPath: string }>;
+}
+
 /** Per-file diff row for an inbox entry. */
 export interface InboxFileDiff {
   path: string;

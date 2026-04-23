@@ -2,12 +2,15 @@ import { LogOut, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
 import {
+  activateAgent,
   type AgentConfigResponse,
   type AgentListEntry,
   fetchAgentConfig,
   fetchAgents,
+  fetchLibraryTemplates,
   fetchProjects,
   fetchProviders,
+  type LibraryTemplate,
   logout,
   type ProjectListEntry,
   type ProviderSummary,
