@@ -17,6 +17,7 @@ import { createAgentApi, createInboxApi, createJobApi } from "./agents/api.js";
 import { DryRunBridge } from "./agents/dry-run-bridge.js";
 import { executeAgentRun } from "./agents/executor.js";
 import { HeartbeatScheduler } from "./agents/heartbeat.js";
+import { EmbeddingWorker } from "./embedding-worker.js";
 import { AgentInbox } from "./agents/inbox.js";
 import { AgentRails } from "./agents/rails.js";
 import { seedAgents } from "./agents/seed-agents.js";
@@ -345,6 +346,31 @@ async function start() {
     schedulers.push(scheduler);
   }
   console.log(`Heartbeat scheduler started for ${schedulers.length} project(s)`);
+
+  // Start one embedding worker per project when a provider is
+  //  registered. Each tick (default 30 s) drains up to 50 chunks from
+  //  `pages_chunks_fts` that lack entries in `chunk_vectors` — covers
+  //  both bulk backfill after first activation and auto-embed on new
+  //  writes from indexPage. Absent an embedding provider this block
+  //  is a no-op; hybrid retrieval stays off (see docs/04 §Graceful
+  //  degradation).
+  const embeddingWorkers: EmbeddingWorker[] = [];
+  const startupEmbeddingProvider = embeddingRegistry.resolve();
+  if (startupEmbeddingProvider) {
+    for (const [projectId, services] of servicesById) {
+      const worker = new EmbeddingWorker(
+        services.searchIndex,
+        startupEmbeddingProvider,
+        projectId,
+        services.projectDir,
+      );
+      worker.onError = (err) =>
+        console.warn(`[embed-worker] ${projectId}: ${err.message}`);
+      worker.start();
+      embeddingWorkers.push(worker);
+    }
+    console.log(`Embedding worker started for ${embeddingWorkers.length} project(s)`);
+  }
 
   // Create broadcast callback that forwards to the WebSocket manager
   // (wsManager is assigned below; the closure reads the module-level
