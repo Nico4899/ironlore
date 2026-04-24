@@ -18,6 +18,7 @@ import { DryRunBridge } from "./agents/dry-run-bridge.js";
 import { executeAgentRun } from "./agents/executor.js";
 import { HeartbeatScheduler } from "./agents/heartbeat.js";
 import { EmbeddingWorker } from "./embedding-worker.js";
+import { createEmbeddingsApi } from "./embeddings-api.js";
 import { AgentInbox } from "./agents/inbox.js";
 import { AgentRails } from "./agents/rails.js";
 import { seedAgents } from "./agents/seed-agents.js";
@@ -354,7 +355,7 @@ async function start() {
   //  writes from indexPage. Absent an embedding provider this block
   //  is a no-op; hybrid retrieval stays off (see docs/04 §Graceful
   //  degradation).
-  const embeddingWorkers: EmbeddingWorker[] = [];
+  const embeddingWorkers = new Map<string, EmbeddingWorker>();
   const startupEmbeddingProvider = embeddingRegistry.resolve();
   if (startupEmbeddingProvider) {
     for (const [projectId, services] of servicesById) {
@@ -367,9 +368,9 @@ async function start() {
       worker.onError = (err) =>
         console.warn(`[embed-worker] ${projectId}: ${err.message}`);
       worker.start();
-      embeddingWorkers.push(worker);
+      embeddingWorkers.set(projectId, worker);
     }
-    console.log(`Embedding worker started for ${embeddingWorkers.length} project(s)`);
+    console.log(`Embedding worker started for ${embeddingWorkers.size} project(s)`);
   }
 
   // Create broadcast callback that forwards to the WebSocket manager
@@ -449,6 +450,17 @@ async function start() {
     app.route(
       `/api/projects/${projectId}/inbox`,
       createInboxApi(inbox, projectId, services.projectDir),
+    );
+    // Phase-11 hybrid retrieval: embedding status + manual backfill.
+    // The router is always mounted; individual routes gracefully
+    // return 503 when no provider is registered.
+    app.route(
+      `/api/projects/${projectId}/embeddings`,
+      createEmbeddingsApi({
+        searchIndex: services.searchIndex,
+        provider: startupEmbeddingProvider,
+        worker: embeddingWorkers.get(projectId) ?? null,
+      }),
     );
   }
   console.log(`Search index: ${totalIndexed} pages indexed across ${servicesById.size} projects`);
