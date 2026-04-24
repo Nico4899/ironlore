@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { fetchForProject } from "./fetch-for-project.js";
+import type { EmbeddingProvider } from "./providers/embedding-types.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import type { ProjectContext, Provider } from "./providers/types.js";
-import { expandQuery } from "./search/query-expansion.js";
+import { expandQuery, searchWithExpansion } from "./search/query-expansion.js";
 import { rerankResults } from "./search/rerank.js";
 import type { SearchIndex } from "./search-index.js";
 
@@ -14,6 +15,12 @@ export interface SearchApiOptions {
   projectDir?: string;
   /** Default model for query expansion + rerank LLM calls. */
   defaultModel?: string;
+  /**
+   * When configured, enables the Phase-11 hybrid-retrieval path:
+   * `vec` + `hyde` query rewrites are embedded and fused into the
+   * BM25 ranking via RRF. Absent → two-channel (original + lex) merge.
+   */
+  embeddingProvider?: EmbeddingProvider | null;
 }
 
 /**
@@ -56,28 +63,29 @@ export function createSearchApi(searchIndex: SearchIndex, opts?: SearchApiOption
     }
 
     try {
-      // Stage 1: direct FTS5 search.
+      // Stage 1: direct FTS5 search as the no-LLM baseline.
       let results = searchIndex.search(query, limit);
 
-      // Stage 2: optional query expansion (LLM keyword rewrite).
+      // Stage 2: query expansion + multi-channel fusion. Runs when an
+      // LLM provider is available; the hybrid vec/hyde path layers on
+      // when an embedding provider is also configured. Degrades to
+      // the original BM25 results if anything upstream fails.
       if (expand && canCallLlm && provider && projectContext && opts?.defaultModel) {
+        const embeddingProvider = opts?.embeddingProvider ?? null;
         const expanded = await expandQuery(
           query,
           searchIndex,
           provider,
           projectContext,
           opts.defaultModel,
+          embeddingProvider,
         );
-        if (!expanded.skipped && expanded.lexRewrite) {
-          const rewritten = searchIndex.search(expanded.lexRewrite, limit);
-          // RRF merge: interleave original + rewritten, dedup by path.
-          const seen = new Set(results.map((r) => r.path));
-          for (const r of rewritten) {
-            if (!seen.has(r.path)) {
-              results.push(r);
-              seen.add(r.path);
-            }
-          }
+        if (!expanded.skipped) {
+          results = await searchWithExpansion(expanded, searchIndex, {
+            limit,
+            embeddingProvider,
+            ctx: projectContext,
+          });
         }
       }
 
