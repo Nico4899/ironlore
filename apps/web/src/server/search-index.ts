@@ -737,6 +737,27 @@ export class SearchIndex {
     return row.n;
   }
 
+  /** Total number of chunks in the FTS table. Drives the status endpoint's progress bar. */
+  countChunksTotal(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM pages_chunks_fts").get() as {
+      n: number;
+    };
+    return row.n;
+  }
+
+  /**
+   * How many chunk_vectors rows were produced by a model other than
+   * `currentModel`. Surfaces a "model drift" badge on the status
+   * endpoint — embeddings from a retired provider stay queryable by
+   * vectorSearch's dim check but produce mismatched cosine scores.
+   */
+  countChunksWithMismatchedModel(currentModel: string): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS n FROM chunk_vectors WHERE model != ?")
+      .get(currentModel) as { n: number };
+    return row.n;
+  }
+
   /**
    * Look up page titles for a batch of paths in one query. Falls back
    * to the path itself when the page is unindexed.
