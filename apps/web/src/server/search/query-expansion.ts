@@ -231,9 +231,7 @@ export async function searchWithExpansion(
 ): Promise<SearchResult[]> {
   const limit = opts?.limit ?? 10;
   const originalResults = searchIndex.search(expanded.original, limit * 2);
-  const lexResults = expanded.lexRewrite
-    ? searchIndex.search(expanded.lexRewrite, limit * 2)
-    : [];
+  const lexResults = expanded.lexRewrite ? searchIndex.search(expanded.lexRewrite, limit * 2) : [];
 
   // Vector channels piggy-back on the BM25 candidate set so we don't
   // scan the entire vault's embeddings on every query.
