@@ -165,22 +165,34 @@ describe("searchWithExpansion", () => {
     }
   });
 
-  it("returns original results unchanged when there is no rewrite", () => {
-    const out = searchWithExpansion(
-      { original: "banana", lexRewrite: null, skipped: false },
+  it("returns original results unchanged when there is no rewrite", async () => {
+    const out = await searchWithExpansion(
+      {
+        original: "banana",
+        lexRewrite: null,
+        vecRewrite: null,
+        hydeAnswer: null,
+        skipped: false,
+      },
       index,
-      5,
+      { limit: 5 },
     );
     const paths = out.map((r) => r.path).sort();
     expect(paths).toContain("alpha.md");
     expect(paths).toContain("beta.md");
   });
 
-  it("merges original + rewrite results via RRF", () => {
-    const out = searchWithExpansion(
-      { original: "apple", lexRewrite: "durian", skipped: false },
+  it("merges original + rewrite results via RRF", async () => {
+    const out = await searchWithExpansion(
+      {
+        original: "apple",
+        lexRewrite: "durian",
+        vecRewrite: null,
+        hydeAnswer: null,
+        skipped: false,
+      },
       index,
-      5,
+      { limit: 5 },
     );
     const paths = new Set(out.map((r) => r.path));
     // Original query hits alpha.md; rewrite hits beta.md + gamma.md.
