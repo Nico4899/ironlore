@@ -402,6 +402,10 @@ async function start() {
           searchProvider?.name === "ollama"
             ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
             : "claude-haiku-4-20250514",
+        // Phase-11 hybrid retrieval: `vec` + `hyde` rewrites fuse with
+        // BM25 when an embedding provider is registered. Null → old
+        // two-channel (original + lex) behavior stays intact.
+        embeddingProvider: embeddingRegistry.resolve(),
       }),
     );
 
