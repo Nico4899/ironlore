@@ -17,8 +17,6 @@ import { createAgentApi, createInboxApi, createJobApi } from "./agents/api.js";
 import { DryRunBridge } from "./agents/dry-run-bridge.js";
 import { executeAgentRun } from "./agents/executor.js";
 import { HeartbeatScheduler } from "./agents/heartbeat.js";
-import { EmbeddingWorker } from "./embedding-worker.js";
-import { createEmbeddingsApi } from "./embeddings-api.js";
 import { AgentInbox } from "./agents/inbox.js";
 import { AgentRails } from "./agents/rails.js";
 import { seedAgents } from "./agents/seed-agents.js";
@@ -26,6 +24,8 @@ import { createAuthApi, SessionStore } from "./auth.js";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
 import { createCrossProjectCopyApi } from "./cross-project-copy.js";
+import { EmbeddingWorker } from "./embedding-worker.js";
+import { createEmbeddingsApi } from "./embeddings-api.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { BackpressureController } from "./jobs/backpressure.js";
 import { openJobsDb } from "./jobs/schema.js";
@@ -365,8 +365,7 @@ async function start() {
         projectId,
         services.projectDir,
       );
-      worker.onError = (err) =>
-        console.warn(`[embed-worker] ${projectId}: ${err.message}`);
+      worker.onError = (err) => console.warn(`[embed-worker] ${projectId}: ${err.message}`);
       worker.start();
       embeddingWorkers.set(projectId, worker);
     }

@@ -33,10 +33,7 @@ export function createEmbeddingsApi(opts: EmbeddingsApiOptions): Hono {
 
   api.get("/status", (c) => {
     if (!opts.provider) {
-      return c.json(
-        { ok: false, error: "No embedding provider configured" },
-        503,
-      );
+      return c.json({ ok: false, error: "No embedding provider configured" }, 503);
     }
     const total = opts.searchIndex.countChunksTotal();
     const missing = opts.searchIndex.countChunksMissingEmbeddings();
@@ -59,10 +56,7 @@ export function createEmbeddingsApi(opts: EmbeddingsApiOptions): Hono {
 
   api.post("/backfill", async (c) => {
     if (!opts.worker) {
-      return c.json(
-        { ok: false, error: "No embedding provider configured" },
-        503,
-      );
+      return c.json({ ok: false, error: "No embedding provider configured" }, 503);
     }
     const result = await opts.worker.tick();
     return c.json({ ok: true, ...result });
