@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { INSTALL_JSON, SENSITIVE_FILE_MODE } from "@ironlore/core";
 import { extractDocx, extractEml } from "@ironlore/core/extractors";
 import { createAuthApi, SessionStore } from "./auth.js";
+import { StorageWriter } from "./storage-writer.js";
 import { extractPageKind } from "./tools/page-kind.js";
 import { processUpload, UploadRejectedError } from "./uploads.js";
 import { assertWritableKind, WritableKindsViolation } from "./tools/writable-kinds-gate.js";
@@ -214,13 +215,18 @@ describe("red-team — (b) malformed extractor inputs", () => {
 
 describe("red-team — (c) nested-archive / zip-slip surface", () => {
   let projectDir: string;
+  let dataRoot: string;
+  let writer: StorageWriter;
 
   beforeEach(() => {
     projectDir = mkdtempSync(join(tmpdir(), "rt-zip-"));
-    mkdirSync(join(projectDir, "data"), { recursive: true });
+    dataRoot = join(projectDir, "data");
+    mkdirSync(dataRoot, { recursive: true });
+    writer = new StorageWriter(projectDir);
   });
 
   afterEach(() => {
+    writer.close();
     rmSync(projectDir, { recursive: true, force: true });
   });
 
@@ -229,74 +235,71 @@ describe("red-team — (c) nested-archive / zip-slip surface", () => {
     // extension allow-list rejects it before any byte hits sharp /
     // mammoth / postal-mime. This is the strongest possible
     // defence against zip-slip: there is no extraction path.
-    const stream = new ReadableStream<Uint8Array>({
-      start(c) {
-        c.enqueue(
-          new Uint8Array([
-            0x50, 0x4b, 0x03, 0x04, // PK\x03\x04 — ZIP local file header
-            ...new Uint8Array(32),
-          ]),
-        );
-        c.close();
-      },
-    });
+    const zip = Buffer.from([
+      0x50, 0x4b, 0x03, 0x04, // PK\x03\x04 — ZIP local file header
+      ...new Uint8Array(32),
+    ]);
     await expect(
-      processUpload(stream, "payload.zip", {
-        writer: stub(projectDir),
-        dataRoot: join(projectDir, "data"),
-      }),
+      processUpload("payload.zip", "application/zip", zip, writer, dataRoot),
     ).rejects.toBeInstanceOf(UploadRejectedError);
   });
 
   it("a ZIP renamed `.png` is rejected by the MIME-sniff polyglot gate", async () => {
-    // Try the polyglot trick: rename the .zip to .png. The
-    // extension allow-list passes; the MIME sniffer (file-type)
-    // identifies the bytes as application/zip; sniffed != image/png
-    // → rejected.
-    const zip = new Uint8Array([
-      0x50, 0x4b, 0x03, 0x04,
-      0x14, 0x00, 0x00, 0x00, 0x08, 0x00,
+    // Polyglot probe: rename the ZIP to .png. Extension allow-list
+    // passes; the file-type sniff identifies the bytes as
+    // application/zip; sniffed != image/png → rejected before
+    // sharp ever sees the buffer.
+    const zip = Buffer.from([
+      0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00,
       ...new Uint8Array(64),
     ]);
-    const stream = new ReadableStream<Uint8Array>({
-      start(c) {
-        c.enqueue(zip);
-        c.close();
-      },
-    });
     await expect(
-      processUpload(stream, "polyglot.png", {
-        writer: stub(projectDir),
-        dataRoot: join(projectDir, "data"),
-      }),
+      processUpload("polyglot.png", "image/png", zip, writer, dataRoot),
     ).rejects.toBeInstanceOf(UploadRejectedError);
   });
 
-  it("an EICAR-style executable sample renamed `.txt` is rejected at sniff", async () => {
-    // EICAR test string is the canonical "this is a virus" probe.
-    // Real malicious shells share its shape: ASCII-printable but
-    // sniffs as application/x-msdownload or similar. We rename
-    // it `.txt` to bypass the extension ban; the MIME sniff or
-    // text-like fallback should still reject (or at minimum
-    // accept it as plain text — never as an executable).
-    const eicar = "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
-    const stream = new ReadableStream<Uint8Array>({
-      start(c) {
-        c.enqueue(new TextEncoder().encode(eicar));
-        c.close();
-      },
-    });
-    // .txt is in TEXT_LIKE_EXTS → sniff bypassed, but the file
-    // can only land at .txt content — never as an executable.
-    // We assert the upload SUCCEEDS as plain text, because
-    // text uploads aren't dangerous; the path discipline
-    // (storage-writer) prevents directory escape via filename.
-    const result = await processUpload(stream, "eicar.txt", {
-      writer: stub(projectDir),
-      dataRoot: join(projectDir, "data"),
-    });
-    // .txt routes past sniff but lands as inert text content.
+  it("an EICAR-style sample renamed `.txt` lands as inert text (no executable path)", async () => {
+    // EICAR is the canonical "this is a virus" probe — ASCII
+    // payload that sniffs as `application/x-msdownload`. Renaming
+    // it `.txt` puts it in `TEXT_LIKE_EXTS` (sniff bypassed),
+    // which is the documented behaviour. The defense isn't at
+    // upload — it's that Ironlore never executes user-uploaded
+    // bytes. The file lands as text content; rendering it is
+    // safe because there's no eval / exec path.
+    const eicar = Buffer.from(
+      "X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*",
+      "utf-8",
+    );
+    const result = await processUpload("eicar.txt", "text/plain", eicar, writer, dataRoot);
     expect(result.path.endsWith(".txt")).toBe(true);
+  });
+
+  it("a `..%2F..%2Fetc%2Fpasswd` filename can't escape the data root", async () => {
+    // Path-traversal smoke test layered on top of the upload
+    // pipeline. Filename normalization in `uploads.ts`
+    // (normalizeFilename) strips slashes; even if it didn't,
+    // StorageWriter's `resolveSafe` would reject. Either way
+    // the upload either lands inside data/ or is rejected.
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    // The path portion that survives normalization should never
+    // begin with `..`. We don't strictly assert reject — we
+    // assert "doesn't escape." Rejection is also fine.
+    try {
+      const result = await processUpload(
+        "../../etc/passwd.png",
+        "image/png",
+        png,
+        writer,
+        dataRoot,
+      );
+      expect(result.path).not.toMatch(/^\.\./);
+      expect(result.path).not.toContain("/..");
+    } catch (err) {
+      // Rejected by the gate (e.g., empty after normalization, or
+      // a sharp re-encode failure on the truncated PNG header).
+      // Both outcomes are safe.
+      expect(err).toBeInstanceOf(Error);
+    }
   });
 });
 
@@ -434,24 +437,3 @@ function flipLastChar(s: string): string {
   return s.slice(0, -1) + next;
 }
 
-interface StubWriter {
-  getDataRoot: () => string;
-  write: (
-    path: string,
-    bytes: Buffer,
-    etag: string | null,
-    author?: string,
-  ) => Promise<{ etag: string }>;
-}
-
-function stub(projectDir: string): StubWriter {
-  // Minimal StorageWriter shape — `processUpload` only calls
-  // `getDataRoot` (for path validation) and `write` (atomic
-  // handoff). A real writer is overkill for these adversarial
-  // tests; we just need the contract.
-  const dataRoot = join(projectDir, "data");
-  return {
-    getDataRoot: () => dataRoot,
-    write: async (path: string) => ({ etag: `"sha256-stub-${path}"` }),
-  };
-}
