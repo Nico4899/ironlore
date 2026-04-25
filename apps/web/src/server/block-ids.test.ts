@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ulid } from "@ironlore/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { assignBlockIds, parseBlocks, readBlocksSidecar, writeBlocksSidecar } from "./block-ids.js";
 
@@ -213,5 +214,132 @@ describe("writeBlocksSidecar and readBlocksSidecar", () => {
     writeBlocksSidecar(mdPath, blocks);
     const loaded = readBlocksSidecar(mdPath);
     expect(loaded?.blocks[0]?.id).toBe("blk_01HY7Z8Q9EXISTING00000AAAA");
+  });
+});
+
+describe("writeBlocksSidecar — D.2 provenance fields", () => {
+  function makeTmpDir(): string {
+    const dir = join(tmpdir(), `block-ids-prov-${randomBytes(4).toString("hex")}`);
+    mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  it("stamps derived_from + agent + compiled_at when supplied", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+    const src = "# Title\n\nBody one.\n\nBody two.\n";
+    const { blocks } = assignBlockIds(src);
+    const target = blocks[1];
+    if (!target) throw new Error("expected at least 2 blocks");
+
+    const provenance = new Map([
+      [
+        target.id,
+        {
+          derived_from: ["sources/foo.md#blk_01HSOURCE0000000000000000A"],
+          agent: "wiki-gardener",
+          compiled_at: "2026-04-23T10:30:00.000Z",
+        },
+      ],
+    ]);
+    writeBlocksSidecar(mdPath, blocks, provenance);
+
+    const loaded = readBlocksSidecar(mdPath);
+    const found = loaded?.blocks.find((b) => b.id === target.id);
+    expect(found?.derived_from).toEqual(["sources/foo.md#blk_01HSOURCE0000000000000000A"]);
+    expect(found?.agent).toBe("wiki-gardener");
+    expect(found?.compiled_at).toBe("2026-04-23T10:30:00.000Z");
+  });
+
+  it("omits provenance fields entirely when not supplied (backward-compatible shape)", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+    const src = "# T\n\nB.\n";
+    const { blocks } = assignBlockIds(src);
+    writeBlocksSidecar(mdPath, blocks);
+
+    const raw = readFileSync(mdPath.replace(/\.md$/, ".blocks.json"), "utf-8");
+    const parsed = JSON.parse(raw) as { blocks: Array<Record<string, unknown>> };
+    for (const b of parsed.blocks) {
+      expect(b).not.toHaveProperty("derived_from");
+      expect(b).not.toHaveProperty("agent");
+      expect(b).not.toHaveProperty("compiled_at");
+    }
+  });
+
+  it("preserves prior provenance for blocks whose IDs survive an edit", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+
+    // First write: stamp provenance on block A. Use a real ULID since
+    // `assignBlockIds`'s regex requires exactly 26 Crockford Base32
+    // chars after `blk_`. The block parser strips `blk_` from the
+    // anchor and re-adds it on the parsed block, so the ID we store in
+    // the provenance map needs the `blk_` prefix.
+    const aId = `blk_${ulid()}`;
+    const src1 = `# A <!-- #${aId} -->\n\nB.\n`;
+    const { blocks: blocks1 } = assignBlockIds(src1);
+    writeBlocksSidecar(
+      mdPath,
+      blocks1,
+      new Map([[aId, { agent: "wiki-gardener", compiled_at: "2026-04-23T10:30:00.000Z" }]]),
+    );
+
+    // Second write: edit a different block, no new provenance for A.
+    // A's provenance must carry forward unchanged.
+    const src2 = `# A <!-- #${aId} -->\n\nUpdated body paragraph.\n`;
+    const { blocks: blocks2 } = assignBlockIds(src2);
+    writeBlocksSidecar(mdPath, blocks2); // no provenance map
+
+    const loaded = readBlocksSidecar(mdPath);
+    const a = loaded?.blocks.find((b) => b.id === aId);
+    expect(a?.agent).toBe("wiki-gardener");
+    expect(a?.compiled_at).toBe("2026-04-23T10:30:00.000Z");
+  });
+
+  it("incoming provenance overrides prior provenance on the same block ID", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+    const id = `blk_${ulid()}`;
+    const src = `# T <!-- #${id} -->\n\nBody.\n`;
+    const { blocks } = assignBlockIds(src);
+
+    writeBlocksSidecar(mdPath, blocks, new Map([[id, { agent: "ingest" }]]));
+    writeBlocksSidecar(mdPath, blocks, new Map([[id, { agent: "editor" }]]));
+
+    const loaded = readBlocksSidecar(mdPath);
+    expect(loaded?.blocks[0]?.agent).toBe("editor");
+  });
+
+  it("drops provenance entries for blocks that were deleted between writes", () => {
+    const dir = makeTmpDir();
+    const mdPath = join(dir, "page.md");
+
+    // Two blocks, both with provenance. Use real ULIDs so `parseBlocks`
+    // recognises the IDs.
+    const keepId = `blk_${ulid()}`;
+    const dropId = `blk_${ulid()}`;
+    const src1 = `# A <!-- #${keepId} -->\n\nB <!-- #${dropId} -->\n`;
+    const { blocks: blocks1 } = assignBlockIds(src1);
+    writeBlocksSidecar(
+      mdPath,
+      blocks1,
+      new Map([
+        [keepId, { agent: "ingest" }],
+        [dropId, { agent: "ingest" }],
+      ]),
+    );
+
+    // Second write: only the first block survives.
+    const src2 = `# A <!-- #${keepId} -->\n`;
+    const { blocks: blocks2 } = assignBlockIds(src2);
+    writeBlocksSidecar(mdPath, blocks2);
+
+    const loaded = readBlocksSidecar(mdPath);
+    expect(loaded?.blocks).toHaveLength(1);
+    expect(loaded?.blocks[0]?.id).toBe(keepId);
+    // The dropped block's provenance entry is gone — sidecar tracks
+    // current state, not history.
+    expect(loaded?.blocks.find((b) => b.id === dropId)).toBeUndefined();
   });
 });

@@ -170,7 +170,6 @@ export function createKbReplaceBlock(
         // blocks via the merge in writeBlocksSidecar.
         const absPath = join(writer.getDataRoot(), path);
         writeBlocksSidecar(absPath, newBlocks, provenanceByBlockId);
-
         return JSON.stringify({ ok: true, newEtag });
       } catch (err) {
         return JSON.stringify({ error: String(err) });
