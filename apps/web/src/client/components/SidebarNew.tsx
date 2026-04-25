@@ -257,6 +257,44 @@ export function SidebarNew() {
     useAppStore.getState().setActivePath(path);
   }, []);
 
+  // ─── ARIA tree: focused-row state + keyboard nav ──────────────────
+  // Tracks which `treeitem` currently owns `tabIndex={0}`. Mouse
+  // clicks set it via `onClick`; keyboard arrows move it via the
+  // container `onKeyDown`. The active file (`activePath`) seeds the
+  // initial focus so screen-reader users land on the page they're
+  // already reading. See docs/09-ui-and-brand.md §Sidebar a11y +
+  // WAI-ARIA Authoring Practices §Tree View.
+  const [focusedTreeIdx, setFocusedTreeIdx] = useState<number>(0);
+  const treeItemRefs = useRef<Array<HTMLDivElement | null>>([]);
+
+  const focusTreeItem = useCallback((idx: number) => {
+    setFocusedTreeIdx(idx);
+    // Defer to the next frame so the ref array has been updated by
+    // the new render before we try to .focus() — otherwise the
+    // first render after a drill-into still holds the old refs.
+    requestAnimationFrame(() => {
+      treeItemRefs.current[idx]?.focus();
+    });
+  }, []);
+
+  // Seed `focusedTreeIdx` to the active file's row so screen-reader
+  // users land on what they're reading. Reset to 0 on folder drill.
+  // Pure index recompute: re-running on visibleItems / activePath
+  // changes is cheap because `findIndex` is O(items-in-view).
+  useEffect(() => {
+    if (visibleItems.length === 0) {
+      setFocusedTreeIdx(0);
+      return;
+    }
+    const activeIdx = visibleItems.findIndex((it) => it.path === activePath);
+    setFocusedTreeIdx((prev) => {
+      if (activeIdx >= 0) return activeIdx;
+      // Active file isn't in the current folder view — keep prev if
+      // it's still in range, otherwise pin to first item.
+      return prev < visibleItems.length ? prev : 0;
+    });
+  }, [visibleItems, activePath]);
+
   // ─── Drag and drop (file moves) ──────────────────────────────────
   // Files can be dragged onto any folder row in the current view, or
   // onto the breadcrumb Home/up buttons to move out of the current
@@ -635,6 +673,8 @@ export function SidebarNew() {
       {!collapsed && (
         // biome-ignore lint/a11y/noStaticElementInteractions: context menu on container
         <div
+          role="tree"
+          aria-label="Files and folders"
           className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ease-in-out ${
             slideDir === "left"
               ? "-translate-x-full opacity-0"
@@ -643,20 +683,79 @@ export function SidebarNew() {
                 : "translate-x-0 opacity-100"
           }`}
           onContextMenu={(e) => handleContextMenu(e)}
+          onKeyDown={(e) => {
+            // WAI-ARIA Authoring Practices §Tree View pattern.
+            // Drilling, not expansion, models the existing UX:
+            // ArrowRight enters a directory; ArrowLeft pops up.
+            // Renames and inputs claim their own keys via
+            // stopPropagation, so the rename input above stays
+            // usable while focus is technically inside the tree.
+            if (visibleItems.length === 0) return;
+            const focused = visibleItems[focusedTreeIdx];
+            switch (e.key) {
+              case "ArrowDown": {
+                e.preventDefault();
+                focusTreeItem(Math.min(focusedTreeIdx + 1, visibleItems.length - 1));
+                return;
+              }
+              case "ArrowUp": {
+                e.preventDefault();
+                focusTreeItem(Math.max(focusedTreeIdx - 1, 0));
+                return;
+              }
+              case "Home": {
+                e.preventDefault();
+                focusTreeItem(0);
+                return;
+              }
+              case "End": {
+                e.preventDefault();
+                focusTreeItem(visibleItems.length - 1);
+                return;
+              }
+              case "ArrowRight": {
+                if (focused?.type === "directory") {
+                  e.preventDefault();
+                  drillInto(focused.path);
+                }
+                return;
+              }
+              case "ArrowLeft": {
+                if (sidebarFolder) {
+                  e.preventDefault();
+                  drillUp();
+                }
+                return;
+              }
+              case " ":
+              case "Enter": {
+                if (!focused) return;
+                if (editingPath === focused.path) return;
+                e.preventDefault();
+                if (focused.type === "directory") drillInto(focused.path);
+                else openFile(focused.path);
+                return;
+              }
+            }
+          }}
         >
           {visibleItems.length === 0 && (
             <div className="py-8 text-center text-xs text-secondary">No pages yet</div>
           )}
-          {visibleItems.map((item) => {
+          {visibleItems.map((item, itemIdx) => {
             const isDir = item.type === "directory";
             const isActive = activePath === item.path;
             const isEditing = editingPath === item.path;
 
             const isDropTarget = isDir && dropTarget === item.path;
+            const isFocusedRow = itemIdx === focusedTreeIdx;
             return (
               // biome-ignore lint/a11y/useSemanticElements: complex interactive row with context menu
               <div
                 key={item.path}
+                ref={(el) => {
+                  treeItemRefs.current[itemIdx] = el;
+                }}
                 className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-(--motion-snap) ${
                   isActive
                     ? "sidebar-item-active text-primary"
@@ -673,6 +772,7 @@ export function SidebarNew() {
                 }}
                 onClick={() => {
                   if (isEditing) return;
+                  setFocusedTreeIdx(itemIdx);
                   if (isDir) drillInto(item.path);
                   else openFile(item.path);
                 }}
@@ -680,14 +780,11 @@ export function SidebarNew() {
                   e.stopPropagation();
                   handleContextMenu(e, item.path, item.type, item.name);
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !isEditing) {
-                    if (isDir) drillInto(item.path);
-                    else openFile(item.path);
-                  }
-                }}
-                role="button"
-                tabIndex={0}
+                role="treeitem"
+                aria-level={1}
+                aria-selected={isActive}
+                {...(isDir ? { "aria-expanded": false } : {})}
+                tabIndex={isFocusedRow ? 0 : -1}
               >
                 <FileIcon type={item.type} />
                 {isEditing ? (
