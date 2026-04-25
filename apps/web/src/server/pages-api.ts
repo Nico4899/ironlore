@@ -5,6 +5,7 @@ import { detectPageType, isBinaryExtension } from "@ironlore/core";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
+import { type AclOp, AclViolation, assertCanAccess, parsePageAcl, stampOwner } from "./acl.js";
 import { assignBlockIds, parseBlocks, writeBlocksSidecar } from "./block-ids.js";
 import type { SearchIndex } from "./search-index.js";
 import { EtagMismatchError, type StorageWriter } from "./storage-writer.js";
@@ -90,12 +91,65 @@ const MIME_MAP: Record<string, string> = {
  */
 type BroadcastFn = (event: WsEventInput) => void;
 
+/**
+ * Per-project options threaded into the pages API. `mode` controls
+ * whether ACL parsing + checks run; `single-user` (default) skips
+ * the ACL path entirely so the existing single-user install pays
+ * no extra cost.
+ */
+export interface PagesApiOptions {
+  mode?: "single-user" | "multi-user";
+}
+
+/**
+ * Read the calling user's identity from the auth middleware. The
+ * middleware sets `userId` + `username` on the Hono context for
+ * every authenticated request. Routes that hit ACL checks should
+ * call this rather than reading the keys directly so future
+ * additions (role, email, etc.) live in one place.
+ */
+function authedUser(c: { get: (key: string) => unknown }): {
+  userId: string;
+  username: string;
+} {
+  return {
+    userId: (c.get("userId") as string | undefined) ?? "",
+    username: (c.get("username") as string | undefined) ?? "",
+  };
+}
+
+/**
+ * Run the ACL gate for `op` against the page's current content.
+ * No-op in single-user mode. Returns null on permit, a Hono Response
+ * on deny — caller returns the response unchanged.
+ */
+function checkAcl(
+  c: { json: (body: unknown, status?: number) => Response; get: (key: string) => unknown },
+  mode: "single-user" | "multi-user",
+  content: string,
+  op: AclOp,
+): Response | null {
+  if (mode === "single-user") return null;
+  const { userId, username } = authedUser(c);
+  try {
+    assertCanAccess(parsePageAcl(content), userId, username, op);
+    return null;
+  } catch (err) {
+    if (err instanceof AclViolation) {
+      return c.json({ error: err.message }, 403);
+    }
+    throw err;
+  }
+}
+
 export function createPagesApi(
   writer: StorageWriter,
   searchIndex: SearchIndex,
   broadcast?: BroadcastFn,
+  opts: PagesApiOptions = {},
 ): Hono {
   const api = new Hono();
+  const mode = opts.mode ?? "single-user";
 
   // -----------------------------------------------------------------------
   // List pages (tree) — served from SQLite index
@@ -181,6 +235,8 @@ export function createPagesApi(
 
     try {
       const { content, etag } = writer.read(pagePath);
+      const denied = checkAcl(c, mode, content, "read");
+      if (denied) return denied;
       const blocks = parseBlocks(content);
 
       c.header("ETag", etag);
@@ -222,7 +278,7 @@ export function createPagesApi(
     }
 
     // Assign block IDs to new blocks before writing
-    const { markdown: annotated, blocks } = assignBlockIds(body.markdown);
+    let { markdown: annotated, blocks } = assignBlockIds(body.markdown);
 
     try {
       const parsedIfMatch = ifMatch ? parseEtag(ifMatch) : null;
@@ -231,6 +287,30 @@ export function createPagesApi(
 
       const absPath = join(writer.getDataRoot(), pagePath);
       const isNew = !existsSync(absPath);
+
+      // ACL check on existing pages — single-user mode is a no-op.
+      // For new pages there's nothing on disk to check; the caller
+      // becomes the owner via `stampOwner` below.
+      if (!isNew) {
+        const { content: existing } = writer.read(pagePath);
+        const denied = checkAcl(c, mode, existing, "write");
+        if (denied) return denied;
+      }
+
+      // First write of a multi-user page: stamp the caller as the
+      // page's owner so subsequent ACL evaluations resolve `owner`
+      // against them. Existing-owner pages are left untouched (no
+      // hijacking).
+      if (mode === "multi-user") {
+        const { userId } = authedUser(c);
+        if (userId) {
+          const stamped = stampOwner(annotated, userId);
+          if (stamped !== annotated) {
+            annotated = stamped;
+            blocks = assignBlockIds(stamped).blocks;
+          }
+        }
+      }
 
       const { etag } = await writer.write(pagePath, annotated, ifMatchQuoted);
 
@@ -292,6 +372,21 @@ export function createPagesApi(
 
     try {
       const ifMatchQuoted = ifMatch ? `"${parseEtag(ifMatch)}"` : null;
+
+      // ACL gate — only when the page exists + is markdown (binary
+      // files have no frontmatter, so ACL is N/A). Read first to
+      // grab the content for the parse.
+      if (mode === "multi-user" && extname(pagePath).toLowerCase() === ".md") {
+        try {
+          const { content: existing } = writer.read(pagePath);
+          const denied = checkAcl(c, mode, existing, "write");
+          if (denied) return denied;
+        } catch {
+          // ENOENT on a delete is benign — the writer.delete call
+          // below will surface the right error.
+        }
+      }
+
       await writer.delete(pagePath, ifMatchQuoted);
 
       // Remove from search index
@@ -350,6 +445,20 @@ export function createPagesApi(
 
     const srcAbs = join(writer.getDataRoot(), sourcePath);
     const isDirectory = existsSync(srcAbs) && statSync(srcAbs).isDirectory();
+
+    // ACL gate — moves are write operations against the source page.
+    // Only the source-side ACL applies; if the destination already
+    // exists at the target path the writer.move call will reject
+    // anyway. Single-user mode skips the parse.
+    if (mode === "multi-user" && !isDirectory && extname(sourcePath).toLowerCase() === ".md") {
+      try {
+        const { content: existing } = writer.read(sourcePath);
+        const denied = checkAcl(c, mode, existing, "write");
+        if (denied) return denied;
+      } catch {
+        // Source missing — let the move call surface the error.
+      }
+    }
 
     try {
       if (isDirectory) {

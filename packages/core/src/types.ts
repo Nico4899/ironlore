@@ -115,4 +115,10 @@ export interface ProjectConfig {
     allowlist?: string[];
   };
   mcp_servers?: McpServerConfig[];
+  /**
+   * `single-user` (default) skips ACL parsing entirely — every
+   * authenticated request can read + write every page. `multi-user`
+   * enables per-page `acl:` frontmatter enforcement.
+   */
+  mode?: "single-user" | "multi-user";
 }

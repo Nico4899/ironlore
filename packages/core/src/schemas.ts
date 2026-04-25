@@ -60,6 +60,14 @@ export const ProjectConfigSchema = z.object({
    * here is invisible to agents in any other project.
    */
   mcp_servers: z.array(McpServerSchema).optional(),
+  /**
+   * Multi-user opt-in per docs/08 §Multi-user mode and per-page
+   * ACLs. `single-user` (the default) skips ACL parsing entirely;
+   * `multi-user` enables per-page `acl:` enforcement on every read
+   * + write through the HTTP API. Switching modes requires a
+   * server restart — runtime toggling would race in-flight writes.
+   */
+  mode: z.enum(["single-user", "multi-user"]).default("single-user"),
 });
 
 /** Zod schema for the bootstrap install record. */
