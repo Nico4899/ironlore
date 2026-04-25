@@ -1,9 +1,15 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { createServer } from "node:net";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
 import { app, BrowserWindow, dialog, shell } from "electron";
+
+// `__dirname` is provided by esbuild's CJS bundle (the production
+// build target) and by Node's CJS loader. Declared explicitly so
+// TypeScript — running with `module: ESNext` — accepts it. We
+// avoid `import.meta.url` to keep the file CJS-compatible without
+// a banner shim.
+declare const __dirname: string;
 
 /**
  * Ironlore Electron shell — Phase-10 packaging entry point.
@@ -30,9 +36,6 @@ import { app, BrowserWindow, dialog, shell } from "electron";
  * pattern and keeps the Electron main process free of all the
  * server's native-module loading edge cases on first launch.
  */
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 interface AppPaths {
   /** OS-native user-data root: `~/Library/Application Support/Ironlore` etc. */

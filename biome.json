@@ -102,7 +102,8 @@
         "apps/web/src/server/agents/inbox.ts",
         "apps/web/src/server/agents/inbox.test.ts",
         "apps/web/src/server/agents/executor.ts",
-        "apps/web/e2e/**"
+        "apps/web/e2e/**",
+        "apps/electron/src/**"
       ],
       "linter": {
         "rules": {
