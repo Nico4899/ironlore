@@ -160,13 +160,18 @@ export async function executeAgentRun(
     fetch: airlock.fetch,
   };
 
-  // Build tool context.
+  // Build tool context. The `fetch` field is the airlock-wrapped
+  // fetch — every tool that hits the network MUST use it (semantic
+  // search's embedding call, MCP HTTP transport, connector skills).
+  // Direct `fetchForProject` calls from inside agent tools bypass
+  // the downgrade.
   const toolCtx: ToolCallContext = {
     projectId: jobCtx.projectId,
     agentSlug,
     jobId: job.id,
     emitEvent: jobCtx.emitEvent,
     dataRoot,
+    fetch: airlock.fetch,
     downgradeEgress: (reason: string) => airlock.downgrade(reason),
     ...(effectiveDryRun ? { dryRunBridge: effectiveDryRun } : {}),
   };

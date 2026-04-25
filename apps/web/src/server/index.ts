@@ -309,14 +309,10 @@ async function start() {
     // degradation.
     const embeddingProvider = embeddingRegistry.resolve();
     if (embeddingProvider) {
-      dispatcher.register(
-        createKbSemanticSearch(
-          services.searchIndex,
-          embeddingProvider,
-          projectId,
-          services.projectDir,
-        ),
-      );
+      // No projectDir / projectId here — the tool resolves the
+      // airlock-wrapped fetch at execute() time off `ToolCallContext`,
+      // so the embedding call honors the run's downgrade.
+      dispatcher.register(createKbSemanticSearch(services.searchIndex, embeddingProvider));
     }
     dispatcher.register(createAgentJournal(services.getDataRoot()));
     dispatchersById.set(projectId, dispatcher);

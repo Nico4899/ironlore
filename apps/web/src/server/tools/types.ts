@@ -21,6 +21,23 @@ export interface ToolCallContext {
   /** Data root for the project (for StorageWriter access). */
   dataRoot: string;
   /**
+   * **Airlock-wrapped** outbound fetch. Every tool that needs to
+   * talk to the network — embedding providers, MCP HTTP servers,
+   * connector skills, anything else — must use this fetch and not
+   * import `fetchForProject` directly. After a Phase-11 Airlock
+   * downgrade, this fetch throws `EgressDowngradedError` *before*
+   * the network is touched, so a tool that bypasses it can leak
+   * data the airlock was supposed to contain.
+   *
+   * The dispatcher injects this from the run's
+   * `ProjectContext.fetch` (which the executor wraps with
+   * `createAirlockSession`). For non-agent contexts (background
+   * embedding worker, public HTTP API), construct a fetch via
+   * `fetchForProject(projectDir, ...)` directly — the airlock is
+   * scoped to agent runs, not server-wide infrastructure.
+   */
+  fetch: (url: string | URL, init?: RequestInit) => Promise<Response>;
+  /**
    * Dry-run coordination bridge. Present only when the executor sets
    * up dry-run mode for a run (persona `review_mode: dry_run`). When
    * set, destructive tools route through the `diff_preview` →
