@@ -1,4 +1,7 @@
 import type {
+  BatchHandle,
+  BatchPollResult,
+  BatchStatus,
   ChatEvent,
   ChatMessage,
   ChatOptions,
@@ -21,6 +24,7 @@ export class AnthropicProvider implements Provider {
   readonly name = "anthropic" as const;
   readonly supportsTools = true;
   readonly supportsPromptCache = true;
+  readonly supportsBatch = true;
 
   private apiKey: string;
   private baseUrl: string;
@@ -72,6 +76,210 @@ export class AnthropicProvider implements Provider {
 
     // Parse the SSE stream.
     yield* parseSSEStream(res.body);
+  }
+
+  /**
+   * Submit a single-request Message Batch — the cheap async path.
+   * Anthropic's batch endpoint accepts an array of `requests`; we
+   * always submit one (callers control batching at the run level,
+   * not at the message level), with a stable `custom_id` we use to
+   * demultiplex the JSONL results once the batch completes.
+   *
+   * Per-request 50 % discount applies; the SLA is "within 24 h" but
+   * batches typically complete within a few minutes for low-volume
+   * autonomous runs (wiki-gardener, bulk reindex). See
+   * https://docs.anthropic.com/en/api/messages-batches for the
+   * authoritative shape.
+   */
+  async submitBatch(opts: ChatOptions, ctx: ProjectContext): Promise<BatchHandle> {
+    const url = `${this.baseUrl}/v1/messages/batches`;
+    const requestId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+
+    const params: Record<string, unknown> = {
+      model: opts.model,
+      max_tokens: opts.maxTokens ?? 4096,
+      system: buildSystemBlock(opts),
+      messages: convertMessages(opts.messages),
+    };
+    if (opts.temperature !== undefined) params.temperature = opts.temperature;
+    // Tools are intentionally not forwarded — the batch path is
+    // single-turn, no round-trips. Caller must omit or strip them.
+
+    const body = {
+      requests: [{ custom_id: requestId, params }],
+    };
+
+    const res = await ctx.fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": this.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "message-batches-2024-09-24",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Anthropic batch submit ${res.status}: ${text}`);
+    }
+    const json = (await res.json()) as { id: string; results_url?: string };
+    if (!json.id) {
+      throw new Error("Anthropic batch submit: missing batch id in response");
+    }
+    return {
+      provider: "anthropic",
+      batchId: json.id,
+      requestId,
+      ...(json.results_url ? { _provider: { resultsUrl: json.results_url } } : {}),
+    };
+  }
+
+  /**
+   * Poll a submitted batch. While Anthropic's batch is `in_progress`
+   * we return a status-only response; once `processing_status` is
+   * `ended` we follow the `results_url` to fetch the JSONL stream
+   * and assemble the single message we submitted into a `done`-shaped
+   * result the caller can record back into the run transcript.
+   */
+  async pollBatch(handle: BatchHandle, ctx: ProjectContext): Promise<BatchPollResult> {
+    if (handle.provider !== "anthropic") {
+      throw new Error(`pollBatch: handle is for '${handle.provider}', not 'anthropic'`);
+    }
+    const statusUrl = `${this.baseUrl}/v1/messages/batches/${handle.batchId}`;
+    const res = await ctx.fetch(statusUrl, {
+      method: "GET",
+      headers: {
+        "X-API-Key": this.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "message-batches-2024-09-24",
+      },
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      return {
+        status: "failed",
+        error: `Anthropic batch poll ${res.status}: ${text}`,
+      };
+    }
+    const json = (await res.json()) as {
+      processing_status?: string;
+      ended_at?: string | null;
+      results_url?: string | null;
+      request_counts?: { errored?: number; expired?: number; canceled?: number };
+    };
+    const status = mapBatchStatus(json.processing_status);
+    if (status === "in_progress") return { status };
+    if (status === "expired") return { status, error: "Batch expired before completion" };
+
+    // status === "completed" or "failed". Anthropic flags failures
+    // via request_counts.errored > 0; we still try to fetch results
+    // when the URL is present so a partial-success batch surfaces
+    // its content.
+    const resultsUrl = json.results_url;
+    if (!resultsUrl) {
+      return {
+        status: "failed",
+        error: "Batch ended without a results_url",
+      };
+    }
+    const fetched = await this.fetchBatchResults(resultsUrl, handle.requestId, ctx);
+    if (!fetched) {
+      return {
+        status: "failed",
+        error: "Batch results JSONL did not contain our request id",
+      };
+    }
+    return { status, result: fetched };
+  }
+
+  /**
+   * Pull the JSONL results stream and locate our request's row.
+   * The stream is line-delimited; each row has shape
+   * `{ custom_id, result: { type, message? | error? } }`. We
+   * concatenate `text` content blocks for the assistant's reply
+   * and surface `usage` so cost telemetry stays accurate.
+   */
+  private async fetchBatchResults(
+    resultsUrl: string,
+    requestId: string,
+    ctx: ProjectContext,
+  ): Promise<{ text: string; usage?: TokenUsage; stopReason: string } | null> {
+    const res = await ctx.fetch(resultsUrl, {
+      method: "GET",
+      headers: {
+        "X-API-Key": this.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-beta": "message-batches-2024-09-24",
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Anthropic batch results ${res.status}: ${await res.text()}`);
+    }
+    const body = await res.text();
+    for (const line of body.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let row: {
+        custom_id?: string;
+        result?: {
+          type?: string;
+          message?: {
+            content?: Array<{ type?: string; text?: string }>;
+            stop_reason?: string;
+            usage?: { input_tokens?: number; output_tokens?: number };
+          };
+          error?: { type?: string; message?: string };
+        };
+      };
+      try {
+        row = JSON.parse(trimmed);
+      } catch {
+        continue; // non-JSON line — Anthropic doesn't ship them, but ignore defensively
+      }
+      if (row.custom_id !== requestId) continue;
+      if (row.result?.type === "errored" && row.result.error) {
+        throw new Error(`Anthropic batch row errored: ${row.result.error.message ?? "unknown"}`);
+      }
+      const message = row.result?.message;
+      if (!message) continue;
+      const text = (message.content ?? [])
+        .filter((c): c is { type: "text"; text: string } => c.type === "text" && typeof c.text === "string")
+        .map((c) => c.text)
+        .join("");
+      const usage: TokenUsage | undefined = message.usage
+        ? {
+            inputTokens: message.usage.input_tokens ?? 0,
+            outputTokens: message.usage.output_tokens ?? 0,
+          }
+        : undefined;
+      return {
+        text,
+        ...(usage ? { usage } : {}),
+        stopReason: message.stop_reason ?? "end_turn",
+      };
+    }
+    return null;
+  }
+}
+
+function mapBatchStatus(raw: string | undefined): BatchStatus {
+  // Anthropic uses `in_progress` and `ended` for the lifecycle;
+  // we widen `ended` to `completed` (or `expired` when the batch
+  // hit its 24 h cutoff). `failed` is reserved for transport
+  // errors that came back with a non-2xx — those land in
+  // `pollBatch` directly without going through this mapper.
+  switch (raw) {
+    case "in_progress":
+      return "in_progress";
+    case "ended":
+      return "completed";
+    case "expired":
+    case "canceling":
+    case "canceled":
+      return "expired";
+    default:
+      return "in_progress";
   }
 }
 

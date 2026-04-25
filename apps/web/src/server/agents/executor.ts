@@ -448,3 +448,24 @@ function parseReviewMode(dataRoot: string, slug: string): "inbox" | "dry_run" | 
   if (match?.[1] === "dry_run") return "dry_run";
   return null;
 }
+
+/**
+ * Parse the persona's YAML frontmatter for `batch: true`. The flag
+ * is the per-persona opt-in to the Phase-11 async batch path
+ * (Anthropic Message Batches, OpenAI batch when shipped).
+ * Returns `false` when the field is absent, malformed, or
+ * `false` — matches the documented default in
+ * docs/04-ai-and-agents.md §Batch API.
+ *
+ * Exported so the executor + the observability projection (the
+ * Settings → Agents card surface) can read the same answer.
+ */
+export function parseBatchOptIn(dataRoot: string, slug: string): boolean {
+  const personaPath = join(dataRoot, ".agents", slug, "persona.md");
+  if (!existsSync(personaPath)) return false;
+  const raw = readFileSync(personaPath, "utf-8");
+  // `^batch:` at the start of a line (no leading whitespace, so
+  // an indented `  batch:` under another key isn't picked up).
+  const match = /^batch\s*:\s*(true|false)\b/m.exec(raw);
+  return match?.[1] === "true";
+}
