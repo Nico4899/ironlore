@@ -73,6 +73,13 @@ interface CallToolResult {
 }
 
 /**
+ * Per-call fetch override. Used by the http transport so each
+ * `tools/call` honors the calling agent run's airlock-wrapped
+ * fetch. Stdio transport ignores it (no network surface).
+ */
+type FetchFn = (url: string | URL, init?: RequestInit) => Promise<Response>;
+
+/**
  * Common transport contract — both stdio + http back this.
  *
  * `request` issues a JSON-RPC call and resolves with the parsed
@@ -80,9 +87,14 @@ interface CallToolResult {
  * underlying process / connection. Implementations MUST handle the
  * `initialize` handshake before any other call — handled inside
  * `connectMcpServer`, callers don't need to think about it.
+ *
+ * The optional `fetch` parameter lets the caller supply a per-call
+ * fetch for the http transport — used by tool dispatches to route
+ * through the airlock-wrapped fetch from `ToolCallContext.fetch`.
+ * Stdio transport ignores the parameter.
  */
 interface McpTransport {
-  request<T>(method: string, params?: unknown): Promise<T>;
+  request<T>(method: string, params?: unknown, fetch?: FetchFn): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -144,14 +156,28 @@ export class McpClient {
    * the server emitted, or a JSON.stringify of the full content
    * payload when the server returned non-text blocks (so the model
    * still sees the data, just structured).
+   *
+   * `fetch` is the per-call airlock-wrapped fetch from
+   * `ToolCallContext.fetch`. Plumbed through the transport so an
+   * http MCP server's `tools/call` honors a Phase-11 egress
+   * downgrade from the calling agent run. Omit for non-agent
+   * dispatches (the bridge's discovery / `initialize` paths).
    */
-  async callTool(name: string, args: unknown): Promise<{ result: string; isError: boolean }> {
+  async callTool(
+    name: string,
+    args: unknown,
+    fetch?: FetchFn,
+  ): Promise<{ result: string; isError: boolean }> {
     await this.initialize();
     try {
-      const res = await this.transport.request<CallToolResult>("tools/call", {
-        name,
-        arguments: args ?? {},
-      });
+      const res = await this.transport.request<CallToolResult>(
+        "tools/call",
+        {
+          name,
+          arguments: args ?? {},
+        },
+        fetch,
+      );
       const contents = res.content ?? [];
       const textParts: string[] = [];
       let hasNonText = false;
@@ -304,7 +330,9 @@ function makeStdioTransport(config: McpServerConfig, opts: McpConnectOptions): M
   }
 
   return {
-    async request<T>(method: string, params?: unknown): Promise<T> {
+    // `_fetch` is part of the McpTransport contract for the http
+    // sibling; stdio has no network surface so we ignore it here.
+    async request<T>(method: string, params?: unknown, _fetch?: FetchFn): Promise<T> {
       const child = ensureSpawned();
       const id = nextRpcId++;
       const req: JsonRpcRequest = { jsonrpc: "2.0", id, method };
@@ -351,7 +379,16 @@ function makeHttpTransport(config: McpServerConfig, opts: McpConnectOptions): Mc
   let nextRpcId = 1;
 
   return {
-    async request<T>(method: string, params?: unknown): Promise<T> {
+    /**
+     * Issue a JSON-RPC POST. When a per-call airlock-wrapped
+     * `fetch` is supplied (via `ToolCallContext.fetch` from the
+     * McpBridge tool dispatch), use it so the call honors the
+     * agent run's egress downgrade. Otherwise — discovery,
+     * `initialize`, anything outside an agent run — fall back to
+     * `fetchForProject` directly so the project's static egress
+     * allowlist still gates the request.
+     */
+    async request<T>(method: string, params?: unknown, fetch?: FetchFn): Promise<T> {
       const id = nextRpcId++;
       const req: JsonRpcRequest = { jsonrpc: "2.0", id, method };
       if (params !== undefined) req.params = params;
@@ -359,12 +396,15 @@ function makeHttpTransport(config: McpServerConfig, opts: McpConnectOptions): Mc
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), requestTimeoutMs);
       try {
-        const res = await fetchForProject(opts.projectDir, url, {
+        const init: RequestInit = {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify(req),
           signal: ac.signal,
-        });
+        };
+        const res = fetch
+          ? await fetch(url, init)
+          : await fetchForProject(opts.projectDir, url, init);
         if (!res.ok) {
           throw new Error(
             `MCP http server '${config.name}' returned ${res.status} ${res.statusText}`,

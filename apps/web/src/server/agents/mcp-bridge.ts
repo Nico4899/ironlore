@@ -104,12 +104,17 @@ export class McpBridge {
           : `[MCP: ${serverName}] ${tool.name}`,
         inputSchema: tool.inputSchema,
       },
-      async execute(args: unknown, _ctx: ToolCallContext): Promise<string> {
+      async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
         // Dispatcher already wraps with `tool.call` / `tool.result`
         // events — we just forward to the MCP server and return the
         // string. Errors come back stringified so the model sees a
         // structured response instead of a thrown exception.
-        const { result, isError } = await client.callTool(tool.name, args);
+        //
+        // `ctx.fetch` is the airlock-wrapped fetch for this run; the
+        // http transport uses it so a Phase-11 egress downgrade in
+        // the calling run blocks subsequent MCP HTTP calls. Stdio
+        // transport ignores the parameter — it has no network surface.
+        const { result, isError } = await client.callTool(tool.name, args, ctx.fetch);
         if (isError) {
           return JSON.stringify({ error: result, server: serverName, tool: tool.name });
         }
