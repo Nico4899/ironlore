@@ -218,6 +218,23 @@ export async function executeAgentRun(
     typeof provider.pollBatch === "function";
 
   if (batchEligible) {
+    // Tool-use precondition guard. Anthropic's batch API is
+    // single-turn — the model can't call mutating tools mid-batch.
+    // A persona that opts in but still declares mutating tools is
+    // misconfigured: the batch path will silently produce a
+    // tool-less reply and the author thinks their edits ran. Refuse
+    // explicitly so the failure is loud, not silent.
+    const mutating = findMutatingToolsInPersona(dataRoot, agentSlug);
+    if (mutating.length > 0) {
+      const reason =
+        `Persona "${agentSlug}" opted into batch mode but declares mutating tools ` +
+        `(${mutating.join(", ")}). Anthropic's batch API is single-turn — mutations ` +
+        `would be silently dropped. Restructure the workflow skill to use a read-only ` +
+        `tool set (kb.search, kb.read_page, kb.read_block) for the batched turn, or ` +
+        `remove \`batch: true\` from the persona.`;
+      jobCtx.emitEvent("message.error", { text: reason });
+      return { status: "failed", result: reason };
+    }
     return runBatchedTurn({
       provider,
       projectContext: wrappedProjectContext,
@@ -551,6 +568,64 @@ export function parseBatchOptIn(dataRoot: string, slug: string): boolean {
   // an indented `  batch:` under another key isn't picked up).
   const match = /^batch\s*:\s*(true|false)\b/m.exec(raw);
   return match?.[1] === "true";
+}
+
+/**
+ * Mutating kb tools — these mutate the page tree and therefore
+ * cannot be used in a single-turn batched run (Anthropic Message
+ * Batches don't support tool-use round-trips). A persona that
+ * declares any of these alongside `batch: true` is misconfigured;
+ * the precondition guard refuses the run with a message advising
+ * the author to restructure the workflow skill.
+ */
+const MUTATING_KB_TOOLS = new Set([
+  "kb.replace_block",
+  "kb.insert_after",
+  "kb.delete_block",
+  "kb.create_page",
+]);
+
+/**
+ * Return the subset of mutating tools declared in the persona's
+ * `tools:` frontmatter. Empty when the persona declares no tools
+ * (then any provider tool is fair game) or when the declared list
+ * is read-only.
+ *
+ * Exported for the executor's batch precondition guard + tests.
+ */
+export function findMutatingToolsInPersona(dataRoot: string, slug: string): string[] {
+  const personaPath = join(dataRoot, ".agents", slug, "persona.md");
+  if (!existsSync(personaPath)) return [];
+  const raw = readFileSync(personaPath, "utf-8");
+  const declared = parseDeclaredTools(raw);
+  if (!declared) return [];
+  return declared.filter((t) => MUTATING_KB_TOOLS.has(t));
+}
+
+/**
+ * Extract the `tools: [...]` list from persona frontmatter. Mirrors
+ * `parseDeclaredSkills` but for the tools field. Returns null when
+ * the field is absent.
+ */
+function parseDeclaredTools(raw: string): string[] | null {
+  const match = /^---[^\n]*\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+  if (!match?.[1]) return null;
+  const flow = /^tools\s*:\s*\[([^\]]*)\]\s*$/m.exec(match[1]);
+  if (flow?.[1] !== undefined) {
+    return flow[1]
+      .split(",")
+      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean);
+  }
+  const block = /^tools\s*:\s*\r?\n((?:[ \t]+-[^\n]*\r?\n?)+)/m.exec(match[1]);
+  if (block?.[1]) {
+    return block[1]
+      .split(/\r?\n/)
+      .map((line) => /^\s*-\s*(.+?)\s*$/.exec(line)?.[1])
+      .filter((s): s is string => Boolean(s))
+      .map((s) => s.replace(/^["']|["']$/g, ""));
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
