@@ -58,7 +58,8 @@ export class McpBridge {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[mcp] server '${config.name}' discovery failed: ${message}`);
+        const stack = err instanceof Error ? err.stack : "";
+        console.warn(`[mcp] server '${config.name}' discovery failed: ${message}\n${stack}`);
         this.discovered.set(config.name, []);
       }
     }

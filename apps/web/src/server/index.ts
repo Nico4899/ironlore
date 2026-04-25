@@ -18,6 +18,7 @@ import { DryRunBridge } from "./agents/dry-run-bridge.js";
 import { executeAgentRun } from "./agents/executor.js";
 import { HeartbeatScheduler } from "./agents/heartbeat.js";
 import { AgentInbox } from "./agents/inbox.js";
+import { McpBridge } from "./agents/mcp-bridge.js";
 import { AgentRails } from "./agents/rails.js";
 import { seedAgents } from "./agents/seed-agents.js";
 import { createAuthApi, SessionStore } from "./auth.js";
@@ -26,6 +27,7 @@ import { createCorsConfig } from "./cors.js";
 import { createCrossProjectCopyApi } from "./cross-project-copy.js";
 import { EmbeddingWorker } from "./embedding-worker.js";
 import { createEmbeddingsApi } from "./embeddings-api.js";
+import { loadProjectConfig } from "./fetch-for-project.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { BackpressureController } from "./jobs/backpressure.js";
 import { openJobsDb } from "./jobs/schema.js";
@@ -223,6 +225,11 @@ async function start() {
   //  writer / searchIndex, so we build one dispatcher per project and
   //  the agent.run handler resolves it by `jobCtx.projectId`.
   const dispatchersById = new Map<string, ToolDispatcher>();
+  // MCP bridges are also per-project: a server registered in
+  // `research/project.yaml` must stay invisible to `main`. Held at
+  // module scope so the shutdown path can SIGTERM the stdio
+  // children before the Node process exits.
+  const mcpBridgesById = new Map<string, McpBridge>();
   for (const [projectId, services] of servicesById) {
     const dispatcher = new ToolDispatcher();
     dispatcher.register(createKbSearch(services.searchIndex));
@@ -252,6 +259,46 @@ async function start() {
     }
     dispatcher.register(createAgentJournal(services.getDataRoot()));
     dispatchersById.set(projectId, dispatcher);
+
+    // MCP bridge — read `mcp_servers` from `project.yaml`, connect,
+    // and merge each discovered tool into the dispatcher as
+    // `mcp.<server>.<tool>`. Discovery runs in parallel across
+    // projects in the background so a slow / dead server doesn't
+    // block startup; per-project failures are logged inside
+    // `discoverAndRegister` and never throw.
+    let mcpServers: McpBridge | null = null;
+    try {
+      const config = loadProjectConfig(services.projectDir);
+      if (config.mcp_servers && config.mcp_servers.length > 0) {
+        mcpServers = new McpBridge(config.mcp_servers, {
+          projectId,
+          dataRoot: services.getDataRoot(),
+          projectDir: services.projectDir,
+        });
+        mcpBridgesById.set(projectId, mcpServers);
+        // Fire-and-await deliberately not used here: discovery is
+        // async network/IO that we don't want gating server boot.
+        // The agent.run handler reads the dispatcher live, so a
+        // tool that registers later (after the first run starts)
+        // is still picked up on the next tool-list emission.
+        void mcpServers
+          .discoverAndRegister(dispatcher)
+          .then(() =>
+            console.log(`[mcp] ${projectId}: ${mcpServers?.toolCount() ?? 0} tools registered`),
+          )
+          .catch((err) =>
+            console.warn(
+              `[mcp] ${projectId}: discovery failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+      }
+    } catch (err) {
+      // Missing / malformed project.yaml is non-fatal — the project
+      // boots without MCP, same as if it had no `mcp_servers` key.
+      console.warn(
+        `[mcp] ${projectId}: project.yaml read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   // Register the agent.run job handler. Resolves per-project state
