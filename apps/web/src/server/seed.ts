@@ -238,6 +238,11 @@ thousands of pages. Arrow keys navigate, \`Enter\` opens.
 With no query, the palette shows your ten most recently edited pages, so
 jumping back to what you were working on never requires typing.
 
+The \`all projects\` toggle in the dialog's header switches scope from
+the current project to every project on this install. Foreign-project
+hits are tagged with the source project name. Agents only see the
+current project unless Airlock is on (\`kb.global_search\`).
+
 ## Wiki-links
 
 Link between pages with double brackets:
