@@ -1183,8 +1183,8 @@ frontmatter \`kind: wiki\`, \`created\` = today's ISO date. Structure:
 ## Summary
 - Orphans: N
 - Stale sources: N
-- Contradiction flags: — (detector not yet available)
-- Provenance gaps: — (detector not yet available)
+- Contradiction flags: N
+- Provenance gaps: N
 
 ## Orphans
 <table of orphan rows or "None.">
@@ -1193,10 +1193,10 @@ frontmatter \`kind: wiki\`, \`created\` = today's ISO date. Structure:
 <table of stale-source rows or "None.">
 
 ## Contradiction flags
-_Detector not yet available — tracked in Phase 11 roadmap._
+<table of contradiction rows or "None.">
 
 ## Provenance gaps
-_Detector not yet available — tracked in Phase 11 roadmap._
+<table of provenance-gap rows or "None.">
 \`\`\`
 
 After writing the report, append a one-line entry to \`_log.md\`:
