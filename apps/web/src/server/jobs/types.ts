@@ -55,6 +55,17 @@ export interface JobRow {
    * in `status='batch_pending'`. Shape: `BatchHandlePersisted`.
    */
   batch_handle: string | null;
+  /**
+   * Phase-11 Airlock forensic audit trail. JSON `{reason, at}` for
+   * runs whose egress got downgraded by a cross-project
+   * `kb.global_search` hit; null otherwise. Set by the worker
+   * pool's `markEgressDowngraded` hook from the executor's
+   * downgrade callback. The actual enforcement still lives in the
+   * in-memory `AirlockSession`; this column exists so an
+   * incident-response query can find every tainted run without
+   * replaying `job_events`.
+   */
+  egress_downgraded: string | null;
   created_at: number;
 }
 
@@ -121,6 +132,14 @@ export interface JobContext {
   workerId: string;
   /** Append an event to the durable job_events stream. */
   emitEvent(kind: string, data: unknown): void;
+  /**
+   * Phase-11 Airlock forensic hook — handler calls this when the
+   * run's egress gets downgraded by a cross-project hit. Worker
+   * pool persists the payload to `jobs.egress_downgraded` so an
+   * incident-response query can find every tainted run by SELECT
+   * rather than replaying `job_events`. First reason wins.
+   */
+  markEgressDowngraded(payload: { reason: string | null; at: string | null }): void;
   /** Signal that this job should be cancelled (cooperative). */
   signal: AbortSignal;
 }

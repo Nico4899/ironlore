@@ -193,6 +193,7 @@ export class WorkerPool {
       projectId: job.project_id,
       workerId: this.workerId,
       emitEvent: (kind, data) => this.appendEvent(job.project_id, job.id, kind, data),
+      markEgressDowngraded: (payload) => this.markEgressDowngraded(job.id, payload),
       signal: controller.signal,
     };
 
@@ -314,6 +315,23 @@ export class WorkerPool {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Phase-11 Airlock — persist the audit trail when a run's egress
+   * gets downgraded by a cross-project `kb.global_search` hit.
+   * The in-memory `AirlockSession` still enforces the downgrade;
+   * this writes a forensic row so SQL queries can find every
+   * tainted run without replaying `job_events`. Idempotent — only
+   * the first downgrade per job sticks (matches `AirlockSession`'s
+   * "first reason wins" semantics).
+   */
+  markEgressDowngraded(jobId: string, payload: { reason: string | null; at: string | null }): void {
+    this.db
+      .prepare(
+        "UPDATE jobs SET egress_downgraded = ? WHERE id = ? AND egress_downgraded IS NULL",
+      )
+      .run(JSON.stringify(payload), jobId);
   }
 
   /**

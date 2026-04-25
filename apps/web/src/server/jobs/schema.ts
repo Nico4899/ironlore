@@ -65,6 +65,16 @@ function initSchema(db: Database.Database): void {
   if (!jobsCols.some((c) => c.name === "batch_handle")) {
     db.exec("ALTER TABLE jobs ADD COLUMN batch_handle TEXT");
   }
+  // Phase-11 Airlock: forensic audit trail for runs whose egress
+  // got downgraded by a `kb.global_search` cross-project hit.
+  // JSON-encoded `{ reason, at }` matching the in-memory
+  // `AirlockStatus` shape; null otherwise. The downgrade is still
+  // enforced in-memory by `createAirlockSession`; this column
+  // exists so a security review can SELECT every run that touched
+  // foreign-project content without replaying the event stream.
+  if (!jobsCols.some((c) => c.name === "egress_downgraded")) {
+    db.exec("ALTER TABLE jobs ADD COLUMN egress_downgraded TEXT");
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS job_events (

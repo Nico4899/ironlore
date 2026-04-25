@@ -154,6 +154,10 @@ export async function executeAgentRun(
       reason: status.reason,
       at: status.at,
     });
+    // Persist the audit trail to `jobs.egress_downgraded`. The
+    // in-memory session still enforces the lockdown; this column
+    // is for incident-response SELECTs.
+    jobCtx.markEgressDowngraded({ reason: status.reason, at: status.at });
   });
   const wrappedProjectContext: ProjectContext = {
     ...projectContext,
