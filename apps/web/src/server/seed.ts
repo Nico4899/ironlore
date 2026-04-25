@@ -1146,15 +1146,31 @@ Flag; do not auto-fix.
 
 ### 3. Contradiction flags — peer claims that disagree
 
-Stub check. \`kb.check_contradictions\` is scheduled for a later phase.
-Produce the stub section exactly like §2 above; do not invent
-contradictions.
+Real check. Call \`kb.lint_contradictions\` with no arguments — it
+returns \`{ count, contradictions: Array<{ sourcePath, targetPath, rel, linkText }> }\`
+for every wiki-link the author wrote with a typed
+\`contradicts\` / \`disagrees\` / \`refutes\` relation
+(\`[[other | contradicts]]\` syntax — see
+[01-content-model.md](../../../../docs/01-content-model.md) §Wiki-link
+relations).
+
+Report each pair as a row: \`| source | target | rel |\`. The lint
+tool intentionally does not invent contradictions — Phase 1 only
+surfaces what the author already flagged. A future detector can layer
+LLM analysis on top to propose pairs the author missed.
 
 ### 4. Provenance gaps — agent-authored blocks missing \`derived_from\`
 
-Stub check. \`.blocks.json\` sidecars do not yet carry the
-\`derived_from\` field in their schema. Produce the stub section; do
-not flag blocks without real evidence.
+Real check. Call \`kb.lint_provenance_gaps\` with no arguments — it
+walks the \`.blocks.json\` sidecars under \`data/\` and returns
+\`{ count, gaps: Array<{ pagePath, blockId, agent, compiledAt }> }\`
+for every block where \`agent\` is set (= written by an agent run
+through \`kb.replace_block\` / \`kb.insert_after\` / \`kb.create_page\`)
+but \`derived_from\` is missing or empty.
+
+Report each gap as a row: \`| page#blockId | agent | compiled-at |\`.
+A gap is a prompt for the authoring agent to revisit and add a
+citation; flag, do not auto-fix.
 
 ## Report output
 

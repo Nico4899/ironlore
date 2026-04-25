@@ -51,7 +51,9 @@ import { ToolDispatcher } from "./tools/dispatcher.js";
 import { createKbCreatePage } from "./tools/kb-create-page.js";
 import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
 import { createKbInsertAfter } from "./tools/kb-insert-after.js";
+import { createKbLintContradictions } from "./tools/kb-lint-contradictions.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
+import { createKbLintProvenanceGaps } from "./tools/kb-lint-provenance-gaps.js";
 import { createKbLintStaleSources } from "./tools/kb-lint-stale-sources.js";
 import { createKbReadBlock } from "./tools/kb-read-block.js";
 import { createKbReadPage } from "./tools/kb-read-page.js";
@@ -241,6 +243,8 @@ async function start() {
     dispatcher.register(createKbCreatePage(services.writer, services.searchIndex));
     dispatcher.register(createKbLintOrphans(services.searchIndex));
     dispatcher.register(createKbLintStaleSources(services.searchIndex));
+    dispatcher.register(createKbLintContradictions(services.searchIndex));
+    dispatcher.register(createKbLintProvenanceGaps(services.getDataRoot()));
     // Hybrid retrieval — register `kb.semantic_search` only when an
     // embedding provider is configured. Absent a provider, the tool
     // stays off the agent's palette and every caller gracefully
