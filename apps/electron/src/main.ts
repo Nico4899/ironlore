@@ -1,0 +1,234 @@
+import { type ChildProcess, spawn } from "node:child_process";
+import { existsSync, mkdirSync } from "node:fs";
+import { createServer } from "node:net";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { app, BrowserWindow, dialog, shell } from "electron";
+
+/**
+ * Ironlore Electron shell — Phase-10 packaging entry point.
+ *
+ * docs/07-tech-stack.md §Electron shell is the spec. The shell's
+ * job is bundling, OS-native paths, subprocess support, and signed
+ * binaries. The actual product (Hono API + React SPA) is unchanged
+ * — Electron just wraps it in a desktop window.
+ *
+ * Architecture (this file):
+ *   1. Resolve install root from `app.getPath("userData")` so user
+ *      data lands in the OS-native location.
+ *   2. Pick an ephemeral loopback port via Node's net module.
+ *   3. Spawn the bundled Hono server as a child process with
+ *      `IRONLORE_INSTALL_ROOT` + `IRONLORE_PORT` set, plus
+ *      `IRONLORE_SERVE_STATIC` pointed at the bundled Vite build
+ *      so the SPA + API ride one origin.
+ *   4. Poll `/ready` until 200, then load the BrowserWindow at
+ *      that URL.
+ *   5. On window close, SIGTERM the server child.
+ *
+ * The spec calls for an in-process server (no fork) — that's a
+ * follow-up; spawning matches the existing fresh-install e2e
+ * pattern and keeps the Electron main process free of all the
+ * server's native-module loading edge cases on first launch.
+ */
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+interface AppPaths {
+  /** OS-native user-data root: `~/Library/Application Support/Ironlore` etc. */
+  userData: string;
+  /** Where the Hono install lives — `<userData>/ironlore`. */
+  installRoot: string;
+  /** Bundled Vite SPA build directory. */
+  staticDir: string;
+  /** Bundled Hono server entry. */
+  serverEntry: string;
+  /** Node binary to spawn the server with. In production we use
+   *  Electron's bundled Node (`process.execPath` with the
+   *  `ELECTRON_RUN_AS_NODE` env var) so the user doesn't need a
+   *  separate Node install. */
+  nodeBinary: string;
+}
+
+function resolvePaths(): AppPaths {
+  const userData = app.getPath("userData");
+  const installRoot = join(userData, "ironlore");
+  mkdirSync(installRoot, { recursive: true });
+
+  // In dev (`pnpm dev`), the bundled main lives at
+  // `apps/electron/dist/main.cjs` and the server source is at
+  // `apps/web/src/server/index.ts`. In production (packaged app),
+  // both are under `Resources/app.asar.unpacked/...`.
+  const isPackaged = app.isPackaged;
+  const staticDir = isPackaged
+    ? join(process.resourcesPath, "client")
+    : resolve(__dirname, "../../../apps/web/dist/client");
+  const serverEntry = isPackaged
+    ? join(process.resourcesPath, "server", "index.cjs")
+    : resolve(__dirname, "../../../apps/web/src/server/index.ts");
+
+  return {
+    userData,
+    installRoot,
+    staticDir,
+    serverEntry,
+    nodeBinary: process.execPath,
+  };
+}
+
+async function findEphemeralPort(): Promise<number> {
+  return new Promise((resolveFn, rejectFn) => {
+    const srv = createServer();
+    srv.unref();
+    srv.on("error", rejectFn);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      if (addr && typeof addr === "object") {
+        const port = addr.port;
+        srv.close(() => resolveFn(port));
+      } else {
+        rejectFn(new Error("ephemeral port: address resolution failed"));
+      }
+    });
+  });
+}
+
+async function pollReady(url: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastErr: unknown = null;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${url}/ready`);
+      if (res.ok) return;
+    } catch (err) {
+      lastErr = err;
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`Server at ${url} not ready in ${timeoutMs}ms: ${String(lastErr)}`);
+}
+
+let serverProc: ChildProcess | null = null;
+let mainWindow: BrowserWindow | null = null;
+
+function spawnServer(paths: AppPaths, port: number): ChildProcess {
+  // In dev, the server is TypeScript source — we spawn `tsx` which
+  // ships in the workspace `node_modules`. In production the
+  // server is bundled to a single .cjs and Electron's own runtime
+  // (process.execPath + ELECTRON_RUN_AS_NODE) executes it.
+  const isPackaged = app.isPackaged;
+  let command: string;
+  let args: string[];
+  if (isPackaged) {
+    command = paths.nodeBinary;
+    args = [paths.serverEntry];
+  } else {
+    const tsx = resolve(__dirname, "../../../node_modules/.bin/tsx");
+    if (!existsSync(tsx)) {
+      throw new Error(
+        `tsx not found at ${tsx}. Run \`pnpm install\` in the workspace root before \`electron\` dev.`,
+      );
+    }
+    command = tsx;
+    args = [paths.serverEntry];
+  }
+
+  const proc = spawn(command, args, {
+    env: {
+      ...process.env,
+      IRONLORE_INSTALL_ROOT: paths.installRoot,
+      IRONLORE_PORT: String(port),
+      IRONLORE_BIND: "127.0.0.1",
+      IRONLORE_SERVE_STATIC: paths.staticDir,
+      // Electron's runtime needs ELECTRON_RUN_AS_NODE=1 to act as
+      // plain Node when invoked with a script path. Production-only;
+      // tsx in dev runs under the workspace's Node and ignores it.
+      ...(isPackaged ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  proc.stdout?.on("data", (chunk: Buffer) => {
+    process.stdout.write(`[server] ${chunk.toString()}`);
+  });
+  proc.stderr?.on("data", (chunk: Buffer) => {
+    process.stderr.write(`[server] ${chunk.toString()}`);
+  });
+  proc.on("exit", (code) => {
+    console.warn(`[server] exited with code ${code ?? "null"}`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showErrorBox(
+        "Ironlore server stopped",
+        `The Ironlore server exited unexpectedly (code ${code ?? "null"}). Check the log and restart.`,
+      );
+    }
+  });
+
+  return proc;
+}
+
+async function createWindow(paths: AppPaths): Promise<void> {
+  const port = await findEphemeralPort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+
+  serverProc = spawnServer(paths, port);
+  await pollReady(baseUrl, 30_000);
+
+  mainWindow = new BrowserWindow({
+    width: 1280,
+    height: 800,
+    minWidth: 768,
+    minHeight: 480,
+    title: "Ironlore",
+    webPreferences: {
+      // No nodeIntegration in the renderer — the SPA is plain web
+      // and talks to the server only via `fetch` + WebSocket.
+      // Hardens us against renderer-side compromise reaching the
+      // local install root.
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+
+  // Open external links in the user's default browser, not in a
+  // child Electron window — keeps the renderer surface bounded.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  await mainWindow.loadURL(baseUrl);
+  if (!app.isPackaged) {
+    mainWindow.webContents.openDevTools({ mode: "detach" });
+  }
+}
+
+app.whenReady().then(async () => {
+  try {
+    const paths = resolvePaths();
+    await createWindow(paths);
+  } catch (err) {
+    dialog.showErrorBox(
+      "Ironlore failed to start",
+      err instanceof Error ? err.message : String(err),
+    );
+    app.exit(1);
+  }
+});
+
+app.on("window-all-closed", () => {
+  // SIGTERM the server before exiting so its WAL flushes.
+  if (serverProc && !serverProc.killed) {
+    serverProc.kill("SIGTERM");
+  }
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});
+
+app.on("before-quit", () => {
+  if (serverProc && !serverProc.killed) {
+    serverProc.kill("SIGTERM");
+  }
+});

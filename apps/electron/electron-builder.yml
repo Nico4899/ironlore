@@ -1,0 +1,116 @@
+# electron-builder config for Ironlore.
+#
+# Per docs/07-tech-stack.md §Electron shell:
+#   - macOS: Apple Developer ID + notarization via electron-notarize
+#   - Windows: EV code-signing cert via electron-builder
+#   - Linux: AppImage with detached GPG signature
+#
+# The signing + notarization steps are gated on env vars so a
+# `pnpm dist` on a developer's laptop without certificates produces
+# an unsigned local build, while CI with the right secrets produces
+# a signed + notarized release artifact.
+#
+# Required CI secrets (macOS):
+#   CSC_LINK                       — base64-encoded .p12 cert bundle
+#   CSC_KEY_PASSWORD               — .p12 password
+#   APPLE_ID                       — notarization Apple ID
+#   APPLE_APP_SPECIFIC_PASSWORD    — app-specific password for that ID
+#   APPLE_TEAM_ID                  — Apple Developer team ID
+#
+# Required CI secrets (Windows):
+#   CSC_LINK + CSC_KEY_PASSWORD    — same shape as macOS
+
+appId: com.ironlore.app
+productName: Ironlore
+copyright: Copyright © 2026 Ironlore
+
+# Paths inside the staging dir consumed by electron-builder.
+# `directories.app` is the project we're packaging; we point it
+# at the apps/electron workspace so its package.json + dist/ are
+# the package root.
+directories:
+  app: .
+  buildResources: build
+  output: out
+
+# What ends up in the .app's Contents.
+# - dist/main.cjs is the bundled main process
+# - The Vite build (apps/web/dist/client) ships as `client/` next
+#   to the asar bundle so the Hono server can serve it via
+#   IRONLORE_SERVE_STATIC.
+# - The bundled server (apps/web/dist/server/index.cjs) ships as
+#   `server/` — Electron main spawns it with ELECTRON_RUN_AS_NODE.
+files:
+  - dist/**/*
+  - package.json
+  - "!node_modules/**/*"
+
+# Native modules can't live inside asar — asar can't execute
+# compiled binaries. better-sqlite3, node-pty, sharp, and
+# @node-rs/argon2 all carry .node files; ship them as
+# extraResources so they're loadable at runtime.
+extraResources:
+  # Vite SPA build — Hono serves this via IRONLORE_SERVE_STATIC.
+  - from: ../web/dist/client
+    to: client
+    filter: ["**/*"]
+  # Bundled Hono server entry. The build step below produces this.
+  - from: ../web/dist/server
+    to: server
+    filter: ["**/*"]
+
+# asarUnpack is the canonical place for native modules that have
+# to live on the real filesystem. The renderer never reaches them,
+# but the spawned server child does. Patterns below cover the four
+# native deps the Hono server uses.
+asar: true
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+  - "**/node_modules/node-pty/**"
+  - "**/node_modules/sharp/**"
+  - "**/node_modules/@node-rs/argon2/**"
+  - "**/node_modules/@node-rs/argon2-*/**"
+
+mac:
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # Entitlements lives under build/ — see entitlements.mac.plist.
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # x64 + arm64 universal binary so one .app runs on both Intel
+  # and Apple Silicon. Apple's notary service signs both slices.
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  # Notarization. electron-builder ≥ 25 reads the env vars below
+  # automatically when this block is present. Off-CI builds skip
+  # this step (the env vars aren't set) and produce an unsigned
+  # local DMG that opens with right-click → Open.
+  notarize:
+    teamId: ${env.APPLE_TEAM_ID}
+
+win:
+  target:
+    - nsis
+    - zip
+
+linux:
+  target:
+    - AppImage
+    - tar.gz
+  category: Office
+
+# Auto-update channel — points at the `ironlore-release.json`
+# manifest so `electron-updater` polls GitHub Releases. Off by
+# default per docs/07-tech-stack.md §Electron shell §Auto-update;
+# the user opts in via Settings → Updates.
+publish:
+  provider: github
+  releaseType: release
