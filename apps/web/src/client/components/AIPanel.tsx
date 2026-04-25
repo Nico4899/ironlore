@@ -1,4 +1,12 @@
-import { ArrowUp, ChevronDown, Highlighter, Lightbulb, Sparkles, X } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronDown,
+  Highlighter,
+  Lightbulb,
+  Settings,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
@@ -6,6 +14,7 @@ import {
   type AgentConfigResponse,
   fetchAgentConfig,
   fetchAgents,
+  fetchProviders,
   getApiProject,
   revertJob,
   submitDryRunVerdict,
@@ -903,6 +912,37 @@ function AgentPauseBanner({ slug }: { slug: string }) {
 }
 
 function AIEmptyState() {
+  // Probe provider connectivity so the empty state can branch:
+  //  - any provider connected → existing tip-card layout
+  //  - none connected → "configure AI" card with clickable links to
+  //    Settings → Providers + a pointer at Ollama for the
+  //    no-API-key path.
+  // Stays a hint, not a hard block — sending a prompt with no
+  // provider still hits the existing "No AI provider configured"
+  // error path the executor emits, so the panel never silently
+  // pretends to work.
+  const [hasProvider, setHasProvider] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchProviders()
+      .then((rows) => {
+        if (cancelled) return;
+        setHasProvider(rows.some((r) => r.status === "connected"));
+      })
+      .catch(() => {
+        // Endpoint failure (rare) → fall through to the prompt
+        // cards rather than nag the user.
+        if (!cancelled) setHasProvider(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (hasProvider === false) {
+    return <AIEmptyStateNoProvider />;
+  }
+
   return (
     <div className="mx-auto flex h-full max-w-[320px] flex-col justify-center gap-3">
       <div className="grid grid-cols-2 gap-3">
@@ -931,6 +971,60 @@ function AIEmptyState() {
             <li>“Find pages where we decided on the editor architecture.”</li>
             <li>“Draft a release note from yesterday's diffs.”</li>
           </ul>
+        }
+        wide
+      />
+    </div>
+  );
+}
+
+/**
+ * Empty-state shown when no AI provider has connected. Replaces the
+ * usual tip-cards so a non-technical user lands on a clear path:
+ * either install Ollama (zero-key local AI) or paste a Claude /
+ * OpenAI key in Settings → Providers. The "Open Settings" button
+ * jumps straight to the providers tab via the existing
+ * `toggleSettings("providers")` action.
+ */
+function AIEmptyStateNoProvider() {
+  const toggleSettings = useAppStore((s) => s.toggleSettings);
+  return (
+    <div className="mx-auto flex h-full max-w-[320px] flex-col justify-center gap-3">
+      <EmptyCard
+        icon={<Settings className="h-4 w-4 text-ironlore-blue" />}
+        title="Connect an AI provider"
+        body={
+          <>
+            <p className="mt-1 text-secondary">
+              Ironlore works without AI — but the panel only comes alive once a provider is
+              configured.
+            </p>
+            <ul className="mt-2 space-y-1.5 text-secondary">
+              <li>
+                <span className="font-medium text-primary">Local · free.</span> Install{" "}
+                <a
+                  href="https://ollama.com/download"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-dotted underline-offset-2 hover:text-ironlore-blue"
+                >
+                  Ollama
+                </a>{" "}
+                and run a model — Ironlore auto-detects it.
+              </li>
+              <li>
+                <span className="font-medium text-primary">Cloud · BYOK.</span> Paste an Anthropic
+                or OpenAI key into Settings → Providers.
+              </li>
+            </ul>
+            <button
+              type="button"
+              onClick={() => toggleSettings("providers")}
+              className="mt-3 rounded border border-ironlore-blue/40 bg-ironlore-blue/10 px-2.5 py-1 text-[11px] font-medium text-ironlore-blue hover:bg-ironlore-blue/20"
+            >
+              Open Settings → Providers
+            </button>
+          </>
         }
         wide
       />

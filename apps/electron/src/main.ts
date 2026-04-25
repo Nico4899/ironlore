@@ -151,6 +151,11 @@ function spawnServer(paths: AppPaths, port: number): ChildProcess {
       IRONLORE_PORT: String(port),
       IRONLORE_BIND: "127.0.0.1",
       IRONLORE_SERVE_STATIC: paths.staticDir,
+      // Tells the server it's running under a GUI shell. Currently
+      // controls the first-run-hint endpoint, which switches the
+      // login page's "where's my password" copy from "terminal" to
+      // "dialog" — see auth.ts /first-run-hint.
+      IRONLORE_GUI: "1",
       // Electron's runtime needs ELECTRON_RUN_AS_NODE=1 to act as
       // plain Node when invoked with a script path. Production-only;
       // tsx in dev runs under the workspace's Node and ignores it.
