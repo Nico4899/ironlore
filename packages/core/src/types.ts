@@ -88,6 +88,24 @@ export interface InstallRecord {
   created_at: string;
 }
 
+/**
+ * MCP server declaration in `project.yaml`. See
+ * docs/04-ai-and-agents.md §MCP compatibility and
+ * docs/05-jobs-and-security.md §MCP server lifecycle.
+ */
+export interface McpServerConfig {
+  /** Tool prefix — surfaced to agents as `mcp.<name>.<tool>`. */
+  name: string;
+  /** `stdio` spawns a subprocess; `http` POSTs JSON-RPC. */
+  transport: "stdio" | "http";
+  /** stdio: executable path. */
+  command?: string;
+  /** stdio: argv. */
+  args?: string[];
+  /** http: endpoint URL. Subject to project egress policy. */
+  url?: string;
+}
+
 /** project.yaml configuration. */
 export interface ProjectConfig {
   preset: ProjectPreset;
@@ -96,4 +114,5 @@ export interface ProjectConfig {
     policy: "open" | "allowlist" | "blocked";
     allowlist?: string[];
   };
+  mcp_servers?: McpServerConfig[];
 }
