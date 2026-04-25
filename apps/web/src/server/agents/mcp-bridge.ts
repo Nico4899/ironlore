@@ -2,10 +2,10 @@ import type { McpServerConfig } from "@ironlore/core";
 import type { ToolDispatcher } from "../tools/dispatcher.js";
 import type { ToolCallContext, ToolImplementation } from "../tools/types.js";
 import {
-  type McpClient,
-  type McpToolDescriptor,
   connectMcpServer,
+  type McpClient,
   type McpConnectOptions,
+  type McpToolDescriptor,
 } from "./mcp-client.js";
 
 /**
@@ -58,8 +58,7 @@ export class McpBridge {
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        const stack = err instanceof Error ? err.stack : "";
-        console.warn(`[mcp] server '${config.name}' discovery failed: ${message}\n${stack}`);
+        console.warn(`[mcp] server '${config.name}' discovery failed: ${message}`);
         this.discovered.set(config.name, []);
       }
     }

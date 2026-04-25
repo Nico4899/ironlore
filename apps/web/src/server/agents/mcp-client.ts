@@ -1,7 +1,12 @@
-import type { ChildProcess } from "node:child_process";
+import { realpathSync } from "node:fs";
 import type { McpServerConfig } from "@ironlore/core";
 import { fetchForProject } from "../fetch-for-project.js";
 import { spawnSafe } from "../spawn-safe.js";
+
+// `node:child_process` is banned by biome to enforce the `spawnSafe`
+// pathway. We re-derive `ChildProcess` from the helper's return type
+// instead of importing it directly.
+type ChildProcess = ReturnType<typeof spawnSafe>;
 
 /**
  * Minimal Model Context Protocol client.
@@ -93,7 +98,6 @@ export interface McpConnectOptions {
 }
 
 export class McpClient {
-  private nextId = 1;
   private transport: McpTransport;
   /** Cached after `initialize` so repeat calls are cheap no-ops. */
   private initialized = false;
@@ -174,10 +178,7 @@ export class McpClient {
 
 function isMethodNotFound(err: unknown): boolean {
   return Boolean(
-    err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code: unknown }).code === -32601,
+    err && typeof err === "object" && "code" in err && (err as { code: unknown }).code === -32601,
   );
 }
 
@@ -215,6 +216,17 @@ function makeStdioTransport(config: McpServerConfig, opts: McpConnectOptions): M
   const command = config.command as string;
   const args = config.args ?? [];
   const requestTimeoutMs = opts.requestTimeoutMs ?? 15_000;
+  // resolveSafe inside spawnSafe rejects an absolute `cwd` whose
+  // text differs from `dataRoot` even when both point at the same
+  // realpath (the canonical macOS `/var` → `/private/var`
+  // wrinkle). Canonicalising here before handing to spawnSafe
+  // dodges that without changing the security primitive.
+  let canonicalRoot = opts.dataRoot;
+  try {
+    canonicalRoot = realpathSync(opts.dataRoot);
+  } catch {
+    // dataRoot doesn't exist — let spawnSafe surface the error.
+  }
 
   let proc: ChildProcess | null = null;
   let exited = false;
@@ -225,8 +237,8 @@ function makeStdioTransport(config: McpServerConfig, opts: McpConnectOptions): M
   function ensureSpawned(): ChildProcess {
     if (proc && !exited) return proc;
     proc = spawnSafe(command, args, {
-      cwd: opts.dataRoot,
-      dataRoot: opts.dataRoot,
+      cwd: canonicalRoot,
+      dataRoot: canonicalRoot,
       projectId: opts.projectId,
     });
     exited = false;
@@ -236,6 +248,18 @@ function makeStdioTransport(config: McpServerConfig, opts: McpConnectOptions): M
       for (const p of pending.values()) {
         clearTimeout(p.timer);
         p.reject(new Error(reason));
+      }
+      pending.clear();
+    });
+    // Async spawn failure (ENOENT, EACCES). Without this listener
+    // the error bubbles up as an unhandled exception and crashes
+    // the host process — fatal for a per-project bridge that's
+    // supposed to fail gracefully.
+    proc.on("error", (err) => {
+      exited = true;
+      for (const p of pending.values()) {
+        clearTimeout(p.timer);
+        p.reject(err);
       }
       pending.clear();
     });
@@ -296,7 +320,7 @@ function makeStdioTransport(config: McpServerConfig, opts: McpConnectOptions): M
           reject,
           timer,
         });
-        if (!child.stdin || !child.stdin.writable) {
+        if (!child.stdin?.writable) {
           clearTimeout(timer);
           pending.delete(id);
           reject(new Error(`MCP server '${config.name}' stdin not writable`));
