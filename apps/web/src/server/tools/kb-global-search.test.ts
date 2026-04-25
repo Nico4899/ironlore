@@ -184,6 +184,55 @@ describe("kb.global_search", () => {
     expect(downgrade).not.toHaveBeenCalled();
   });
 
+  it("skips foreign projects marked trust: strict", async () => {
+    const main = newProject("main");
+    const strictForeign = newProject("strict");
+    const normalForeign = newProject("normal");
+    main.searchIndex.indexPage("a.md", "# A\n\nMango pad notes.\n", "test");
+    strictForeign.searchIndex.indexPage("b.md", "# B\n\nMango bass workflow.\n", "test");
+    normalForeign.searchIndex.indexPage("c.md", "# C\n\nMango drum workflow.\n", "test");
+
+    const downgrade = vi.fn();
+    const tool = createKbGlobalSearch({
+      getAllProjectIndexes: () =>
+        new Map([
+          ["main", main.searchIndex],
+          ["strict", strictForeign.searchIndex],
+          ["normal", normalForeign.searchIndex],
+        ]),
+      getProjectTrust: (pid) => (pid === "strict" ? "strict" : "normal"),
+    });
+    const result = JSON.parse(await tool.execute({ query: "mango" }, makeCtx({ downgrade }))) as {
+      results: Array<{ projectId: string }>;
+      skippedStrictProjects?: number;
+    };
+
+    const projectIds = new Set(result.results.map((r) => r.projectId));
+    expect(projectIds.has("main")).toBe(true);
+    expect(projectIds.has("normal")).toBe(true);
+    expect(projectIds.has("strict")).toBe(false);
+    expect(result.skippedStrictProjects).toBe(1);
+  });
+
+  it("does NOT skip the caller's own project even when its trust is strict", async () => {
+    // Strict only constrains *outbound* discovery — a project's
+    // own agents still see its own pages.
+    const main = newProject("main");
+    main.searchIndex.indexPage("a.md", "# A\n\nMango self-search.\n", "test");
+
+    const downgrade = vi.fn();
+    const tool = createKbGlobalSearch({
+      getAllProjectIndexes: () => new Map([["main", main.searchIndex]]),
+      getProjectTrust: () => "strict",
+    });
+    const result = JSON.parse(await tool.execute({ query: "mango" }, makeCtx({ downgrade }))) as {
+      results: Array<{ projectId: string }>;
+    };
+    expect(result.results.some((r) => r.projectId === "main")).toBe(true);
+    // No foreign projects participated → no downgrade.
+    expect(downgrade).not.toHaveBeenCalled();
+  });
+
   it("respects ?limit by capping the merged list", async () => {
     const main = newProject("main");
     const other = newProject("other");

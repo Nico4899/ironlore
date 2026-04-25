@@ -286,6 +286,19 @@ async function start() {
             for (const [pid, svc] of servicesById) m.set(pid, svc.searchIndex);
             return m;
           },
+          // Per-project trust gate — strict projects sit out the
+          // cross-project fan-out entirely. Resolved live so a
+          // project.yaml edit + restart picks it up without
+          // touching the dispatcher wiring.
+          getProjectTrust: (pid) => {
+            const svc = servicesById.get(pid);
+            if (!svc) return undefined;
+            try {
+              return loadProjectConfig(svc.projectDir).trust;
+            } catch {
+              return undefined;
+            }
+          },
         }),
       );
     }

@@ -68,6 +68,22 @@ export const ProjectConfigSchema = z.object({
    * server restart — runtime toggling would race in-flight writes.
    */
   mode: z.enum(["single-user", "multi-user"]).default("single-user"),
+  /**
+   * Phase-11 Airlock trust boundary (docs/05 §Threat-model
+   * boundaries). `normal` (default) means foreign-project agents
+   * may surface this project's pages through `kb.global_search`
+   * (and trigger the egress downgrade in the process). `strict`
+   * removes the project from cross-project fan-out entirely:
+   * agents in *other* projects never see its content, even at the
+   * cost of a downgraded run. The project's own agents are
+   * unaffected — strict only constrains *outbound* discovery, not
+   * the project's own `kb.search`.
+   *
+   * The trust gate is independent of `egress.policy`: a strict
+   * project may still allow its own agents broad outbound network
+   * access; the two policies cover orthogonal risks.
+   */
+  trust: z.enum(["normal", "strict"]).default("normal"),
 });
 
 /** Zod schema for the bootstrap install record. */

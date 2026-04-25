@@ -43,6 +43,20 @@ export interface KbGlobalSearchOptions {
    *  keyed by `projectId`. Should be a closure over the live
    *  registry so projects added at runtime are visible. */
   getAllProjectIndexes: () => Map<string, SearchIndex>;
+  /**
+   * Optional per-project trust resolver. Returns `"strict"` for
+   * projects that opt out of cross-project fan-out (their pages
+   * stay invisible to agents in other projects) and `"normal"` /
+   * `undefined` for projects that participate.
+   *
+   * The caller's own project is always searched regardless of its
+   * trust setting — strict only constrains *outbound* discovery,
+   * not the project's own `kb.search` surface.
+   *
+   * Wired to `loadProjectConfig(projectDir).trust` at index.ts.
+   * Optional so tests + simpler callers can omit it.
+   */
+  getProjectTrust?: (projectId: string) => "normal" | "strict" | undefined;
 }
 
 export function createKbGlobalSearch(opts: KbGlobalSearchOptions): ToolImplementation {
@@ -97,8 +111,20 @@ export function createKbGlobalSearch(opts: KbGlobalSearchOptions): ToolImplement
       const K = 60; // RRF — same constant the per-project + scope=all paths use
       const merged = new Map<string, { score: number; result: GlobalSearchResult }>();
       let foreignHits = 0;
+      let skippedStrictProjects = 0;
 
       for (const [pid, idx] of all) {
+        // Trust gate — a project marked `trust: strict` in
+        // project.yaml is invisible to agents in *other*
+        // projects. Caller's own project is always searched.
+        if (
+          pid !== ctx.projectId &&
+          opts.getProjectTrust &&
+          opts.getProjectTrust(pid) === "strict"
+        ) {
+          skippedStrictProjects++;
+          continue;
+        }
         let projectResults: ReturnType<SearchIndex["search"]>;
         try {
           projectResults = idx.search(query, limit * 2);
@@ -150,6 +176,10 @@ export function createKbGlobalSearch(opts: KbGlobalSearchOptions): ToolImplement
         // RRF — useful for the agent to decide whether to refine
         // the query before triggering the lockdown.
         foreignCandidates: foreignHits,
+        // Surfaced for transparency: an agent that sees "I asked
+        // about X but two projects opted out" can communicate that
+        // gap to the user instead of silently underreporting.
+        ...(skippedStrictProjects > 0 ? { skippedStrictProjects } : {}),
       });
     },
   };
