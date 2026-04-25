@@ -450,6 +450,7 @@ export function AIPanel() {
             </span>
           )}
           <span className="flex-1" />
+          <NetworkLockedBadge />
           <Key>⌘⇧A</Key>
         </div>
       </AgentPulse>
@@ -1542,6 +1543,45 @@ function RunFinalizedCard({
  * `signal-amber` rail used elsewhere for "intentional limit
  * reached."
  */
+/**
+ * Persistent chrome-level "network locked" badge. Visible the
+ * moment a Phase-11 Airlock downgrade lands, and stays visible
+ * for the rest of the conversation — until the user clears the
+ * messages or starts a new run. Mirrors the inline
+ * `EgressDowngradedBanner` (which fires once per run as a
+ * conversation card) at a higher visual altitude so the user can
+ * always see the security state without scrolling.
+ *
+ * Reads off the same `egress_downgraded` store message the inline
+ * banner uses, so any future change to event handling stays
+ * coherent across both surfaces. Renders nothing pre-downgrade.
+ */
+function NetworkLockedBadge() {
+  const downgraded = useAIPanelStore((s) =>
+    s.messages.some((m) => m.type === "egress_downgraded"),
+  );
+  if (!downgraded) return null;
+  return (
+    <span
+      role="status"
+      aria-label="Network locked: cross-project content entered this run; outbound network calls are blocked for the rest of the conversation"
+      title="Cross-project content entered this run. Outbound network calls are blocked for the rest of the conversation."
+      className="flex items-center gap-1 rounded-sm font-mono uppercase"
+      style={{
+        fontSize: 9.5,
+        letterSpacing: "0.06em",
+        padding: "2px 6px",
+        background: "color-mix(in oklch, var(--il-amber) 12%, transparent)",
+        border: "1px solid color-mix(in oklch, var(--il-amber) 35%, transparent)",
+        color: "var(--il-amber)",
+      }}
+    >
+      <Reuleaux size={6} color="var(--il-amber)" />
+      Network locked
+    </span>
+  );
+}
+
 function EgressDowngradedBanner({ reason, at }: { reason: string; at: string | null }) {
   const formattedAt = (() => {
     if (!at) return null;
