@@ -79,8 +79,14 @@ test.describe("editor save round-trip", () => {
     //      first (the directory), then `index.md`. We use
     //      `getByRole` so a className refactor doesn't break the
     //      selector.
-    await page.getByRole("button", { name: /^getting-started$/ }).first().click();
-    await page.getByRole("button", { name: /^index\.md$/ }).first().click();
+    await page
+      .getByRole("button", { name: /^getting-started$/ })
+      .first()
+      .click();
+    await page
+      .getByRole("button", { name: /^index\.md$/ })
+      .first()
+      .click();
 
     // ── 5. Editor mounts and the seeded content renders ────────────
     const editor = page.locator(".ProseMirror");
@@ -106,18 +112,31 @@ test.describe("editor save round-trip", () => {
     //      session cookie set on the Vite origin is sent — going
     //      direct to the Hono port would 401 because cookies
     //      don't cross origins.
-    const apiPath = `${server.baseUrl}/api/projects/main/pages/getting-started/index.md`;
+    // The browser fetch uses the page's session cookie; Playwright's
+    // `page.request` runs in a separate APIRequestContext that
+    // doesn't carry the page-mutated cookies in our setup, so we
+    // route through `page.evaluate` to share the live cookie jar.
+    const apiPath = "/api/projects/main/pages/getting-started/index.md";
     const deadline = Date.now() + 5_000;
     let body: { content?: string; etag?: string } = {};
+    let lastStatus = 0;
     while (Date.now() < deadline) {
-      const res = await page.request.get(apiPath);
-      if (res.ok()) {
-        body = (await res.json()) as { content?: string; etag?: string };
+      const result = await page.evaluate(async (path: string) => {
+        const r = await fetch(path, { credentials: "include" });
+        const txt = r.ok ? await r.json() : null;
+        return { status: r.status, body: txt as { content?: string; etag?: string } | null };
+      }, apiPath);
+      lastStatus = result.status;
+      if (result.body) {
+        body = result.body;
         if (body.content?.includes(marker)) break;
       }
       await new Promise((r) => setTimeout(r, 200));
     }
-    expect(body.content, `auto-save marker '${marker}' should reach the server`).toContain(marker);
+    expect(
+      body.content,
+      `auto-save marker '${marker}' should reach the server (last GET status: ${lastStatus})`,
+    ).toContain(marker);
     expect(body.etag, "save should produce a fresh etag").toMatch(/^"sha256-/);
   });
 });

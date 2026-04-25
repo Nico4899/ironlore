@@ -55,3 +55,37 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    # The Playwright suite drives a real browser through the actual
+    # boot path (Hono API + Vite dev + onboarding wizard + editor
+    # save round-trip). Each spec self-spawns its servers on
+    # isolated ports under a temp install root — no shared state
+    # with the unit `test` job, so it can run in parallel.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # `--with-deps` pulls system libraries Chromium needs on a
+      # fresh GitHub runner; without it `chromium-headless` fails
+      # at start-up with libnss / libxkbcommon errors.
+      - name: Install Playwright browsers
+        run: pnpm --filter @ironlore/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      # Upload the HTML report on failure so a developer reading the
+      # CI log can see the failing screenshot + trace without
+      # re-running locally.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
