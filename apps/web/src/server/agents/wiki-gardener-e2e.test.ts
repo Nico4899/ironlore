@@ -161,6 +161,7 @@ describe("Wiki Gardener end-to-end (seed → activate → schedule)", () => {
           jobId: "test",
           emitEvent: () => undefined,
           dataRoot: fx.dataDir,
+          fetch: globalThis.fetch,
         },
       ),
     ) as { count: number; orphans: Array<{ path: string }> };

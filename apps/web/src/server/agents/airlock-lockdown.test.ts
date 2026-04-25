@@ -53,6 +53,7 @@ function makeJob(): JobRow {
     commit_sha_start: null,
     commit_sha_end: null,
     batch_handle: null,
+    egress_downgraded: null,
     created_at: now,
   };
 }
@@ -62,6 +63,7 @@ function makeJobCtx(events: Array<{ kind: string; data: unknown }>): JobContext 
     projectId: "main",
     workerId: "test-worker",
     emitEvent: (kind, data) => events.push({ kind, data }),
+    markEgressDowngraded: () => undefined,
     signal: new AbortController().signal,
   };
 }

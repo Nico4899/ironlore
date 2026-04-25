@@ -72,6 +72,7 @@ function makeJob(overrides: Partial<JobRow> = {}): JobRow {
     commit_sha_start: null,
     commit_sha_end: null,
     batch_handle: null,
+    egress_downgraded: null,
     created_at: now,
     ...overrides,
   };
@@ -82,6 +83,7 @@ function makeJobCtx(): JobContext {
     projectId: "main",
     workerId: "test-worker",
     emitEvent: () => {},
+    markEgressDowngraded: () => undefined,
     signal: new AbortController().signal,
   };
 }

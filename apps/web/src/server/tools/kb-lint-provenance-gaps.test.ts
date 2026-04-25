@@ -25,6 +25,7 @@ const NO_CTX: ToolCallContext = {
   jobId: "test",
   emitEvent: () => undefined,
   dataRoot: "",
+  fetch: globalThis.fetch,
 };
 
 function writeSidecar(dataRoot: string, mdPath: string, index: BlocksIndex): void {

@@ -58,6 +58,7 @@ function makeCtx(opts: { downgrade: ReturnType<typeof vi.fn> }): ToolCallContext
     jobId: "test",
     emitEvent: () => undefined,
     dataRoot: "",
+    fetch: globalThis.fetch,
     downgradeEgress: opts.downgrade,
   };
 }

@@ -328,9 +328,7 @@ export class WorkerPool {
    */
   markEgressDowngraded(jobId: string, payload: { reason: string | null; at: string | null }): void {
     this.db
-      .prepare(
-        "UPDATE jobs SET egress_downgraded = ? WHERE id = ? AND egress_downgraded IS NULL",
-      )
+      .prepare("UPDATE jobs SET egress_downgraded = ? WHERE id = ? AND egress_downgraded IS NULL")
       .run(JSON.stringify(payload), jobId);
   }
 

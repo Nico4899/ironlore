@@ -69,6 +69,7 @@ describe("red-team — (a) writable_kinds bypass via prompt injection", () => {
       jobId: "rt",
       emitEvent: () => undefined,
       dataRoot,
+      fetch: globalThis.fetch,
     };
   }
 

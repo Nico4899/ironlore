@@ -1557,9 +1557,7 @@ function RunFinalizedCard({
  * coherent across both surfaces. Renders nothing pre-downgrade.
  */
 function NetworkLockedBadge() {
-  const downgraded = useAIPanelStore((s) =>
-    s.messages.some((m) => m.type === "egress_downgraded"),
-  );
+  const downgraded = useAIPanelStore((s) => s.messages.some((m) => m.type === "egress_downgraded"));
   if (!downgraded) return null;
   return (
     <span

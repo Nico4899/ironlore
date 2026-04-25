@@ -28,6 +28,7 @@ const NO_CTX: ToolCallContext = {
   jobId: "test",
   emitEvent: () => undefined,
   dataRoot: "",
+  fetch: globalThis.fetch,
 };
 
 describe("SearchIndex.findContradictions + kb.lint_contradictions", () => {

@@ -27,6 +27,7 @@ function ctx(dataRoot: string, agentSlug: string): ToolCallContext {
     jobId: "test",
     emitEvent: () => undefined,
     dataRoot,
+    fetch: globalThis.fetch,
   };
 }
 

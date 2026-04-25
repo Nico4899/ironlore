@@ -57,6 +57,7 @@ function makeCtx(fx: Fx): ToolCallContext {
     jobId: "j1",
     emitEvent: () => undefined,
     dataRoot: fx.dataRoot,
+    fetch: globalThis.fetch,
   };
 }
 

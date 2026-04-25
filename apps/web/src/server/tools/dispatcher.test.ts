@@ -44,6 +44,7 @@ function makeCtx(dataRoot: string): ToolCallContext {
     jobId: "test-job",
     emitEvent: (kind, data) => events.push({ kind, data }),
     dataRoot,
+    fetch: globalThis.fetch,
   };
 }
 
@@ -534,6 +535,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       jobId: "test-job",
       emitEvent: (kind, data) => events.push({ kind, data }),
       dataRoot,
+      fetch: globalThis.fetch,
       dryRunBridge: bridge,
     };
 
@@ -596,6 +598,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       jobId: "test-job",
       emitEvent: () => {},
       dataRoot,
+      fetch: globalThis.fetch,
       dryRunBridge: bridge,
     };
 
@@ -646,6 +649,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       jobId: "test-job",
       emitEvent: () => {},
       dataRoot,
+      fetch: globalThis.fetch,
       dryRunBridge: bridge,
     };
 
@@ -688,6 +692,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       jobId: "test-job",
       emitEvent: (kind, data) => events.push({ kind, data }),
       dataRoot,
+      fetch: globalThis.fetch,
       dryRunBridge: bridge,
     };
 

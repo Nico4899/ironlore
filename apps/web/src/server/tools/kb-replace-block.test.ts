@@ -39,6 +39,7 @@ function ctx(projectDir: string, agentSlug: string): ToolCallContext {
     jobId: "test",
     emitEvent: () => undefined,
     dataRoot: join(projectDir, "data"),
+    fetch: globalThis.fetch,
   };
 }
 
