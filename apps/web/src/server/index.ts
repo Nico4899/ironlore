@@ -649,6 +649,49 @@ async function start() {
     app.route("/metrics", metricsApi);
   }
 
+  // Static SPA serving — opt-in via `IRONLORE_SERVE_STATIC=<dir>`.
+  // The Electron shell sets this to its bundled `dist/client`
+  // path; normal dev keeps Vite as the SPA host and the env
+  // unset. The middleware sits AFTER every API route so a path
+  // collision never shadows an endpoint, with an SPA fallback to
+  // `index.html` for unknown paths so client-side routing works.
+  // Per docs/07-tech-stack.md §Electron shell.
+  const staticDir = process.env.IRONLORE_SERVE_STATIC;
+  if (staticDir) {
+    const { serveStatic } = await import("@hono/node-server/serve-static");
+    const { resolve, isAbsolute } = await import("node:path");
+    const root = isAbsolute(staticDir) ? staticDir : resolve(process.cwd(), staticDir);
+    app.use(
+      "*",
+      serveStatic({
+        root,
+        // serve-static treats `root` as relative to cwd. We always
+        // hand it an absolute path; the rewriter is a no-op that
+        // still lets the middleware match against any URL.
+        rewriteRequestPath: (path) => path.replace(/^\/+/, "/"),
+      }),
+    );
+    // SPA fallback — for any non-API path that didn't hit a static
+    // file, return index.html so client-side routes hydrate.
+    const { readFileSync } = await import("node:fs");
+    const indexHtml = readFileSync(`${root}/index.html`, "utf-8");
+    app.notFound((c) => {
+      const path = new URL(c.req.url).pathname;
+      // API / WS / health / ready paths are real 404s — we only
+      // fall through to index.html for "looks like a page" paths.
+      if (
+        path.startsWith("/api/") ||
+        path.startsWith("/ws") ||
+        path === "/health" ||
+        path === "/ready"
+      ) {
+        return c.json({ error: "Not Found" }, 404);
+      }
+      return c.html(indexHtml);
+    });
+    console.log(`Serving static SPA from ${root}`);
+  }
+
   // Initialize WebSocket manager for real-time events
   wsManager = new WebSocketManager(sessionStore, validateCookie);
 
