@@ -1017,6 +1017,9 @@ function MessageList() {
             <div className="rounded-lg bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
           )}
           {msg.type === "run_finalized" && <RunFinalizedCard msg={msg} />}
+          {msg.type === "egress_downgraded" && (
+            <EgressDowngradedBanner reason={msg.reason} at={msg.at} />
+          )}
           {msg.type === "resume_divider" && (
             <div className="flex items-center gap-2 py-1 text-[10px] text-secondary">
               <div className="h-px flex-1 bg-border" />
@@ -1432,6 +1435,61 @@ function RunFinalizedCard({
           {reverted && " \u00B7 reverted"}
         </div>
         {revertError && <div className="mt-1 text-signal-red">{revertError}</div>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Phase-11 Airlock affordance — rendered once per run when
+ * `kb.global_search` returned a foreign-project hit and the
+ * executor's airlock session flipped egress to offline. After
+ * this point every provider call + connector fetch in the run
+ * throws `EgressDowngradedError` (HTTP 451).
+ *
+ * The card is informational, not actionable: the downgrade is
+ * one-way per run, so there's no "undo." The user's recourse is
+ * to start a new run if they need network access.
+ *
+ * Visual posture: amber instead of red — this is a deliberate,
+ * documented containment, not a failure. Mirrors the
+ * `signal-amber` rail used elsewhere for "intentional limit
+ * reached."
+ */
+function EgressDowngradedBanner({ reason, at }: { reason: string; at: string | null }) {
+  const formattedAt = (() => {
+    if (!at) return null;
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(at));
+    } catch {
+      return null;
+    }
+  })();
+
+  return (
+    <div
+      className="rounded-lg border px-3 py-2 text-xs"
+      role="status"
+      aria-live="polite"
+      style={{
+        borderColor: "color-mix(in oklch, var(--il-amber) 35%, transparent)",
+        background: "color-mix(in oklch, var(--il-amber) 8%, transparent)",
+        color: "var(--il-text)",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-semibold" style={{ color: "var(--il-amber)" }}>
+          Egress downgraded
+        </div>
+        {formattedAt && <div className="font-mono text-secondary">{formattedAt}</div>}
+      </div>
+      <div className="mt-0.5 text-secondary">{reason}</div>
+      <div className="mt-1 text-secondary opacity-80">
+        Cross-project content entered this run, so outbound network calls are blocked for the rest
+        of the conversation. Start a new run to restore network access.
       </div>
     </div>
   );

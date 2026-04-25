@@ -261,6 +261,26 @@ function processJobEvent(event: { seq: number; kind: string; data: string }): vo
       break;
     }
 
+    case "egress.downgraded": {
+      // Phase-11 Airlock — `kb.global_search` returned a foreign
+      // hit and the run's egress just went offline. Render the
+      // banner once per run; if the executor double-fires (it
+      // shouldn't) the second card is harmless. The event payload
+      // is `{ reason, at }` — see airlock.ts.
+      const reason =
+        typeof data.reason === "string" && data.reason.length > 0
+          ? data.reason
+          : "cross-project content entered the run";
+      const at = typeof data.at === "string" ? data.at : null;
+      // Fold duplicates into the first banner so a noisy executor
+      // can't spam the panel.
+      const existing = store.messages.find((m) => m.type === "egress_downgraded");
+      if (!existing) {
+        store.addMessage({ type: "egress_downgraded", reason, at });
+      }
+      break;
+    }
+
     case "run.finalized": {
       // Server emits this at the end of an autonomous run with the
       // commit range + file list. We surface it as a finalized card
