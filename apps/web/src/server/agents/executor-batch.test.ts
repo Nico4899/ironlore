@@ -98,10 +98,11 @@ class StubBatchProvider implements Provider {
     },
   ) {}
 
+  // Should never be reached in batch tests — yield nothing so a
+  // misrouted call surfaces as an empty stream rather than fake
+  // success.
+  // biome-ignore lint/correctness/useYield: deliberate empty stream
   async *chat(_opts: ChatOptions, _ctx: ProjectContext): AsyncIterable<ChatEvent> {
-    // Should never be reached in batch tests — yield nothing so a
-    // misrouted call surfaces as an empty stream rather than fake
-    // success.
     return;
   }
 

@@ -3,12 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BackpressureController } from "../jobs/backpressure.js";
 import type { JobContext, JobResult, JobRow } from "../jobs/types.js";
-import type {
-  BatchPollResult,
-  ChatMessage,
-  ProjectContext,
-  Provider,
-} from "../providers/types.js";
+import type { BatchPollResult, ChatMessage, ProjectContext, Provider } from "../providers/types.js";
 import type { ToolDispatcher } from "../tools/dispatcher.js";
 import type { RunBudget, ToolCallContext } from "../tools/types.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
