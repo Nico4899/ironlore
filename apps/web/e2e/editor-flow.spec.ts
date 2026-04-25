@@ -102,7 +102,11 @@ test.describe("editor save round-trip", () => {
     //      window. We poll the pages API for up to 5 s with a
     //      200 ms cadence — proves the PUT actually landed and
     //      block-ID assignment didn't strip our content.
-    const apiPath = `${server.apiUrl}/api/projects/main/pages/getting-started/index.md`;
+    //      Routed through Vite's proxy (`baseUrl`) so the
+    //      session cookie set on the Vite origin is sent — going
+    //      direct to the Hono port would 401 because cookies
+    //      don't cross origins.
+    const apiPath = `${server.baseUrl}/api/projects/main/pages/getting-started/index.md`;
     const deadline = Date.now() + 5_000;
     let body: { content?: string; etag?: string } = {};
     while (Date.now() < deadline) {
