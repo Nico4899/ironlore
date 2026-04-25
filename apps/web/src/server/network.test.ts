@@ -50,4 +50,16 @@ describe("validateBind", () => {
     validateBind("0.0.0.0");
     expect(exitCalled).toBeUndefined();
   });
+
+  it("allows 0.0.0.0 when IRONLORE_TRUST_NETWORK_BIND=1 (container escape hatch)", () => {
+    // Used by the bundled Docker compose — the container's own
+    // network namespace is the trust boundary, the host's
+    // `-p 127.0.0.1:3000:3000` mapping is the actual exposure
+    // control. Outside a container the env stays unset and the
+    // strict HTTPS rail still applies.
+    delete process.env.IRONLORE_PUBLIC_URL;
+    process.env.IRONLORE_TRUST_NETWORK_BIND = "1";
+    validateBind("0.0.0.0");
+    expect(exitCalled).toBeUndefined();
+  });
 });
