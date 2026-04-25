@@ -5,7 +5,7 @@ import { ProviderRegistry } from "./providers/registry.js";
 import type { ProjectContext, Provider } from "./providers/types.js";
 import { expandQuery, searchWithExpansion } from "./search/query-expansion.js";
 import { rerankResults } from "./search/rerank.js";
-import type { SearchIndex } from "./search-index.js";
+import type { SearchIndex, SearchResult } from "./search-index.js";
 
 export interface SearchApiOptions {
   provider?: Provider | null;
@@ -21,6 +21,20 @@ export interface SearchApiOptions {
    * BM25 ranking via RRF. Absent → two-channel (original + lex) merge.
    */
   embeddingProvider?: EmbeddingProvider | null;
+  /**
+   * Snapshot of every registered project's `SearchIndex`, keyed by
+   * project ID. Used only by the `?scope=all` branch of `GET /search`
+   * — single-project queries never touch this map. Returning a fresh
+   * map per call lets the host pass a closure that reads its live
+   * `servicesById` registry, so projects added at runtime become
+   * searchable without restarting the route.
+   *
+   * The agent tool path (`kb.search`) intentionally never sees this:
+   * cross-project blending happens only in the user's UI, never in a
+   * tool that an agent could invoke. See docs/08 §What this does not
+   * try to do.
+   */
+  getAllProjectIndexes?: () => Map<string, SearchIndex>;
 }
 
 /**
@@ -57,9 +71,54 @@ export function createSearchApi(searchIndex: SearchIndex, opts?: SearchApiOption
     const limit = Number(c.req.query("limit") ?? "20");
     const expand = c.req.query("expand") !== "false";
     const rerank = c.req.query("rerank") !== "false";
+    const scope = c.req.query("scope") === "all" ? "all" : "current";
 
     if (!query.trim()) {
       return c.json({ results: [] });
+    }
+
+    // ?scope=all — fan out across every registered project's
+    // SearchIndex, tag each hit with `projectId`, and merge by
+    // position-RRF (each project's i-th result contributes
+    // 1/(K+i+1)). The LLM expansion + rerank pipeline stays off in
+    // this branch: those stages are project-scoped (they use the
+    // active project's provider keys + egress allowlist) and don't
+    // generalise to a heterogeneous result set. Without
+    // `getAllProjectIndexes` configured, scope=all degrades to
+    // current-project results.
+    if (scope === "all" && opts?.getAllProjectIndexes) {
+      try {
+        const all = opts.getAllProjectIndexes();
+        const K = 60;
+        const merged = new Map<
+          string,
+          { score: number; result: SearchResult & { projectId: string } }
+        >();
+        for (const [pid, idx] of all) {
+          let projectResults: SearchResult[];
+          try {
+            projectResults = idx.search(query, limit * 2);
+          } catch {
+            // FTS5 syntax error in one project shouldn't poison the
+            // whole fan-out — just skip that project.
+            continue;
+          }
+          for (let i = 0; i < projectResults.length; i++) {
+            const r = projectResults[i];
+            if (!r) continue;
+            const key = `${pid}:${r.path}`;
+            const rrfScore = 1 / (K + i + 1);
+            merged.set(key, { score: rrfScore, result: { ...r, projectId: pid } });
+          }
+        }
+        const results = [...merged.values()]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, limit)
+          .map((e) => e.result);
+        return c.json({ results });
+      } catch {
+        return c.json({ results: [] });
+      }
     }
 
     try {
