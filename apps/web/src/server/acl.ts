@@ -147,8 +147,11 @@ export function stampOwner(markdown: string, userId: string): string {
 
 function matchScalar(fm: string, key: string): string | null {
   // Top-level scalar: `key: value` at start of line, no leading
-  // whitespace (which would make it a nested key).
-  const re = new RegExp(`^${key}\\s*:\\s*"?([^"\\n]+?)"?\\s*(?:#.*)?$`, "m");
+  // whitespace (which would make it a nested key). Tolerates a
+  // trailing block-ID HTML comment (assignBlockIds may append
+  // ` <!-- #blk_… -->` to the last line of a frontmatter paragraph
+  // because parseBlocks treats frontmatter as a paragraph).
+  const re = new RegExp(`^${key}\\s*:\\s*"?([^"\\n<#]+?)"?(?:\\s*<!--[^]*?-->)?\\s*(?:#.*)?$`, "m");
   const m = re.exec(fm);
   return m?.[1] ? m[1].trim() : null;
 }
@@ -175,7 +178,12 @@ function matchList(block: string, key: string): string[] | null {
   //     - a
   //     - b`.
   // Both are common in seeded fixtures and the spec example.
-  const flow = new RegExp(`^\\s+${key}\\s*:\\s*\\[([^\\]]*)\\]\\s*$`, "m").exec(block);
+  // Trailing `<!-- #blk_… -->` comments appear when the frontmatter
+  // round-trips through `assignBlockIds`; the regexes tolerate them.
+  const flow = new RegExp(
+    `^\\s+${key}\\s*:\\s*\\[([^\\]]*)\\](?:\\s*<!--[^]*?-->)?\\s*$`,
+    "m",
+  ).exec(block);
   if (flow?.[1] !== undefined) {
     return flow[1]
       .split(",")
