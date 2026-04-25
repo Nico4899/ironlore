@@ -150,7 +150,7 @@ describe("AnthropicProvider — pollBatch", () => {
     let call = 0;
     const result = await provider.pollBatch(
       handle,
-      ctxWith(async (url) => {
+      ctxWith(async () => {
         call++;
         if (call === 1) {
           return jsonResponse({

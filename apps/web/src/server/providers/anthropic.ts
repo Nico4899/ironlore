@@ -244,7 +244,10 @@ export class AnthropicProvider implements Provider {
       const message = row.result?.message;
       if (!message) continue;
       const text = (message.content ?? [])
-        .filter((c): c is { type: "text"; text: string } => c.type === "text" && typeof c.text === "string")
+        .filter(
+          (c): c is { type: "text"; text: string } =>
+            c.type === "text" && typeof c.text === "string",
+        )
         .map((c) => c.text)
         .join("");
       const usage: TokenUsage | undefined = message.usage
