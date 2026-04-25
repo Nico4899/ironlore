@@ -1,4 +1,5 @@
 import type { EmbeddingProvider, EmbeddingProviderId } from "./embedding-types.js";
+import { OllamaEmbeddingProvider } from "./ollama-embedding.js";
 import { OpenAIEmbeddingProvider } from "./openai-embedding.js";
 
 /**
