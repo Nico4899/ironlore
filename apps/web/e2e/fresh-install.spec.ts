@@ -8,12 +8,11 @@ import { expect, test } from "@playwright/test";
 /**
  * Phase-5 exit criterion — fresh install → working AI panel in <2 min.
  *
- * Walks the actual UI: a self-spawned server on an isolated install
- * root, login with the bootstrapped admin password, forced
- * change-password, the five-step onboarding wizard, and finally a
- * mounted `AIPanelRail` (the "panel is ready" signal — it always
- * renders inside `AppShell`, regardless of whether the panel is
- * open or collapsed).
+ * Walks the actual UI: login with the bootstrapped admin password,
+ * forced change-password, the five-step onboarding wizard, and
+ * finally a mounted `AIPanelRail` (the "panel is ready" signal — it
+ * always renders inside `AppShell`, regardless of whether the panel
+ * is open or collapsed).
  *
  * Wall-clock budget is 60 s, well under the documented 2 min: a
  * human's 2 min is dominated by typing API keys + reading copy, and
@@ -21,15 +20,27 @@ import { expect, test } from "@playwright/test";
  * server-side path got measurably slower, not that the UX target
  * shifted.
  *
+ * **Test plumbing.** The Hono API server in `src/server/index.ts`
+ * doesn't serve the React SPA — Vite does, in dev. So this spec
+ * spawns _both_ on isolated ports:
+ *   - Hono on `FRESH_PORT` with `IRONLORE_INSTALL_ROOT` pointed at
+ *     a temp dir, so its bootstrap writes to throwaway storage.
+ *   - Vite dev server on `VITE_PORT` with `IRONLORE_PROXY_TARGET`
+ *     pointed at our isolated Hono — overrides the default `:3000`
+ *     proxy in [`vite.config.ts`](../vite.config.ts).
+ * Playwright then drives the Vite port; everything is independent
+ * of the project's regular dev servers.
+ *
  * `webServer` in [`playwright.config.ts`](../playwright.config.ts)
- * still spawns the project's dev server on 3000 for `health.spec.ts`
- * — this spec is independent and runs against a separate process on
- * 3007 with `IRONLORE_INSTALL_ROOT` pointing at a temp directory.
+ * still spawns the project's dev API server on 3000 for
+ * `health.spec.ts` — this spec doesn't touch it.
  */
 
 const FRESH_PORT = 3007;
+const VITE_PORT = 5176;
 const FRESH_BASE = `http://127.0.0.1:${FRESH_PORT}`;
-const READY_TIMEOUT_MS = 30_000;
+const VITE_BASE = `http://127.0.0.1:${VITE_PORT}`;
+const READY_TIMEOUT_MS = 45_000;
 // Total budget from `page.goto("/")` to `AIPanelRail` visible.
 // 60 s is generous for an automated walk; 2 min is the spec ceiling.
 const PANEL_READY_BUDGET_MS = 60_000;
@@ -39,23 +50,29 @@ const __dirname = dirname(__filename);
 const APP_WEB_DIR = resolve(__dirname, "..");
 const SERVER_ENTRY = resolve(APP_WEB_DIR, "src/server/index.ts");
 const TSX_BIN = resolve(APP_WEB_DIR, "node_modules/.bin/tsx");
+const VITE_BIN = resolve(APP_WEB_DIR, "node_modules/.bin/vite");
 
 let serverProcess: ChildProcess | null = null;
+let viteProcess: ChildProcess | null = null;
 let installRoot = "";
 
-async function pollUntilReady(url: string, timeoutMs: number): Promise<void> {
+async function pollHttpUntilReady(
+  url: string,
+  expectedStatusOk: boolean,
+  timeoutMs: number,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastErr: unknown = null;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${url}/ready`);
-      if (res.ok) return;
+      const res = await fetch(url);
+      if (expectedStatusOk ? res.ok : res.status > 0) return;
     } catch (err) {
       lastErr = err;
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  throw new Error(`Server at ${url} never became ready within ${timeoutMs}ms: ${String(lastErr)}`);
+  throw new Error(`URL ${url} never became ready within ${timeoutMs}ms: ${String(lastErr)}`);
 }
 
 function readAdminPassword(root: string): string {
@@ -68,9 +85,16 @@ function readAdminPassword(root: string): string {
 }
 
 test.describe("fresh install — onboarding to AI panel", () => {
+  // Bootstrap of an isolated Hono install root + a fresh Vite dev
+  // server isn't fast enough for Playwright's 30 s default hook
+  // timeout. 2 min covers cold seeding on slower laptops.
+  test.describe.configure({ timeout: 180_000 });
+
   test.beforeAll(async () => {
+    test.setTimeout(120_000);
     installRoot = mkdtempSync(resolve(tmpdir(), "ironlore-fresh-"));
 
+    // 1. Hono API server in an isolated install root.
     serverProcess = spawn(TSX_BIN, [SERVER_ENTRY], {
       cwd: APP_WEB_DIR,
       env: {
@@ -78,28 +102,45 @@ test.describe("fresh install — onboarding to AI panel", () => {
         IRONLORE_INSTALL_ROOT: installRoot,
         IRONLORE_PORT: String(FRESH_PORT),
         IRONLORE_BIND: "127.0.0.1",
-        // Suppress the metrics endpoint conflict on shared dev box.
         IRONLORE_METRICS: "false",
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
-
-    // Surface server stderr if startup fails — invaluable when the
-    // CI log is the only thing the developer can see.
-    serverProcess.stderr?.on("data", (chunk: Buffer) => {
-      process.stderr.write(`[fresh-install server] ${chunk.toString()}`);
+    serverProcess.stdout?.on("data", (chunk: Buffer) => {
+      process.stdout.write(`[fresh-install hono] ${chunk.toString()}`);
     });
+    serverProcess.stderr?.on("data", (chunk: Buffer) => {
+      process.stderr.write(`[fresh-install hono] ${chunk.toString()}`);
+    });
+    await pollHttpUntilReady(`${FRESH_BASE}/ready`, true, READY_TIMEOUT_MS);
 
-    await pollUntilReady(FRESH_BASE, READY_TIMEOUT_MS);
+    // 2. Vite dev server proxying to our isolated Hono.
+    viteProcess = spawn(VITE_BIN, ["--port", String(VITE_PORT), "--strictPort"], {
+      cwd: APP_WEB_DIR,
+      env: {
+        ...process.env,
+        IRONLORE_PROXY_TARGET: FRESH_BASE,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    viteProcess.stdout?.on("data", (chunk: Buffer) => {
+      process.stdout.write(`[fresh-install vite] ${chunk.toString()}`);
+    });
+    viteProcess.stderr?.on("data", (chunk: Buffer) => {
+      process.stderr.write(`[fresh-install vite] ${chunk.toString()}`);
+    });
+    // Vite's dev index doesn't expose a /ready, but a 200/404 on the
+    // root means the server has bound.
+    await pollHttpUntilReady(`${VITE_BASE}/`, false, READY_TIMEOUT_MS);
   });
 
   test.afterAll(async () => {
-    if (serverProcess && !serverProcess.killed) {
-      serverProcess.kill("SIGTERM");
-      // Give the process a moment to exit cleanly; if it doesn't,
-      // SIGKILL on the way out so test runs don't leak.
-      await new Promise((r) => setTimeout(r, 500));
-      if (!serverProcess.killed) serverProcess.kill("SIGKILL");
+    for (const proc of [viteProcess, serverProcess]) {
+      if (proc && !proc.killed) {
+        proc.kill("SIGTERM");
+        await new Promise((r) => setTimeout(r, 500));
+        if (!proc.killed) proc.kill("SIGKILL");
+      }
     }
     if (installRoot) {
       rmSync(installRoot, { recursive: true, force: true });
@@ -116,17 +157,17 @@ test.describe("fresh install — onboarding to AI panel", () => {
 
     const startedAt = Date.now();
 
-    await page.goto(`${FRESH_BASE}/`);
+    await page.goto(`${VITE_BASE}/`);
 
     // ── 1. Login ───────────────────────────────────────────────────
     // LoginPage renders <input id="login-password"> autofocused.
-    await page.fill("#login-password", adminPassword);
+    await page.locator("#login-password").fill(adminPassword);
     await page.keyboard.press("Enter");
 
     // ── 2. Forced change-password ──────────────────────────────────
-    await page.fill("#current-password", adminPassword);
-    await page.fill("#new-password", newPassword);
-    await page.fill("#confirm-password", newPassword);
+    await page.locator("#current-password").fill(adminPassword);
+    await page.locator("#new-password").fill(newPassword);
+    await page.locator("#confirm-password").fill(newPassword);
     // Submit by clicking the visible button — Enter from the
     // confirm field also works but the button click avoids a
     // browser-specific autofill race.
