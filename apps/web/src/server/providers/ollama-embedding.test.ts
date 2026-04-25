@@ -48,22 +48,23 @@ describe("OllamaEmbeddingProvider", () => {
   });
 
   it("posts to /api/embed with model + input array", async () => {
-    let captured: { url: string; init: RequestInit } | null = null;
+    const captured: { url: string; init: RequestInit }[] = [];
     const provider = new OllamaEmbeddingProvider({ baseUrl: "http://localhost:99999" });
     await provider.embed(
       ["hello", "world"],
       makeCtx(async (url, init) => {
-        captured = { url: String(url), init: init ?? {} };
+        captured.push({ url: String(url), init: init ?? {} });
         return new Response(
           JSON.stringify({ embeddings: [new Array(768).fill(0.1), new Array(768).fill(0.2)] }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
       }),
     );
-    expect(captured).not.toBeNull();
-    expect(captured?.url).toBe("http://localhost:99999/api/embed");
-    expect(captured?.init?.method).toBe("POST");
-    const body = JSON.parse(String(captured?.init?.body)) as {
+    expect(captured).toHaveLength(1);
+    const entry = captured[0];
+    expect(entry?.url).toBe("http://localhost:99999/api/embed");
+    expect(entry?.init.method).toBe("POST");
+    const body = JSON.parse(String(entry?.init.body)) as {
       model: string;
       input: string[];
     };

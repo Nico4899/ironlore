@@ -1901,8 +1901,7 @@ function EmbeddingsCard() {
     );
   }
 
-  const pct =
-    status.total === 0 ? 100 : Math.round((status.embedded / status.total) * 100);
+  const pct = status.total === 0 ? 100 : Math.round((status.embedded / status.total) * 100);
 
   return (
     <div
@@ -1946,7 +1945,9 @@ function EmbeddingsCard() {
             }}
           />
         </div>
-        <span style={{ fontSize: 12, color: "var(--il-text2)", fontVariantNumeric: "tabular-nums" }}>
+        <span
+          style={{ fontSize: 12, color: "var(--il-text2)", fontVariantNumeric: "tabular-nums" }}
+        >
           {status.embedded} / {status.total}
         </span>
       </div>

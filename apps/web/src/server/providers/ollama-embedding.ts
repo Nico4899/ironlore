@@ -94,9 +94,7 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       throw new Error("Ollama embeddings response missing `embeddings` array");
     }
     if (embeddings.length !== texts.length) {
-      throw new Error(
-        `Ollama returned ${embeddings.length} embeddings for ${texts.length} inputs`,
-      );
+      throw new Error(`Ollama returned ${embeddings.length} embeddings for ${texts.length} inputs`);
     }
     // Validate dimensionality on the first row — Ollama doesn't
     // accept a `dimensions` parameter, so the only way to catch a
