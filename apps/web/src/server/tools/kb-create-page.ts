@@ -1,7 +1,10 @@
+import { join } from "node:path";
 import { ulid } from "@ironlore/core";
+import { assignBlockIds, type BlockProvenance, writeBlocksSidecar } from "../block-ids.js";
 import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
+import { assertWritableKind, WritableKindsViolation } from "./writable-kinds-gate.js";
 
 /**
  * kb.create_page — create a new page, assign frontmatter, return ID.
@@ -44,9 +47,20 @@ export function createKbCreatePage(
         parent: string;
         title: string;
         markdown: string;
-        kind?: string;
+        kind?: "page" | "source" | "wiki";
         tags?: string[];
       };
+
+      // writable_kinds gate — `kind` comes from input rather than an
+      // existing page; default to "page" when unspecified.
+      try {
+        assertWritableKind(ctx, kind ?? null);
+      } catch (err) {
+        if (err instanceof WritableKindsViolation) {
+          return JSON.stringify({ error: err.message, status: err.status });
+        }
+        throw err;
+      }
 
       const id = ulid();
       const now = new Date().toISOString();
@@ -71,11 +85,30 @@ export function createKbCreatePage(
         .filter(Boolean)
         .join("\n");
 
-      const content = `${frontmatter}\n\n# ${title}\n\n${markdown}\n`;
+      const rawContent = `${frontmatter}\n\n# ${title}\n\n${markdown}\n`;
+      // Stamp block IDs on the brand-new page so the sidecar has
+      // consistent IDs to attach provenance to. `assignBlockIds`
+      // returns the annotated content + parsed blocks.
+      const { markdown: content, blocks } = assignBlockIds(rawContent);
+
+      // Every block on a freshly-created page is "new", so stamp the
+      // calling agent + compiled_at on all of them. `derived_from`
+      // isn't supplied at create time — the model fills it in on
+      // subsequent kb.replace_block calls per cited block.
+      const compiledAt = new Date().toISOString();
+      const provenanceByBlockId = new Map<string, BlockProvenance>();
+      for (const b of blocks) {
+        provenanceByBlockId.set(b.id, {
+          ...(ctx.agentSlug ? { agent: ctx.agentSlug } : {}),
+          compiled_at: compiledAt,
+        });
+      }
 
       try {
         const { etag } = await writer.write(path, content, null, ctx.agentSlug);
         searchIndex.indexPage(path, content, ctx.agentSlug);
+        const absPath = join(writer.getDataRoot(), path);
+        writeBlocksSidecar(absPath, blocks, provenanceByBlockId);
         return JSON.stringify({ ok: true, id, path, etag });
       } catch (err) {
         return JSON.stringify({ error: String(err) });
