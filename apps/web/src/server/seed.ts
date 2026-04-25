@@ -1236,6 +1236,290 @@ Close the run with \`agent.journal\` summarising counts and the report
 path.
 `,
   );
+
+  // ─── Connector-skill examples ──────────────────────────────────────
+  // Three worked-out templates for users authoring their own
+  // upstream connectors. Each documents:
+  //   1. The `project.yaml` `egress.allowlist` entry the skill needs
+  //      so `fetchForProject` lets the network call through.
+  //   2. The auth handoff pattern (env var → vault → header).
+  //   3. The error shape the skill should return so the agent's
+  //      transcript stays structured.
+  // Connectors are inert markdown today: the model reads them when
+  // the persona declares `skills: [<name>]`, and the actual HTTP
+  // execution path (an MCP server or a future generic `http.fetch`
+  // tool) routes through `fetchForProject`. See
+  // docs/04-ai-and-agents.md §Skills vs tools and
+  // docs/05-jobs-and-security.md §Network egress.
+
+  // GitHub issue search — Bearer-token auth, JSON GET, paginated.
+  seedFile(
+    join(sharedSkillsDir, "github-issue-search.md"),
+    `---
+name: GitHub Issue Search
+description: Read-only search over a GitHub repo's issues + pull requests (Bearer auth)
+---
+
+# GitHub Issue Search Skill
+
+Use this skill when the user asks about issues, pull requests, or
+discussions in a configured GitHub repository — for instance
+"summarise the open issues tagged \`good-first-issue\`" or "what's
+the status of PR #42?". This is a read-only connector; do **not**
+mutate upstream state.
+
+## project.yaml entry
+
+Add the host to the project's egress allowlist or
+\`fetchForProject\` will block the call:
+
+\`\`\`yaml
+# projects/<id>/project.yaml
+egress:
+  policy: allowlist
+  allowlist:
+    - api.github.com
+\`\`\`
+
+## Auth handoff
+
+GitHub uses a personal-access token (\`ghp_…\`) on the
+\`Authorization: Bearer <token>\` header. Read the token from the
+project's API-key vault under the \`github\` slot — never inline
+the literal token into a tool call or chat reply.
+
+If the vault lookup returns no key, surface a structured error
+(\`{ error: "auth_missing", connector: "github" }\`) and stop;
+don't fall back to anonymous calls because rate limits + private
+repos behave differently and the model would silently miss data.
+
+## Request shape
+
+\`\`\`http
+GET https://api.github.com/search/issues?q=repo:<owner>/<repo>+is:issue+state:open
+Authorization: Bearer <token>
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2022-11-28
+\`\`\`
+
+The response paginates 30 results per page. Stop at the first page
+unless the user explicitly asks for more; pulling 1000 issues into
+context ruins token budget for a single answer.
+
+## Error shapes
+
+Always return JSON your transcript can parse cleanly:
+
+| Upstream | Return                                                       |
+|---|---|
+| \`401\` / \`403\` | \`{ error: "auth_failed", connector: "github" }\` |
+| \`404\` (repo) | \`{ error: "repo_not_found", repo: "<owner>/<repo>" }\` |
+| \`429\` | \`{ error: "rate_limited", connector: "github", retry_after_s: <int> }\` |
+| Network blocked | The egress middleware throws \`EgressBlockedError\` — surface as \`{ error: "egress_blocked", host: "api.github.com" }\` |
+| Other 5xx | \`{ error: "upstream_5xx", status: <int>, connector: "github" }\` |
+
+## Composing with kb.*
+
+After fetching issues, write a synthesis page through
+\`kb.create_page\` or \`kb.replace_block\` so the answer is
+preserved across runs. Cite issue URLs in the synthesis so a human
+reviewer can click through. Mark synthesised content with
+\`derived_from\` pointing at the upstream URLs so the
+provenance-gap lint check stays clean.
+`,
+  );
+
+  // Webhook trigger — POST with optional auth, fire-and-forget.
+  seedFile(
+    join(sharedSkillsDir, "webhook-trigger.md"),
+    `---
+name: Webhook Trigger
+description: Generic outbound HTTP POST for fire-and-forget integrations (Slack, Discord, n8n, Make)
+---
+
+# Webhook Trigger Skill
+
+Use this skill when the user asks the agent to *notify* an
+external system — Slack incoming-webhooks, Discord channels, an
+n8n / Zapier / Make automation, a self-hosted GitHub Action
+dispatcher. This is one-way: post a payload, get a status code
+back, never read response bodies that could contain secrets.
+
+## project.yaml entry
+
+Each webhook host is allowlisted explicitly. Wildcards aren't
+honored — \`hooks.slack.com\` does not unlock
+\`*.slack.com\`:
+
+\`\`\`yaml
+# projects/<id>/project.yaml
+egress:
+  policy: allowlist
+  allowlist:
+    - hooks.slack.com
+    - discord.com
+    # ... one entry per upstream
+\`\`\`
+
+## Auth handoff
+
+Most webhook targets bake their auth into the URL itself
+(\`https://hooks.slack.com/services/T.../B.../<secret>\`). Store
+the **full URL** in the project's API-key vault under a
+\`webhook:<name>\` slot rather than splitting it. The agent reads
+the URL via the vault primitive; the secret never appears in
+chat transcripts.
+
+For targets that use header-based auth instead, follow the
+pattern in [HTTP GET with auth](http-get-with-auth.md) —
+\`Authorization: Bearer\`, \`X-API-Key\`, or HMAC-signed bodies.
+
+## Request shape
+
+\`\`\`http
+POST <vault://webhook:<name>>
+Content-Type: application/json
+User-Agent: Ironlore/<agent-slug>
+
+{
+  "text": "<message body>",
+  "_ironlore": {
+    "agent": "<slug>",
+    "run_id": "<job-id>",
+    "ts": "<ISO-8601>"
+  }
+}
+\`\`\`
+
+The \`_ironlore\` envelope is optional; many webhook receivers
+ignore unknown keys, but it makes audits easier when the same
+webhook fires from multiple systems.
+
+## Error shapes
+
+Webhook receivers vary on what they return. Treat any non-2xx as
+a failed delivery and **do not retry automatically** — the run
+loop's retry policy already covers transient errors, and a
+duplicate Slack notification is its own incident:
+
+| Upstream | Return                                                                |
+|---|---|
+| 2xx | \`{ ok: true, status: <int> }\` |
+| Other | \`{ error: "webhook_failed", status: <int>, connector: "<name>" }\` |
+| Network blocked | \`{ error: "egress_blocked", host: "<host>" }\` (allowlist) |
+
+## When *not* to use this
+
+- **Bidirectional integrations.** If the agent needs the
+  upstream's response (e.g. "did the deploy succeed?"), a webhook
+  is wrong — use \`http-get-with-auth\` for the read-back call.
+- **Reading data.** Webhooks are write-only; don't pull GitHub
+  issues through one. Use \`github-issue-search\`.
+- **Bulk fan-out.** A skill posts one webhook per agent run.
+  Sending 10k webhooks in a loop is a cron job, not an agent call;
+  use \`ironlore eval --json\` + a shell loop instead.
+`,
+  );
+
+  // Generic HTTP GET with auth — the most common pattern.
+  seedFile(
+    join(sharedSkillsDir, "http-get-with-auth.md"),
+    `---
+name: HTTP GET with auth
+description: Parametric pattern for read-only HTTP GET against an authenticated upstream
+---
+
+# HTTP GET with Auth Skill
+
+Use this skill as a template when none of the connector-specific
+skills (\`github-issue-search\`, \`linear-search\`, etc.) match
+your upstream. It documents the three auth shapes Ironlore
+encounters in practice and the response-handling discipline that
+keeps the agent's transcript safe.
+
+## project.yaml entry
+
+Allowlist the exact host. Sub-domains and ports must match — the
+egress middleware compares against \`URL.hostname\`:
+
+\`\`\`yaml
+# projects/<id>/project.yaml
+egress:
+  policy: allowlist
+  allowlist:
+    - api.example.com
+    - api-staging.example.com    # sub-domains need their own row
+\`\`\`
+
+## Auth shapes
+
+### Bearer token (most common)
+
+\`\`\`http
+GET https://api.example.com/v1/<resource>
+Authorization: Bearer <token>
+Accept: application/json
+\`\`\`
+
+Vault slot: \`bearer:<service>\`. Match GitHub / Linear /
+Notion / Stripe.
+
+### API-key header
+
+\`\`\`http
+GET https://api.example.com/v1/<resource>
+X-API-Key: <key>
+Accept: application/json
+\`\`\`
+
+Vault slot: \`apikey:<service>\`. Match SendGrid / Datadog.
+
+### Basic auth
+
+\`\`\`http
+GET https://api.example.com/v1/<resource>
+Authorization: Basic <base64(user:password)>
+Accept: application/json
+\`\`\`
+
+Vault slot: \`basic:<service>\` (store \`user:password\` raw;
+encode at request time). Match older self-hosted services.
+
+## Response handling
+
+1. Check status. Anything \`>= 400\` returns a structured error
+   (see table below); never let the model see a 500's HTML body
+   verbatim — it's noise that ruins context budget.
+2. Cap response size. \`Content-Length > 100 KB\` should trigger
+   an \`{ error: "response_too_large" }\` rather than streaming
+   into the transcript. If the user wants the full payload, write
+   it to a page through \`kb.create_page\` first, then summarise.
+3. Strip auth-shaped fields from any response that's about to
+   land in chat. Some upstreams echo the request's
+   \`Authorization\` header in error responses; redact before
+   returning.
+
+## Error shapes
+
+| Upstream | Return                                                                |
+|---|---|
+| \`401\` / \`403\` | \`{ error: "auth_failed", connector: "<name>" }\` |
+| \`404\` | \`{ error: "not_found", path: "<request-path>" }\` |
+| \`429\` | \`{ error: "rate_limited", connector: "<name>", retry_after_s: <int> }\` |
+| 5xx | \`{ error: "upstream_5xx", status: <int>, connector: "<name>" }\` |
+| Network blocked | \`{ error: "egress_blocked", host: "<host>" }\` (allowlist) |
+| Response too large | \`{ error: "response_too_large", limit: 102400 }\` |
+
+## Composing with kb.*
+
+A successful read should land in the knowledge base — not just
+in the chat transcript — when the answer matters past the
+current run. \`kb.create_page\` for new content,
+\`kb.replace_block\` for updates to existing pages, both with
+\`derived_from\` set to the upstream URL so the
+provenance-gap lint check passes.
+`,
+  );
 }
 
 /**
