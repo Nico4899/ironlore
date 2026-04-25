@@ -171,6 +171,34 @@ Gardener, and more. Activate one by flipping \`active: true\` in its
 frontmatter. Each specialist has a scheduled heartbeat (cron) and a scope
 that limits which folders it can read or write.
 
+The fastest way to activate a template is from the UI: open
+**Settings → Agents → Library**, find the row for the persona you want,
+and click **Activate**. The button copies the persona to
+\`.agents/<slug>/persona.md\` and registers an \`agent_state\` row so the
+heartbeat scheduler picks it up on the next tick — no restart needed.
+
+## Wiki Gardener
+
+The Wiki Gardener is the default opt-in maintenance persona. Activate it
+once and a weekly heartbeat runs four lint checks across your vault:
+
+- **Orphans** — markdown pages with zero inbound wiki-links.
+- **Stale sources** — wiki pages older than the \`kind: source\` pages
+  they cite.
+- **Contradiction flags** — typed wiki-links the author wrote with
+  \`[[other | contradicts]]\` (or \`disagrees\` / \`refutes\`).
+- **Provenance gaps** — agent-authored blocks that shipped without a
+  \`derived_from\` citation in the \`.blocks.json\` sidecar.
+
+Each run writes a single page at
+\`_maintenance/lint-<YYYY-MM-DD>.md\` (\`kind: wiki\`), appends a one-line
+entry to \`_log.md\`, and adds a backlink under the Maintenance heading
+of \`_index.md\`. The gardener flags; it doesn't auto-fix. Resolution is
+the human's call.
+
+The lint workflow lives in \`.agents/.shared/skills/lint.md\` — every
+agent that opts into \`skills: [lint]\` gets the same recipe.
+
 ## Providers
 
 Ironlore has no mandatory cloud dependency. Pick one:

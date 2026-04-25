@@ -45,11 +45,15 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
       /\ndescription: Wiki health check — orphans, stale sources, contradiction flags, provenance gaps\n/,
     );
     expect(content).toContain("# Lint Skill");
-    // Document stub status explicitly — the model must not hallucinate
-    // findings for checks whose detectors have not shipped.
-    expect(content).toContain("Stub check.");
-    // Orphan detection is real today — ensure the skill says so.
+    // All four detectors now ship as real `kb.lint_*` tools — the
+    // `Stub check` markers were removed when contradictions +
+    // provenance-gaps tools landed. Pin the four tool calls
+    // instead so a future skill rewrite that drops one is caught.
     expect(content).toContain("Real check.");
+    expect(content).toContain("kb.lint_orphans");
+    expect(content).toContain("kb.lint_stale_sources");
+    expect(content).toContain("kb.lint_contradictions");
+    expect(content).toContain("kb.lint_provenance_gaps");
   });
 
   it("writes _index.md and _log.md at the vault root with kind: wiki", async () => {

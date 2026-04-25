@@ -180,9 +180,10 @@ describe("kb.lint_provenance_gaps", () => {
       ],
     });
     const tool = createKbLintProvenanceGaps(root);
-    const result = JSON.parse(
-      await tool.execute({ excludeAgents: ["spec-reviewer"] }, NO_CTX),
-    ) as { count: number; gaps: Array<{ agent: string }> };
+    const result = JSON.parse(await tool.execute({ excludeAgents: ["spec-reviewer"] }, NO_CTX)) as {
+      count: number;
+      gaps: Array<{ agent: string }>;
+    };
     expect(result.count).toBe(1);
     expect(result.gaps[0]?.agent).toBe("wiki-gardener");
   });
