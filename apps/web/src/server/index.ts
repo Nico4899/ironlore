@@ -120,7 +120,12 @@ const port = Number(process.env.IRONLORE_PORT ?? DEFAULT_PORT);
 validateBind(host);
 
 async function start() {
-  const installRoot = process.cwd();
+  // `IRONLORE_INSTALL_ROOT` overrides `process.cwd()` for the
+  // install layout. Used by the fresh-install Playwright e2e so a
+  // single Node process can host an isolated bootstrap root without
+  // chdir'ing the entire process. Production deployments leave it
+  // unset and inherit cwd as before.
+  const installRoot = process.env.IRONLORE_INSTALL_ROOT ?? process.cwd();
   await bootstrap(installRoot);
 
   // Check sensitive file permissions (refuse to start if too broad)
