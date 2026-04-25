@@ -143,9 +143,9 @@ describe("executor — async-batch path", () => {
     }
   });
 
-  it("submits + polls + returns the assistant text on completion", async () => {
+  it("submits the batch and returns batch_pending so the worker pool can release the slot", async () => {
     const provider = new StubBatchProvider({
-      progressCount: 2, // two `in_progress` ticks, then terminal
+      progressCount: 0,
       terminal: {
         status: "completed",
         result: {
@@ -170,20 +170,25 @@ describe("executor — async-batch path", () => {
       batchOptions: { forceOptIn: true, pollIntervalMs: 1, timeoutMs: 5000 },
     });
 
-    expect(result.status).toBe("done");
-    expect(result.result).toBe("summary text");
+    expect(result.status).toBe("batch_pending");
+    expect(result.batchHandle).toBeDefined();
+    expect(result.batchHandle?.provider).toBe("anthropic");
+    expect(result.batchHandle?.batchId).toMatch(/^msgbatch_/);
+    expect(result.batchHandle?.agentSlug).toBe("general");
     expect(provider.submitCalls).toBe(1);
-    expect(provider.pollCalls).toBe(3);
+    // The executor no longer polls in-process — that's the worker
+    // pool's job via agent.batch_resume ticks.
+    expect(provider.pollCalls).toBe(0);
 
-    // Every documented batch event fires, in order.
+    // Submit-side events fire before the executor returns.
     const kinds = events.map((e) => e.kind);
     expect(kinds[0]).toBe("message.user");
     expect(kinds).toContain("batch.starting");
     expect(kinds).toContain("batch.submitted");
-    expect(kinds.filter((k) => k === "batch.poll").length).toBe(3);
-    expect(kinds).toContain("message.text");
-    expect(kinds).toContain("usage");
-    expect(kinds).toContain("batch.completed");
+    // Polling events are emitted later, by resumeBatchedTurn —
+    // they shouldn't appear yet.
+    expect(kinds).not.toContain("batch.poll");
+    expect(kinds).not.toContain("batch.completed");
   });
 
   it("strips tools from the submitBatch payload — single-turn invariant", async () => {
@@ -209,10 +214,18 @@ describe("executor — async-batch path", () => {
     expect(provider.lastSubmitOpts?.tools).toBeUndefined();
   });
 
-  it("fails the run when the batch comes back with status: expired", async () => {
-    const provider = new StubBatchProvider({
-      progressCount: 1,
-      terminal: { status: "expired", error: "Batch expired before completion" },
+  it("returns failed when the submitBatch call itself throws", async () => {
+    // A provider whose submit implementation throws (network
+    // hiccup, auth error) should fail the run synchronously
+    // instead of parking — there's no batch to poll later.
+    class ThrowingSubmitProvider extends StubBatchProvider {
+      override async submitBatch(): Promise<never> {
+        throw new Error("upstream 500");
+      }
+    }
+    const provider = new ThrowingSubmitProvider({
+      progressCount: 0,
+      terminal: { status: "completed", result: { text: "x", stopReason: "end_turn" } },
     });
     const events: RecordedEvent[] = [];
 
@@ -228,34 +241,9 @@ describe("executor — async-batch path", () => {
     });
 
     expect(result.status).toBe("failed");
-    expect(result.result).toMatch(/expired/i);
+    expect(result.result).toMatch(/upstream 500/);
     const errEvent = events.find((e) => e.kind === "message.error");
     expect(errEvent).toBeDefined();
-  });
-
-  it("times out cleanly when the batch never ends", async () => {
-    const provider = new StubBatchProvider({
-      progressCount: 1_000_000, // never completes
-      terminal: { status: "completed", result: { text: "x", stopReason: "end_turn" } },
-    });
-    const events: RecordedEvent[] = [];
-
-    const result = await executeAgentRun(makeJob(), makeJobCtx(events), {
-      provider,
-      projectContext: ctx,
-      dispatcher: new ToolDispatcher(),
-      dataRoot,
-      projectDir,
-      model: "claude-sonnet-4-6",
-      agentSlug: "general",
-      // 50ms ceiling, 1ms cadence → at most ~50 polls before timeout
-      batchOptions: { forceOptIn: true, pollIntervalMs: 1, timeoutMs: 50 },
-    });
-
-    expect(result.status).toBe("failed");
-    expect(result.result).toBe("batch timeout");
-    const errEvent = events.find((e) => e.kind === "message.error");
-    expect((errEvent?.data as { text?: string } | undefined)?.text).toMatch(/within 50ms/);
   });
 
   it("falls back to the streaming path for interactive jobs even when batch is opted in", async () => {

@@ -133,8 +133,11 @@ export function useAgentSession() {
 
 /**
  * Map a raw job event into a ConversationMessage.
+ *
+ * Exported for tests — the production caller is the polling
+ * timer inside `useAgentSession`.
  */
-function processJobEvent(event: { seq: number; kind: string; data: string }): void {
+export function processJobEvent(event: { seq: number; kind: string; data: string }): void {
   const store = useAIPanelStore.getState();
   let data: Record<string, unknown>;
   try {

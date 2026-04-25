@@ -434,6 +434,73 @@ async function start() {
     return result;
   });
 
+  // Phase-11 async-batch resume tick. The worker pool enqueues a
+  //  job of this kind every time `agent.run` returns
+  //  `batch_pending` — see WorkerPool.parkBatchPending. The handler
+  //  polls the upstream once, emits events on the *original* job's
+  //  id, and either finalizes the original or re-enqueues another
+  //  tick. The original job stays in `status='batch_pending'`
+  //  while we wait, so its slot is free.
+  pool.register("agent.batch_resume", async (job) => {
+    const payload = JSON.parse(job.payload) as {
+      originalJobId?: string;
+      attempt?: number;
+      delayMs?: number;
+    };
+    const originalJobId = payload.originalJobId;
+    if (!originalJobId) return { status: "failed", result: "missing originalJobId" };
+
+    const original = pool.getJob(originalJobId);
+    if (!original || original.status !== "batch_pending") {
+      // Race: the original was finalized by another path
+      // (cancellation, manual revert) — drop the tick.
+      return { status: "done", result: "stale" };
+    }
+
+    const handle = pool.getBatchHandle(originalJobId);
+    if (!handle) {
+      pool.finalizeBatchedJob(originalJobId, "failed", "missing batch handle on resume");
+      return { status: "failed", result: "missing batch handle" };
+    }
+
+    const provider = providerRegistry.resolve();
+    if (!provider) {
+      pool.finalizeBatchedJob(originalJobId, "failed", "no AI provider configured at resume time");
+      return { status: "failed", result: "no provider" };
+    }
+    const projectContext = ProviderRegistry.buildContext(job.project_id, fetch);
+    const attempt = payload.attempt ?? 1;
+    const delayMs = payload.delayMs ?? 5_000;
+
+    const { resumeBatchedTurn } = await import("./agents/executor.js");
+    const { outcome } = await resumeBatchedTurn({
+      provider,
+      projectContext,
+      originalJobId,
+      handle,
+      emitOriginal: (kind, data) => pool.emitEventForJob(originalJobId, kind, data),
+      finalizeOriginal: (status, result) => pool.finalizeBatchedJob(originalJobId, status, result),
+      attempt,
+      // 720 ticks × default 5 s = 1 h cap. Anthropic's batch SLA
+      // is 24 h; the cap is conservative and keeps a misbehaving
+      // upstream from queueing resume-tick jobs forever.
+      attemptCap: 720,
+    });
+
+    if (outcome === "rescheduled") {
+      pool.enqueue({
+        projectId: job.project_id,
+        kind: "agent.batch_resume",
+        mode: "autonomous",
+        ownerId: job.owner_id ?? undefined,
+        payload: { originalJobId, attempt: attempt + 1, delayMs },
+        scheduledAt: Date.now() + delayMs,
+      });
+    }
+
+    return { status: "done", result: outcome };
+  });
+
   // Start the worker pool + backpressure controller recovery timer.
   backpressure.start();
   pool.start();

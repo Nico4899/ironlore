@@ -1,7 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { ulid } from "@ironlore/core";
 import type Database from "better-sqlite3";
-import type { JobContext, JobHandler, JobResult, JobRow } from "./types.js";
+import type {
+  BatchHandlePersisted,
+  JobContext,
+  JobHandler,
+  JobResult,
+  JobRow,
+} from "./types.js";
 
 /**
  * In-process worker pool.
@@ -20,6 +26,15 @@ import type { JobContext, JobHandler, JobResult, JobRow } from "./types.js";
 const POLL_INTERVAL_MS = 1_000;
 const LEASE_DURATION_MS = 30_000;
 const LEASE_RENEW_MS = 10_000;
+/**
+ * Default delay between an `agent.run` returning `batch_pending`
+ * and the first `agent.batch_resume` tick. 5 s matches the
+ * historical in-process polling cadence — long enough that a fast
+ * batch is still ready by the first poll, short enough that
+ * humans don't notice. Overridable per result via
+ * `JobResult.batchResumeDelayMs` (tests inject 1 ms).
+ */
+const BATCH_RESUME_DELAY_MS = 5_000;
 
 export class WorkerPool {
   private db: Database.Database;
@@ -195,6 +210,10 @@ export class WorkerPool {
 
   private completeJob(jobId: string, result: JobResult): void {
     const now = Date.now();
+    if (result.status === "batch_pending") {
+      this.parkBatchPending(jobId, result, now);
+      return;
+    }
     this.db
       .prepare(
         "UPDATE jobs SET status = ?, result = ?, finished_at = ?, lease_until = NULL WHERE id = ?",
@@ -206,6 +225,118 @@ export class WorkerPool {
       clearInterval(active.renewTimer);
       this.activeJobs.delete(jobId);
     }
+  }
+
+  /**
+   * Phase-11 batch path. The original `agent.run` job returned
+   * `batch_pending` because it submitted an async batch and
+   * doesn't want to hold its worker slot for the full upstream
+   * latency. Persist the handle, drop the lease, free the slot,
+   * and enqueue a delayed `agent.batch_resume` job that will poll
+   * the upstream and finalize the original.
+   *
+   * The original row stays in `status='batch_pending'` (distinct
+   * from `running`) so the atomic claim in `poll()` can never
+   * pick it up again — a second worker that scans for queued
+   * jobs won't see this row at all.
+   */
+  private parkBatchPending(jobId: string, result: JobResult, now: number): void {
+    if (!result.batchHandle) {
+      // Defensive — handler returned the new status without the
+      // payload. Treat as a hard failure rather than parking
+      // forever, otherwise the row leaks slots in the dashboard.
+      this.db
+        .prepare(
+          "UPDATE jobs SET status='failed', result=?, finished_at=?, lease_until=NULL WHERE id=?",
+        )
+        .run("batch_pending without batchHandle", now, jobId);
+      const active = this.activeJobs.get(jobId);
+      if (active) {
+        clearInterval(active.renewTimer);
+        this.activeJobs.delete(jobId);
+      }
+      return;
+    }
+    const job = this.getJob(jobId);
+    if (!job) return;
+    this.db
+      .prepare(
+        `UPDATE jobs
+         SET status='batch_pending',
+             batch_handle=?,
+             lease_until=NULL,
+             worker_id=NULL
+         WHERE id=?`,
+      )
+      .run(JSON.stringify(result.batchHandle), jobId);
+
+    const delayMs = result.batchResumeDelayMs ?? BATCH_RESUME_DELAY_MS;
+    this.enqueue({
+      projectId: job.project_id,
+      kind: "agent.batch_resume",
+      mode: "autonomous",
+      ownerId: job.owner_id ?? undefined,
+      payload: { originalJobId: jobId, attempt: 1, delayMs },
+      scheduledAt: now + delayMs,
+    });
+
+    const active = this.activeJobs.get(jobId);
+    if (active) {
+      clearInterval(active.renewTimer);
+      this.activeJobs.delete(jobId);
+    }
+  }
+
+  /**
+   * Append an event to the durable stream of a job *other than*
+   * the one currently running. Used by `agent.batch_resume` to
+   * emit `message.text` / `usage` / `batch.completed` against the
+   * original `agent.run` job — the job_id the AI panel is
+   * subscribed to.
+   *
+   * The seq counter is shared with the regular emit path so a
+   * resume tick can never collide with a stray late event from
+   * the original handler (which doesn't exist by the time the
+   * tick fires, but defensive is cheap).
+   */
+  emitEventForJob(originalJobId: string, kind: string, data: unknown): void {
+    const job = this.getJob(originalJobId);
+    if (!job) return;
+    this.appendEvent(job.project_id, originalJobId, kind, data);
+  }
+
+  /**
+   * Read the persisted batch handle for a job, or null when the
+   * job has no handle (it's not batch_pending, or the column
+   * was never written).
+   */
+  getBatchHandle(jobId: string): BatchHandlePersisted | null {
+    const row = this.db.prepare("SELECT batch_handle FROM jobs WHERE id = ?").get(jobId) as
+      | { batch_handle: string | null }
+      | undefined;
+    if (!row?.batch_handle) return null;
+    try {
+      return JSON.parse(row.batch_handle) as BatchHandlePersisted;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Mark a parked `batch_pending` job as terminal. Called by the
+   * resume handler when the upstream batch ends. Idempotent — a
+   * job that's already been marked done/failed by some other
+   * path is left alone.
+   */
+  finalizeBatchedJob(jobId: string, status: "done" | "failed", result: string): void {
+    const now = Date.now();
+    this.db
+      .prepare(
+        `UPDATE jobs
+         SET status=?, result=?, finished_at=?, lease_until=NULL, worker_id=NULL
+         WHERE id=? AND status='batch_pending'`,
+      )
+      .run(status, result, now, jobId);
   }
 
   private appendEvent(projectId: string, jobId: string, kind: string, data: unknown): void {

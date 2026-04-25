@@ -9,9 +9,28 @@
  * See docs/05-jobs-and-security.md §Durable Jobs for the full design.
  */
 
-export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
+export type JobStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed"
+  | "cancelled"
+  /**
+   * Phase-11: an autonomous run submitted an async batch and
+   * released its worker slot. The job is alive but parked until
+   * the agent.batch_resume handler picks up its handle on a poll
+   * tick. Distinct from `running` so the worker pool's atomic
+   * claim can't double-dispatch a parked job.
+   */
+  | "batch_pending";
 export type JobMode = "interactive" | "autonomous";
-export type JobKind = "agent.run" | "cron.tick" | "reindex" | "lint" | string;
+export type JobKind =
+  | "agent.run"
+  | "agent.batch_resume"
+  | "cron.tick"
+  | "reindex"
+  | "lint"
+  | string;
 
 export interface JobRow {
   id: string;
@@ -31,7 +50,28 @@ export interface JobRow {
   result: string | null;
   commit_sha_start: string | null;
   commit_sha_end: string | null;
+  /**
+   * Persisted async-batch handle JSON; only set while the row is
+   * in `status='batch_pending'`. Shape: `BatchHandlePersisted`.
+   */
+  batch_handle: string | null;
   created_at: number;
+}
+
+/**
+ * Subset of the in-memory `BatchHandle` that's persisted to the
+ * jobs.batch_handle column. The `agent.batch_resume` handler
+ * rebuilds the upstream call from these fields. Held lean
+ * deliberately — request bodies are not stored, only the
+ * provider-side identifiers needed to poll + the run-context
+ * identifiers needed to emit events on the original job.
+ */
+export interface BatchHandlePersisted {
+  provider: string;
+  batchId: string;
+  requestId: string | null;
+  model: string;
+  agentSlug: string;
 }
 
 export interface JobEventRow {
@@ -82,6 +122,20 @@ export interface JobContext {
 }
 
 export interface JobResult {
-  status: "done" | "failed";
+  /**
+   * Terminal job outcomes (`done` / `failed`) finalize the row.
+   * `batch_pending` is non-terminal: the worker pool persists
+   * `batchHandle`, releases the slot, and enqueues an
+   * `agent.batch_resume` job to poll the upstream batch later.
+   */
+  status: "done" | "failed" | "batch_pending";
   result?: string;
+  /** Required when `status === "batch_pending"`. */
+  batchHandle?: BatchHandlePersisted;
+  /**
+   * Override the resume scheduling delay (ms). Defaults to the
+   * worker pool's `BATCH_RESUME_DELAY_MS`. Tests use a tight
+   * value (1–5 ms) to exercise the loop without sleeping.
+   */
+  batchResumeDelayMs?: number;
 }
