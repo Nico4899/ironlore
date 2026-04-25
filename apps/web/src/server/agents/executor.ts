@@ -3,7 +3,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { BackpressureController } from "../jobs/backpressure.js";
 import type { JobContext, JobResult, JobRow } from "../jobs/types.js";
-import type { ChatMessage, ProjectContext, Provider } from "../providers/types.js";
+import type {
+  BatchPollResult,
+  ChatMessage,
+  ProjectContext,
+  Provider,
+} from "../providers/types.js";
 import type { ToolDispatcher } from "../tools/dispatcher.js";
 import type { RunBudget, ToolCallContext } from "../tools/types.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
@@ -59,6 +64,21 @@ export interface ExecutorOptions {
    * so the pool self-tunes under 429 pressure.
    */
   backpressure?: BackpressureController;
+  /**
+   * Async-batch tuning knobs — exposed for tests + operators with
+   * unusual upstream latencies. Production defaults match the spec
+   * (poll every 5 s, give up after 30 min). The persona opts in via
+   * `batch: true` in frontmatter; without that flag these knobs are
+   * dead code per run.
+   */
+  batchOptions?: {
+    /** Override the persona's `batch:` decision (tests inject `true`). */
+    forceOptIn?: boolean;
+    /** Poll cadence in milliseconds; defaults to 5_000. */
+    pollIntervalMs?: number;
+    /** Hard deadline; defaults to 30 min. After that the run fails. */
+    timeoutMs?: number;
+  };
 }
 
 /**
@@ -147,6 +167,53 @@ export async function executeAgentRun(
   }
 
   const toolDefinitions = dispatcher.getDefinitions();
+
+  // ───────── Async-batch path (Phase-11 cost reduction) ─────────
+  //
+  // Persona opts in via `batch: true` in frontmatter. Only fires
+  // for autonomous jobs (interactive runs always stream — the user
+  // is at their desk). The provider must declare `supportsBatch`
+  // *and* expose both `submitBatch` + `pollBatch`. When eligible
+  // the executor takes a single round-trip with no tools, polls
+  // until the batch ends (bounded by `timeoutMs`), and emits the
+  // result as a normal `message.text` + `usage`.
+  //
+  // **Single-turn constraint.** Anthropic's batch API doesn't
+  // support tool-use round-trips; we strip `tools` from the
+  // submission. A persona that opts in without restructuring its
+  // workflow skill (i.e. one that still expects to call
+  // `kb.replace_block` mid-conversation) will produce a coherent
+  // text reply but no mutations. Authors are responsible for
+  // shaping their workflow before opting in — see
+  // docs/04-ai-and-agents.md §Batch API.
+  //
+  // **Worker-release deferred.** This slice does not yet release
+  // the worker lease while polling — the worker pool still pins a
+  // slot for the full batch duration. Acceptable for the documented
+  // wiki-gardener / bulk-reindex callers (batches typically
+  // complete in seconds-to-minutes). The full lease-release
+  // refactor is the audited follow-up.
+  const batchOptIn = opts.batchOptions?.forceOptIn ?? parseBatchOptIn(dataRoot, agentSlug);
+  const batchEligible =
+    job.mode === "autonomous" &&
+    batchOptIn &&
+    provider.supportsBatch === true &&
+    typeof provider.submitBatch === "function" &&
+    typeof provider.pollBatch === "function";
+
+  if (batchEligible) {
+    return runBatchedTurn({
+      provider,
+      projectContext,
+      jobCtx,
+      model,
+      systemPrompt,
+      messages,
+      budget,
+      pollIntervalMs: opts.batchOptions?.pollIntervalMs ?? 5_000,
+      timeoutMs: opts.batchOptions?.timeoutMs ?? 30 * 60_000,
+    });
+  }
 
   // Main loop: call provider → handle events → loop on tool_use.
   let journalEmitted = false;
@@ -468,4 +535,134 @@ export function parseBatchOptIn(dataRoot: string, slug: string): boolean {
   // an indented `  batch:` under another key isn't picked up).
   const match = /^batch\s*:\s*(true|false)\b/m.exec(raw);
   return match?.[1] === "true";
+}
+
+// ---------------------------------------------------------------------------
+// Async-batch runner
+// ---------------------------------------------------------------------------
+
+interface BatchRunOpts {
+  provider: Provider;
+  projectContext: ProjectContext;
+  jobCtx: JobContext;
+  model: string;
+  systemPrompt: string;
+  messages: readonly ChatMessage[];
+  budget: RunBudget;
+  pollIntervalMs: number;
+  timeoutMs: number;
+}
+
+/**
+ * Submit the run to the provider's async batch queue + poll until
+ * the batch ends. Mirrors the streaming path's event surface
+ * (`message.text`, `usage`, `message.error`) so the AI panel +
+ * job-events stream don't need to know which path produced the
+ * reply. Tools are intentionally stripped — Anthropic's batch API
+ * is single-turn.
+ *
+ * Returns immediately with `failed` when the provider doesn't
+ * implement the batch surface (defensive — `executeAgentRun`
+ * already gates on `supportsBatch`, but the helper is exported for
+ * tests that drive it directly).
+ */
+async function runBatchedTurn(opts: BatchRunOpts): Promise<JobResult> {
+  const { provider, projectContext, jobCtx, model, systemPrompt, messages, budget } = opts;
+  if (!provider.submitBatch || !provider.pollBatch) {
+    return { status: "failed", result: "Provider does not implement batch surface" };
+  }
+
+  jobCtx.emitEvent("batch.starting", {
+    provider: provider.name,
+    model,
+    pollIntervalMs: opts.pollIntervalMs,
+    timeoutMs: opts.timeoutMs,
+  });
+
+  let handle: Awaited<ReturnType<NonNullable<Provider["submitBatch"]>>>;
+  try {
+    handle = await provider.submitBatch(
+      {
+        model,
+        systemPrompt,
+        messages: [...messages],
+        // No `tools` — single-turn, the model can't call mid-batch.
+        cacheSystemPrompt: provider.supportsPromptCache,
+      },
+      projectContext,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    jobCtx.emitEvent("message.error", { text: `Batch submit failed: ${message}` });
+    return { status: "failed", result: message };
+  }
+
+  jobCtx.emitEvent("batch.submitted", {
+    provider: handle.provider,
+    batchId: handle.batchId,
+    requestId: handle.requestId,
+  });
+
+  // Bounded poll loop. We sleep `pollIntervalMs` between calls and
+  // bail at `timeoutMs`. Cooperatively respects `jobCtx.signal`
+  // (set when an admin cancels the job through the inbox).
+  const deadline = Date.now() + opts.timeoutMs;
+  let pollCount = 0;
+  while (!jobCtx.signal.aborted) {
+    pollCount++;
+    let result: BatchPollResult;
+    try {
+      result = await provider.pollBatch(handle, projectContext);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      jobCtx.emitEvent("message.error", { text: `Batch poll failed: ${message}` });
+      return { status: "failed", result: message };
+    }
+
+    jobCtx.emitEvent("batch.poll", {
+      batchId: handle.batchId,
+      status: result.status,
+      pollCount,
+    });
+
+    if (result.status === "completed" && result.result) {
+      const text = result.result.text;
+      const usage = result.result.usage;
+      if (text) {
+        jobCtx.emitEvent("message.text", { text });
+      }
+      if (usage) {
+        budget.usedTokens += usage.inputTokens + usage.outputTokens;
+        jobCtx.emitEvent("usage", usage);
+      }
+      jobCtx.emitEvent("batch.completed", {
+        batchId: handle.batchId,
+        stopReason: result.result.stopReason,
+      });
+      return { status: "done", result: text };
+    }
+
+    if (result.status === "failed" || result.status === "expired") {
+      const reason = result.error ?? `Batch ${result.status}`;
+      jobCtx.emitEvent("message.error", { text: reason });
+      return { status: "failed", result: reason };
+    }
+
+    // status === "in_progress" → wait + try again, unless we've
+    // hit the wall-clock deadline. The deadline check is *after*
+    // the first poll so a fast batch (returning `completed` on
+    // the first call) doesn't spuriously time out at low budgets.
+    if (Date.now() >= deadline) {
+      jobCtx.emitEvent("message.error", {
+        text: `Batch did not complete within ${opts.timeoutMs}ms`,
+      });
+      return { status: "failed", result: "batch timeout" };
+    }
+    await new Promise((resolve) => setTimeout(resolve, opts.pollIntervalMs));
+  }
+
+  // Aborted — propagate cooperatively so the worker pool sees a
+  // clean shutdown rather than a hanging batch.
+  jobCtx.emitEvent("batch.aborted", { batchId: handle.batchId });
+  return { status: "failed", result: "aborted" };
 }
