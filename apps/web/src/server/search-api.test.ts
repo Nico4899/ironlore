@@ -73,7 +73,7 @@ describe("search-api — scope=current (default)", () => {
 
   it("returns only the active project's index, no projectId tag", async () => {
     await main.writer.write("apple.md", "# Apple\n\nJonagold and braeburn.", null);
-    main.searchIndex.indexPage("apple.md", "# Apple\n\nJonagold and braeburn.");
+    main.searchIndex.indexPage("apple.md", "# Apple\n\nJonagold and braeburn.", "test");
     const app = new Hono();
     app.route("/search", createSearchApi(main.searchIndex));
 
@@ -85,7 +85,7 @@ describe("search-api — scope=current (default)", () => {
 
   it("ignores scope=all when getAllProjectIndexes is not configured", async () => {
     await main.writer.write("apple.md", "Apple jonagold.", null);
-    main.searchIndex.indexPage("apple.md", "Apple jonagold.");
+    main.searchIndex.indexPage("apple.md", "Apple jonagold.", "test");
     const app = new Hono();
     app.route("/search", createSearchApi(main.searchIndex));
 
@@ -115,9 +115,9 @@ describe("search-api — scope=all", () => {
     // Both projects mention "synth" — the all-projects fan-out
     // should surface both hits with their respective projectId.
     await main.writer.write("a.md", "# A\n\nSynth pad notes.", null);
-    main.searchIndex.indexPage("a.md", "# A\n\nSynth pad notes.");
+    main.searchIndex.indexPage("a.md", "# A\n\nSynth pad notes.", "test");
     await other.writer.write("b.md", "# B\n\nSynth bass workflow.", null);
-    other.searchIndex.indexPage("b.md", "# B\n\nSynth bass workflow.");
+    other.searchIndex.indexPage("b.md", "# B\n\nSynth bass workflow.", "test");
 
     const allIndexes = new Map<string, SearchIndex>([
       ["main", main.searchIndex],
@@ -143,9 +143,9 @@ describe("search-api — scope=all", () => {
 
   it("scope=current still suppresses cross-project hits even with the registry wired", async () => {
     await main.writer.write("a.md", "Apple alpha.", null);
-    main.searchIndex.indexPage("a.md", "Apple alpha.");
+    main.searchIndex.indexPage("a.md", "Apple alpha.", "test");
     await other.writer.write("b.md", "Apple beta.", null);
-    other.searchIndex.indexPage("b.md", "Apple beta.");
+    other.searchIndex.indexPage("b.md", "Apple beta.", "test");
 
     const allIndexes = new Map<string, SearchIndex>([
       ["main", main.searchIndex],
@@ -169,9 +169,9 @@ describe("search-api — scope=all", () => {
 
   it("a project that throws on FTS5 doesn't poison the rest of the fan-out", async () => {
     await main.writer.write("a.md", "Carousel.", null);
-    main.searchIndex.indexPage("a.md", "Carousel.");
+    main.searchIndex.indexPage("a.md", "Carousel.", "test");
     await other.writer.write("b.md", "Carousel.", null);
-    other.searchIndex.indexPage("b.md", "Carousel.");
+    other.searchIndex.indexPage("b.md", "Carousel.", "test");
 
     // Stub a misbehaving SearchIndex that always throws — simulates
     // a project whose FTS index is corrupt or being rebuilt.
@@ -212,7 +212,7 @@ describe("search-api — scope=all", () => {
       for (let i = 0; i < 3; i++) {
         const p = `${prefix}${i}.md`;
         await fx.writer.write(p, `Mango ${prefix}${i}.`, null);
-        fx.searchIndex.indexPage(p, `Mango ${prefix}${i}.`);
+        fx.searchIndex.indexPage(p, `Mango ${prefix}${i}.`, "test");
       }
     }
 
