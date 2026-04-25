@@ -612,6 +612,67 @@ export async function fetchLibraryTemplates(): Promise<LibraryTemplate[]> {
 }
 
 /**
+ * Hybrid-retrieval embedding status. Returns null when no provider
+ * is configured (the API responds 503) so the Settings card can
+ * render a "connect a provider" affordance without throwing.
+ *
+ * `mismatched > 0` means the user swapped embedding models — old
+ * rows in `chunk_vectors` are technically queryable only when their
+ * dims still match, but quality drifts; the UI surfaces this as a
+ * "reindex recommended" hint.
+ */
+export interface EmbeddingsStatus {
+  total: number;
+  embedded: number;
+  missing: number;
+  mismatched: number;
+  model: string;
+  dims: number;
+  running: boolean;
+}
+
+export async function fetchEmbeddingsStatus(): Promise<EmbeddingsStatus | null> {
+  const res = await apiFetch(`${base()}/embeddings/status`);
+  if (res.status === 503) return null;
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const body = (await res.json()) as { ok: boolean } & EmbeddingsStatus;
+  if (!body.ok) return null;
+  return {
+    total: body.total,
+    embedded: body.embedded,
+    missing: body.missing,
+    mismatched: body.mismatched,
+    model: body.model,
+    dims: body.dims,
+    running: body.running,
+  };
+}
+
+/**
+ * Manual backfill tick — drains one batch of unembedded chunks
+ * synchronously. The Settings UI calls this in a loop until
+ * `remaining === 0`; the background worker continues running on
+ * its own interval regardless.
+ */
+export async function kickEmbeddingsBackfill(): Promise<{
+  processed: number;
+  remaining: number;
+  model: string;
+} | null> {
+  const res = await apiFetch(`${base()}/embeddings/backfill`, { method: "POST" });
+  if (res.status === 503) return null;
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const body = (await res.json()) as {
+    ok: boolean;
+    processed: number;
+    remaining: number;
+    model: string;
+  };
+  if (!body.ok) return null;
+  return { processed: body.processed, remaining: body.remaining, model: body.model };
+}
+
+/**
  * Activate a library persona template. On success the agent is live
  * under `data/.agents/<slug>/` with `active: true` in its frontmatter
  * and a corresponding `agent_state` row. 409 when already activated,
