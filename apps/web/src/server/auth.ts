@@ -320,19 +320,30 @@ export function createAuthApi(
   // ----------------------------------------------------------------
   // GET /api/auth/first-run-hint
   //
-  // Returns `{ hint: "terminal" }` while `.ironlore-install.json` is
-  // still on disk — i.e. the initial admin password has not yet been
-  // consumed via the first login + password change. Returns
-  // `{ hint: null }` afterwards. The endpoint deliberately never
-  // exposes the password itself; it just tells the UI *where* the
-  // password was printed so a fresh user doesn't stare at a blank
-  // login form with no hint it was emitted to stdout.
+  // Returns `{ hint: "terminal" | "dialog" }` while
+  // `.ironlore-install.json` is still on disk — i.e. the initial
+  // admin password has not yet been consumed via the first login +
+  // password change. Returns `{ hint: null }` afterwards. The
+  // endpoint deliberately never exposes the password itself; it
+  // just tells the UI *where* the password was surfaced so a fresh
+  // user doesn't stare at a blank login form.
+  //
+  // Hint shape:
+  //   - `"dialog"` when the server runs under Electron (`IRONLORE_GUI=1`).
+  //     The Electron main process surfaces the password in a native
+  //     dialog + clipboard — the LoginPage tells the user to look there.
+  //   - `"terminal"` otherwise (Docker, raw `pnpm dev`, systemd unit,
+  //     etc.) — the bootstrap script prints the password to stdout,
+  //     where the operator can read it.
   //
   // Public — this runs before authentication by design.
   // ----------------------------------------------------------------
   api.get("/first-run-hint", (c) => {
     const installJsonPath = join(installRoot, INSTALL_JSON);
-    const hint = existsSync(installJsonPath) ? "terminal" : null;
+    if (!existsSync(installJsonPath)) {
+      return c.json({ hint: null });
+    }
+    const hint = process.env.IRONLORE_GUI === "1" ? "dialog" : "terminal";
     return c.json({ hint });
   });
 

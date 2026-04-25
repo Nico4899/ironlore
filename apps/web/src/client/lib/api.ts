@@ -829,16 +829,21 @@ interface LoginResponse {
 }
 
 /**
- * First-run hint — returns `"terminal"` while the install record is
- * still on disk (fresh install, admin password was dumped to stdout),
- * `null` otherwise. Consumed by the LoginPage so a brand-new user
- * doesn't stare at a blank form wondering where the password lives.
+ * First-run hint — non-null while the install record is still on
+ * disk (fresh install, admin password not yet consumed), `null`
+ * afterwards. Two shapes:
+ *   - `"dialog"` when Ironlore runs under Electron — the desktop
+ *     shell shows the password in a native dialog + clipboard.
+ *   - `"terminal"` otherwise — the bootstrap script printed the
+ *     password to the server's stdout.
+ * Consumed by the LoginPage so a brand-new user doesn't stare at
+ * a blank form wondering where the password lives.
  */
-export async function fetchFirstRunHint(): Promise<"terminal" | null> {
+export async function fetchFirstRunHint(): Promise<"terminal" | "dialog" | null> {
   try {
     const res = await fetch("/api/auth/first-run-hint");
     if (!res.ok) return null;
-    const data = (await res.json()) as { hint: "terminal" | null };
+    const data = (await res.json()) as { hint: "terminal" | "dialog" | null };
     return data.hint;
   } catch {
     return null;

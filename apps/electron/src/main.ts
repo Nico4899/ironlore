@@ -1,8 +1,8 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
-import { app, BrowserWindow, dialog, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, shell } from "electron";
 
 // `__dirname` is provided by esbuild's CJS bundle (the production
 // build target) and by Node's CJS loader. Declared explicitly so
@@ -179,12 +179,62 @@ function spawnServer(paths: AppPaths, port: number): ChildProcess {
   return proc;
 }
 
+/**
+ * On a fresh install the bootstrap script writes the generated
+ * admin password to `<installRoot>/.ironlore-install.json` and
+ * prints it to stdout. GUI-only users never see stdout, so on
+ * first launch we surface the password in a native dialog and
+ * pre-copy it to the clipboard. The install record is consumed by
+ * the first /api/auth/login call, so this dialog only appears
+ * once per new install.
+ *
+ * Reading the file from the Electron main process (instead of
+ * adding a backdoor endpoint) keeps the password out of the HTTP
+ * surface — the renderer never has to be trusted with it.
+ */
+function showFirstRunPasswordDialog(installRoot: string): void {
+  const installJsonPath = join(installRoot, ".ironlore-install.json");
+  if (!existsSync(installJsonPath)) return;
+  let record: { admin_username?: string; initial_password?: string };
+  try {
+    record = JSON.parse(readFileSync(installJsonPath, "utf-8")) as {
+      admin_username?: string;
+      initial_password?: string;
+    };
+  } catch {
+    return;
+  }
+  const password = record.initial_password;
+  const username = record.admin_username ?? "admin";
+  if (!password) return;
+
+  clipboard.writeText(password);
+  dialog.showMessageBoxSync({
+    type: "info",
+    title: "Ironlore — first run",
+    message: "Initial admin password",
+    detail:
+      `Username: ${username}\nPassword: ${password}\n\n` +
+      "The password has been copied to your clipboard. Paste it on the " +
+      "login screen, then pick a new one — this initial password will " +
+      "not be shown again.",
+    buttons: ["Continue"],
+    defaultId: 0,
+    noLink: true,
+  });
+}
+
 async function createWindow(paths: AppPaths): Promise<void> {
   const port = await findEphemeralPort();
   const baseUrl = `http://127.0.0.1:${port}`;
 
   serverProc = spawnServer(paths, port);
   await pollReady(baseUrl, 30_000);
+  // Once the server has booted, the install record is on disk if
+  // this is a fresh install. Surface it before the BrowserWindow
+  // opens so the user lands on the login screen with the password
+  // already in their clipboard.
+  showFirstRunPasswordDialog(paths.installRoot);
 
   mainWindow = new BrowserWindow({
     width: 1280,
