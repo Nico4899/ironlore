@@ -2,15 +2,15 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { INSTALL_JSON, SENSITIVE_FILE_MODE } from "@ironlore/core";
 import { extractDocx, extractEml } from "@ironlore/core/extractors";
+import type { Hono } from "hono";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createAuthApi, SessionStore } from "./auth.js";
 import { StorageWriter } from "./storage-writer.js";
 import { extractPageKind } from "./tools/page-kind.js";
-import { processUpload, UploadRejectedError } from "./uploads.js";
 import { assertWritableKind, WritableKindsViolation } from "./tools/writable-kinds-gate.js";
+import { processUpload, UploadRejectedError } from "./uploads.js";
 
 /**
  * Phase-8 red-team corpus — adversarial probes for the four
@@ -89,8 +89,7 @@ describe("red-team — (a) writable_kinds bypass via prompt injection", () => {
     // first-match — verify a duplicate later in frontmatter
     // doesn't change the gate verdict.
     writePersona("gardener", ["page", "wiki"]);
-    const tampered =
-      "---\nid: x\nkind: source\ndescription: harmless\nkind: page\n---\n\nbody\n";
+    const tampered = "---\nid: x\nkind: source\ndescription: harmless\nkind: page\n---\n\nbody\n";
     const k = extractPageKind(tampered);
     expect(k).toBe("source"); // first match wins → gate sees source
     expect(() => assertWritableKind(ctx("gardener"), k)).toThrow(WritableKindsViolation);
@@ -236,7 +235,10 @@ describe("red-team — (c) nested-archive / zip-slip surface", () => {
     // mammoth / postal-mime. This is the strongest possible
     // defence against zip-slip: there is no extraction path.
     const zip = Buffer.from([
-      0x50, 0x4b, 0x03, 0x04, // PK\x03\x04 — ZIP local file header
+      0x50,
+      0x4b,
+      0x03,
+      0x04, // PK\x03\x04 — ZIP local file header
       ...new Uint8Array(32),
     ]);
     await expect(
@@ -250,7 +252,16 @@ describe("red-team — (c) nested-archive / zip-slip surface", () => {
     // application/zip; sniffed != image/png → rejected before
     // sharp ever sees the buffer.
     const zip = Buffer.from([
-      0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00, 0x08, 0x00,
+      0x50,
+      0x4b,
+      0x03,
+      0x04,
+      0x14,
+      0x00,
+      0x00,
+      0x00,
+      0x08,
+      0x00,
       ...new Uint8Array(64),
     ]);
     await expect(
@@ -436,4 +447,3 @@ function flipLastChar(s: string): string {
   const next = String.fromCharCode(c === 65 /* A */ ? 66 : c - 1);
   return s.slice(0, -1) + next;
 }
-
