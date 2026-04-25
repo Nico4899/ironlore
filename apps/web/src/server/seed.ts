@@ -319,6 +319,83 @@ substitute \`Ctrl\` for \`Cmd\`.
 `,
   );
 
+  // Authoring guide for connector skills — points at the three
+  // worked examples seeded into `.agents/.shared/skills/`.
+  seedFile(
+    join(dataDir, "getting-started", "connectors.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Connector Skills
+kind: page
+created: ${now}
+modified: ${now}
+tags: [onboarding, agents, connectors]
+icon: lucide:plug
+---
+
+# Connector Skills
+
+Connector skills are markdown templates that teach an agent how to
+talk to an external service — GitHub, a Slack webhook, a private
+HTTP API — using Ironlore's existing primitives. They're inert
+text on disk; the model loads them when its persona declares
+\`skills: [<name>]\` in frontmatter, and the actual network call
+lands through \`fetchForProject\` so the project's egress
+allowlist is the trust boundary.
+
+Three worked examples ship in \`.agents/.shared/skills/\` as a
+starting point:
+
+| File | Pattern |
+|---|---|
+| [github-issue-search.md](/.agents/.shared/skills/github-issue-search) | Bearer-token auth, JSON GET, paginated reads. |
+| [webhook-trigger.md](/.agents/.shared/skills/webhook-trigger) | Fire-and-forget POST against Slack / Discord / n8n / Make. |
+| [http-get-with-auth.md](/.agents/.shared/skills/http-get-with-auth) | Parametric template — Bearer / API-key / Basic auth shapes. |
+
+## How to author a new connector
+
+1. **Pick the upstream's host(s).** Add each one to your project's
+   \`project.yaml\` under \`egress.allowlist\`. Sub-domains and
+   ports are matched literally — \`hooks.slack.com\` does not
+   unlock \`*.slack.com\`. Without this entry,
+   \`fetchForProject\` throws \`EgressBlockedError\` and the call
+   never leaves the host.
+2. **Decide where the secret lives.** Per-project API keys belong
+   in the project's encrypted vault under a slot like
+   \`bearer:<service>\` or \`webhook:<name>\`. Never inline secrets
+   into the skill markdown — the file is git-tracked.
+3. **Document the request shape.** Include the full HTTP verb +
+   headers + body in a fenced code block. The model reads this
+   verbatim when planning the call.
+4. **Document the error shape.** A skill is only as useful as its
+   failure mode. Spell out what to return on \`401\` / \`404\` /
+   \`429\` / 5xx / \`EgressBlocked\` so the agent's transcript stays
+   structured. The three seeded skills share a consistent JSON
+   shape — copy it.
+5. **Compose with \`kb.*\`.** A skill that pulls remote data should
+   write the result back through \`kb.create_page\` or
+   \`kb.replace_block\` (with \`derived_from\` set) so the answer
+   survives across runs. Otherwise the model re-fetches every
+   conversation and the cost compounds.
+
+## When *not* to write a connector skill
+
+- **You're integrating a service that ships an MCP server.**
+  Register the MCP server in \`project.yaml\` and let the
+  \`mcp.<server>.<tool>\` surface handle the protocol. MCP is the
+  import path for the existing ecosystem; connectors are for
+  upstreams without one.
+- **The integration is two-way + stateful.** Connector skills are
+  one-shot patterns — fetch, summarise, optionally write back.
+  Long-running interactive sessions (a chat upstream that holds
+  state) need a real provider, not a skill.
+
+See [docs/04-ai-and-agents.md §Skills vs tools](https://github.com/anthropics/ironlore/blob/main/docs/04-ai-and-agents.md#skills-vs-tools)
+for the fuller skills-vs-tools framing.
+`,
+  );
+
   // -------------------------------------------------------------------------
   // Convention pages — seeded empty so the Wiki Gardener has somewhere to
   // write. Described in docs/04-ai-and-agents.md §Convention pages. Both are
