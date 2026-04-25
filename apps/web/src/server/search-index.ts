@@ -501,6 +501,39 @@ export class SearchIndex {
   }
 
   /**
+   * Wiki-link relations that flag a contradiction between source +
+   * target. The typed-relation pipe form `[[other | contradicts]]`
+   * stamps the rel column at index time; the lint check just reads
+   * the rows back. `disagrees` and `refutes` are accepted aliases
+   * for users who prefer slightly less adversarial wording — same
+   * semantic, same row.
+   *
+   * See docs/01-content-model.md §Wiki-link relations and the
+   * Wiki-Gardener `lint.md` skill in `seed.ts`.
+   */
+  findContradictions(): Array<{
+    sourcePath: string;
+    targetPath: string;
+    rel: string;
+    linkText: string;
+  }> {
+    const rows = this.db
+      .prepare(
+        `SELECT source_path AS sourcePath, target_path AS targetPath, rel, link_text AS linkText
+         FROM backlinks
+         WHERE rel IN ('contradicts', 'disagrees', 'refutes')
+         ORDER BY source_path, target_path`,
+      )
+      .all() as Array<{
+      sourcePath: string;
+      targetPath: string;
+      rel: string;
+      linkText: string;
+    }>;
+    return rows;
+  }
+
+  /**
    * Wiki pages whose cited sources were modified more recently — the
    * Phase-11 stale-source check from the Wiki Gardener's lint skill.
    *
