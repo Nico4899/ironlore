@@ -1191,7 +1191,9 @@ function RecentCard({
           className="font-mono uppercase truncate"
           style={{
             fontSize: 10.5,
-            color: "var(--il-text4)",
+            // Folder path is real navigation context — bumped from
+            // text4 → text3 so it clears WCAG AA contrast.
+            color: "var(--il-text3)",
             letterSpacing: "0.04em",
             marginBottom: 4,
           }}

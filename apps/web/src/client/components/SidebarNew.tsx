@@ -1280,7 +1280,10 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
       >
         <span>Agents</span>
         <span className="flex-1" />
-        <span style={{ color: "var(--il-text4)" }}>
+        {/* Counter is status text — uses text3 (AA-clearing) rather
+         *  than text4 so screen-readers + low-vision users can read
+         *  the running / total count. */}
+        <span style={{ color: "var(--il-text3)" }}>
           {runningCount > 0 ? `${runningCount} running` : `${agents.length}`}
         </span>
       </div>
@@ -1327,11 +1330,14 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
                     className="font-mono"
                     style={{
                       fontSize: 10.5,
+                      // Status text — text3 clears WCAG AA, text4
+                      // does not. Running / paused use signal
+                      // colours that already clear contrast.
                       color: a.running
                         ? "var(--il-blue)"
                         : paused
                           ? "var(--il-amber)"
-                          : "var(--il-text4)",
+                          : "var(--il-text3)",
                       letterSpacing: "0.04em",
                     }}
                   >

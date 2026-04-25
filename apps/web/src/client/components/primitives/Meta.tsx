@@ -35,7 +35,11 @@ export function Meta({ k, v, color = "var(--il-text3)", className, style }: Meta
         ...style,
       }}
     >
-      <span style={{ textTransform: "uppercase", color: "var(--il-text4)" }}>{k}</span>
+      {/* Key label uses text3 (AA-clearing) rather than text4. The
+       *  key communicates real information (which metric we're
+       *  showing — STEP, FTS5, ETAG, etc.) so screen-reader and
+       *  low-vision users need it readable. */}
+      <span style={{ textTransform: "uppercase", color: "var(--il-text3)" }}>{k}</span>
       <span aria-hidden="true">·</span>
       {/* Tabular figures on the value — Meta values are nearly always
        *  counts (step NN) or positions (etag hash, NN / NN). Keeps

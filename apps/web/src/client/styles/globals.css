@@ -54,10 +54,17 @@
   /* Secondary accent — reserved for secondary agent identity only */
   --il-violet: oklch(0.70 0.17 300);
 
-  /* Text (dark) */
+  /* Text (dark)
+   * text3's L was bumped from 0.48 → 0.65 to clear WCAG 2.1 AA's
+   * 4.5:1 contrast bar against `--il-bg` for the small-mono labels
+   * it powers (status-bar branch chip, ⌘-JUMPABLE hints, etc.).
+   * text4 remains below AA by intent — it's reserved for purely
+   * decorative content (watermark Venns, ghost timestamps); axe
+   * scans exclude those callsites explicitly.
+   */
   --il-text: oklch(0.95 0.005 260);
-  --il-text2: oklch(0.68 0.012 260);
-  --il-text3: oklch(0.48 0.012 260);
+  --il-text2: oklch(0.78 0.012 260);
+  --il-text3: oklch(0.65 0.012 260);
   --il-text4: oklch(0.36 0.010 260);
 
   /* Borders (dark) */
@@ -144,9 +151,12 @@ html.light {
 
   --il-violet: oklch(0.55 0.20 300);
 
+  /* Text (light) — text3 dropped to L=0.45 so it clears 4.5:1
+   * against `--il-bg`. See dark-theme block above for the rationale.
+   */
   --il-text: oklch(0.18 0.012 260);
-  --il-text2: oklch(0.42 0.012 260);
-  --il-text3: oklch(0.58 0.010 260);
+  --il-text2: oklch(0.36 0.012 260);
+  --il-text3: oklch(0.45 0.010 260);
   --il-text4: oklch(0.72 0.008 260);
 
   --il-border: oklch(0.86 0.008 265);
