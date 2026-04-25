@@ -35,15 +35,25 @@ directories:
 
 # What ends up in the .app's Contents.
 # - dist/main.cjs is the bundled main process
+# - node_modules carries the four native deps the bundled server
+#   require()s at runtime (better-sqlite3, sharp, node-pty,
+#   @node-rs/argon2). They're declared as production dependencies
+#   in apps/electron/package.json so pnpm hoists them locally;
+#   electron-builder packs them into asar, and the `asarUnpack`
+#   patterns below pull the four out at install time so their
+#   .node binaries land on the real filesystem (asar can't execute
+#   compiled binaries).
 # - The Vite build (apps/web/dist/client) ships as `client/` next
 #   to the asar bundle so the Hono server can serve it via
 #   IRONLORE_SERVE_STATIC.
 # - The bundled server (apps/web/dist/server/index.cjs) ships as
-#   `server/` — Electron main spawns it with ELECTRON_RUN_AS_NODE.
+#   `server/` — Electron main spawns it with ELECTRON_RUN_AS_NODE
+#   plus a NODE_PATH pointing at the unpacked node_modules so the
+#   external native deps resolve at require() time.
 files:
   - dist/**/*
   - package.json
-  - "!node_modules/**/*"
+  - node_modules/**/*
 
 # Native modules can't live inside asar — asar can't execute
 # compiled binaries. better-sqlite3, node-pty, sharp, and

@@ -136,6 +136,14 @@ function spawnServer(paths: AppPaths, port: number): ChildProcess {
     args = [paths.serverEntry];
   }
 
+  // The bundled server's `external` list keeps native deps
+  // (better-sqlite3, sharp, node-pty, @node-rs/argon2) outside the
+  // bundle. Production resolution finds them via NODE_PATH pointing
+  // at the asar-unpacked node_modules — that's where electron-builder
+  // lands the four `asarUnpack` patterns.
+  const unpackedModules = isPackaged
+    ? join(process.resourcesPath, "app.asar.unpacked", "node_modules")
+    : null;
   const proc = spawn(command, args, {
     env: {
       ...process.env,
@@ -147,6 +155,7 @@ function spawnServer(paths: AppPaths, port: number): ChildProcess {
       // plain Node when invoked with a script path. Production-only;
       // tsx in dev runs under the workspace's Node and ignores it.
       ...(isPackaged ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
+      ...(unpackedModules ? { NODE_PATH: unpackedModules } : {}),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
