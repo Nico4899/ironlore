@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { hash } from "@node-rs/argon2";
 import { SENSITIVE_FILE_MODE } from "@ironlore/core";
+import { hash } from "@node-rs/argon2";
 import Database from "better-sqlite3";
 
 /**

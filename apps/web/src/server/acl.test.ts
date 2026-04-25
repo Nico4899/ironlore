@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { ACL_DEFAULT, AclViolation, assertCanAccess, canAccess, parsePageAcl, stampOwner } from "./acl.js";
+import {
+  ACL_DEFAULT,
+  AclViolation,
+  assertCanAccess,
+  canAccess,
+  parsePageAcl,
+  stampOwner,
+} from "./acl.js";
 
 /**
  * Per-page ACL parser + gate — unit coverage. Wiring into HTTP

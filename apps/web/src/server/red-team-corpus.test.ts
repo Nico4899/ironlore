@@ -382,14 +382,21 @@ describe("red-team — (d) cookie tampering / session fixation", () => {
     expect(res.status).toBe(401);
   });
 
-  it("a flipped-byte signature is rejected (Ed25519 verifies cleanly)", async () => {
+  it("a tampered signature is rejected (Ed25519 verifies cleanly)", async () => {
     const cookie = await login();
-    // Cookie format is `<sessionId>.<base64url-sig>`. Flip the
-    // last char of the signature so verification fails.
+    // Cookie format is `<sessionId>.<base64url-sig>`. Replace the
+    // last 4 chars of the signature with `AAAA` — guaranteed
+    // base64url-valid, deterministically different from the
+    // original (the chance of an Ed25519 sig already ending in
+    // `AAAA` is negligible). Avoids URL-encoding flakiness around
+    // chars like `+` / `/` that a single-byte bit-flip can hit.
     const dot = cookie.lastIndexOf(".");
-    const flipped = `${cookie.slice(0, dot + 1)}${flipLastChar(cookie.slice(dot + 1))}`;
+    const sig = cookie.slice(dot + 1);
+    const tamperedSig = `${sig.slice(0, -4)}AAAA`;
+    expect(tamperedSig).not.toBe(sig); // probe sanity
+    const tampered = `${cookie.slice(0, dot + 1)}${tamperedSig}`;
     const res = await api.request("/me", {
-      headers: { Cookie: `ironlore_session=${flipped}` },
+      headers: { Cookie: `ironlore_session=${tampered}` },
     });
     expect(res.status).toBe(401);
   });
@@ -438,12 +445,3 @@ describe("red-team — (d) cookie tampering / session fixation", () => {
 // helpers
 // ─────────────────────────────────────────────────────────────────
 
-function flipLastChar(s: string): string {
-  if (s.length === 0) return "A";
-  const c = s.charCodeAt(s.length - 1);
-  // Flip a single bit so the result is still a valid base64url
-  // character but a different one — keeps the cookie shape sane,
-  // ensures the signature genuinely changes.
-  const next = String.fromCharCode(c === 65 /* A */ ? 66 : c - 1);
-  return s.slice(0, -1) + next;
-}

@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Hono } from "hono";
+import { type Context, Hono, type Next } from "hono";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createPagesApi } from "./pages-api.js";
 import { SearchIndex } from "./search-index.js";
@@ -49,7 +49,9 @@ function setup(mode: "single-user" | "multi-user" = "multi-user"): Setup {
 
   // Test-only auth shim. The real middleware in `auth.ts` sets the
   // same two keys; we shortcut so the test can swap users by header.
-  app.use("/pages/*", async (c, next) => {
+  // Typed as plain Context so `c.set` accepts arbitrary keys —
+  // matches auth.ts's middleware signature.
+  app.use("/pages/*", async (c: Context, next: Next) => {
     const username = c.req.header("X-Test-User") ?? "alice";
     const userId = `${username}-uid`;
     c.set("userId", userId);
@@ -95,12 +97,7 @@ async function get(app: Hono, user: string, path: string): Promise<Response> {
   });
 }
 
-async function del(
-  app: Hono,
-  user: string,
-  path: string,
-  ifMatch?: string,
-): Promise<Response> {
+async function del(app: Hono, user: string, path: string, ifMatch?: string): Promise<Response> {
   return app.request(`/pages/${path}`, {
     method: "DELETE",
     headers: {
@@ -267,7 +264,13 @@ describe("multi-user pages-api — ACL enforcement", () => {
 
     const r1 = await get(s.app, "bob", "doc.md");
     const etag = r1.headers.get("ETag") ?? "";
-    await put(s.app, "bob", "doc.md", `${(await r1.json() as { content: string }).content}bob edit\n`, etag);
+    await put(
+      s.app,
+      "bob",
+      "doc.md",
+      `${((await r1.json()) as { content: string }).content}bob edit\n`,
+      etag,
+    );
 
     const final = await get(s.app, "alice", "doc.md");
     const body = (await final.json()) as { content: string };

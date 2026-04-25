@@ -80,12 +80,7 @@ export function parsePageAcl(markdown: string): PageAcl {
  * Returns `true` iff the user passes. The HTTP handler maps `false`
  * to a 403 response; agent tools throw `AclViolation`.
  */
-export function canAccess(
-  acl: PageAcl,
-  userId: string,
-  username: string,
-  op: AclOp,
-): boolean {
+export function canAccess(acl: PageAcl, userId: string, username: string, op: AclOp): boolean {
   // Resolve the allow-list for the op. Null defaults differ:
   //   - read default = everyone (every user passes).
   //   - write default = owner only (nobody passes when owner unset).
@@ -111,12 +106,7 @@ export function canAccess(
  * Throw on deny. The HTTP handler catches this and maps to 403;
  * tools propagate it through the dispatcher's normal error path.
  */
-export function assertCanAccess(
-  acl: PageAcl,
-  userId: string,
-  username: string,
-  op: AclOp,
-): void {
+export function assertCanAccess(acl: PageAcl, userId: string, username: string, op: AclOp): void {
   if (!canAccess(acl, userId, username, op)) {
     throw new AclViolation(op, username);
   }
