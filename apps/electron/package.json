@@ -8,14 +8,19 @@
   "scripts": {
     "build:main": "esbuild src/main.ts --bundle --platform=node --target=node22 --format=cjs --outfile=dist/main.cjs --external:electron",
     "build:client": "pnpm --filter @ironlore/web build",
-    "build": "pnpm build:client && pnpm build:main",
+    "build:server": "node scripts/build-server.mjs",
+    "build": "pnpm build:client && pnpm build:server && pnpm build:main",
     "dev": "pnpm build:main && electron dist/main.cjs",
     "dist": "pnpm build && electron-builder --config electron-builder.yml",
     "dist:mac": "pnpm build && electron-builder --config electron-builder.yml --mac",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@ironlore/core": "workspace:*"
+    "@ironlore/core": "workspace:*",
+    "@node-rs/argon2": "^2.0.2",
+    "better-sqlite3": "^12.9.0",
+    "node-pty": "^1.1.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
