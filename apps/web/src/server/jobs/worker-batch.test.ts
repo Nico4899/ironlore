@@ -33,8 +33,14 @@ function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const tick = (): void => {
-      if (predicate()) return resolve();
-      if (Date.now() - start > timeoutMs) return reject(new Error("waitFor timeout"));
+      if (predicate()) {
+        resolve();
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        reject(new Error("waitFor timeout"));
+        return;
+      }
       setTimeout(tick, 5);
     };
     tick();
