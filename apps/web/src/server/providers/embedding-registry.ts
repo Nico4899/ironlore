@@ -69,4 +69,14 @@ export class EmbeddingProviderRegistry {
   }): void {
     this.register(new OpenAIEmbeddingProvider(opts));
   }
+
+  /**
+   * Register a local Ollama embedding provider. No API key — Ollama
+   * runs on the user's machine, gated by the project's egress
+   * allowlist (which has to permit `127.0.0.1` for localhost; the
+   * `main` preset's allowlist does by default).
+   */
+  registerOllama(opts?: { model?: string; dimensions?: number; baseUrl?: string }): void {
+    this.register(new OllamaEmbeddingProvider(opts));
+  }
 }

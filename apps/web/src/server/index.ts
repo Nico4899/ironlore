@@ -39,6 +39,7 @@ import { checkPermissions } from "./permissions.js";
 import { ProjectRegistry } from "./project-registry.js";
 import { ProjectServices } from "./project-services.js";
 import { EmbeddingProviderRegistry } from "./providers/embedding-registry.js";
+import { OllamaEmbeddingProvider } from "./providers/ollama-embedding.js";
 import { getProviderKey } from "./providers/key-store.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import { createProvidersApi } from "./providers-api.js";
@@ -221,6 +222,27 @@ async function start() {
   if (openAiKey) {
     embeddingRegistry.registerOpenAI({ apiKey: openAiKey });
     console.log(`Embedding provider: OpenAI registered (${envOpenAiKey ? "env" : "key-store"})`);
+  } else {
+    // Local fallback — when no OpenAI key is configured, probe
+    // Ollama for an installed embedding model (`nomic-embed-text` /
+    // `mxbai-embed-large` / `all-minilm`). If found, register the
+    // local provider so hybrid retrieval works without a paid API.
+    // Skipped when OpenAI is configured to avoid dim-mismatched
+    // chunk_vectors rows when the user later swaps providers.
+    const ollamaEmbedModel = await OllamaEmbeddingProvider.detectEmbeddingModel();
+    if (ollamaEmbedModel) {
+      // Pick dimensionality from the model family; the user can
+      // override via an env or future Settings selector.
+      const dims = ollamaEmbedModel.startsWith("mxbai-embed-large")
+        ? 1024
+        : ollamaEmbedModel.startsWith("all-minilm")
+          ? 384
+          : 768;
+      embeddingRegistry.registerOllama({ model: ollamaEmbedModel, dimensions: dims });
+      console.log(
+        `Embedding provider: Ollama registered (model: ${ollamaEmbedModel}, ${dims} dims)`,
+      );
+    }
   }
 
   // Per-project tool dispatchers — tools close over that project's
