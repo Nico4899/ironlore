@@ -191,6 +191,13 @@ export interface SearchResult {
   title: string;
   snippet: string;
   rank: number;
+  /**
+   * Project the result came from. Set only on `?scope=all` responses
+   * (the all-projects toggle in ⌘K). Single-project queries leave it
+   * undefined — callers can render a project badge prefix iff
+   * `projectId !== getApiProject()`.
+   */
+  projectId?: string;
 }
 
 export interface BacklinkEntry {
@@ -204,9 +211,28 @@ export interface RecentEdit {
   author: string;
 }
 
-/** Full-text search via FTS5. */
-export async function searchPages(query: string, limit = 20): Promise<SearchResult[]> {
+/**
+ * Full-text search via FTS5.
+ *
+ * `scope` controls how far the query reaches:
+ *   - `"current"` (default) — only the active project's index, full
+ *     LLM-expansion + rerank pipeline.
+ *   - `"all"` — fan-out across every registered project's index. Each
+ *     result carries a `projectId` field; the LLM expansion + rerank
+ *     stages are intentionally skipped server-side because they're
+ *     bound to one project's provider keys + egress allowlist.
+ *
+ * The `scope=all` path is exclusive to the user's ⌘K dialog. Agent
+ * tools (`kb.search`) stay single-project — see docs/08 §What this
+ * does not try to do.
+ */
+export async function searchPages(
+  query: string,
+  limit = 20,
+  scope: "current" | "all" = "current",
+): Promise<SearchResult[]> {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
+  if (scope === "all") params.set("scope", "all");
   const res = await apiFetch(`${searchBase()}/search?${params}`);
   if (!res.ok) throw new ApiError(res.status, await res.text());
   const data = (await res.json()) as { results: SearchResult[] };

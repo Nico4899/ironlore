@@ -42,6 +42,7 @@ import { ProviderRegistry } from "./providers/registry.js";
 import { createProvidersApi } from "./providers-api.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { createSearchApi } from "./search-api.js";
+import type { SearchIndex } from "./search-index.js";
 import { TerminalManager } from "./terminal.js";
 import { createAgentJournal } from "./tools/agent-journal.js";
 import { ToolDispatcher } from "./tools/dispatcher.js";
@@ -432,6 +433,16 @@ async function start() {
         // BM25 when an embedding provider is registered. Null → old
         // two-channel (original + lex) behavior stays intact.
         embeddingProvider: embeddingRegistry.resolve(),
+        // ?scope=all fan-out: capture the live `servicesById` map by
+        // closure so projects added later become searchable without
+        // restarting this route. The agent tool path
+        // (`kb.search` / dispatcher) doesn't receive this — only the
+        // user-facing HTTP endpoint can blend results across projects.
+        getAllProjectIndexes: () => {
+          const m = new Map<string, SearchIndex>();
+          for (const [pid, svc] of servicesById) m.set(pid, svc.searchIndex);
+          return m;
+        },
       }),
     );
 

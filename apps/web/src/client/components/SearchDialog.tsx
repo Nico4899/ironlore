@@ -1,7 +1,13 @@
 import { messages } from "@ironlore/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
-import { fetchRecentEdits, type RecentEdit, type SearchResult, searchPages } from "../lib/api.js";
+import {
+  fetchRecentEdits,
+  getApiProject,
+  type RecentEdit,
+  type SearchResult,
+  searchPages,
+} from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { Key, Meta, Reuleaux } from "./primitives/index.js";
 
