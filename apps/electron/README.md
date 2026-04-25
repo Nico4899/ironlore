@@ -9,7 +9,7 @@ Spec: [docs/07-tech-stack.md §Electron shell](../../docs/07-tech-stack.md).
 
 ```sh
 pnpm install            # at the workspace root
-pnpm --filter @ironlore/web build:client
+pnpm --filter @ironlore/web build  # produces dist/client (Vite SPA)
 pnpm --filter @ironlore/electron dev
 ```
 
@@ -18,11 +18,14 @@ The dev script:
 1. Bundles `apps/electron/src/main.ts` → `dist/main.cjs` via esbuild.
 2. Spawns Electron pointed at `dist/main.cjs`.
 3. Electron main resolves `app.getPath("userData")` → install root,
-   picks an ephemeral loopback port, spawns the Hono server with
-   `IRONLORE_INSTALL_ROOT`, `IRONLORE_PORT`, and
-   `IRONLORE_SERVE_STATIC=<bundled SPA>` set.
-4. Once `/ready` returns 200, opens a `BrowserWindow` at the bound
-   URL.
+   picks an ephemeral loopback port, spawns the Hono server (in dev
+   it's `tsx` against source; in production it's the bundled CJS,
+   see below) with `IRONLORE_INSTALL_ROOT`, `IRONLORE_PORT`,
+   `IRONLORE_SERVE_STATIC=<bundled SPA>`, and `IRONLORE_GUI=1` set.
+4. Once `/ready` returns 200, the main process reads
+   `<installRoot>/.ironlore-install.json` (if present) and surfaces
+   the bootstrap admin password in a native dialog + clipboard.
+5. Opens a sandboxed `BrowserWindow` at the bound URL.
 
 User data lands in the OS-native location:
 
@@ -61,14 +64,31 @@ automatically — no extra configuration required.
 Windows code-signing uses the same `CSC_LINK` + `CSC_KEY_PASSWORD`
 shape with a Windows EV cert.
 
+## Server bundle
+
+Production builds need a single-file Hono entry. `pnpm build` runs
+`scripts/build-server.mjs`, which esbuilds `apps/web/src/server/index.ts`
+to `apps/web/dist/server/index.cjs` (~5 MB). Native modules are
+marked external — they ship via `asarUnpack` instead.
+
 ## Native modules + asar
 
-The Hono server spawned by the Electron main process loads four
-native modules: `better-sqlite3`, `node-pty`, `sharp`, and
-`@node-rs/argon2`. asar can't execute compiled binaries, so all
-four are listed in `electron-builder.yml`'s `asarUnpack` so they
-land on the real filesystem. The Vite SPA build + bundled server
-ride as `extraResources`.
+The bundled server `require()`s four native modules:
+`better-sqlite3`, `node-pty`, `sharp`, `@node-rs/argon2`. asar
+can't execute compiled binaries, so:
+
+1. The four are declared as production deps of this package's
+   `package.json` so pnpm hoists them locally.
+2. `electron-builder.yml#files` ships `node_modules/**/*` into the
+   asar bundle.
+3. `asarUnpack` patterns extract the four to
+   `app.asar.unpacked/node_modules/` at install time.
+4. `src/main.ts` sets
+   `NODE_PATH=<resourcesPath>/app.asar.unpacked/node_modules`
+   when spawning the server child, so Node's resolver finds them
+   at `require()` time.
+
+The Vite SPA build + bundled server entry ride as `extraResources`.
 
 ## What's left
 
@@ -84,6 +104,6 @@ Other follow-ups:
   approach is simpler and matches the existing fresh-install e2e
   pattern; the in-process variant requires refactoring
   `apps/web/src/server/index.ts` into a callable export.
-- `electron-updater` auto-update wiring per spec point 5.
+- `electron-updater` auto-update wiring per spec point 6.
 - `--headless` CLI mode that runs against the same data root per
-  spec point 6.
+  spec point 7.

@@ -1,12 +1,4 @@
-import {
-  ArrowUp,
-  ChevronDown,
-  Highlighter,
-  Lightbulb,
-  Settings,
-  Sparkles,
-  X,
-} from "lucide-react";
+import { ArrowUp, ChevronDown, Highlighter, Lightbulb, Settings, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
