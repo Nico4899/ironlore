@@ -1,8 +1,11 @@
+import { join } from "node:path";
 import { parseBlocks } from "@ironlore/core";
-import { assignBlockIds } from "../block-ids.js";
+import { assignBlockIds, type BlockProvenance, writeBlocksSidecar } from "../block-ids.js";
 import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
+import { extractPageKind } from "./page-kind.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
+import { assertWritableKind, WritableKindsViolation } from "./writable-kinds-gate.js";
 
 /** Render a minimal +/- diff for a single-block replacement. */
 function renderReplaceDiff(oldText: string, newText: string, blockId: string): string {
@@ -73,21 +76,13 @@ export function createKbReplaceBlock(
       };
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
-      const {
-        path,
-        blockId,
-        markdown,
-        etag,
-        derived_from: _derivedFrom,
-      } = args as {
+      const { path, blockId, markdown, etag, derived_from } = args as {
         path: string;
         blockId: string;
         markdown: string;
         etag: string;
         derived_from?: string[];
       };
-      // TODO: write _derivedFrom into .blocks.json provenance when
-      // the sidecar write path is wired (Track C).
 
       // Read current content.
       let currentContent: string;
@@ -106,6 +101,18 @@ export function createKbReplaceBlock(
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "ENOENT") {
           return JSON.stringify({ error: "Page not found", path });
+        }
+        throw err;
+      }
+
+      // writable_kinds gate — pre-write check using the page's
+      // declared kind. Throws WritableKindsViolation when the persona
+      // doesn't permit; we surface it as a 403-shaped tool error.
+      try {
+        assertWritableKind(ctx, extractPageKind(currentContent));
+      } catch (err) {
+        if (err instanceof WritableKindsViolation) {
+          return JSON.stringify({ error: err.message, status: err.status });
         }
         throw err;
       }
@@ -133,12 +140,36 @@ export function createKbReplaceBlock(
       // Stamp block IDs on any freshly-inserted blocks so subsequent
       // kb.* calls can reference them. `assignBlockIds` preserves
       // existing IDs and only annotates new ones.
-      const { markdown: annotated } = assignBlockIds(newContent);
+      const { markdown: annotated, blocks: newBlocks } = assignBlockIds(newContent);
+
+      // Compute provenance for the NEW block IDs introduced by this
+      // edit. The model's single `derived_from` array applies to every
+      // block produced by the replacement — typically one, but the
+      // model can replace one block with several. Pre-existing block
+      // IDs (untouched by the edit) keep their prior provenance via
+      // the merge logic in writeBlocksSidecar.
+      const preWriteIds = new Set(blocks.map((b) => b.id));
+      const compiledAt = new Date().toISOString();
+      const provenanceByBlockId = new Map<string, BlockProvenance>();
+      for (const b of newBlocks) {
+        if (preWriteIds.has(b.id)) continue;
+        provenanceByBlockId.set(b.id, {
+          ...(derived_from !== undefined ? { derived_from } : {}),
+          ...(ctx.agentSlug ? { agent: ctx.agentSlug } : {}),
+          compiled_at: compiledAt,
+        });
+      }
 
       // Write through StorageWriter (same WAL + git path as everything else).
       try {
         const { etag: newEtag } = await writer.write(path, annotated, etag, ctx.agentSlug);
         searchIndex.indexPage(path, annotated, ctx.agentSlug);
+        // Sidecar write closes the long-standing gap where tool-edited
+        // pages had stale .blocks.json (the sidecar was only refreshed
+        // on the HTTP write path). Provenance survives untouched
+        // blocks via the merge in writeBlocksSidecar.
+        const absPath = join(writer.getDataRoot(), path);
+        writeBlocksSidecar(absPath, newBlocks, provenanceByBlockId);
 
         return JSON.stringify({ ok: true, newEtag });
       } catch (err) {
