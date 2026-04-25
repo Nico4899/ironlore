@@ -1,139 +1,120 @@
-import type { ToolDefinition } from "../providers/types.js";
-import type { ToolCallContext } from "../tools/types.js";
+import type { McpServerConfig } from "@ironlore/core";
+import type { ToolDispatcher } from "../tools/dispatcher.js";
+import type { ToolCallContext, ToolImplementation } from "../tools/types.js";
+import {
+  type McpClient,
+  type McpToolDescriptor,
+  connectMcpServer,
+  type McpConnectOptions,
+} from "./mcp-client.js";
 
 /**
  * MCP compatibility bridge.
  *
- * Registers external MCP servers declared in `project.yaml` and
- * merges their advertised tools into the agent's tool surface at
- * call time. MCP tool calls carry the same project scope and egress
- * policy as any native `kb.*` tool — no special privileges.
+ * Per-project: takes the `mcp_servers` list from `project.yaml`,
+ * spins up an `McpClient` for each, discovers their advertised
+ * tools, and registers each tool into the project's
+ * `ToolDispatcher` as a `mcp.<server>.<tool>` `ToolImplementation`.
  *
- * Supported transports:
- *   - `stdio` — spawned via `spawnSafe`, communicates over stdin/stdout
- *   - `http`  — connects to a running HTTP SSE endpoint
+ * The tool surface is opaque to the dispatcher — every MCP tool
+ * call goes through the same `tool.call` / `tool.result` events the
+ * `kb.*` tools emit, so audit, budget, and the dry-run review path
+ * apply uniformly. Cross-project: a server registered here is
+ * invisible to other projects' bridges (each project owns its own
+ * client + connection).
  *
- * See docs/04-ai-and-agents.md §MCP compatibility.
- */
-
-export interface McpServerConfig {
-  name: string;
-  transport: "stdio" | "http";
-  /** For stdio: the command to spawn. */
-  command?: string;
-  args?: string[];
-  /** For http: the URL of the SSE endpoint. */
-  url?: string;
-}
-
-interface McpTool {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
-
-/**
- * MCP server connection. Manages lifecycle + tool discovery.
- *
- * Phase 4 ships the scaffold with tool discovery + call forwarding.
- * The actual MCP protocol parsing (@modelcontextprotocol/sdk) is
- * wired when the first user reports an MCP server they want to use.
+ * See:
+ *   - docs/04-ai-and-agents.md §MCP compatibility
+ *   - docs/05-jobs-and-security.md §MCP server lifecycle
  */
 export class McpBridge {
-  private servers = new Map<string, McpServerConfig>();
-  private discoveredTools = new Map<string, McpTool[]>();
+  private clients = new Map<string, McpClient>();
+  private discovered = new Map<string, McpToolDescriptor[]>();
 
-  /**
-   * Register an MCP server from project.yaml configuration.
-   */
-  registerServer(config: McpServerConfig): void {
-    this.servers.set(config.name, config);
-  }
+  constructor(
+    private readonly servers: McpServerConfig[],
+    private readonly connectOpts: McpConnectOptions,
+  ) {}
 
-  /**
-   * Discover tools from all registered MCP servers.
-   * Called once at agent-run startup.
-   */
-  async discoverTools(projectId: string): Promise<void> {
-    for (const [name, config] of this.servers) {
-      try {
-        const tools = await this.listTools(config, projectId);
-        this.discoveredTools.set(name, tools);
-      } catch (err) {
-        console.warn(`MCP server ${name}: tool discovery failed:`, err);
-        this.discoveredTools.set(name, []);
-      }
-    }
-  }
-
-  /**
-   * Get all discovered MCP tool definitions, namespaced by server.
-   * Tool names are prefixed: `mcp.<server>.<tool>`.
-   */
-  getToolDefinitions(): ToolDefinition[] {
-    const defs: ToolDefinition[] = [];
-    for (const [serverName, tools] of this.discoveredTools) {
-      for (const tool of tools) {
-        defs.push({
-          name: `mcp.${serverName}.${tool.name}`,
-          description: `[MCP: ${serverName}] ${tool.description}`,
-          inputSchema: tool.inputSchema,
-        });
-      }
-    }
-    return defs;
-  }
-
-  /**
-   * Forward a tool call to the appropriate MCP server.
-   */
-  async callTool(fullName: string, args: unknown, _ctx: ToolCallContext): Promise<string> {
-    // Parse `mcp.<server>.<tool>` name.
-    const parts = fullName.split(".");
-    if (parts.length < 3 || parts[0] !== "mcp") {
-      return JSON.stringify({ error: `Invalid MCP tool name: ${fullName}` });
-    }
-    const serverName = parts[1] ?? "";
-    const toolName = parts.slice(2).join(".");
-
-    const config = this.servers.get(serverName);
-    if (!config) {
-      return JSON.stringify({ error: `MCP server not found: ${serverName}` });
-    }
-
-    // TODO: implement actual MCP protocol call via @modelcontextprotocol/sdk.
-    // For now, return a scaffold response so the tool surface is visible
-    // and agents learn the naming convention.
-    return JSON.stringify({
-      error: "MCP tool execution not yet implemented",
-      server: serverName,
-      tool: toolName,
-      args,
-    });
-  }
-
-  /**
-   * Whether any MCP servers are registered.
-   */
   hasServers(): boolean {
-    return this.servers.size > 0;
+    return this.servers.length > 0;
+  }
+
+  /**
+   * Connect to every configured server, discover its tools, and
+   * register each as `mcp.<server>.<tool>` in the dispatcher. A
+   * single server's failure is logged but doesn't poison the rest:
+   * the bridge is a compatibility layer, not a dependency.
+   */
+  async discoverAndRegister(dispatcher: ToolDispatcher): Promise<void> {
+    for (const config of this.servers) {
+      try {
+        const client = connectMcpServer(config, this.connectOpts);
+        this.clients.set(config.name, client);
+        const tools = await client.listTools();
+        this.discovered.set(config.name, tools);
+        for (const tool of tools) {
+          dispatcher.register(this.makeToolImpl(config.name, tool, client));
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[mcp] server '${config.name}' discovery failed: ${message}`);
+        this.discovered.set(config.name, []);
+      }
+    }
+  }
+
+  /**
+   * Number of MCP tools currently registered. Useful for telemetry
+   * and the audit / settings UI ("connected to N servers, M tools").
+   */
+  toolCount(): number {
+    let n = 0;
+    for (const tools of this.discovered.values()) n += tools.length;
+    return n;
+  }
+
+  /**
+   * Tear down stdio child processes + abandon any in-flight HTTP
+   * requests. Called from the server's shutdown path so SIGTERM
+   * doesn't orphan MCP children.
+   */
+  async close(): Promise<void> {
+    const closing: Promise<void>[] = [];
+    for (const client of this.clients.values()) {
+      closing.push(client.close().catch(() => undefined));
+    }
+    await Promise.all(closing);
+    this.clients.clear();
+    this.discovered.clear();
   }
 
   // ─── Internal ────────────────────────────────────────────────────
 
-  private async listTools(config: McpServerConfig, _projectId: string): Promise<McpTool[]> {
-    if (config.transport === "stdio") {
-      // Stdio: would spawn the server, send tools/list, parse response.
-      // Scaffold: return empty until @modelcontextprotocol/sdk is wired.
-      return [];
-    }
-
-    if (config.transport === "http" && config.url) {
-      // HTTP: would GET <url>/tools, parse JSON response.
-      // Scaffold: return empty.
-      return [];
-    }
-
-    return [];
+  private makeToolImpl(
+    serverName: string,
+    tool: McpToolDescriptor,
+    client: McpClient,
+  ): ToolImplementation {
+    return {
+      definition: {
+        name: `mcp.${serverName}.${tool.name}`,
+        description: tool.description
+          ? `[MCP: ${serverName}] ${tool.description}`
+          : `[MCP: ${serverName}] ${tool.name}`,
+        inputSchema: tool.inputSchema,
+      },
+      async execute(args: unknown, _ctx: ToolCallContext): Promise<string> {
+        // Dispatcher already wraps with `tool.call` / `tool.result`
+        // events — we just forward to the MCP server and return the
+        // string. Errors come back stringified so the model sees a
+        // structured response instead of a thrown exception.
+        const { result, isError } = await client.callTool(tool.name, args);
+        if (isError) {
+          return JSON.stringify({ error: result, server: serverName, tool: tool.name });
+        }
+        return result;
+      },
+    };
   }
 }
