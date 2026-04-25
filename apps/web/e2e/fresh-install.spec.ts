@@ -115,14 +115,18 @@ test.describe("fresh install — onboarding to AI panel", () => {
     await pollHttpUntilReady(`${FRESH_BASE}/ready`, true, READY_TIMEOUT_MS);
 
     // 2. Vite dev server proxying to our isolated Hono.
-    viteProcess = spawn(VITE_BIN, ["--port", String(VITE_PORT), "--strictPort"], {
-      cwd: APP_WEB_DIR,
-      env: {
-        ...process.env,
-        IRONLORE_PROXY_TARGET: FRESH_BASE,
+    viteProcess = spawn(
+      VITE_BIN,
+      ["--port", String(VITE_PORT), "--strictPort", "--host", "127.0.0.1"],
+      {
+        cwd: APP_WEB_DIR,
+        env: {
+          ...process.env,
+          IRONLORE_PROXY_TARGET: FRESH_BASE,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
       },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    );
     viteProcess.stdout?.on("data", (chunk: Buffer) => {
       process.stdout.write(`[fresh-install vite] ${chunk.toString()}`);
     });
@@ -147,9 +151,7 @@ test.describe("fresh install — onboarding to AI panel", () => {
     }
   });
 
-  test("login → change password → onboarding → AI panel mounts within budget", async ({
-    page,
-  }) => {
+  test("login → change password → onboarding → AI panel mounts within budget", async ({ page }) => {
     test.setTimeout(PANEL_READY_BUDGET_MS + 30_000); // budget + jitter
 
     const adminPassword = readAdminPassword(installRoot);
@@ -168,10 +170,11 @@ test.describe("fresh install — onboarding to AI panel", () => {
     await page.locator("#current-password").fill(adminPassword);
     await page.locator("#new-password").fill(newPassword);
     await page.locator("#confirm-password").fill(newPassword);
-    // Submit by clicking the visible button — Enter from the
+    // Submit by clicking the visible button — labelled "Set password"
+    // per `messages.authChangePasswordButton`. Enter from the
     // confirm field also works but the button click avoids a
     // browser-specific autofill race.
-    await page.getByRole("button", { name: /change password/i }).click();
+    await page.getByRole("button", { name: /set password/i }).click();
 
     // ── 3. Onboarding wizard (5 steps) ─────────────────────────────
     // Step 0 Welcome → "Begin"
