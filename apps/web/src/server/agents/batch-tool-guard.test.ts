@@ -67,6 +67,7 @@ function makeJob(): JobRow {
     result: null,
     commit_sha_start: null,
     commit_sha_end: null,
+    batch_handle: null,
     created_at: now,
   };
 }
@@ -209,7 +210,10 @@ describe("executor — batch precondition guard", () => {
       batchOptions: { forceOptIn: true, pollIntervalMs: 1, timeoutMs: 5000 },
     });
 
-    expect(result.status).toBe("done");
+    // Submit-and-park: the executor returns batch_pending so the
+    // worker pool can release the slot. The actual completion
+    // lands later via agent.batch_resume.
+    expect(result.status).toBe("batch_pending");
     expect(provider.submitCalls).toBe(1);
   });
 
@@ -231,7 +235,7 @@ describe("executor — batch precondition guard", () => {
       batchOptions: { forceOptIn: true, pollIntervalMs: 1, timeoutMs: 5000 },
     });
 
-    expect(result.status).toBe("done");
+    expect(result.status).toBe("batch_pending");
     expect(provider.submitCalls).toBe(1);
   });
 });

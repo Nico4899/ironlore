@@ -3,12 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createAirlockSession } from "../airlock.js";
 import type { BackpressureController } from "../jobs/backpressure.js";
-import type {
-  BatchHandlePersisted,
-  JobContext,
-  JobResult,
-  JobRow,
-} from "../jobs/types.js";
+import type { BatchHandlePersisted, JobContext, JobResult, JobRow } from "../jobs/types.js";
 import type { ChatMessage, ProjectContext, Provider } from "../providers/types.js";
 import type { ToolDispatcher } from "../tools/dispatcher.js";
 import type { RunBudget, ToolCallContext } from "../tools/types.js";
@@ -702,7 +697,7 @@ async function runBatchedTurn(opts: BatchRunOpts): Promise<JobResult> {
   const persisted: BatchHandlePersisted = {
     provider: handle.provider,
     batchId: handle.batchId,
-    requestId: handle.requestId ?? null,
+    requestId: handle.requestId,
     model,
     agentSlug,
   };
@@ -762,9 +757,13 @@ export async function resumeBatchedTurn(opts: {
   try {
     result = await provider.pollBatch(
       {
-        provider: handle.provider,
+        // The persisted shape uses `string` to keep the jobs
+        // module free of provider-layer imports; the cast here
+        // is safe because the executor only persists
+        // `handle.provider` which originated as a `ProviderId`.
+        provider: handle.provider as Provider["name"],
         batchId: handle.batchId,
-        requestId: handle.requestId ?? undefined,
+        requestId: handle.requestId,
       },
       projectContext,
     );

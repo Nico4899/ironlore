@@ -1,13 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { ulid } from "@ironlore/core";
 import type Database from "better-sqlite3";
-import type {
-  BatchHandlePersisted,
-  JobContext,
-  JobHandler,
-  JobResult,
-  JobRow,
-} from "./types.js";
+import type { BatchHandlePersisted, JobContext, JobHandler, JobResult, JobRow } from "./types.js";
 
 /**
  * In-process worker pool.

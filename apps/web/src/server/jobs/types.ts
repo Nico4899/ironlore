@@ -67,9 +67,13 @@ export interface JobRow {
  * identifiers needed to emit events on the original job.
  */
 export interface BatchHandlePersisted {
+  /** Provider that issued the batch. Reads as a `ProviderId` after
+   *  parse — typed as plain string here to keep the jobs module
+   *  free of provider-layer imports (the resume handler casts when
+   *  reconstructing the in-memory `BatchHandle`). */
   provider: string;
   batchId: string;
-  requestId: string | null;
+  requestId: string;
   model: string;
   agentSlug: string;
 }

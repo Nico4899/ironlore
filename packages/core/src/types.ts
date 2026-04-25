@@ -121,4 +121,12 @@ export interface ProjectConfig {
    * enables per-page `acl:` frontmatter enforcement.
    */
   mode?: "single-user" | "multi-user";
+  /**
+   * Phase-11 Airlock trust boundary. `normal` (default) → the
+   * project participates in cross-project `kb.global_search` fan-out.
+   * `strict` → agents in *other* projects can never see this
+   * project's pages, even at the cost of a downgraded run. The
+   * project's own `kb.search` is unaffected.
+   */
+  trust?: "normal" | "strict";
 }

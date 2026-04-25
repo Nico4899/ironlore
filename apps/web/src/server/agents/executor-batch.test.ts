@@ -57,6 +57,7 @@ function makeJob(overrides: Partial<JobRow> = {}): JobRow {
     result: null,
     commit_sha_start: null,
     commit_sha_end: null,
+    batch_handle: null,
     created_at: now,
     ...overrides,
   };
