@@ -174,8 +174,12 @@ export class SessionStore {
 /**
  * Load or create the per-instance password salt.
  * Stored at `<installRoot>/password.salt` with mode 0600.
+ *
+ * Exported so the CLI's `user add` command can hash new-user
+ * passwords against the same salt the running server uses — they
+ * read the same file and produce the same hash format.
  */
-function loadSalt(installRoot: string): Buffer {
+export function loadSalt(installRoot: string): Buffer {
   const saltPath = join(installRoot, "password.salt");
   if (existsSync(saltPath)) {
     return Buffer.from(readFileSync(saltPath, "utf-8").trim(), "hex");
@@ -185,7 +189,7 @@ function loadSalt(installRoot: string): Buffer {
   return salt;
 }
 
-async function hashPassword(password: string, salt: Buffer): Promise<string> {
+export async function hashPassword(password: string, salt: Buffer): Promise<string> {
   return hash(password, { salt });
 }
 

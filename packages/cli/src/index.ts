@@ -10,6 +10,7 @@ import { newProject } from "./commands/new-project.js";
 import { reindex } from "./commands/reindex.js";
 import { repair } from "./commands/repair.js";
 import { restore } from "./commands/restore.js";
+import { userAdd } from "./commands/user.js";
 
 const program = new Command();
 
@@ -90,6 +91,24 @@ program
   .option("--preset <preset>", "Preset: main | research | sandbox", "main")
   .action((id, opts: { name?: string; preset: "main" | "research" | "sandbox" }) =>
     newProject(id, opts),
+  );
+
+program
+  .command("user")
+  .description("Manage users (multi-user mode)")
+  .addCommand(
+    new Command("add")
+      .description("Provision a new user; prints initial password to stdout once")
+      .argument("<username>", "Username (alphanumerics, '.', '_', '-')")
+      .option("--install-root <path>", "Install root (defaults to cwd)")
+      .action(async (username: string, opts: { installRoot?: string }) => {
+        try {
+          await userAdd(username, { installRoot: opts.installRoot });
+        } catch (err) {
+          console.error(err instanceof Error ? err.message : String(err));
+          process.exit(1);
+        }
+      }),
   );
 
 program.parse();

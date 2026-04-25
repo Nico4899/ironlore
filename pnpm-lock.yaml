@@ -267,6 +267,9 @@ importers:
       '@ironlore/core':
         specifier: workspace:*
         version: link:../core
+      '@node-rs/argon2':
+        specifier: ^2.0.2
+        version: 2.0.2
       better-sqlite3:
         specifier: ^12.9.0
         version: 12.9.0

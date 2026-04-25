@@ -458,9 +458,19 @@ async function start() {
     seedAgents(services.getDataRoot(), jobsDb);
 
     // Mount page / raw / upload / search APIs for this project.
+    // `mode` (single-user default, multi-user opt-in) is read from
+    // `project.yaml` once at boot — toggling at runtime would race
+    // in-flight writes (docs/08 §Multi-user mode and per-page ACLs).
+    let projectMode: "single-user" | "multi-user" = "single-user";
+    try {
+      const cfg = loadProjectConfig(services.projectDir);
+      if (cfg.mode === "multi-user") projectMode = "multi-user";
+    } catch {
+      // Missing / malformed project.yaml → safe default.
+    }
     app.route(
       `/api/projects/${projectId}/pages`,
-      createPagesApi(services.writer, services.searchIndex, broadcast),
+      createPagesApi(services.writer, services.searchIndex, broadcast, { mode: projectMode }),
     );
     app.route(
       `/api/projects/${projectId}/raw`,
