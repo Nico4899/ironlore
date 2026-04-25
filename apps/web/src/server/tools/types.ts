@@ -27,6 +27,20 @@ export interface ToolCallContext {
    * approve/reject dance before mutating.
    */
   dryRunBridge?: DryRunBridge;
+  /**
+   * Airlock dynamic-egress downgrade hook (Phase-11). Set by the
+   * executor when the run is operating with cross-project search
+   * enabled (`IRONLORE_AIRLOCK=true` + the dispatcher carries
+   * `kb.global_search`). The `kb.global_search` tool calls this
+   * after returning any cross-project hit, which flips the
+   * run's `ProjectContext.fetch` to throw `EgressDowngradedError`
+   * for every subsequent network call.
+   *
+   * Absent for runs that aren't part of the Airlock surface —
+   * the dispatcher never registers `kb.global_search` in those
+   * configurations, so no tool ever consults the field.
+   */
+  downgradeEgress?: (reason: string) => void;
 }
 
 /**
