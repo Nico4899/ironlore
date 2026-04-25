@@ -74,17 +74,16 @@ test.describe("editor save round-trip", () => {
 
     // ── 4. Drill into the seed `getting-started/` folder + open
     //      its index page. The sidebar renders each entry as a
-    //      `role="button"` row whose accessible name is the item's
-    //      filename (no .md extension visible). `getting-started`
-    //      first (the directory), then `index.md`. We use
-    //      `getByRole` so a className refactor doesn't break the
-    //      selector.
+    //      `role="treeitem"` row whose accessible name is the
+    //      item's filename. `getting-started` first (the
+    //      directory), then `index.md`. We use `getByRole` so a
+    //      className refactor doesn't break the selector.
     await page
-      .getByRole("button", { name: /^getting-started$/ })
+      .getByRole("treeitem", { name: /^getting-started$/ })
       .first()
       .click();
     await page
-      .getByRole("button", { name: /^index\.md$/ })
+      .getByRole("treeitem", { name: /^index\.md$/ })
       .first()
       .click();
 

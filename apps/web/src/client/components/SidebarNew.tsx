@@ -671,7 +671,6 @@ export function SidebarNew() {
        * motion settles.
        */}
       {!collapsed && (
-        // biome-ignore lint/a11y/noStaticElementInteractions: context menu on container
         <div
           role="tree"
           aria-label="Files and folders"
@@ -750,7 +749,12 @@ export function SidebarNew() {
             const isDropTarget = isDir && dropTarget === item.path;
             const isFocusedRow = itemIdx === focusedTreeIdx;
             return (
-              // biome-ignore lint/a11y/useSemanticElements: complex interactive row with context menu
+              // The row is `role="treeitem"` (semantic). Keyboard
+              // activation is handled by the parent tree's
+              // `onKeyDown`, not this row, so biome's
+              // useKeyWithClickEvents rule is satisfied at the
+              // tree level rather than per-row.
+              // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard activation handled at tree-container level
               <div
                 key={item.path}
                 ref={(el) => {
