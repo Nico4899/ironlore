@@ -51,6 +51,7 @@ import { createAgentJournal } from "./tools/agent-journal.js";
 import { ToolDispatcher } from "./tools/dispatcher.js";
 import { createKbCreatePage } from "./tools/kb-create-page.js";
 import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
+import { createKbGlobalSearch } from "./tools/kb-global-search.js";
 import { createKbInsertAfter } from "./tools/kb-insert-after.js";
 import { createKbLintContradictions } from "./tools/kb-lint-contradictions.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
@@ -267,6 +268,27 @@ async function start() {
     dispatcher.register(createKbLintStaleSources(services.searchIndex));
     dispatcher.register(createKbLintContradictions(services.searchIndex));
     dispatcher.register(createKbLintProvenanceGaps(services.getDataRoot()));
+
+    // Phase-11 Airlock — cross-project search with dynamic egress
+    // downgrade. Off by default; opted in per-install via
+    // `IRONLORE_AIRLOCK=true`. The capability only makes sense in
+    // multi-user setups where projects have differing trust
+    // levels (docs/05 §Threat-model boundaries — 1.0 vs Airlock).
+    // Single-user installs leave the env unset, the tool is
+    // never registered, and the executor's airlock session never
+    // fires. Same `getAllProjectIndexes` closure shape the HTTP
+    // ?scope=all path uses.
+    if (process.env.IRONLORE_AIRLOCK === "true") {
+      dispatcher.register(
+        createKbGlobalSearch({
+          getAllProjectIndexes: () => {
+            const m = new Map<string, SearchIndex>();
+            for (const [pid, svc] of servicesById) m.set(pid, svc.searchIndex);
+            return m;
+          },
+        }),
+      );
+    }
     // Hybrid retrieval — register `kb.semantic_search` only when an
     // embedding provider is configured. Absent a provider, the tool
     // stays off the agent's palette and every caller gracefully

@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createAirlockSession } from "../airlock.js";
 import type { BackpressureController } from "../jobs/backpressure.js";
 import type { JobContext, JobResult, JobRow } from "../jobs/types.js";
 import type { BatchPollResult, ChatMessage, ProjectContext, Provider } from "../providers/types.js";
@@ -140,6 +141,25 @@ export async function executeAgentRun(
   const skillsBlock = loadSkills(dataRoot, agentSlug, persona.skills);
   const systemPrompt = skillsBlock ? `${persona.body}${skillsBlock}` : persona.body;
 
+  // Airlock session — wraps the run's fetch so a future
+  // `kb.global_search` call can flip egress to offline. Per
+  // docs/05-jobs-and-security.md §Threat-model boundaries +
+  // airlock.ts. The session is per-run; a fresh agent run gets a
+  // fresh session, so a previous run's downgrade does not leak.
+  // When the dispatcher doesn't carry `kb.global_search` the
+  // downgrade callback simply never fires — the wrapper is a
+  // no-op transparent proxy in that case.
+  const airlock = createAirlockSession(projectContext.fetch, (status) => {
+    jobCtx.emitEvent("egress.downgraded", {
+      reason: status.reason,
+      at: status.at,
+    });
+  });
+  const wrappedProjectContext: ProjectContext = {
+    ...projectContext,
+    fetch: airlock.fetch,
+  };
+
   // Build tool context.
   const toolCtx: ToolCallContext = {
     projectId: jobCtx.projectId,
@@ -147,6 +167,7 @@ export async function executeAgentRun(
     jobId: job.id,
     emitEvent: jobCtx.emitEvent,
     dataRoot,
+    downgradeEgress: (reason: string) => airlock.downgrade(reason),
     ...(effectiveDryRun ? { dryRunBridge: effectiveDryRun } : {}),
   };
 
@@ -199,7 +220,7 @@ export async function executeAgentRun(
   if (batchEligible) {
     return runBatchedTurn({
       provider,
-      projectContext,
+      projectContext: wrappedProjectContext,
       jobCtx,
       model,
       systemPrompt,
@@ -242,7 +263,7 @@ export async function executeAgentRun(
           tools: provider.supportsTools ? toolDefinitions : undefined,
           cacheSystemPrompt: provider.supportsPromptCache,
         },
-        projectContext,
+        wrappedProjectContext,
       );
 
       for await (const event of stream) {
