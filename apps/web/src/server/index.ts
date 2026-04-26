@@ -392,6 +392,21 @@ async function start() {
       prompt: payload.prompt,
       dryRunBridge,
       backpressure,
+      // Phase-11 lint banner — when the wiki-gardener (or any
+      // future lint workflow) finalizes via
+      // `agent.journal({ lintReport: ... })`, fire one
+      // `lint:findings` WS event so the UI surfaces the report.
+      // Generic agent runs don't supply the field and this
+      // callback never fires.
+      onLintReport: (report) => {
+        broadcast({
+          type: "lint:findings",
+          reportPath: report.reportPath,
+          counts: report.counts,
+          agent: agentSlug,
+          runId: job.id,
+        });
+      },
     });
 
     // Record outcome for auto-pause rails.

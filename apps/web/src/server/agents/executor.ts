@@ -75,6 +75,24 @@ export interface ExecutorOptions {
     /** Hard deadline; defaults to 30 min. After that the run fails. */
     timeoutMs?: number;
   };
+  /**
+   * Phase-11 lint workflow hook. The wiki-gardener's `lint.md` skill
+   * finalizes via `agent.journal({ lintReport: { reportPath, counts }})`;
+   * the executor surfaces that payload here so the host can fire a
+   * `lint:findings` WebSocket event for the UI banner. Generic
+   * agent runs leave the field absent and this callback never
+   * fires — no false banners on every `agent.run`.
+   */
+  onLintReport?: (payload: {
+    reportPath: string;
+    counts: {
+      orphans: number;
+      stale: number;
+      contradictions: number;
+      coverageGaps: number;
+      provenanceGaps: number;
+    };
+  }) => void;
 }
 
 /**
@@ -363,6 +381,26 @@ export async function executeAgentRun(
         // Check if this was agent.journal — the finalization signal.
         if (tc.name === "agent.journal") {
           journalEmitted = true;
+          // Phase-11 lint surface: when the call carries a
+          // `lintReport`, hand it to the host so it can fire the
+          // `lint:findings` WS event for the UI banner. Defensive
+          // shape coercion lives in agent-journal.ts; here we
+          // just forward the field.
+          const journalArgs = tc.input as {
+            lintReport?: {
+              reportPath: string;
+              counts: {
+                orphans: number;
+                stale: number;
+                contradictions: number;
+                coverageGaps: number;
+                provenanceGaps: number;
+              };
+            };
+          };
+          if (opts.onLintReport && journalArgs.lintReport?.reportPath) {
+            opts.onLintReport(journalArgs.lintReport);
+          }
         }
 
         // Check if budget is exhausted after this call.
