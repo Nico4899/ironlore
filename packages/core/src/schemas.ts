@@ -11,7 +11,22 @@ export const PageFrontmatterSchema = z.object({
   modified: z.string().datetime(),
   tags: z.array(z.string()).optional(),
   icon: z.string().optional(),
+  /**
+   * Single-source ULID — kept for backwards compatibility with
+   * pages that cite exactly one source. New `kind: wiki` pages
+   * created via the ingest workflow or the AI panel's "Save as
+   * wiki" button populate the plural `source_ids` instead.
+   */
   source_id: z.string().optional(),
+  /**
+   * Plural source-ULIDs the wiki page synthesises from. Set by
+   * the ingest workflow + the AI panel's Save-as-wiki affordance.
+   * Per Principle 5a, every entry here points to a `kind: source`
+   * page (or an unmarked `kind: page`); never to another
+   * `kind: wiki` page. Empty array is permitted but reads as a
+   * provenance gap to the lint pipeline.
+   */
+  source_ids: z.array(z.string()).optional(),
   acl: z
     .object({
       read: z.array(z.string()).optional(),

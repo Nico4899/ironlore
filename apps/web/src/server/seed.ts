@@ -1354,6 +1354,158 @@ journal call without \`lintReport\` finalizes the run silently:
 `,
   );
 
+  // Shared skill: ingest — process a new source page into the
+  // wiki. The five-step Make-like pipeline (Diff → Summarize →
+  // Extract → Write → (Images, deferred)) the proposal calls for,
+  // baked into a workflow skill the wiki-gardener (or any other
+  // persona) loads on demand. Like `lint.md`, this is a markdown
+  // template the agent reads at run-start; tool calls are real but
+  // the orchestration lives in prose so the user can audit and
+  // edit it without touching code.
+  //
+  // Per Principle 5a + the wiki-gardener's `readable_kinds:
+  // [source]` declaration, synthesis reads source pages only —
+  // never other wiki pages — so each compilation layer hashes back
+  // to ground truth via `derived_from`.
+  seedFile(
+    join(sharedSkillsDir, "ingest.md"),
+    `---
+name: Ingest
+description: Process a new source page into the wiki via the five-step pipeline (Diff → Summarize → Extract → Write → Images)
+---
+
+# Ingest Skill
+
+The canonical "process a new source" workflow. The user dropped raw
+material — a clipped article, a transcript, an uploaded PDF, a
+pasted note — into the vault as a \`kind: source\` page. This skill
+turns it into one or more \`kind: wiki\` pages that synthesise the
+material, citing the source via \`derived_from\` block-refs and
+\`source_ids\` frontmatter.
+
+Treat the agent like \`make\` — a strict procedural engine, not an
+improviser. Each phase has a defined input, a defined output, and a
+defined tool to run. Skip phases that don't apply, but don't
+collapse them.
+
+## When to run
+
+- Loaded by the Wiki Gardener (or any persona that lists \`ingest\`
+  in its \`skills:\` frontmatter) when a new \`kind: source\` page
+  appears in \`_log.md\` since the last run.
+- Invokable on demand: "ingest the spoke I dropped in
+  \`sources/2026-04-25-research.md\`."
+
+## The Sources-not-Compilations rule
+
+This skill operates under Principle 5a. **Never read another
+\`kind: wiki\` page as factual input for synthesis.** The persona
+loading this skill should declare \`readable_kinds: [source]\` so
+the constraint is visible in its config; in practice it means: when
+this skill calls \`kb.read_page\`, the target should be a
+\`kind: source\` page (or an unmarked \`kind: page\`), not a
+\`kind: wiki\` page derived by some earlier ingest run.
+
+If you find yourself wanting to read a wiki page to "save a
+synthesis step," stop — that's exactly the hallucination-
+accumulation failure mode the principle exists to prevent. Re-read
+the original sources instead.
+
+## The five steps
+
+### 1. Diff — what changed?
+
+Read \`_log.md\` and the previous ingest run's journal entry (in
+\`agents/<your-slug>/memory/home.md\`). Identify:
+
+- **New sources** — \`kind: source\` pages that didn't exist on the
+  last run.
+- **Modified sources** — \`kind: source\` pages whose \`modified\`
+  timestamp is newer than your last run, AND whose ETag changed.
+
+Skip the rest of the steps if there's nothing new — close with
+\`agent.journal\` summarising "no new sources" and exit.
+
+### 2. Summarize — distil each source to a paragraph
+
+For each source page identified in step 1, call
+\`kb.read_page\` to get the full content, then write a one-paragraph
+summary into your scratch buffer. **Don't write anything to disk in
+this step.** The summary is a working artefact, not a stored
+output.
+
+The summary should answer: what's the core claim? What's the
+strongest piece of evidence? What's the one sentence that, if quoted,
+captures the spirit of the source?
+
+### 3. Extract — pull entities, concepts, and action items
+
+For each summary in step 2, list:
+
+- **Entities** the source mentions by name (people, places, products,
+  technologies). Cross-reference against \`_index.md\` to see
+  which already have wiki pages.
+- **Concepts** the source advances or refutes — these are
+  candidate wiki-page topics if no page yet exists. The
+  \`kb.lint_coverage_gaps\` tool surfaces concepts the vault keeps
+  citing without writing up; consult its most recent report at
+  \`_maintenance/lint-<latest-date>.md\` for guidance.
+- **Action items** the user or you should follow up on — these go
+  in the journal, not into wiki pages.
+
+### 4. Write — formalise into wiki pages
+
+For each concept identified in step 3 that doesn't yet have a wiki
+page:
+
+- Call \`kb.create_page\` with \`kind: wiki\`, parent in the
+  appropriate folder (default \`wiki/\`), title set to the concept
+  label.
+- The body is your synthesis from step 2 + 3 — written in your
+  own voice, citing the source explicitly via inline
+  \`[[source/path#blk_…]]\` block-refs for every factual claim.
+- After creating the page, call \`kb.replace_block\` for each
+  synthesis block with \`derived_from: ["source/path#blk_…"]\`
+  so the per-block provenance chain is auditable. The trust score
+  ([04-ai-and-agents.md §Trust score](../../../../docs/04-ai-and-agents.md))
+  reads this to render \`fresh / stale / unverified\` per block.
+
+For each existing wiki page where a new source adds material:
+
+- Call \`kb.read_page\` on the existing wiki to get its current
+  content + ETag.
+- Use \`kb.insert_after\` to append a new block (synthesised from
+  the new source, not from the existing wiki body — Principle 5a)
+  with \`derived_from\` pointing at the new source's blocks.
+- Update the wiki page's frontmatter \`source_ids\` to include
+  the new source's ULID.
+
+**Never** rewrite an existing wiki block from another wiki block.
+
+### 5. Images — local-only handling (deferred for now)
+
+If a source page references binary assets (PNG, SVG, PDF), Ironlore
+keeps them as raw files alongside the source. Today this skill
+**doesn't extract or rewrite those assets** — it just notes their
+paths in the wiki page's body so the user can navigate. A future
+iteration may add an image-extraction tool; until then, leave a
+\`> Images: [list of paths]\` quote at the bottom of any wiki page
+that should reference them.
+
+## Closing
+
+After step 4 (and 5 if applicable):
+
+1. Append a one-line entry to \`_log.md\`:
+   \`- <ISO timestamp> · ingest · <N> sources processed · <N> wiki pages touched\`.
+2. Close the run with \`agent.journal\` summarising counts, the
+   list of touched wiki paths, and any action items from step 3
+   that need user attention. Generic runs don't surface a banner —
+   the journal entry is enough — so don't pass \`lintReport\`
+   (that's for the lint workflow only).
+`,
+  );
+
   // ─── Connector-skill examples ──────────────────────────────────────
   // Three worked-out templates for users authoring their own
   // upstream connectors. Each documents:
