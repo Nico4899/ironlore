@@ -1,4 +1,4 @@
-import { Upload } from "lucide-react";
+import { ShieldCheck, Upload } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useAutoSave } from "../hooks/useAutoSave.js";
 import type { ConflictResponse } from "../lib/api.js";
@@ -7,6 +7,7 @@ import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
 import { AgentDetailPage } from "./AgentDetailPage.js";
+import { BlockProvenancePanel } from "./BlockProvenancePanel.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
 import { getEditorCommands } from "./editor/editor-commands.js";
 import { HighlightToolbar } from "./editor/HighlightToolbar.js";
@@ -415,6 +416,7 @@ function MarkdownContent({
   onSelectionChange,
 }: MarkdownContentProps) {
   const etag = useEditorStore((s) => s.etag);
+  const filePath = useEditorStore((s) => s.filePath);
   // Force WYSIWYG when developer mode is off — a user who toggled
   //  source mode while dev-mode was on shouldn't be trapped in the
   //  raw markdown view after they flip the switch back. This is a
@@ -425,6 +427,12 @@ function MarkdownContent({
   const effectiveMode = devMode ? mode : "wysiwyg";
 
   const pip = statusToPip(status);
+
+  // Block-provenance panel — Phase-11 A.3.2 "show your work"
+  // affordance. Toggled from a toolbar button; reads the persisted
+  // `.blocks.json` provenance + computed trust per agent-stamped
+  // block via `GET /pages/provenance/:path`.
+  const [provenanceOpen, setProvenanceOpen] = useState(false);
 
   return (
     <>
@@ -482,6 +490,35 @@ function MarkdownContent({
           <FormatBlockButton label="Link" command="insertLink" />
         </div>
         <div className="flex-1" />
+        {/*
+         * Provenance trigger — Phase-11 A.3.2. Always visible on
+         * markdown pages; the panel itself reports "no agent-authored
+         * blocks" when there's nothing to show, so the affordance is
+         * predictable rather than appearing/disappearing per page.
+         */}
+        {filePath && (
+          <button
+            type="button"
+            aria-label="Show block provenance"
+            aria-expanded={provenanceOpen}
+            title="Block provenance — show your work"
+            onClick={() => setProvenanceOpen((v) => !v)}
+            className="flex items-center gap-1 rounded font-mono uppercase hover:bg-ironlore-slate-hover"
+            style={{
+              fontSize: 10.5,
+              letterSpacing: "0.04em",
+              padding: "2px 6px",
+              color: provenanceOpen ? "var(--il-blue)" : "var(--il-text3)",
+            }}
+          >
+            <ShieldCheck className="h-3 w-3" />
+            Provenance
+          </button>
+        )}
+        <span
+          aria-hidden="true"
+          style={{ width: 1, height: 14, background: "var(--il-border)", margin: "0 2px" }}
+        />
         <Meta k="etag" v={shortEtag(etag)} />
         <span
           aria-hidden="true"
@@ -492,6 +529,12 @@ function MarkdownContent({
           <StatusPip state={pip.state} label={pip.label} size={7} />
         </span>
       </div>
+
+      {/* Anchored provenance panel — overlay positioned absolute
+       *  relative to the editor's content stack. */}
+      {provenanceOpen && filePath && (
+        <BlockProvenancePanel pagePath={filePath} onClose={() => setProvenanceOpen(false)} />
+      )}
 
       {/*
        * Page metadata strip — mono overline inside the editor's gutter

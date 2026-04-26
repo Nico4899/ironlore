@@ -82,6 +82,41 @@ export async function fetchPage(pagePath: string): Promise<PageResponse> {
   return res.json() as Promise<PageResponse>;
 }
 
+/**
+ * Block-level provenance + computed trust for the agent-stamped
+ * blocks on a page. Backs the "show your work" panel — empty array
+ * for fully human-written pages, one row per agent-stamped block
+ * otherwise.
+ *
+ * Trust is derived at read time per
+ * [docs/04-ai-and-agents.md §Trust score](docs/04-ai-and-agents.md);
+ * `fresh | stale | unverified` reflects the current source-page
+ * states relative to the block's `compiledAt`.
+ */
+export interface BlockTrustResponse {
+  state: "fresh" | "stale" | "unverified";
+  sources: number;
+  chainDepth: number;
+  newestSourceModified: string | null;
+  reason: string | null;
+}
+
+export interface BlockProvenanceRow {
+  id: string;
+  agent: string | null;
+  compiledAt: string | null;
+  derivedFrom: string[];
+  trust: BlockTrustResponse | null;
+}
+
+export async function fetchPageProvenance(pagePath: string): Promise<BlockProvenanceRow[]> {
+  const res = await apiFetch(`${pagesBase()}/provenance/${pagePath}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { blocks: BlockProvenanceRow[] };
+  return data.blocks;
+}
+
 export async function savePage(
   pagePath: string,
   markdown: string,
