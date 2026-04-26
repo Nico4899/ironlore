@@ -72,15 +72,15 @@ export function LintFindingsBanner() {
       aria-live="polite"
       className="flex items-start gap-2 border-b border-ironlore-blue/40 bg-ironlore-blue/10 px-4 py-2 text-xs text-primary"
     >
-      <ClipboardList
-        className="mt-0.5 h-4 w-4 shrink-0"
-        style={{ color: "var(--il-blue)" }}
-      />
+      <ClipboardList className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--il-blue)" }} />
       <div className="flex-1">
         <p className="font-semibold">
           <span style={{ color: "var(--il-blue)" }}>{finding.agent}</span> · {headline}
         </p>
-        <p className="mt-0.5 font-mono text-[11px] text-secondary truncate" title={finding.reportPath}>
+        <p
+          className="mt-0.5 font-mono text-[11px] text-secondary truncate"
+          title={finding.reportPath}
+        >
           {finding.reportPath}
         </p>
       </div>

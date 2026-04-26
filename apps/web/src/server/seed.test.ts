@@ -42,18 +42,23 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).toMatch(/^---\n/);
     expect(content).toMatch(/\nname: Lint\n/);
     expect(content).toMatch(
-      /\ndescription: Wiki health check — orphans, stale sources, contradiction flags, provenance gaps\n/,
+      /\ndescription: Wiki health check — orphans, stale sources, contradiction flags, coverage gaps, provenance gaps\n/,
     );
     expect(content).toContain("# Lint Skill");
-    // All four detectors now ship as real `kb.lint_*` tools — the
-    // `Stub check` markers were removed when contradictions +
-    // provenance-gaps tools landed. Pin the four tool calls
-    // instead so a future skill rewrite that drops one is caught.
+    // All five detectors now ship as real `kb.lint_*` tools — pin
+    // every tool call so a future skill rewrite that drops one is
+    // caught. The fifth detector (coverage_gaps) shipped alongside
+    // the lint:findings WS event wiring.
     expect(content).toContain("Real check.");
     expect(content).toContain("kb.lint_orphans");
     expect(content).toContain("kb.lint_stale_sources");
     expect(content).toContain("kb.lint_contradictions");
+    expect(content).toContain("kb.lint_coverage_gaps");
     expect(content).toContain("kb.lint_provenance_gaps");
+    // The skill must close by passing `lintReport` on agent.journal —
+    // that's what fires the dismissible UI banner. Pin the literal
+    // field name so a refactor that renames the field breaks loudly.
+    expect(content).toContain("lintReport");
   });
 
   it("writes _index.md and _log.md at the vault root with kind: wiki", async () => {

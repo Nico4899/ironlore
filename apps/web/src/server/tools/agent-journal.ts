@@ -59,7 +59,8 @@ export function createAgentJournal(dataRoot: string): ToolImplementation {
             properties: {
               reportPath: {
                 type: "string",
-                description: "Path of the report page, relative to data/ (e.g. _maintenance/lint-2026-04-26.md).",
+                description:
+                  "Path of the report page, relative to data/ (e.g. _maintenance/lint-2026-04-26.md).",
               },
               counts: {
                 type: "object",
