@@ -92,7 +92,13 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).toMatch(/writable_kinds: \[page, wiki\]/);
     // Iter 2: the gardener declares the lint workflow skill so the
     // executor's skill loader picks it up on each run.
-    expect(content).toMatch(/\nskills: \[lint\]\n/);
+    // Wiki-gardener now opts into both shipped workflow skills:
+    // `lint` for the periodic health check + `ingest` for the
+    // 5-step Make-like compilation pipeline (proposal A.6).
+    expect(content).toMatch(/\nskills: \[lint, ingest\]\n/);
+    // Sources-not-compilations declaration per Principle 5a — the
+    // gardener's synthesis operations read source pages only.
+    expect(content).toMatch(/\n {2}readable_kinds: \[source\]\n/);
 
     // Body declares the Phase-11 dependency surface
     expect(content).toContain("`lint.md`");

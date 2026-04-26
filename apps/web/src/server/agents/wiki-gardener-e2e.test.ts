@@ -82,7 +82,7 @@ describe("Wiki Gardener end-to-end (seed → activate → schedule)", () => {
       "utf-8",
     );
     expect(template).toMatch(/\nactive: false\n/);
-    expect(template).toMatch(/\nskills: \[lint\]\n/);
+    expect(template).toMatch(/\nskills: \[lint, ingest\]\n/);
   });
 
   it("activation flips the template into a running persona and creates agent_state", () => {
@@ -92,7 +92,7 @@ describe("Wiki Gardener end-to-end (seed → activate → schedule)", () => {
 
     const activated = readFileSync(result.personaPath, "utf-8");
     expect(activated).toMatch(/\nactive: true\n/);
-    expect(activated).toMatch(/\nskills: \[lint\]\n/);
+    expect(activated).toMatch(/\nskills: \[lint, ingest\]\n/);
 
     const row = fx.db
       .prepare("SELECT status FROM agent_state WHERE project_id = ? AND slug = ?")

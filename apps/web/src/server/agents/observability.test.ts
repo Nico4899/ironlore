@@ -321,6 +321,12 @@ body
     expect(cfg?.persona?.scope).toEqual({
       pages: ["/engineering/**"],
       writableKinds: ["page"],
+      // The fixture omits `readable_kinds` from scope; the parser
+      // surfaces null rather than the default-everything value so
+      // a Settings reviewer can tell "explicit" apart from
+      // "implicit." Pin the null so a future "default to []"
+      // refactor breaks loudly.
+      readableKinds: null,
     });
   });
 
