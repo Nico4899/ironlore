@@ -54,6 +54,7 @@ import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
 import { createKbGlobalSearch } from "./tools/kb-global-search.js";
 import { createKbInsertAfter } from "./tools/kb-insert-after.js";
 import { createKbLintContradictions } from "./tools/kb-lint-contradictions.js";
+import { createKbLintCoverageGaps } from "./tools/kb-lint-coverage-gaps.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
 import { createKbLintProvenanceGaps } from "./tools/kb-lint-provenance-gaps.js";
 import { createKbLintStaleSources } from "./tools/kb-lint-stale-sources.js";
@@ -267,6 +268,7 @@ async function start() {
     dispatcher.register(createKbLintOrphans(services.searchIndex));
     dispatcher.register(createKbLintStaleSources(services.searchIndex));
     dispatcher.register(createKbLintContradictions(services.searchIndex));
+    dispatcher.register(createKbLintCoverageGaps(services.searchIndex));
     dispatcher.register(createKbLintProvenanceGaps(services.getDataRoot()));
 
     // Phase-11 Airlock — cross-project search with dynamic egress
