@@ -667,6 +667,78 @@ export class SearchIndex {
     return out;
   }
 
+  /**
+   * Coverage gaps — wiki-link target labels mentioned by ≥ `minMentions`
+   * distinct pages that don't resolve to any existing page. Surfaces
+   * concepts the vault keeps referring to but never wrote up.
+   *
+   * Cheap SQLite query — pure inverse of `findOrphans`. The orphan
+   * check matches every page against the set of cited targets;
+   * coverage-gap matches every cited target against the set of
+   * existing pages. Same `linkTargetCandidates` resolution so a
+   * target written as `Foo`, `notes/Foo`, or `notes/Foo.md` resolves
+   * to a real page at `notes/Foo.md`.
+   *
+   * Threshold defaults to 3 per the Phase-11 lint spec — single
+   * stray references are usually typos or one-off ideas; three+
+   * citations across distinct pages reads as "this should exist."
+   */
+  findCoverageGaps(
+    minMentions = 3,
+    opts?: { excludePrefixes?: readonly string[] },
+  ): Array<{ target: string; mentionedBy: string[]; citationCount: number }> {
+    const excludePrefixes = opts?.excludePrefixes ?? [
+      "_maintenance/",
+      "getting-started/",
+      ".agents/",
+    ];
+
+    // Build the set of *every* spelling that resolves to an existing
+    // page. A target the user wrote as the bare basename `Foo` is
+    // not a gap if a page at `notes/Foo.md` exists.
+    const pages = this.db
+      .prepare("SELECT path FROM pages WHERE file_type = 'markdown'")
+      .all() as Array<{ path: string }>;
+    const resolvedTargets = new Set<string>();
+    for (const p of pages) {
+      for (const cand of linkTargetCandidates(p.path)) resolvedTargets.add(cand);
+    }
+
+    // Group backlinks by target to count distinct citing pages.
+    // Skip excluded prefixes on the *citing* side so a maintenance
+    // report's references don't push a target over the threshold.
+    const rows = this.db
+      .prepare(
+        `SELECT target_path AS target, source_path AS source
+         FROM backlinks`,
+      )
+      .all() as Array<{ target: string; source: string }>;
+
+    const grouped = new Map<string, Set<string>>();
+    for (const r of rows) {
+      if (excludePrefixes.some((pre) => r.source.startsWith(pre))) continue;
+      if (resolvedTargets.has(r.target)) continue;
+      let bucket = grouped.get(r.target);
+      if (!bucket) {
+        bucket = new Set();
+        grouped.set(r.target, bucket);
+      }
+      bucket.add(r.source);
+    }
+
+    const out: Array<{ target: string; mentionedBy: string[]; citationCount: number }> = [];
+    for (const [target, sources] of grouped) {
+      if (sources.size < minMentions) continue;
+      out.push({
+        target,
+        mentionedBy: [...sources].sort(),
+        citationCount: sources.size,
+      });
+    }
+    out.sort((a, b) => b.citationCount - a.citationCount || a.target.localeCompare(b.target));
+    return out;
+  }
+
   // -------------------------------------------------------------------------
   // Phase-11 hybrid retrieval — chunk_vectors read/write + cosine search.
   // The BM25-prefilter caps search to ~250 chunks, so an in-JS cosine loop
