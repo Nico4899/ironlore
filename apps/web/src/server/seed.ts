@@ -1050,8 +1050,7 @@ explicit "edit this page" instructions from the user.
     // operates the ingest workflow; other specialists keep the
     // wider read scope (navigation + cross-referencing) by leaving
     // the field absent → all kinds readable, the existing default.
-    const readableLine =
-      p.slug === "wiki-gardener" ? "\n  readable_kinds: [source]" : "";
+    const readableLine = p.slug === "wiki-gardener" ? "\n  readable_kinds: [source]" : "";
     const frontmatter = `---
 name: ${p.name}
 slug: ${p.slug}

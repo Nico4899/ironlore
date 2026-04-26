@@ -16,18 +16,16 @@ import { useAppStore } from "../stores/app.js";
  * those into the new page's frontmatter `source_ids` array so the
  * trust pipeline can evaluate the citation chain on read.
  */
-export function SaveAsWikiDialog({
-  markdown,
-  onClose,
-}: {
-  markdown: string;
-  onClose: () => void;
-}) {
+export function SaveAsWikiDialog({ markdown, onClose }: { markdown: string; onClose: () => void }) {
   const [title, setTitle] = useState("");
   const [parent, setParent] = useState("wiki");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const setActivePath = useAppStore((s) => s.setActivePath);
+  // Auto-focus the title input via ref callback rather than the
+  // `autoFocus` attribute (Biome's a11y rule deprecates the latter
+  // because it can disorient screen-reader users when not gated).
+  const titleRef = (el: HTMLInputElement | null) => el?.focus();
 
   // Extract block-ref source-page paths once on mount. Identical
   // grammar to the agent panel's CitationText regex.
@@ -65,7 +63,20 @@ export function SaveAsWikiDialog({
     }
   };
 
+  // The escape key closes the dialog; keyboard users also have the
+  // explicit X button. The backdrop click-to-close is mouse UX; we
+  // don't need a parallel keydown on the backdrop because the
+  // dialog already grabs focus on mount.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: backdrop click-to-close paired with the Escape handler above
     <div
       role="dialog"
       aria-label="Save reply as wiki page"
@@ -115,10 +126,10 @@ export function SaveAsWikiDialog({
           <label className="flex flex-col gap-1">
             <span style={{ color: "var(--il-text3)" }}>Title</span>
             <input
+              ref={titleRef}
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              autoFocus
               className="rounded border border-border bg-transparent px-2 py-1.5 text-primary focus:border-ironlore-blue focus:outline-none"
               maxLength={120}
             />
@@ -152,9 +163,7 @@ export function SaveAsWikiDialog({
                   </li>
                 ))}
                 {sourceIds.length > 5 && (
-                  <li style={{ color: "var(--il-text4)" }}>
-                    …and {sourceIds.length - 5} more
-                  </li>
+                  <li style={{ color: "var(--il-text4)" }}>…and {sourceIds.length - 5} more</li>
                 )}
               </ul>
             </div>
@@ -162,8 +171,8 @@ export function SaveAsWikiDialog({
           {sourceIds.length === 0 && (
             <p style={{ color: "var(--il-text3)", fontSize: 10.5 }}>
               No <code>[[page#blk_…]]</code> citations in this reply — the saved page will start
-              with empty <code>source_ids</code> and surface as an unverified provenance gap on
-              the next lint run.
+              with empty <code>source_ids</code> and surface as an unverified provenance gap on the
+              next lint run.
             </p>
           )}
           {error && (
@@ -208,8 +217,7 @@ export function extractSourcePaths(markdown: string): string[] {
   const re = /\[\[([^\]\n]+?)#blk_[A-Za-z0-9]+\]\]/g;
   const seen = new Set<string>();
   const out: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(markdown)) !== null) {
+  for (const m of markdown.matchAll(re)) {
     const page = m[1]?.trim();
     if (!page || seen.has(page)) continue;
     seen.add(page);

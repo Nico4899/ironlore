@@ -22,7 +22,6 @@ import { PlusMenu } from "./ai-composer/PlusMenu.js";
 import { type SlashAction, SlashMenu } from "./ai-composer/SlashMenu.js";
 import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
-import { SaveAsWikiDialog } from "./SaveAsWikiDialog.js";
 import {
   AgentPulse,
   Blockref,
@@ -31,6 +30,7 @@ import {
   Reuleaux,
   StatusPip,
 } from "./primitives/index.js";
+import { SaveAsWikiDialog } from "./SaveAsWikiDialog.js";
 
 /**
  * Storage key pattern for cost-estimate acknowledgement per agent slug.
