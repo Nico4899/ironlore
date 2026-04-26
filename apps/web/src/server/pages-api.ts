@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { WsEventInput } from "@ironlore/core";
-import { detectPageType, isBinaryExtension } from "@ironlore/core";
+import { detectPageType, isBinaryExtension, ulid } from "@ironlore/core";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
@@ -220,6 +220,92 @@ export function createPagesApi(
     } catch (err) {
       if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Save an AI-panel conversation reply as a `kind: wiki` page —
+  // Phase-11 query-to-wiki workflow (A.6.2).
+  //
+  // Body: { title: string, markdown: string, parent?: string,
+  //         sourceIds?: string[] }
+  //
+  // The user is in the AI panel, the agent has just produced a
+  // useful reply, the user clicks "Save as wiki page". This endpoint
+  // creates a new `kind: wiki` page populated with the agent's
+  // text + frontmatter `source_ids` so the trust-score pipeline
+  // can later evaluate the citation chain (per Principle 5a +
+  // [docs/04-ai-and-agents.md §Trust score](../../../docs/04-ai-and-agents.md)).
+  //
+  // Mounted before the generic `/:path{.+}` GET so Hono's prefix
+  // match picks it first — same pattern the `/folders/...` and
+  // `/provenance/...` routes use.
+  // -----------------------------------------------------------------------
+  api.post("/from-conversation", async (c) => {
+    const body = await c.req.json<{
+      title: string;
+      markdown: string;
+      parent?: string;
+      sourceIds?: string[];
+    }>();
+    const { title, markdown, parent, sourceIds } = body;
+    if (!title || !markdown) {
+      return c.json({ error: "title and markdown required" }, 400);
+    }
+
+    const id = ulid();
+    const now = new Date().toISOString();
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60);
+    if (!slug) {
+      return c.json({ error: "title produced an empty slug" }, 400);
+    }
+    const dir = (parent ?? "wiki").replace(/^\/+|\/+$/g, "");
+    const path = dir ? `${dir}/${slug}.md` : `${slug}.md`;
+
+    // Frontmatter — flow-style `source_ids` so the YAML stays one
+    // line per array. Empty `sourceIds` is permitted (the user
+    // saved a reply that didn't cite anything); the lint pipeline
+    // will flag it as a provenance gap on the next run.
+    const ids = Array.isArray(sourceIds) ? sourceIds.filter((s) => typeof s === "string") : [];
+    const frontmatterLines = [
+      "---",
+      "schema: 1",
+      `id: ${id}`,
+      `title: ${title}`,
+      "kind: wiki",
+      `created: ${now}`,
+      `modified: ${now}`,
+      ids.length > 0 ? `source_ids: [${ids.join(", ")}]` : null,
+      "---",
+    ].filter(Boolean);
+    const content = `${frontmatterLines.join("\n")}\n\n# ${title}\n\n${markdown}\n`;
+
+    try {
+      const denied = checkAcl(c, mode, content, "write");
+      if (denied) return denied;
+      const { etag } = await writer.write(path, content, null, "user");
+      searchIndex.indexPage(path, content, "user");
+      broadcast?.({
+        type: "tree:add",
+        path,
+        name: basename(path),
+        fileType: "markdown",
+      });
+      return c.json({ ok: true, id, path, etag });
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      if (err instanceof EtagMismatchError) {
+        // Slug collision — the path already exists. Surface
+        // explicitly so the client can retry with a disambiguator.
+        return c.json({ error: `A page already exists at ${path}` }, 409);
       }
       throw err;
     }
