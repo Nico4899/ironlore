@@ -286,6 +286,23 @@ export function createPagesApi(
     ].filter(Boolean);
     const content = `${frontmatterLines.join("\n")}\n\n# ${title}\n\n${markdown}\n`;
 
+    // Slug-collision check — the writer's `null`-etag write path
+    // is "create or overwrite," but Save-as-wiki should never
+    // overwrite. Pre-flight read: if the file exists, surface a
+    // 409 so the client can disambiguate the title.
+    try {
+      writer.read(path);
+      return c.json({ error: `A page already exists at ${path}` }, 409);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        if (err instanceof ForbiddenError) {
+          return c.json({ error: "Forbidden" }, 403);
+        }
+        throw err;
+      }
+      // ENOENT — the slug is free, proceed to write.
+    }
+
     try {
       const denied = checkAcl(c, mode, content, "write");
       if (denied) return denied;
@@ -301,11 +318,6 @@ export function createPagesApi(
     } catch (err) {
       if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);
-      }
-      if (err instanceof EtagMismatchError) {
-        // Slug collision — the path already exists. Surface
-        // explicitly so the client can retry with a disambiguator.
-        return c.json({ error: `A page already exists at ${path}` }, 409);
       }
       throw err;
     }

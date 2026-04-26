@@ -345,3 +345,105 @@ describe("Pages API — GET /provenance", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("Pages API — POST /from-conversation (Save as wiki)", () => {
+  let ctx: ReturnType<typeof setup>;
+
+  beforeEach(() => {
+    ctx = setup();
+  });
+  afterEach(() => {
+    rmSync(ctx.projectDir, { recursive: true, force: true });
+  });
+
+  it("creates a kind: wiki page with source_ids from the request body", async () => {
+    // The Phase-11 query-to-wiki workflow (A.6.2) — user clicks
+    // "Save as wiki" on an agent reply and the panel posts the
+    // text + extracted source paths. Pin the resulting frontmatter
+    // shape so a future refactor that drops `kind: wiki` or skips
+    // `source_ids` breaks loudly.
+    const res = await ctx.app.request("/pages/from-conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "What is RRF",
+        markdown: "Reciprocal rank fusion combines BM25 and vector ranks.",
+        sourceIds: ["sources/rrf-paper", "sources/our-eval"],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: true; path: string; etag: string };
+    expect(body.path).toBe("wiki/what-is-rrf.md");
+
+    // Read the page back and confirm the persisted frontmatter.
+    const read = await ctx.app.request("/pages/wiki/what-is-rrf.md");
+    expect(read.status).toBe(200);
+    const page = (await read.json()) as { content: string };
+    expect(page.content).toMatch(/^---\nschema: 1/);
+    expect(page.content).toMatch(/\nkind: wiki\n/);
+    expect(page.content).toMatch(/\nsource_ids: \[sources\/rrf-paper, sources\/our-eval\]\n/);
+    expect(page.content).toContain("# What is RRF");
+    expect(page.content).toContain("Reciprocal rank fusion");
+  });
+
+  it("respects the `parent` field (defaults to wiki/ when absent)", async () => {
+    const res = await ctx.app.request("/pages/from-conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Saved Note",
+        markdown: "Body.",
+        parent: "research",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { path: string };
+    expect(body.path).toBe("research/saved-note.md");
+  });
+
+  it("omits source_ids from the frontmatter when the array is empty", async () => {
+    // No citations in the agent's reply → empty array → don't
+    // emit the YAML key at all (cleaner than `source_ids: []`).
+    // The lint pipeline still flags the page as a provenance gap
+    // on its next run; that's the documented signal.
+    const res = await ctx.app.request("/pages/from-conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Citation-less",
+        markdown: "No citations in this reply.",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const read = await ctx.app.request("/pages/wiki/citation-less.md");
+    const page = (await read.json()) as { content: string };
+    expect(page.content).not.toMatch(/source_ids:/);
+  });
+
+  it("returns 400 when title is missing", async () => {
+    const res = await ctx.app.request("/pages/from-conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markdown: "body without title" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when title slug is empty (non-alphanumeric only)", async () => {
+    const res = await ctx.app.request("/pages/from-conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "!@#$%", markdown: "body" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 409 on slug collision (same title saved twice)", async () => {
+    const body = JSON.stringify({ title: "Dupe", markdown: "first" });
+    const init = { method: "POST", headers: { "Content-Type": "application/json" }, body };
+    const first = await ctx.app.request("/pages/from-conversation", init);
+    expect(first.status).toBe(200);
+    const second = await ctx.app.request("/pages/from-conversation", init);
+    expect(second.status).toBe(409);
+  });
+});
