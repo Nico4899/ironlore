@@ -75,10 +75,7 @@ interface BlockEntry {
  * source sidecar (cached per-call). Returns a Map keyed by block
  * ID; blocks without `agent` stamping are omitted (no badge).
  */
-export function computePageBlockTrust(
-  dataRoot: string,
-  pagePath: string,
-): Map<string, BlockTrust> {
+export function computePageBlockTrust(dataRoot: string, pagePath: string): Map<string, BlockTrust> {
   const sidecar = readBlocksSidecar(absolutize(dataRoot, pagePath));
   const out = new Map<string, BlockTrust>();
   if (!sidecar) return out;

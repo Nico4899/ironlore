@@ -41,14 +41,10 @@ function writePage(relPath: string, body: string, sidecar: object | null): void 
 
 describe("computePageBlockTrust", () => {
   it("returns no entry for human-written blocks (no agent stamp = no badge)", () => {
-    writePage(
-      "human.md",
-      "---\nid: 01\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nhi",
-      {
-        version: 1,
-        blocks: [{ id: "blk_HUMAN", type: "paragraph", start: 0, end: 2 }],
-      },
-    );
+    writePage("human.md", "---\nid: 01\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nhi", {
+      version: 1,
+      blocks: [{ id: "blk_HUMAN", type: "paragraph", start: 0, end: 2 }],
+    });
     const out = computePageBlockTrust(dataRoot, "human.md");
     expect(out.size).toBe(0);
   });
@@ -56,23 +52,19 @@ describe("computePageBlockTrust", () => {
   it("flags an agent-stamped block with no derived_from as unverified", () => {
     // Mirrors kb.lint_provenance_gaps — agent claimed authorship
     // without citing sources. Worst-case for trust.
-    writePage(
-      "wiki.md",
-      "---\nid: 01\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nbody",
-      {
-        version: 1,
-        blocks: [
-          {
-            id: "blk_GAP",
-            type: "paragraph",
-            start: 0,
-            end: 4,
-            agent: "wiki-gardener",
-            compiled_at: "2026-04-25T09:00:00.000Z",
-          },
-        ],
-      },
-    );
+    writePage("wiki.md", "---\nid: 01\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nbody", {
+      version: 1,
+      blocks: [
+        {
+          id: "blk_GAP",
+          type: "paragraph",
+          start: 0,
+          end: 4,
+          agent: "wiki-gardener",
+          compiled_at: "2026-04-25T09:00:00.000Z",
+        },
+      ],
+    });
     const out = computePageBlockTrust(dataRoot, "wiki.md");
     const trust = out.get("blk_GAP");
     expect(trust?.state).toBe("unverified");
@@ -85,32 +77,24 @@ describe("computePageBlockTrust", () => {
     // staleness signal. The doc's `findStaleSources` lint runs the
     // same comparison at the page level; this test pins the
     // per-block UI signal that complements it.
-    writePage(
-      "src.md",
-      "---\nid: SRC\nmodified: 2026-04-25T12:00:00.000Z\n---\n\ncontent",
-      {
-        version: 1,
-        blocks: [{ id: "blk_SRC", type: "paragraph", start: 0, end: 7 }],
-      },
-    );
-    writePage(
-      "wiki.md",
-      "---\nid: WIKI\nmodified: 2026-04-25T11:00:00.000Z\n---\n\nbody",
-      {
-        version: 1,
-        blocks: [
-          {
-            id: "blk_WIKI",
-            type: "paragraph",
-            start: 0,
-            end: 4,
-            agent: "wiki-gardener",
-            compiled_at: "2026-04-25T11:00:00.000Z",
-            derived_from: ["src.md#blk_SRC"],
-          },
-        ],
-      },
-    );
+    writePage("src.md", "---\nid: SRC\nmodified: 2026-04-25T12:00:00.000Z\n---\n\ncontent", {
+      version: 1,
+      blocks: [{ id: "blk_SRC", type: "paragraph", start: 0, end: 7 }],
+    });
+    writePage("wiki.md", "---\nid: WIKI\nmodified: 2026-04-25T11:00:00.000Z\n---\n\nbody", {
+      version: 1,
+      blocks: [
+        {
+          id: "blk_WIKI",
+          type: "paragraph",
+          start: 0,
+          end: 4,
+          agent: "wiki-gardener",
+          compiled_at: "2026-04-25T11:00:00.000Z",
+          derived_from: ["src.md#blk_SRC"],
+        },
+      ],
+    });
     const trust = computePageBlockTrust(dataRoot, "wiki.md").get("blk_WIKI");
     expect(trust?.state).toBe("stale");
     expect(trust?.sources).toBe(1);
@@ -118,56 +102,44 @@ describe("computePageBlockTrust", () => {
   });
 
   it("flags an agent-stamped block whose cited source no longer exists as unverified", () => {
-    writePage(
-      "wiki.md",
-      "---\nid: 01\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nbody",
-      {
-        version: 1,
-        blocks: [
-          {
-            id: "blk_ORPHAN",
-            type: "paragraph",
-            start: 0,
-            end: 4,
-            agent: "wiki-gardener",
-            compiled_at: "2026-04-25T09:00:00.000Z",
-            derived_from: ["deleted.md#blk_GHOST"],
-          },
-        ],
-      },
-    );
+    writePage("wiki.md", "---\nid: 01\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nbody", {
+      version: 1,
+      blocks: [
+        {
+          id: "blk_ORPHAN",
+          type: "paragraph",
+          start: 0,
+          end: 4,
+          agent: "wiki-gardener",
+          compiled_at: "2026-04-25T09:00:00.000Z",
+          derived_from: ["deleted.md#blk_GHOST"],
+        },
+      ],
+    });
     const trust = computePageBlockTrust(dataRoot, "wiki.md").get("blk_ORPHAN");
     expect(trust?.state).toBe("unverified");
     expect(trust?.reason).toMatch(/no longer exist/);
   });
 
   it("returns fresh when every source exists and predates compiled_at", () => {
-    writePage(
-      "src.md",
-      "---\nid: SRC\nmodified: 2026-04-25T08:00:00.000Z\n---\n\ncontent",
-      {
-        version: 1,
-        blocks: [{ id: "blk_SRC", type: "paragraph", start: 0, end: 7 }],
-      },
-    );
-    writePage(
-      "wiki.md",
-      "---\nid: WIKI\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nbody",
-      {
-        version: 1,
-        blocks: [
-          {
-            id: "blk_FRESH",
-            type: "paragraph",
-            start: 0,
-            end: 4,
-            agent: "wiki-gardener",
-            compiled_at: "2026-04-25T10:00:00.000Z",
-            derived_from: ["src.md#blk_SRC"],
-          },
-        ],
-      },
-    );
+    writePage("src.md", "---\nid: SRC\nmodified: 2026-04-25T08:00:00.000Z\n---\n\ncontent", {
+      version: 1,
+      blocks: [{ id: "blk_SRC", type: "paragraph", start: 0, end: 7 }],
+    });
+    writePage("wiki.md", "---\nid: WIKI\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nbody", {
+      version: 1,
+      blocks: [
+        {
+          id: "blk_FRESH",
+          type: "paragraph",
+          start: 0,
+          end: 4,
+          agent: "wiki-gardener",
+          compiled_at: "2026-04-25T10:00:00.000Z",
+          derived_from: ["src.md#blk_SRC"],
+        },
+      ],
+    });
     const trust = computePageBlockTrust(dataRoot, "wiki.md").get("blk_FRESH");
     expect(trust?.state).toBe("fresh");
     expect(trust?.sources).toBe(1);
@@ -179,50 +151,38 @@ describe("computePageBlockTrust", () => {
     // The proposal A.3.4 wants `compilation_depth` as a stored
     // field; computing it on demand from `derived_from` validates
     // the "no need to denormalize" position.
-    writePage(
-      "src.md",
-      "---\nid: SRC\nmodified: 2026-04-25T08:00:00.000Z\n---\n\ncontent",
-      {
-        version: 1,
-        blocks: [{ id: "blk_SRC", type: "paragraph", start: 0, end: 7 }],
-      },
-    );
-    writePage(
-      "wiki1.md",
-      "---\nid: WIKI1\nmodified: 2026-04-25T09:00:00.000Z\n---\n\nbody1",
-      {
-        version: 1,
-        blocks: [
-          {
-            id: "blk_W1",
-            type: "paragraph",
-            start: 0,
-            end: 5,
-            agent: "wiki-gardener",
-            compiled_at: "2026-04-25T09:00:00.000Z",
-            derived_from: ["src.md#blk_SRC"],
-          },
-        ],
-      },
-    );
-    writePage(
-      "wiki2.md",
-      "---\nid: WIKI2\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nbody2",
-      {
-        version: 1,
-        blocks: [
-          {
-            id: "blk_W2",
-            type: "paragraph",
-            start: 0,
-            end: 5,
-            agent: "wiki-gardener",
-            compiled_at: "2026-04-25T10:00:00.000Z",
-            derived_from: ["wiki1.md#blk_W1"],
-          },
-        ],
-      },
-    );
+    writePage("src.md", "---\nid: SRC\nmodified: 2026-04-25T08:00:00.000Z\n---\n\ncontent", {
+      version: 1,
+      blocks: [{ id: "blk_SRC", type: "paragraph", start: 0, end: 7 }],
+    });
+    writePage("wiki1.md", "---\nid: WIKI1\nmodified: 2026-04-25T09:00:00.000Z\n---\n\nbody1", {
+      version: 1,
+      blocks: [
+        {
+          id: "blk_W1",
+          type: "paragraph",
+          start: 0,
+          end: 5,
+          agent: "wiki-gardener",
+          compiled_at: "2026-04-25T09:00:00.000Z",
+          derived_from: ["src.md#blk_SRC"],
+        },
+      ],
+    });
+    writePage("wiki2.md", "---\nid: WIKI2\nmodified: 2026-04-25T10:00:00.000Z\n---\n\nbody2", {
+      version: 1,
+      blocks: [
+        {
+          id: "blk_W2",
+          type: "paragraph",
+          start: 0,
+          end: 5,
+          agent: "wiki-gardener",
+          compiled_at: "2026-04-25T10:00:00.000Z",
+          derived_from: ["wiki1.md#blk_W1"],
+        },
+      ],
+    });
     const trust = computePageBlockTrust(dataRoot, "wiki2.md").get("blk_W2");
     expect(trust?.chainDepth).toBe(2);
   });

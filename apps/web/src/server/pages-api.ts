@@ -6,12 +6,7 @@ import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
 import { type AclOp, AclViolation, assertCanAccess, parsePageAcl, stampOwner } from "./acl.js";
-import {
-  assignBlockIds,
-  parseBlocks,
-  readBlocksSidecar,
-  writeBlocksSidecar,
-} from "./block-ids.js";
+import { assignBlockIds, parseBlocks, readBlocksSidecar, writeBlocksSidecar } from "./block-ids.js";
 import { computePageBlockTrust } from "./block-trust.js";
 import type { SearchIndex } from "./search-index.js";
 import { EtagMismatchError, type StorageWriter } from "./storage-writer.js";
