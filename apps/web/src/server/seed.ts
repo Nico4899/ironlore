@@ -1038,11 +1038,20 @@ explicit "edit this page" instructions from the user.
   ];
 
   for (const p of personas) {
-    // Only the wiki-gardener opts into a workflow skill at seed time
-    // (the `lint.md` skill it loads each run). Other specialists stay
-    // skill-free until the user wires them up by hand — the framework
-    // is opt-in (see skill-loader.ts).
-    const skillsLine = p.slug === "wiki-gardener" ? "\nskills: [lint]" : "";
+    // The wiki-gardener opts into both shipped workflow skills at
+    // seed time (`lint` for the periodic health check, `ingest` for
+    // processing new sources). Other specialists stay skill-free
+    // until the user wires them up by hand — the framework is
+    // opt-in (see skill-loader.ts).
+    const skillsLine = p.slug === "wiki-gardener" ? "\nskills: [lint, ingest]" : "";
+    // Per Principle 5a, synthesis personas declare
+    // `readable_kinds: [source]` so the sources-not-compilations
+    // constraint is visible in their config. The wiki-gardener
+    // operates the ingest workflow; other specialists keep the
+    // wider read scope (navigation + cross-referencing) by leaving
+    // the field absent → all kinds readable, the existing default.
+    const readableLine =
+      p.slug === "wiki-gardener" ? "\n  readable_kinds: [source]" : "";
     const frontmatter = `---
 name: ${p.name}
 slug: ${p.slug}
@@ -1057,7 +1066,7 @@ active: false${skillsLine}
 scope:
   pages: ["${p.scope}"]
   tags: []
-  writable_kinds: [page, wiki]
+  writable_kinds: [page, wiki]${readableLine}
 ---`;
 
     // The wiki-gardener is a maintenance persona rather than a domain
