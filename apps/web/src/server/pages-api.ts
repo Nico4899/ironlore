@@ -6,7 +6,13 @@ import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
 import { type AclOp, AclViolation, assertCanAccess, parsePageAcl, stampOwner } from "./acl.js";
-import { assignBlockIds, parseBlocks, writeBlocksSidecar } from "./block-ids.js";
+import {
+  assignBlockIds,
+  parseBlocks,
+  readBlocksSidecar,
+  writeBlocksSidecar,
+} from "./block-ids.js";
+import { computePageBlockTrust } from "./block-trust.js";
 import type { SearchIndex } from "./search-index.js";
 import { EtagMismatchError, type StorageWriter } from "./storage-writer.js";
 
@@ -219,6 +225,57 @@ export function createPagesApi(
     } catch (err) {
       if (err instanceof ForbiddenError) {
         return c.json({ error: "Forbidden" }, 403);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Read block-level provenance + trust for a page (Phase-11 A.3.x).
+  //
+  // Returns the persisted `.blocks.json` sidecar's per-block `agent`,
+  // `compiled_at`, `derived_from` plus a server-computed trust state
+  // (`fresh | stale | unverified`) for the "show your work"
+  // affordance. Mounted before the generic `/:path{.+}` GET so Hono's
+  // prefix match picks it first — same pattern the `/folders/...`
+  // routes use.
+  //
+  // Trust score is derived at read time per
+  // [docs/04-ai-and-agents.md §Trust score](../../../docs/04-ai-and-agents.md);
+  // no `trust_score` column anywhere. The endpoint is read-only and
+  // honors the same ACL gate as `GET /:path` so a user that can read
+  // the page can read its provenance.
+  // -----------------------------------------------------------------------
+  api.get("/provenance/:path{.+}", (c) => {
+    const pagePath = c.req.param("path") ?? "";
+    if (!pagePath) return c.json({ error: "Path required" }, 400);
+    try {
+      const { content } = writer.read(pagePath);
+      const denied = checkAcl(c, mode, content, "read");
+      if (denied) return denied;
+      const sidecar = readBlocksSidecar(join(writer.getDataRoot(), pagePath));
+      if (!sidecar) {
+        // No provenance to surface — page is fully human-written or
+        // hasn't yet been touched by an agent. Empty array, not 404.
+        return c.json({ blocks: [] });
+      }
+      const trust = computePageBlockTrust(writer.getDataRoot(), pagePath);
+      const blocks = sidecar.blocks
+        .filter((b) => b.agent !== undefined)
+        .map((b) => ({
+          id: b.id,
+          agent: b.agent ?? null,
+          compiledAt: b.compiled_at ?? null,
+          derivedFrom: b.derived_from ?? [],
+          trust: trust.get(b.id) ?? null,
+        }));
+      return c.json({ blocks });
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return c.json({ error: "Not found" }, 404);
       }
       throw err;
     }

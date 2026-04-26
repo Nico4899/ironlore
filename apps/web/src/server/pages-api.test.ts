@@ -268,3 +268,80 @@ describe("Pages API — DELETE", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("Pages API — GET /provenance", () => {
+  let ctx: ReturnType<typeof setup>;
+
+  beforeEach(() => {
+    ctx = setup();
+  });
+  afterEach(() => {
+    rmSync(ctx.projectDir, { recursive: true, force: true });
+  });
+
+  it("returns { blocks: [] } for a page with no agent stamps", async () => {
+    // Page exists but no .blocks.json or sidecar with no agent
+    // fields → empty array, not 404. The UI should treat this as
+    // "nothing to show your work for."
+    await ctx.app.request("/pages/human.md", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markdown: "# Human\n\nbody.\n" }),
+    });
+    const res = await ctx.app.request("/pages/provenance/human.md");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { blocks: unknown[] };
+    expect(body.blocks).toEqual([]);
+  });
+
+  it("surfaces sidecar provenance + computed trust for agent-stamped blocks", async () => {
+    // Land an agent-stamped block via the sidecar carry-forward
+    // path. We side-step the kb tool dispatcher to keep the test
+    // small — the writeBlocksSidecar call mirrors what the tool
+    // does at line 156 of kb-replace-block.ts.
+    const { writer } = ctx;
+    writer.write("src.md", "# Source\n\nfact.\n", "test");
+    writer.write("wiki.md", "# Wiki\n\nsynthesis.\n", "test");
+    const { writeBlocksSidecar, parseBlocks } = await import("./block-ids.js");
+    const wikiBlocks = parseBlocks(writer.read("wiki.md").content);
+    const synth = wikiBlocks.find((b) => b.type === "paragraph");
+    if (!synth) throw new Error("test fixture: missing paragraph block");
+    const provenance = new Map([
+      [
+        synth.id,
+        {
+          derived_from: ["src.md#someBlk"],
+          agent: "wiki-gardener",
+          compiled_at: "2026-04-25T10:00:00.000Z",
+        },
+      ],
+    ]);
+    writeBlocksSidecar(join(writer.getDataRoot(), "wiki.md"), wikiBlocks, provenance);
+
+    const res = await ctx.app.request("/pages/provenance/wiki.md");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      blocks: Array<{
+        id: string;
+        agent: string;
+        compiledAt: string;
+        derivedFrom: string[];
+        trust: { state: string } | null;
+      }>;
+    };
+    expect(body.blocks.length).toBe(1);
+    const row = body.blocks[0];
+    expect(row?.agent).toBe("wiki-gardener");
+    expect(row?.derivedFrom).toEqual(["src.md#someBlk"]);
+    expect(row?.compiledAt).toBe("2026-04-25T10:00:00.000Z");
+    // Source page exists; trust is computed and one of the
+    // documented enum values.
+    expect(row?.trust).not.toBeNull();
+    expect(["fresh", "stale", "unverified"]).toContain(row?.trust?.state);
+  });
+
+  it("returns 404 when the page itself does not exist", async () => {
+    const res = await ctx.app.request("/pages/provenance/missing.md");
+    expect(res.status).toBe(404);
+  });
+});
