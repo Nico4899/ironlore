@@ -117,6 +117,38 @@ export async function fetchPageProvenance(pagePath: string): Promise<BlockProven
   return data.blocks;
 }
 
+/**
+ * Save an AI-panel reply as a `kind: wiki` page. Phase-11
+ * query-to-wiki workflow (A.6.2): the user clicks "Save as wiki
+ * page" on an agent reply they want to keep, the panel collects
+ * the prose + any cited block-refs, and the server creates the
+ * page with `source_ids` populated for the trust pipeline.
+ *
+ * `parent` defaults to `wiki/` server-side. Returns the created
+ * page path so the caller can navigate to it.
+ */
+export interface SaveAsWikiResponse {
+  ok: true;
+  id: string;
+  path: string;
+  etag: string;
+}
+
+export async function saveReplyAsWikiPage(input: {
+  title: string;
+  markdown: string;
+  parent?: string;
+  sourceIds?: string[];
+}): Promise<SaveAsWikiResponse> {
+  const res = await apiFetch(`${pagesBase()}/from-conversation`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return (await res.json()) as SaveAsWikiResponse;
+}
+
 export async function savePage(
   pagePath: string,
   markdown: string,

@@ -22,6 +22,7 @@ import { PlusMenu } from "./ai-composer/PlusMenu.js";
 import { type SlashAction, SlashMenu } from "./ai-composer/SlashMenu.js";
 import { CostEstimateDialog } from "./CostEstimateDialog.js";
 import { DiffPreview } from "./DiffPreview.js";
+import { SaveAsWikiDialog } from "./SaveAsWikiDialog.js";
 import {
   AgentPulse,
   Blockref,
@@ -1169,6 +1170,13 @@ function UserBubble({ text, timestamp }: { text: string; timestamp?: number }) {
  * `CitationText` so `[[Page#blk_…]]` still becomes a Blockref.
  */
 function AssistantReply({ text }: { text: string }) {
+  // Phase-11 query-to-wiki affordance — small "Save as wiki" link
+  // in the assistant header. Only shown when there's enough text
+  // to be worth saving (skip the streaming-empty case where the
+  // header renders before the first token lands).
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const showSave = text.trim().length > 24;
+
   return (
     <div className="leading-relaxed text-primary" style={{ fontSize: 13, lineHeight: 1.55 }}>
       <div className="mb-1 flex items-center gap-1.5">
@@ -1183,8 +1191,28 @@ function AssistantReply({ text }: { text: string }) {
         >
           assistant
         </span>
+        <span className="flex-1" />
+        {showSave && (
+          <button
+            type="button"
+            onClick={() => setSaveDialogOpen(true)}
+            title="Save this reply as a kind: wiki page"
+            className="rounded font-mono uppercase hover:text-ironlore-blue"
+            style={{
+              fontSize: 9.5,
+              letterSpacing: "0.06em",
+              padding: "1px 4px",
+              color: "var(--il-text4)",
+            }}
+          >
+            save as wiki
+          </button>
+        )}
       </div>
       <CitationText text={text} />
+      {saveDialogOpen && (
+        <SaveAsWikiDialog markdown={text} onClose={() => setSaveDialogOpen(false)} />
+      )}
     </div>
   );
 }
