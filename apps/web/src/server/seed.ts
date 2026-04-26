@@ -1198,7 +1198,7 @@ If no brand voice page exists, use a professional, concise tone:
     join(sharedSkillsDir, "lint.md"),
     `---
 name: Lint
-description: Wiki health check — orphans, stale sources, contradiction flags, provenance gaps
+description: Wiki health check — orphans, stale sources, contradiction flags, coverage gaps, provenance gaps
 ---
 
 # Lint Skill
@@ -1224,7 +1224,7 @@ by the General agent on demand ("run the lint skill").
 3. The previous lint report at \`_maintenance/lint-<latest-date>.md\` if
    one exists, so repeat findings are marked as such.
 
-## The four checks
+## The five checks
 
 ### 1. Orphans — pages with zero inbound wiki-links
 
@@ -1269,7 +1269,20 @@ tool intentionally does not invent contradictions — Phase 1 only
 surfaces what the author already flagged. A future detector can layer
 LLM analysis on top to propose pairs the author missed.
 
-### 4. Provenance gaps — agent-authored blocks missing \`derived_from\`
+### 4. Coverage gaps — concepts the vault keeps citing but never wrote up
+
+Real check. Call \`kb.lint_coverage_gaps\` with no arguments — it
+queries the backlinks table for wiki-link target labels that ≥3
+distinct pages cite but no page actually exists for. Returns
+\`{ count, gaps: Array<{ target, mentionedBy, citationCount }> }\`,
+sorted by citation count descending. Threshold of 3 keeps stray
+typos and one-off references out of the report.
+
+Report each gap as a row: \`| target | citations | first 3 citing pages |\`.
+A coverage gap is a prompt for the user to write the page (or for
+a future ingest workflow to draft a stub); flag, do not auto-create.
+
+### 5. Provenance gaps — agent-authored blocks missing \`derived_from\`
 
 Real check. Call \`kb.lint_provenance_gaps\` with no arguments — it
 walks the \`.blocks.json\` sidecars under \`data/\` and returns
@@ -1294,6 +1307,7 @@ frontmatter \`kind: wiki\`, \`created\` = today's ISO date. Structure:
 - Orphans: N
 - Stale sources: N
 - Contradiction flags: N
+- Coverage gaps: N
 - Provenance gaps: N
 
 ## Orphans
@@ -1305,6 +1319,9 @@ frontmatter \`kind: wiki\`, \`created\` = today's ISO date. Structure:
 ## Contradiction flags
 <table of contradiction rows or "None.">
 
+## Coverage gaps
+<table of coverage-gap rows or "None.">
+
 ## Provenance gaps
 <table of provenance-gap rows or "None.">
 \`\`\`
@@ -1314,8 +1331,26 @@ After writing the report, append a one-line entry to \`_log.md\`:
 Then add a backlink entry in \`_index.md\` under a "Maintenance" heading
 if the heading exists, otherwise create it.
 
-Close the run with \`agent.journal\` summarising counts and the report
-path.
+Close the run with \`agent.journal\` and **always** pass the structured
+\`lintReport\` field — the server reads it to fire a dismissible banner
+in the user's UI ("3 stale pages, 1 contradiction · view report"). A
+journal call without \`lintReport\` finalizes the run silently:
+
+\`\`\`json
+{
+  "text": "<prose summary of counts + report path>",
+  "lintReport": {
+    "reportPath": "_maintenance/lint-<YYYY-MM-DD>.md",
+    "counts": {
+      "orphans": <N>,
+      "stale": <N>,
+      "contradictions": <N>,
+      "coverageGaps": <N>,
+      "provenanceGaps": <N>
+    }
+  }
+}
+\`\`\`
 `,
   );
 
