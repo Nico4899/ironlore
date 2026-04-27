@@ -293,17 +293,41 @@ export interface RecentEdit {
  * tools (`kb.search`) stay single-project — see docs/08 §What this
  * does not try to do.
  */
+/**
+ * Phase-11 user-facing semantic search response shape. Adds the
+ * `semanticAvailable` field so the Cmd+K toggle can grey itself out
+ * when the project's embedding provider isn't configured.
+ */
+export interface SearchPagesResponse {
+  results: SearchResult[];
+  semanticAvailable: boolean;
+}
+
 export async function searchPages(
   query: string,
   limit = 20,
   scope: "current" | "all" = "current",
-): Promise<SearchResult[]> {
+  /**
+   * When true AND the server has an embedding provider registered,
+   * runs the semantic-search pass alongside FTS5 and merges via RRF
+   * — surfaces concept matches the keyword path misses (the
+   * "Redis implementation details" / "how does the caching work?"
+   * gap). Silently a no-op when no provider is registered; check
+   * `semanticAvailable` on the response to know whether the toggle
+   * is meaningful.
+   */
+  semantic = false,
+): Promise<SearchPagesResponse> {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
   if (scope === "all") params.set("scope", "all");
+  if (semantic) params.set("semantic", "true");
   const res = await apiFetch(`${searchBase()}/search?${params}`);
   if (!res.ok) throw new ApiError(res.status, await res.text());
-  const data = (await res.json()) as { results: SearchResult[] };
-  return data.results;
+  const data = (await res.json()) as Partial<SearchPagesResponse>;
+  return {
+    results: data.results ?? [],
+    semanticAvailable: data.semanticAvailable ?? false,
+  };
 }
 
 /** Get pages that link to the given path. */

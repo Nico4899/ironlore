@@ -138,6 +138,24 @@ export function SearchDialog() {
    * and gets a project badge if it isn't from the current project).
    */
   const [allProjects, setAllProjects] = useState(false);
+  /**
+   * Phase-11 user-facing semantic toggle. When on AND the server's
+   * embedding provider is reachable, the response merges semantic
+   * hits (chunk-vector cosine) with the FTS5 result set via RRF —
+   * surfaces concept matches the keyword path misses (e.g. query
+   * "how does the caching work" → "Redis implementation details"
+   * page). Persisted in localStorage so power users don't have to
+   * retoggle each session. The button is disabled when the server
+   * reports `semanticAvailable: false`.
+   */
+  const [semantic, setSemantic] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("ironlore.search.semantic") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [semanticAvailable, setSemanticAvailable] = useState<boolean>(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -164,9 +182,10 @@ export function SearchDialog() {
     setLoading(true);
     debounceRef.current = setTimeout(() => {
       const t0 = performance.now();
-      searchPages(query, 20, allProjects ? "all" : "current")
+      searchPages(query, 20, allProjects ? "all" : "current", semantic)
         .then((r) => {
-          setResults(r);
+          setResults(r.results);
+          setSemanticAvailable(r.semanticAvailable);
           setSelectedIdx(0);
           setFtsMs(Math.round(performance.now() - t0));
         })
@@ -180,7 +199,17 @@ export function SearchDialog() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, allProjects]);
+  }, [query, allProjects, semantic]);
+
+  // Persist the semantic preference whenever it flips so power users
+  // who turn it on don't have to retoggle each session.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ironlore.search.semantic", semantic ? "1" : "0");
+    } catch {
+      /* storage denied — non-fatal */
+    }
+  }, [semantic]);
 
   const close = useCallback(() => {
     useAppStore.getState().toggleSearchDialog();
@@ -406,6 +435,49 @@ export function SearchDialog() {
             }}
           >
             all projects
+          </button>
+          {/*
+           * Phase-11 semantic toggle — fires `?semantic=true` to merge
+           * chunk-vector cosine hits with the FTS5 result set via RRF.
+           * Disabled when the server reports `semanticAvailable: false`
+           * (no embedding provider configured). Persisted to
+           * localStorage so power users keep it on across sessions.
+           */}
+          <button
+            type="button"
+            onClick={() => semanticAvailable && setSemantic((v) => !v)}
+            className="font-mono uppercase outline-none"
+            aria-pressed={semantic && semanticAvailable}
+            disabled={!semanticAvailable}
+            title={
+              semanticAvailable
+                ? "Toggle semantic search (concept matches alongside keywords)"
+                : "Configure an embedding provider in Settings → Providers to enable semantic search"
+            }
+            style={{
+              padding: "3px 8px",
+              fontSize: 10,
+              letterSpacing: "0.06em",
+              color: !semanticAvailable
+                ? "var(--il-text4)"
+                : semantic
+                  ? "var(--il-blue)"
+                  : "var(--il-text3)",
+              background:
+                semantic && semanticAvailable
+                  ? "color-mix(in oklch, var(--il-blue) 14%, transparent)"
+                  : "transparent",
+              border: `1px solid ${
+                semantic && semanticAvailable
+                  ? "color-mix(in oklch, var(--il-blue) 30%, transparent)"
+                  : "var(--il-border-soft)"
+              }`,
+              borderRadius: 3,
+              cursor: semanticAvailable ? "pointer" : "not-allowed",
+              opacity: semanticAvailable ? 1 : 0.5,
+            }}
+          >
+            semantic
           </button>
           {/*
            * Timing chip — `fts5 · <state>`. `…` while in flight,
