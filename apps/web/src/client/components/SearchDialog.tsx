@@ -141,6 +141,23 @@ export function SearchDialog() {
    */
   const [allProjects, setAllProjects] = useState(false);
   /**
+   * Phase-11 user-facing semantic toggle. When on AND the server's
+   * embedding provider is reachable, the response merges semantic
+   * hits (chunk-vector cosine) with the FTS5 result set via RRF —
+   * surfaces concept matches the keyword path misses. Persisted in
+   * localStorage so power users don't have to retoggle each session.
+   * The button is disabled when the server reports
+   * `semanticAvailable: false`.
+   */
+  const [semantic, setSemantic] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("ironlore.search.semantic") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [semanticAvailable, setSemanticAvailable] = useState<boolean>(true);
+  /**
    * Installed-agent search hits — populates the AGENTS tab. Empty
    * query returns every agent ordered by slug; non-empty filters by
    * substring against slug/name/role/description (server-side).
@@ -173,13 +190,10 @@ export function SearchDialog() {
     setLoading(true);
     debounceRef.current = setTimeout(() => {
       const t0 = performance.now();
-      // Semantic search is always-on — the server no-ops the param
-      //  when no embedding provider is configured, so passing `true`
-      //  unconditionally costs nothing in that case and surfaces
-      //  concept matches whenever a provider IS configured.
-      void searchPages(query, 20, allProjects ? "all" : "current", true)
+      void searchPages(query, 20, allProjects ? "all" : "current", semantic)
         .then((r) => {
           setResults(r.results);
+          setSemanticAvailable(r.semanticAvailable);
           setSelectedIdx(0);
           setFtsMs(Math.round(performance.now() - t0));
         })
@@ -198,7 +212,17 @@ export function SearchDialog() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, allProjects]);
+  }, [query, allProjects, semantic]);
+
+  // Persist the semantic preference whenever it flips so power users
+  // who turn it on don't have to retoggle each session.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ironlore.search.semantic", semantic ? "1" : "0");
+    } catch {
+      /* storage denied — non-fatal */
+    }
+  }, [semantic]);
 
   const close = useCallback(() => {
     useAppStore.getState().toggleSearchDialog();
@@ -213,9 +237,10 @@ export function SearchDialog() {
   }, []);
 
   // Tab filtering: BLOCKS = results with a `#` fragment in the path
-  // (chunk-level hits when the server surfaces them); AGENTS has no
-  // data source yet, so the tab stays visible but empty. PAGES =
-  // everything with a plain path.
+  // (chunk-level hits when the server surfaces them); AGENTS reads
+  // from the dedicated agent-search endpoint and is rendered with a
+  // separate row template below. PAGES = everything with a plain
+  // path.
   const counts = useMemo(() => {
     const blocks = results.filter((r) => r.path.includes("#"));
     const pages = results.filter((r) => !r.path.includes("#"));
@@ -223,9 +248,9 @@ export function SearchDialog() {
       ALL: results.length,
       PAGES: pages.length,
       BLOCKS: blocks.length,
-      AGENTS: 0,
+      AGENTS: agentResults.length,
     } satisfies Record<Tab, number>;
-  }, [results]);
+  }, [results, agentResults]);
 
   const filtered = useMemo(() => {
     if (tab === "PAGES") return results.filter((r) => !r.path.includes("#"));
@@ -521,7 +546,7 @@ export function SearchDialog() {
             </div>
           )}
 
-          {!showRecent && displayItems.length === 0 && !loading && (
+          {!showRecent && tab !== "AGENTS" && displayItems.length === 0 && !loading && (
             <div
               className="px-5 py-8 text-center"
               style={{ color: "var(--il-text2)", fontSize: 13 }}
@@ -530,8 +555,90 @@ export function SearchDialog() {
             </div>
           )}
 
+          {tab === "AGENTS" && agentResults.length === 0 && !loading && (
+            <div
+              className="px-5 py-8 text-center"
+              style={{ color: "var(--il-text2)", fontSize: 13 }}
+            >
+              {showRecent ? "No agents installed" : "No agents matched"}
+            </div>
+          )}
+
+          {tab === "AGENTS" &&
+            agentResults.map((a) => (
+              <button
+                key={a.slug}
+                type="button"
+                onClick={() => {
+                  useAppStore.getState().setActiveAgentSlug(a.slug);
+                  close();
+                }}
+                className="grid w-full text-left outline-none"
+                style={{
+                  padding: "11px 20px",
+                  borderTop: "1px solid var(--il-border-soft)",
+                  gridTemplateColumns: "auto 1fr auto",
+                  gap: 12,
+                  alignItems: "baseline",
+                  background: "transparent",
+                  cursor: "pointer",
+                  opacity: a.paused ? 0.6 : 1,
+                }}
+              >
+                <Reuleaux
+                  size={7}
+                  color={a.paused ? "var(--il-amber)" : "var(--il-blue)"}
+                />
+                <div style={{ minWidth: 0 }}>
+                  <div className="flex items-baseline gap-2">
+                    {a.emoji && <span style={{ fontSize: 13 }}>{a.emoji}</span>}
+                    <span
+                      style={{
+                        fontSize: 13,
+                        color: "var(--il-text)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {a.name ?? a.slug}
+                    </span>
+                    <span
+                      className="font-mono"
+                      style={{ fontSize: 10.5, color: "var(--il-text3)" }}
+                    >
+                      {a.slug}
+                    </span>
+                    {a.paused && (
+                      <span
+                        className="font-mono uppercase"
+                        style={{
+                          fontSize: 10,
+                          letterSpacing: "0.06em",
+                          color: "var(--il-amber)",
+                        }}
+                      >
+                        paused
+                      </span>
+                    )}
+                  </div>
+                  {(a.description ?? a.role) && (
+                    <div
+                      className="truncate"
+                      style={{
+                        fontSize: 12,
+                        color: "var(--il-text2)",
+                        marginTop: 3,
+                      }}
+                    >
+                      {a.description ?? a.role}
+                    </div>
+                  )}
+                </div>
+                <Key>↵</Key>
+              </button>
+            ))}
+
           {/* Top hit — only when actively searching */}
-          {topHit && (
+          {tab !== "AGENTS" && topHit && (
             <button
               type="button"
               key={topHit.path}
@@ -587,8 +694,10 @@ export function SearchDialog() {
             </button>
           )}
 
-          {/* Subsequent hits — or the whole recent list */}
-          {restHits.map((item, i) => {
+          {/* Subsequent hits — or the whole recent list. AGENTS tab
+              renders its own row template above and skips this map. */}
+          {tab !== "AGENTS" &&
+            restHits.map((item, i) => {
             const idx = topHit ? i + 1 : i;
             const focused = idx === selectedIdx;
             // Two rows can share the same `path` if they originated
