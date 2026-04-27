@@ -251,7 +251,7 @@ describe("search-api — Phase-11 ?semantic=true toggle", () => {
    * `storeChunkEmbedding` so the index has something to find.
    */
   class StubEmbeddingProvider {
-    readonly name = "stub" as const;
+    readonly name = "ollama" as const;
     readonly dimensions = 4;
     readonly model = "stub-test";
     constructor(private readonly vector: readonly number[]) {}
@@ -311,7 +311,12 @@ describe("search-api — Phase-11 ?semantic=true toggle", () => {
     // caching-deep.md gets the perfect-match vector → cosine 1.
     main.searchIndex.storeChunkEmbedding("caching-deep.md", 0, queryVec, "stub-test");
     // caching-shallow.md gets a low-similarity vector.
-    main.searchIndex.storeChunkEmbedding("caching-shallow.md", 0, [0.1, 0.5, 0.5, 0.5], "stub-test");
+    main.searchIndex.storeChunkEmbedding(
+      "caching-shallow.md",
+      0,
+      [0.1, 0.5, 0.5, 0.5],
+      "stub-test",
+    );
 
     const app = new Hono();
     app.route(

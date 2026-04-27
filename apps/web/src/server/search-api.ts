@@ -291,9 +291,7 @@ async function runSemanticPass(
       fused.set(r.path, { score: 1 / (RRF_K + i + 1), result: r });
     });
 
-    const semanticOnly = [...semanticPagesByRank.entries()].filter(
-      ([path]) => !fused.has(path),
-    );
+    const semanticOnly = [...semanticPagesByRank.entries()].filter(([path]) => !fused.has(path));
     let titleByPath: Map<string, string> = new Map();
     if (semanticOnly.length > 0) {
       titleByPath = searchIndex.getPageTitles(semanticOnly.map(([p]) => p));
