@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { activateAgent } from "./activate.js";
+import { searchInstalledAgents } from "./agent-search.js";
 import { type BuildPersonaInput, buildPersona } from "./build-persona.js";
 import { estimateRunCost } from "./cost-estimate.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
@@ -205,6 +206,21 @@ export function createAgentApi(
       .prepare("SELECT slug, status FROM agent_state WHERE project_id = ? ORDER BY slug")
       .all(projectId) as Array<{ slug: string; status: "active" | "paused" }>;
     return c.json({ agents: rows });
+  });
+
+  // -----------------------------------------------------------------------
+  // Free-text agent search — backs the Cmd+K dialog's `AGENTS` tab.
+  // Walks installed personas under `.agents/<slug>/persona.md`, scores
+  // by case-insensitive substring against slug/name/role/description.
+  // Empty query → all installed agents (alphabetical by slug). Falls
+  // back to an empty list when `projectDir` isn't configured rather
+  // than 500'ing — the dialog should degrade gracefully.
+  // -----------------------------------------------------------------------
+  api.get("/search", (c) => {
+    if (!projectDir) return c.json({ agents: [] });
+    const query = c.req.query("q") ?? "";
+    const agents = searchInstalledAgents(`${projectDir}/data`, query);
+    return c.json({ agents });
   });
 
   // -----------------------------------------------------------------------

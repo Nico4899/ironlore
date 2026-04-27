@@ -2,9 +2,11 @@ import { messages } from "@ironlore/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
 import {
+  type AgentSearchHit,
   fetchRecentEdits,
   getApiProject,
   type RecentEdit,
+  searchAgents,
   type SearchResult,
   searchPages,
 } from "../lib/api.js";
@@ -139,23 +141,11 @@ export function SearchDialog() {
    */
   const [allProjects, setAllProjects] = useState(false);
   /**
-   * Phase-11 user-facing semantic toggle. When on AND the server's
-   * embedding provider is reachable, the response merges semantic
-   * hits (chunk-vector cosine) with the FTS5 result set via RRF —
-   * surfaces concept matches the keyword path misses (e.g. query
-   * "how does the caching work" → "Redis implementation details"
-   * page). Persisted in localStorage so power users don't have to
-   * retoggle each session. The button is disabled when the server
-   * reports `semanticAvailable: false`.
+   * Installed-agent search hits — populates the AGENTS tab. Empty
+   * query returns every agent ordered by slug; non-empty filters by
+   * substring against slug/name/role/description (server-side).
    */
-  const [semantic, setSemantic] = useState<boolean>(() => {
-    try {
-      return window.localStorage.getItem("ironlore.search.semantic") === "1";
-    } catch {
-      return false;
-    }
-  });
-  const [semanticAvailable, setSemanticAvailable] = useState<boolean>(true);
+  const [agentResults, setAgentResults] = useState<AgentSearchHit[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -174,6 +164,7 @@ export function SearchDialog() {
 
     if (!query.trim()) {
       setResults([]);
+      setAgentResults([]);
       setSelectedIdx(0);
       setFtsMs(null);
       return;
@@ -182,10 +173,13 @@ export function SearchDialog() {
     setLoading(true);
     debounceRef.current = setTimeout(() => {
       const t0 = performance.now();
-      searchPages(query, 20, allProjects ? "all" : "current", semantic)
+      // Semantic search is always-on — the server no-ops the param
+      //  when no embedding provider is configured, so passing `true`
+      //  unconditionally costs nothing in that case and surfaces
+      //  concept matches whenever a provider IS configured.
+      void searchPages(query, 20, allProjects ? "all" : "current", true)
         .then((r) => {
           setResults(r.results);
-          setSemanticAvailable(r.semanticAvailable);
           setSelectedIdx(0);
           setFtsMs(Math.round(performance.now() - t0));
         })
@@ -194,22 +188,17 @@ export function SearchDialog() {
           setFtsMs(null);
         })
         .finally(() => setLoading(false));
+      // Agents tab data — fired in parallel so switching to the tab
+      //  doesn't show a stale list.
+      void searchAgents(query)
+        .then(setAgentResults)
+        .catch(() => setAgentResults([]));
     }, 150);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query, allProjects, semantic]);
-
-  // Persist the semantic preference whenever it flips so power users
-  // who turn it on don't have to retoggle each session.
-  useEffect(() => {
-    try {
-      window.localStorage.setItem("ironlore.search.semantic", semantic ? "1" : "0");
-    } catch {
-      /* storage denied — non-fatal */
-    }
-  }, [semantic]);
+  }, [query, allProjects]);
 
   const close = useCallback(() => {
     useAppStore.getState().toggleSearchDialog();

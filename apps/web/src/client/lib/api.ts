@@ -330,6 +330,29 @@ export async function searchPages(
   };
 }
 
+export interface AgentSearchHit {
+  slug: string;
+  name: string | null;
+  emoji: string | null;
+  role: string | null;
+  description: string | null;
+  paused: boolean;
+}
+
+/**
+ * Search installed agents by free-text query — backs the Cmd+K
+ * dialog's `AGENTS` tab. Empty query returns every agent ordered by
+ * slug. Server matches case-insensitive substrings against
+ * slug/name/role/description.
+ */
+export async function searchAgents(query: string): Promise<AgentSearchHit[]> {
+  const params = new URLSearchParams({ q: query });
+  const res = await apiFetch(`${base()}/agents/search?${params}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { agents: AgentSearchHit[] };
+  return data.agents;
+}
+
 /** Get pages that link to the given path. */
 export async function fetchBacklinks(path: string): Promise<BacklinkEntry[]> {
   const params = new URLSearchParams({ path });
