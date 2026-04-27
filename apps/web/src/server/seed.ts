@@ -1035,15 +1035,36 @@ explicit "edit this page" instructions from the user.
       heartbeat: "0 6 * * 0",
       scope: "/**",
     },
+    {
+      // Phase-11 self-improvement loop. Weekly cron; reviews the
+      // last 7 days of failed + retried agent runs, identifies
+      // recurring patterns, and proposes a markdown edit to a
+      // shared skill file. Always runs under `review_mode: inbox`
+      // so every proposed edit lands on a staging branch the user
+      // approves via the existing inbox UI before merge.
+      slug: "evolver",
+      name: "Evolver",
+      emoji: "\u{1F9EC}",
+      dept: "Maintenance",
+      role: "Skill evolution — analyse failed runs, propose skill edits",
+      heartbeat: "0 7 * * 0",
+      scope: "/.agents/.shared/skills/**",
+    },
   ];
 
   for (const p of personas) {
-    // The wiki-gardener opts into both shipped workflow skills at
-    // seed time (`lint` for the periodic health check, `ingest` for
-    // processing new sources). Other specialists stay skill-free
-    // until the user wires them up by hand — the framework is
-    // opt-in (see skill-loader.ts).
-    const skillsLine = p.slug === "wiki-gardener" ? "\nskills: [lint, ingest]" : "";
+    // The wiki-gardener + evolver opt into workflow skills at seed
+    // time. Other specialists stay skill-free until the user wires
+    // them up by hand — the framework is opt-in (see skill-loader.ts).
+    let skillsLine = "";
+    if (p.slug === "wiki-gardener") skillsLine = "\nskills: [lint, ingest]";
+    else if (p.slug === "evolver") skillsLine = "\nskills: [evolve]";
+    // The evolver always runs under inbox review — every skill-file
+    // edit it proposes lands on a staging branch the user approves
+    // before merge. That's the safety property the SkillClaw-style
+    // loop trades on: the AI suggests a plain-text markdown edit,
+    // the human approves it.
+    const reviewLine = p.slug === "evolver" ? "\nreview_mode: inbox" : "";
     // Per Principle 5a, synthesis personas declare
     // `readable_kinds: [source]` so the sources-not-compilations
     // constraint is visible in their config. The wiki-gardener
@@ -1051,6 +1072,11 @@ explicit "edit this page" instructions from the user.
     // wider read scope (navigation + cross-referencing) by leaving
     // the field absent → all kinds readable, the existing default.
     const readableLine = p.slug === "wiki-gardener" ? "\n  readable_kinds: [source]" : "";
+    // The evolver writes to skill files (no `kind:` marker → fall
+    // through to the gate's permissive default), but should NOT
+    // mutate `kind: source` or `kind: wiki` content. Pin
+    // `writable_kinds: [page]` so the gate enforces that boundary.
+    const writableKinds = p.slug === "evolver" ? "[page]" : "[page, wiki]";
     const frontmatter = `---
 name: ${p.name}
 slug: ${p.slug}
@@ -1061,11 +1087,11 @@ role: "${p.role}"
 provider: anthropic
 heartbeat: "${p.heartbeat}"
 budget: { period: monthly, runs: 40 }
-active: false${skillsLine}
+active: false${skillsLine}${reviewLine}
 scope:
   pages: ["${p.scope}"]
   tags: []
-  writable_kinds: [page, wiki]${readableLine}
+  writable_kinds: ${writableKinds}${readableLine}
 ---`;
 
     // The wiki-gardener is a maintenance persona rather than a domain
@@ -1108,7 +1134,60 @@ ${p.role}.
 - Flag findings; do not auto-fix — the user reviews the report and
   decides what to act on
 `
-        : `
+        : p.slug === "evolver"
+          ? `
+You are the Evolver — the agent that helps Ironlore's other agents
+get better at their jobs over time. You read what went wrong in the
+last week of runs and propose targeted edits to the shared skill
+files. Every proposed edit lands on a staging branch the user
+approves through the Inbox before it merges.
+
+## Responsibilities
+
+${p.role}.
+
+## How you work
+
+1. Load the \`evolve.md\` shared skill. It defines the four-action
+   choice (improve_skill / optimize_description / create_skill /
+   skip), the \`NOT for:\` exclusion-syntax convention, and the
+   exact diff format the user sees in the Inbox.
+2. Call \`kb.query_failed_runs\` (default 168 hours = one week) to
+   pull aggregated failure patterns across every agent that ran in
+   this project. Look for: agents with >2 failed runs, tools that
+   error repeatedly across agents, the same error string surfacing
+   from multiple runs.
+3. Read the relevant shared skill file via \`kb.read_page\` if a
+   pattern points at one.
+4. Pick **exactly one** action per run — quality over volume:
+   - **improve_skill** — the skill body is missing a constraint
+     that would have prevented the failures. Edit it via
+     \`kb.replace_block\` or \`kb.insert_after\`.
+   - **optimize_description** — the skill is fine but its
+     frontmatter \`description\` doesn't match how it's actually
+     being invoked. Edit the description.
+   - **create_skill** — a recurring failure mode has no skill
+     covering it. Draft a new shared skill via \`kb.create_page\`.
+   - **skip** — none of the patterns rise above noise. Close the
+     run with a journal entry explaining why; no edit.
+5. When proposing a constraint addition, prefer the explicit
+   \`NOT for:\` exclusion syntax (see \`evolve.md\`) — it surfaces
+   in BM25 and reads loud-and-clear in the agent's loaded prompt.
+
+## Guidelines
+
+- Work within your assigned scope: \`${p.scope}\`. The
+  writable_kinds: [page] gate keeps you out of \`kind: source\`
+  and \`kind: wiki\` content.
+- Always run under \`review_mode: inbox\` (already pinned in your
+  frontmatter). Never auto-merge.
+- One action per run. The user can approve a small edit fast;
+  reviewing a sweeping rewrite is friction.
+- Cite specific failed-run job IDs in your journal entry so a
+  curious user can audit the evidence trail behind the proposed
+  change.
+`
+          : `
 You are {{company_name}}'s ${p.name}. Company description: {{company_description}}.
 Current goals: {{goals}}.
 
