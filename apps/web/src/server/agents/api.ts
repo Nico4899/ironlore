@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { activateAgent } from "./activate.js";
+import { buildPersona, type BuildPersonaInput } from "./build-persona.js";
 import { estimateRunCost } from "./cost-estimate.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
 import type { AgentInbox } from "./inbox.js";
@@ -301,6 +302,28 @@ export function createAgentApi(
     const result = activateAgent(dataDir, jobsDb, projectId, slug);
     if (!result.ok) return c.json({ ok: false, error: result.error }, result.code);
     return c.json({ ok: true, personaPath: result.personaPath });
+  });
+
+  // -----------------------------------------------------------------------
+  // Visual Agent Builder — Phase-11 deliverable (proposal A.9.1).
+  //
+  // Creates a NEW custom agent from form-driven inputs (Name, Role,
+  // "Never do this" constraints, scope, write-access toggle, review
+  // mode, optional cron). The body is compiled into a strictly
+  // formatted persona.md by `buildPersona`; the user never has to
+  // touch YAML by hand.
+  //
+  // 400 on bad slug / missing required fields.
+  // 409 if a persona already exists at the slug.
+  //
+  // Body shape: BuildPersonaInput.
+  // -----------------------------------------------------------------------
+  api.post("/", async (c) => {
+    if (!projectDir) return c.json({ ok: false, error: "No project dir" }, 500);
+    const body = (await c.req.json()) as BuildPersonaInput;
+    const result = buildPersona(`${projectDir}/data`, jobsDb, projectId, body);
+    if (!result.ok) return c.json({ ok: false, error: result.error }, result.code);
+    return c.json({ ok: true, slug: result.slug, personaPath: result.personaPath });
   });
 
   // -----------------------------------------------------------------------
