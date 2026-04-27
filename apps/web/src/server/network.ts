@@ -13,6 +13,16 @@ export function validateBind(host: string): void {
     return; // loopback is always safe
   }
 
+  // Container escape hatch — `IRONLORE_TRUST_NETWORK_BIND=1` opts
+  // out of the HTTPS public-URL requirement. Used by the bundled
+  // Docker compose where the container's network namespace is
+  // isolated and the Docker port mapping (`-p 127.0.0.1:3000:3000`)
+  // is the actual host-exposure boundary. Outside a container this
+  // env stays unset and the strict rail applies.
+  if (process.env.IRONLORE_TRUST_NETWORK_BIND === "1") {
+    return;
+  }
+
   const publicUrl = process.env.IRONLORE_PUBLIC_URL;
 
   if (!publicUrl) {

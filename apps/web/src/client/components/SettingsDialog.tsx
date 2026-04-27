@@ -5,11 +5,14 @@ import {
   type AgentConfigResponse,
   type AgentListEntry,
   activateAgent,
+  type EmbeddingsStatus,
   fetchAgentConfig,
   fetchAgents,
+  fetchEmbeddingsStatus,
   fetchLibraryTemplates,
   fetchProjects,
   fetchProviders,
+  kickEmbeddingsBackfill,
   type LibraryTemplate,
   logout,
   type ProjectListEntry,
@@ -28,6 +31,7 @@ import {
   useAppStore,
 } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
+import { AgentBuilderDialog } from "./AgentBuilderDialog.js";
 
 type Tab = SettingsTab;
 
@@ -1428,6 +1432,8 @@ function AgentsTab() {
   // toast so the mistake stays anchored to the card it came from.
   const [activating, setActivating] = useState<string | null>(null);
   const [activateErr, setActivateErr] = useState<Record<string, string>>({});
+  // Visual Agent Builder modal — Phase-11 A.9.1.
+  const [builderOpen, setBuilderOpen] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -1610,6 +1616,42 @@ function AgentsTab() {
           );
         })}
       </div>
+
+      {/* Visual Agent Builder — Phase-11 A.9.1 entry point. The
+       *  dialog compiles plain-English form inputs into a properly-
+       *  shaped persona.md so non-technical users don't have to
+       *  edit YAML by hand. Clicking "Build a custom agent" opens
+       *  the modal; on success we reload the agent list so the
+       *  newly-built agent appears alongside library activations. */}
+      <div style={{ marginTop: 18, marginBottom: 8, display: "flex", alignItems: "center" }}>
+        <SectionLabel>Custom</SectionLabel>
+        <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={() => setBuilderOpen(true)}
+          className="rounded border border-ironlore-blue/50 px-2 py-0.5 text-[10px] font-medium text-ironlore-blue hover:bg-ironlore-blue/15"
+        >
+          Build a custom agent
+        </button>
+      </div>
+      <p style={{ fontSize: 10.5, color: "var(--il-text3)", lineHeight: 1.5, marginBottom: 12 }}>
+        Skip the library — describe an agent's role and constraints in plain English, and the
+        builder writes the persona file for you.
+      </p>
+
+      {builderOpen && (
+        <AgentBuilderDialog
+          onClose={() => setBuilderOpen(false)}
+          onCreated={(slug: string) => {
+            void reload();
+            setActivateErr((prev) => {
+              const next = { ...prev };
+              delete next[slug];
+              return next;
+            });
+          }}
+        />
+      )}
 
       {library && library.length > 0 && (
         <>
@@ -1800,7 +1842,211 @@ function StorageTab() {
           ))}
         </div>
       </SettingRow>
+
+      <SettingRow
+        n="03"
+        label="Embeddings (hybrid retrieval)"
+        sub="Phase-11 vector index. Surfaces only when an embedding provider is configured (OpenAI key in Providers, or a local Ollama embedding model). Backfill runs in the background; the button below kicks a synchronous drain you can watch progress on."
+      >
+        <EmbeddingsCard />
+      </SettingRow>
     </>
+  );
+}
+
+/**
+ * Embeddings status card on the Storage tab. Polls
+ * `/api/projects/<id>/embeddings/status` every 5 seconds while
+ * the dialog is open so the worker's background progress shows
+ * live; the Backfill button drives a synchronous tick loop the
+ * user can pin to.
+ *
+ * Renders four states:
+ *   - `null` (no provider configured) → muted "connect a provider" hint
+ *   - `total === 0` → empty-vault hint
+ *   - `missing > 0` → progress + Backfill button
+ *   - `missing === 0` → "Up to date" with model + dims chip
+ */
+function EmbeddingsCard() {
+  const [status, setStatus] = useState<EmbeddingsStatus | null | "loading">("loading");
+  const [draining, setDraining] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const next = await fetchEmbeddingsStatus();
+      setStatus(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+    // Poll-based refresh — cheap (one SQL count) and avoids
+    // wiring a WS topic for a Settings panel the user only opens
+    // occasionally.
+    const id = setInterval(() => {
+      void reload();
+    }, 5000);
+    return () => clearInterval(id);
+  }, [reload]);
+
+  const handleBackfill = useCallback(async () => {
+    setDraining(true);
+    setError(null);
+    try {
+      // Loop synchronous ticks until remaining hits zero or one
+      // tick reports zero progress (= every input failed; bail).
+      // Each tick processes the worker's batch size (~32 chunks).
+      let lastProcessed = -1;
+      while (true) {
+        const result = await kickEmbeddingsBackfill();
+        if (!result) break;
+        if (result.processed === 0 && lastProcessed === 0) break;
+        lastProcessed = result.processed;
+        await reload();
+        if (result.remaining === 0) break;
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDraining(false);
+    }
+  }, [reload]);
+
+  if (status === "loading") {
+    return (
+      <div style={{ fontSize: 12.5, color: "var(--il-text3)" }}>Loading embedding status…</div>
+    );
+  }
+
+  if (status === null) {
+    return (
+      <div
+        style={{
+          padding: "10px 12px",
+          background: "var(--il-slate)",
+          border: "1px dashed var(--il-border-soft)",
+          borderRadius: 3,
+          fontSize: 12.5,
+          color: "var(--il-text2)",
+        }}
+      >
+        No embedding provider configured. Add an OpenAI key in <strong>Providers</strong>, or
+        install a local embedding model in Ollama (<code>nomic-embed-text</code>,{" "}
+        <code>mxbai-embed-large</code>, or <code>all-minilm</code>) and restart the server.
+      </div>
+    );
+  }
+
+  const pct = status.total === 0 ? 100 : Math.round((status.embedded / status.total) * 100);
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 10,
+        padding: "12px 14px",
+        background: "var(--il-slate)",
+        border: "1px solid var(--il-border-soft)",
+        borderRadius: 3,
+      }}
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 12 }}>
+        <span style={{ fontSize: 12, color: "var(--il-text3)" }}>Coverage</span>
+        <div
+          // Progress bar — single track + amber fill scaled to
+          // (embedded / total). 100% paints in green so the
+          // "done" state is visually distinct.
+          aria-label={`${status.embedded} of ${status.total} chunks embedded (${pct}%)`}
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          style={{
+            position: "relative",
+            height: 8,
+            background: "var(--il-slate-elev)",
+            borderRadius: 2,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: `${pct}%`,
+              background: pct === 100 ? "var(--il-green)" : "var(--il-amber)",
+              transition: "width var(--motion-transit) ease",
+            }}
+          />
+        </div>
+        <span
+          style={{ fontSize: 12, color: "var(--il-text2)", fontVariantNumeric: "tabular-nums" }}
+        >
+          {status.embedded} / {status.total}
+        </span>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          fontSize: 11.5,
+          color: "var(--il-text3)",
+        }}
+      >
+        <span>
+          model: <strong style={{ color: "var(--il-text2)" }}>{status.model}</strong>
+        </span>
+        <span>
+          dims: <strong style={{ color: "var(--il-text2)" }}>{status.dims}</strong>
+        </span>
+        {status.mismatched > 0 && (
+          <span style={{ color: "var(--il-amber)" }}>
+            {status.mismatched} stale (model swap — reindex recommended)
+          </span>
+        )}
+        <span style={{ color: status.running ? "var(--il-green)" : "var(--il-text3)" }}>
+          worker: {status.running ? "live" : "stopped"}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button
+          type="button"
+          onClick={handleBackfill}
+          disabled={draining || status.missing === 0}
+          style={{
+            padding: "5px 12px",
+            fontSize: 12,
+            fontFamily: "var(--font-sans)",
+            fontWeight: 500,
+            background: draining
+              ? "var(--il-slate-elev)"
+              : status.missing === 0
+                ? "var(--il-slate-elev)"
+                : "var(--il-blue)",
+            color: status.missing === 0 ? "var(--il-text3)" : "var(--il-bg)",
+            border: "none",
+            borderRadius: 3,
+            cursor: draining || status.missing === 0 ? "default" : "pointer",
+          }}
+        >
+          {draining ? "Backfilling…" : status.missing === 0 ? "Up to date" : "Backfill now"}
+        </button>
+        {status.missing > 0 && (
+          <span style={{ fontSize: 11.5, color: "var(--il-text3)" }}>
+            {status.missing} chunks pending
+          </span>
+        )}
+        {error && <span style={{ fontSize: 11.5, color: "var(--il-red)" }}>{error}</span>}
+      </div>
+    </div>
   );
 }
 

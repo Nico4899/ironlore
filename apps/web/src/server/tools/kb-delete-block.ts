@@ -1,8 +1,11 @@
+import { join } from "node:path";
 import { parseBlocks } from "@ironlore/core";
-import { assignBlockIds } from "../block-ids.js";
+import { assignBlockIds, writeBlocksSidecar } from "../block-ids.js";
 import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
+import { extractPageKind } from "./page-kind.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
+import { assertWritableKind, WritableKindsViolation } from "./writable-kinds-gate.js";
 
 function renderDeleteDiff(blockId: string, oldText: string): string {
   const lines = oldText.split("\n").map((l) => `- ${l}`);
@@ -86,6 +89,16 @@ export function createKbDeleteBlock(
         throw err;
       }
 
+      // writable_kinds gate — pre-write check; throws on violation.
+      try {
+        assertWritableKind(ctx, extractPageKind(currentContent));
+      } catch (err) {
+        if (err instanceof WritableKindsViolation) {
+          return JSON.stringify({ error: err.message, status: err.status });
+        }
+        throw err;
+      }
+
       const blocks = parseBlocks(currentContent);
       const target = blocks.find((b) => b.id === blockId);
       if (!target) {
@@ -112,11 +125,18 @@ export function createKbDeleteBlock(
       // Stamp block IDs on any surviving blocks whose ID anchors were
       // adjacent to the deleted block and may now need re-assignment.
       // `assignBlockIds` preserves existing IDs and only annotates new ones.
-      const { markdown: annotated } = assignBlockIds(newContent);
+      const { markdown: annotated, blocks: newBlocks } = assignBlockIds(newContent);
 
       try {
         const { etag: newEtag } = await writer.write(path, annotated, etag, ctx.agentSlug);
         searchIndex.indexPage(path, annotated, ctx.agentSlug);
+        // Sidecar refresh — the deleted block's provenance entry is
+        // dropped because it's no longer in `newBlocks`. Surviving
+        // blocks keep their prior provenance via the merge in
+        // writeBlocksSidecar (no per-block stamping needed for a
+        // pure deletion).
+        const absPath = join(writer.getDataRoot(), path);
+        writeBlocksSidecar(absPath, newBlocks);
 
         return JSON.stringify({ ok: true, newEtag });
       } catch (err) {

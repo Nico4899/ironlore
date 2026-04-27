@@ -18,6 +18,7 @@ import { DryRunBridge } from "./agents/dry-run-bridge.js";
 import { executeAgentRun } from "./agents/executor.js";
 import { HeartbeatScheduler } from "./agents/heartbeat.js";
 import { AgentInbox } from "./agents/inbox.js";
+import { McpBridge } from "./agents/mcp-bridge.js";
 import { AgentRails } from "./agents/rails.js";
 import { seedAgents } from "./agents/seed-agents.js";
 import { createAuthApi, SessionStore } from "./auth.js";
@@ -26,6 +27,7 @@ import { createCorsConfig } from "./cors.js";
 import { createCrossProjectCopyApi } from "./cross-project-copy.js";
 import { EmbeddingWorker } from "./embedding-worker.js";
 import { createEmbeddingsApi } from "./embeddings-api.js";
+import { loadProjectConfig } from "./fetch-for-project.js";
 import { createIpcAuthMiddleware } from "./ipc-auth.js";
 import { BackpressureController } from "./jobs/backpressure.js";
 import { openJobsDb } from "./jobs/schema.js";
@@ -38,18 +40,26 @@ import { ProjectRegistry } from "./project-registry.js";
 import { ProjectServices } from "./project-services.js";
 import { EmbeddingProviderRegistry } from "./providers/embedding-registry.js";
 import { getProviderKey } from "./providers/key-store.js";
+import { OllamaEmbeddingProvider } from "./providers/ollama-embedding.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import { createProvidersApi } from "./providers-api.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { createSearchApi } from "./search-api.js";
+import type { SearchIndex } from "./search-index.js";
 import { TerminalManager } from "./terminal.js";
 import { createAgentJournal } from "./tools/agent-journal.js";
 import { ToolDispatcher } from "./tools/dispatcher.js";
+import { createKbAppendMemory } from "./tools/kb-append-memory.js";
 import { createKbCreatePage } from "./tools/kb-create-page.js";
 import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
+import { createKbGlobalSearch } from "./tools/kb-global-search.js";
 import { createKbInsertAfter } from "./tools/kb-insert-after.js";
+import { createKbLintContradictions } from "./tools/kb-lint-contradictions.js";
+import { createKbLintCoverageGaps } from "./tools/kb-lint-coverage-gaps.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
+import { createKbLintProvenanceGaps } from "./tools/kb-lint-provenance-gaps.js";
 import { createKbLintStaleSources } from "./tools/kb-lint-stale-sources.js";
+import { createKbQueryFailedRuns } from "./tools/kb-query-failed-runs.js";
 import { createKbReadBlock } from "./tools/kb-read-block.js";
 import { createKbReadPage } from "./tools/kb-read-page.js";
 import { createKbReplaceBlock } from "./tools/kb-replace-block.js";
@@ -119,7 +129,12 @@ const port = Number(process.env.IRONLORE_PORT ?? DEFAULT_PORT);
 validateBind(host);
 
 async function start() {
-  const installRoot = process.cwd();
+  // `IRONLORE_INSTALL_ROOT` overrides `process.cwd()` for the
+  // install layout. Used by the fresh-install Playwright e2e so a
+  // single Node process can host an isolated bootstrap root without
+  // chdir'ing the entire process. Production deployments leave it
+  // unset and inherit cwd as before.
+  const installRoot = process.env.IRONLORE_INSTALL_ROOT ?? process.cwd();
   await bootstrap(installRoot);
 
   // Check sensitive file permissions (refuse to start if too broad)
@@ -211,12 +226,38 @@ async function start() {
   if (openAiKey) {
     embeddingRegistry.registerOpenAI({ apiKey: openAiKey });
     console.log(`Embedding provider: OpenAI registered (${envOpenAiKey ? "env" : "key-store"})`);
+  } else {
+    // Local fallback — when no OpenAI key is configured, probe
+    // Ollama for an installed embedding model (`nomic-embed-text` /
+    // `mxbai-embed-large` / `all-minilm`). If found, register the
+    // local provider so hybrid retrieval works without a paid API.
+    // Skipped when OpenAI is configured to avoid dim-mismatched
+    // chunk_vectors rows when the user later swaps providers.
+    const ollamaEmbedModel = await OllamaEmbeddingProvider.detectEmbeddingModel();
+    if (ollamaEmbedModel) {
+      // Pick dimensionality from the model family; the user can
+      // override via an env or future Settings selector.
+      const dims = ollamaEmbedModel.startsWith("mxbai-embed-large")
+        ? 1024
+        : ollamaEmbedModel.startsWith("all-minilm")
+          ? 384
+          : 768;
+      embeddingRegistry.registerOllama({ model: ollamaEmbedModel, dimensions: dims });
+      console.log(
+        `Embedding provider: Ollama registered (model: ${ollamaEmbedModel}, ${dims} dims)`,
+      );
+    }
   }
 
   // Per-project tool dispatchers — tools close over that project's
   //  writer / searchIndex, so we build one dispatcher per project and
   //  the agent.run handler resolves it by `jobCtx.projectId`.
   const dispatchersById = new Map<string, ToolDispatcher>();
+  // MCP bridges are also per-project: a server registered in
+  // `research/project.yaml` must stay invisible to `main`. Held at
+  // module scope so the shutdown path can SIGTERM the stdio
+  // children before the Node process exits.
+  const mcpBridgesById = new Map<string, McpBridge>();
   for (const [projectId, services] of servicesById) {
     const dispatcher = new ToolDispatcher();
     dispatcher.register(createKbSearch(services.searchIndex));
@@ -228,6 +269,53 @@ async function start() {
     dispatcher.register(createKbCreatePage(services.writer, services.searchIndex));
     dispatcher.register(createKbLintOrphans(services.searchIndex));
     dispatcher.register(createKbLintStaleSources(services.searchIndex));
+    dispatcher.register(createKbLintContradictions(services.searchIndex));
+    dispatcher.register(createKbLintCoverageGaps(services.searchIndex));
+    dispatcher.register(createKbLintProvenanceGaps(services.getDataRoot()));
+    // Phase-11 evolver-agent helper. Reads from the install-level
+    // jobsDb (shared across projects) but filters by `ctx.projectId`
+    // at execute time, so a research-project run can't read main's
+    // failure history.
+    dispatcher.register(createKbQueryFailedRuns(jobsDb));
+    // Phase-11 cognitive-offloading tool — agents append facts to
+    // `.agents/<slug>/memory/<topic>.md` (Principle 5b). The
+    // executor hydrates these files into the system prompt at run
+    // start, so anything written here surfaces in the next run.
+    dispatcher.register(createKbAppendMemory());
+
+    // Phase-11 Airlock — cross-project search with dynamic egress
+    // downgrade. Off by default; opted in per-install via
+    // `IRONLORE_AIRLOCK=true`. The capability only makes sense in
+    // multi-user setups where projects have differing trust
+    // levels (docs/05 §Threat-model boundaries — 1.0 vs Airlock).
+    // Single-user installs leave the env unset, the tool is
+    // never registered, and the executor's airlock session never
+    // fires. Same `getAllProjectIndexes` closure shape the HTTP
+    // ?scope=all path uses.
+    if (process.env.IRONLORE_AIRLOCK === "true") {
+      dispatcher.register(
+        createKbGlobalSearch({
+          getAllProjectIndexes: () => {
+            const m = new Map<string, SearchIndex>();
+            for (const [pid, svc] of servicesById) m.set(pid, svc.searchIndex);
+            return m;
+          },
+          // Per-project trust gate — strict projects sit out the
+          // cross-project fan-out entirely. Resolved live so a
+          // project.yaml edit + restart picks it up without
+          // touching the dispatcher wiring.
+          getProjectTrust: (pid) => {
+            const svc = servicesById.get(pid);
+            if (!svc) return undefined;
+            try {
+              return loadProjectConfig(svc.projectDir).trust;
+            } catch {
+              return undefined;
+            }
+          },
+        }),
+      );
+    }
     // Hybrid retrieval — register `kb.semantic_search` only when an
     // embedding provider is configured. Absent a provider, the tool
     // stays off the agent's palette and every caller gracefully
@@ -235,17 +323,53 @@ async function start() {
     // degradation.
     const embeddingProvider = embeddingRegistry.resolve();
     if (embeddingProvider) {
-      dispatcher.register(
-        createKbSemanticSearch(
-          services.searchIndex,
-          embeddingProvider,
-          projectId,
-          services.projectDir,
-        ),
-      );
+      // No projectDir / projectId here — the tool resolves the
+      // airlock-wrapped fetch at execute() time off `ToolCallContext`,
+      // so the embedding call honors the run's downgrade.
+      dispatcher.register(createKbSemanticSearch(services.searchIndex, embeddingProvider));
     }
     dispatcher.register(createAgentJournal(services.getDataRoot()));
     dispatchersById.set(projectId, dispatcher);
+
+    // MCP bridge — read `mcp_servers` from `project.yaml`, connect,
+    // and merge each discovered tool into the dispatcher as
+    // `mcp.<server>.<tool>`. Discovery runs in parallel across
+    // projects in the background so a slow / dead server doesn't
+    // block startup; per-project failures are logged inside
+    // `discoverAndRegister` and never throw.
+    let mcpServers: McpBridge | null = null;
+    try {
+      const config = loadProjectConfig(services.projectDir);
+      if (config.mcp_servers && config.mcp_servers.length > 0) {
+        mcpServers = new McpBridge(config.mcp_servers, {
+          projectId,
+          dataRoot: services.getDataRoot(),
+          projectDir: services.projectDir,
+        });
+        mcpBridgesById.set(projectId, mcpServers);
+        // Fire-and-await deliberately not used here: discovery is
+        // async network/IO that we don't want gating server boot.
+        // The agent.run handler reads the dispatcher live, so a
+        // tool that registers later (after the first run starts)
+        // is still picked up on the next tool-list emission.
+        void mcpServers
+          .discoverAndRegister(dispatcher)
+          .then(() =>
+            console.log(`[mcp] ${projectId}: ${mcpServers?.toolCount() ?? 0} tools registered`),
+          )
+          .catch((err) =>
+            console.warn(
+              `[mcp] ${projectId}: discovery failed: ${err instanceof Error ? err.message : String(err)}`,
+            ),
+          );
+      }
+    } catch (err) {
+      // Missing / malformed project.yaml is non-fatal — the project
+      // boots without MCP, same as if it had no `mcp_servers` key.
+      console.warn(
+        `[mcp] ${projectId}: project.yaml read failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   // Register the agent.run job handler. Resolves per-project state
@@ -280,6 +404,21 @@ async function start() {
       prompt: payload.prompt,
       dryRunBridge,
       backpressure,
+      // Phase-11 lint banner — when the wiki-gardener (or any
+      // future lint workflow) finalizes via
+      // `agent.journal({ lintReport: ... })`, fire one
+      // `lint:findings` WS event so the UI surfaces the report.
+      // Generic agent runs don't supply the field and this
+      // callback never fires.
+      onLintReport: (report) => {
+        broadcast({
+          type: "lint:findings",
+          reportPath: report.reportPath,
+          counts: report.counts,
+          agent: agentSlug,
+          runId: job.id,
+        });
+      },
     });
 
     // Record outcome for auto-pause rails.
@@ -318,6 +457,73 @@ async function start() {
     }
 
     return result;
+  });
+
+  // Phase-11 async-batch resume tick. The worker pool enqueues a
+  //  job of this kind every time `agent.run` returns
+  //  `batch_pending` — see WorkerPool.parkBatchPending. The handler
+  //  polls the upstream once, emits events on the *original* job's
+  //  id, and either finalizes the original or re-enqueues another
+  //  tick. The original job stays in `status='batch_pending'`
+  //  while we wait, so its slot is free.
+  pool.register("agent.batch_resume", async (job) => {
+    const payload = JSON.parse(job.payload) as {
+      originalJobId?: string;
+      attempt?: number;
+      delayMs?: number;
+    };
+    const originalJobId = payload.originalJobId;
+    if (!originalJobId) return { status: "failed", result: "missing originalJobId" };
+
+    const original = pool.getJob(originalJobId);
+    if (!original || original.status !== "batch_pending") {
+      // Race: the original was finalized by another path
+      // (cancellation, manual revert) — drop the tick.
+      return { status: "done", result: "stale" };
+    }
+
+    const handle = pool.getBatchHandle(originalJobId);
+    if (!handle) {
+      pool.finalizeBatchedJob(originalJobId, "failed", "missing batch handle on resume");
+      return { status: "failed", result: "missing batch handle" };
+    }
+
+    const provider = providerRegistry.resolve();
+    if (!provider) {
+      pool.finalizeBatchedJob(originalJobId, "failed", "no AI provider configured at resume time");
+      return { status: "failed", result: "no provider" };
+    }
+    const projectContext = ProviderRegistry.buildContext(job.project_id, fetch);
+    const attempt = payload.attempt ?? 1;
+    const delayMs = payload.delayMs ?? 5_000;
+
+    const { resumeBatchedTurn } = await import("./agents/executor.js");
+    const { outcome } = await resumeBatchedTurn({
+      provider,
+      projectContext,
+      originalJobId,
+      handle,
+      emitOriginal: (kind, data) => pool.emitEventForJob(originalJobId, kind, data),
+      finalizeOriginal: (status, result) => pool.finalizeBatchedJob(originalJobId, status, result),
+      attempt,
+      // 720 ticks × default 5 s = 1 h cap. Anthropic's batch SLA
+      // is 24 h; the cap is conservative and keeps a misbehaving
+      // upstream from queueing resume-tick jobs forever.
+      attemptCap: 720,
+    });
+
+    if (outcome === "rescheduled") {
+      pool.enqueue({
+        projectId: job.project_id,
+        kind: "agent.batch_resume",
+        mode: "autonomous",
+        ownerId: job.owner_id ?? undefined,
+        payload: { originalJobId, attempt: attempt + 1, delayMs },
+        scheduledAt: Date.now() + delayMs,
+      });
+    }
+
+    return { status: "done", result: outcome };
   });
 
   // Start the worker pool + backpressure controller recovery timer.
@@ -405,9 +611,19 @@ async function start() {
     seedAgents(services.getDataRoot(), jobsDb);
 
     // Mount page / raw / upload / search APIs for this project.
+    // `mode` (single-user default, multi-user opt-in) is read from
+    // `project.yaml` once at boot — toggling at runtime would race
+    // in-flight writes (docs/08 §Multi-user mode and per-page ACLs).
+    let projectMode: "single-user" | "multi-user" = "single-user";
+    try {
+      const cfg = loadProjectConfig(services.projectDir);
+      if (cfg.mode === "multi-user") projectMode = "multi-user";
+    } catch {
+      // Missing / malformed project.yaml → safe default.
+    }
     app.route(
       `/api/projects/${projectId}/pages`,
-      createPagesApi(services.writer, services.searchIndex, broadcast),
+      createPagesApi(services.writer, services.searchIndex, broadcast, { mode: projectMode }),
     );
     app.route(
       `/api/projects/${projectId}/raw`,
@@ -432,6 +648,16 @@ async function start() {
         // BM25 when an embedding provider is registered. Null → old
         // two-channel (original + lex) behavior stays intact.
         embeddingProvider: embeddingRegistry.resolve(),
+        // ?scope=all fan-out: capture the live `servicesById` map by
+        // closure so projects added later become searchable without
+        // restarting this route. The agent tool path
+        // (`kb.search` / dispatcher) doesn't receive this — only the
+        // user-facing HTTP endpoint can blend results across projects.
+        getAllProjectIndexes: () => {
+          const m = new Map<string, SearchIndex>();
+          for (const [pid, svc] of servicesById) m.set(pid, svc.searchIndex);
+          return m;
+        },
       }),
     );
 
@@ -574,6 +800,49 @@ async function start() {
     const metricsApi = createMetricsEndpoint(() => wal);
     app.use("/metrics", authMiddleware);
     app.route("/metrics", metricsApi);
+  }
+
+  // Static SPA serving — opt-in via `IRONLORE_SERVE_STATIC=<dir>`.
+  // The Electron shell sets this to its bundled `dist/client`
+  // path; normal dev keeps Vite as the SPA host and the env
+  // unset. The middleware sits AFTER every API route so a path
+  // collision never shadows an endpoint, with an SPA fallback to
+  // `index.html` for unknown paths so client-side routing works.
+  // Per docs/07-tech-stack.md §Electron shell.
+  const staticDir = process.env.IRONLORE_SERVE_STATIC;
+  if (staticDir) {
+    const { serveStatic } = await import("@hono/node-server/serve-static");
+    const { resolve, isAbsolute } = await import("node:path");
+    const root = isAbsolute(staticDir) ? staticDir : resolve(process.cwd(), staticDir);
+    app.use(
+      "*",
+      serveStatic({
+        root,
+        // serve-static treats `root` as relative to cwd. We always
+        // hand it an absolute path; the rewriter is a no-op that
+        // still lets the middleware match against any URL.
+        rewriteRequestPath: (path) => path.replace(/^\/+/, "/"),
+      }),
+    );
+    // SPA fallback — for any non-API path that didn't hit a static
+    // file, return index.html so client-side routes hydrate.
+    const { readFileSync } = await import("node:fs");
+    const indexHtml = readFileSync(`${root}/index.html`, "utf-8");
+    app.notFound((c) => {
+      const path = new URL(c.req.url).pathname;
+      // API / WS / health / ready paths are real 404s — we only
+      // fall through to index.html for "looks like a page" paths.
+      if (
+        path.startsWith("/api/") ||
+        path.startsWith("/ws") ||
+        path === "/health" ||
+        path === "/ready"
+      ) {
+        return c.json({ error: "Not Found" }, 404);
+      }
+      return c.html(indexHtml);
+    });
+    console.log(`Serving static SPA from ${root}`);
   }
 
   // Initialize WebSocket manager for real-time events

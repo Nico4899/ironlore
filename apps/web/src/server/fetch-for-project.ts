@@ -10,7 +10,13 @@ import { load } from "js-yaml";
  */
 const configCache = new Map<string, ProjectConfig>();
 
-function loadProjectConfig(projectDir: string): ProjectConfig {
+/**
+ * Load + cache a project's `project.yaml`. Exported so other server
+ * modules (MCP bridge, settings projection, etc.) can read the
+ * config without each having its own YAML reader. Cache is keyed by
+ * `projectDir` and never invalidated — restart picks up edits.
+ */
+export function loadProjectConfig(projectDir: string): ProjectConfig {
   const cached = configCache.get(projectDir);
   if (cached) return cached;
 

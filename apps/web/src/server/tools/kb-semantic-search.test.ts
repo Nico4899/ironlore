@@ -31,6 +31,7 @@ const NO_CTX: ToolCallContext = {
   jobId: "test",
   emitEvent: () => undefined,
   dataRoot: "",
+  fetch: globalThis.fetch,
 };
 
 /**
@@ -76,8 +77,8 @@ describe("kb.semantic_search", () => {
   });
 
   it("returns empty results for an empty query", async () => {
-    const { index, projectDir } = setup();
-    const tool = createKbSemanticSearch(index, new StubEmbeddingProvider({}), "main", projectDir);
+    const { index } = setup();
+    const tool = createKbSemanticSearch(index, new StubEmbeddingProvider({}));
     const out = JSON.parse(await tool.execute({ query: "" }, NO_CTX)) as {
       results: unknown[];
     };
@@ -85,11 +86,11 @@ describe("kb.semantic_search", () => {
   });
 
   it("returns empty results when no chunk matches the BM25 prefilter", async () => {
-    const { index, projectDir } = setup();
+    const { index } = setup();
     index.indexPage("note.md", "# Note\n\nHello world.", "user");
 
     const provider = new StubEmbeddingProvider({ banana: [1, 0, 0, 0] });
-    const tool = createKbSemanticSearch(index, provider, "main", projectDir);
+    const tool = createKbSemanticSearch(index, provider);
 
     const out = JSON.parse(await tool.execute({ query: "banana" }, NO_CTX)) as {
       results: unknown[];
@@ -100,7 +101,7 @@ describe("kb.semantic_search", () => {
   });
 
   it("ranks a vector-close page above a BM25-only page on the same query", async () => {
-    const { index, projectDir } = setup();
+    const { index } = setup();
     // Two pages both contain "coffee" so both survive BM25 prefilter.
     // Only `close.md` gets an embedding that matches the query vector.
     index.indexPage("far.md", "# Far\n\nCoffee details, far from the query.", "user");
@@ -109,7 +110,7 @@ describe("kb.semantic_search", () => {
     index.storeChunkEmbedding("close.md", 0, [1, 0, 0, 0], "stub-4d");
 
     const provider = new StubEmbeddingProvider({ coffee: [1, 0, 0, 0] });
-    const tool = createKbSemanticSearch(index, provider, "main", projectDir);
+    const tool = createKbSemanticSearch(index, provider);
 
     const out = JSON.parse(await tool.execute({ query: "coffee" }, NO_CTX)) as {
       results: Array<{ path: string }>;
@@ -118,7 +119,7 @@ describe("kb.semantic_search", () => {
   });
 
   it("falls back to BM25 prefilter order when the embed call fails", async () => {
-    const { index, projectDir } = setup();
+    const { index } = setup();
     index.indexPage("alpha.md", "# Alpha\n\nCoffee page.", "user");
     index.indexPage("beta.md", "# Beta\n\nCoffee page.", "user");
     index.storeChunkEmbedding("alpha.md", 0, [0, 1, 0, 0], "stub-4d");
@@ -126,7 +127,7 @@ describe("kb.semantic_search", () => {
 
     const provider = new StubEmbeddingProvider({ coffee: [1, 0, 0, 0] });
     provider.shouldThrow = true;
-    const tool = createKbSemanticSearch(index, provider, "main", projectDir);
+    const tool = createKbSemanticSearch(index, provider);
 
     const out = JSON.parse(await tool.execute({ query: "coffee" }, NO_CTX)) as {
       results: Array<{ path: string }>;
@@ -136,13 +137,13 @@ describe("kb.semantic_search", () => {
   });
 
   it("respects the `limit` parameter", async () => {
-    const { index, projectDir } = setup();
+    const { index } = setup();
     for (const slug of ["a", "b", "c", "d", "e"]) {
       index.indexPage(`${slug}.md`, `# ${slug}\n\ntopic word`, "user");
       index.storeChunkEmbedding(`${slug}.md`, 0, [1, 0, 0, 0], "stub-4d");
     }
     const provider = new StubEmbeddingProvider({ topic: [1, 0, 0, 0] });
-    const tool = createKbSemanticSearch(index, provider, "main", projectDir);
+    const tool = createKbSemanticSearch(index, provider);
 
     const out = JSON.parse(await tool.execute({ query: "topic", limit: 2 }, NO_CTX)) as {
       results: Array<{ path: string }>;
@@ -151,13 +152,13 @@ describe("kb.semantic_search", () => {
   });
 
   it("surfaces block-ID citations on hits that came through the vector path", async () => {
-    const { index, projectDir } = setup();
+    const { index } = setup();
     const content = "# Overview\n\nCoffee details. <!-- #blk_01TEST -->";
     index.indexPage("w.md", content, "user");
     index.storeChunkEmbedding("w.md", 0, [1, 0, 0, 0], "stub-4d");
 
     const provider = new StubEmbeddingProvider({ coffee: [1, 0, 0, 0] });
-    const tool = createKbSemanticSearch(index, provider, "main", projectDir);
+    const tool = createKbSemanticSearch(index, provider);
 
     const out = JSON.parse(await tool.execute({ query: "coffee" }, NO_CTX)) as {
       results: Array<{ path: string; blockIdStart: string | null }>;
@@ -166,12 +167,12 @@ describe("kb.semantic_search", () => {
   });
 
   it("populates title + snippet fields from the chunk FTS table", async () => {
-    const { index, projectDir } = setup();
+    const { index } = setup();
     index.indexPage("w.md", "# My Title\n\nBrewing notes for coffee.", "user");
     index.storeChunkEmbedding("w.md", 0, [1, 0, 0, 0], "stub-4d");
 
     const provider = new StubEmbeddingProvider({ coffee: [1, 0, 0, 0] });
-    const tool = createKbSemanticSearch(index, provider, "main", projectDir);
+    const tool = createKbSemanticSearch(index, provider);
 
     const out = JSON.parse(await tool.execute({ query: "coffee" }, NO_CTX)) as {
       results: Array<{ path: string; title: string; snippet: string }>;
@@ -181,7 +182,7 @@ describe("kb.semantic_search", () => {
   });
 
   it("RRF-merges BM25 and vector ranks — a page surfaced by both tops one surfaced by only one", async () => {
-    const { index, projectDir } = setup();
+    const { index } = setup();
     // `both.md` matches the BM25 query *and* has a close vector.
     // `vectorOnly.md` also matches BM25 (same word) but vector is farther.
     index.indexPage("both.md", "# Both\n\ntopic page", "user");
@@ -190,7 +191,7 @@ describe("kb.semantic_search", () => {
     index.storeChunkEmbedding("vectorOnly.md", 0, [0.2, 0.98, 0, 0], "stub-4d");
 
     const provider = new StubEmbeddingProvider({ topic: [1, 0, 0, 0] });
-    const tool = createKbSemanticSearch(index, provider, "main", projectDir);
+    const tool = createKbSemanticSearch(index, provider);
 
     const out = JSON.parse(await tool.execute({ query: "topic" }, NO_CTX)) as {
       results: Array<{ path: string }>;

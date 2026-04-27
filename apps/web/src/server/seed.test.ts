@@ -42,14 +42,23 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).toMatch(/^---\n/);
     expect(content).toMatch(/\nname: Lint\n/);
     expect(content).toMatch(
-      /\ndescription: Wiki health check — orphans, stale sources, contradiction flags, provenance gaps\n/,
+      /\ndescription: Wiki health check — orphans, stale sources, contradiction flags, coverage gaps, provenance gaps\n/,
     );
     expect(content).toContain("# Lint Skill");
-    // Document stub status explicitly — the model must not hallucinate
-    // findings for checks whose detectors have not shipped.
-    expect(content).toContain("Stub check.");
-    // Orphan detection is real today — ensure the skill says so.
+    // All five detectors now ship as real `kb.lint_*` tools — pin
+    // every tool call so a future skill rewrite that drops one is
+    // caught. The fifth detector (coverage_gaps) shipped alongside
+    // the lint:findings WS event wiring.
     expect(content).toContain("Real check.");
+    expect(content).toContain("kb.lint_orphans");
+    expect(content).toContain("kb.lint_stale_sources");
+    expect(content).toContain("kb.lint_contradictions");
+    expect(content).toContain("kb.lint_coverage_gaps");
+    expect(content).toContain("kb.lint_provenance_gaps");
+    // The skill must close by passing `lintReport` on agent.journal —
+    // that's what fires the dismissible UI banner. Pin the literal
+    // field name so a refactor that renames the field breaks loudly.
+    expect(content).toContain("lintReport");
   });
 
   it("writes _index.md and _log.md at the vault root with kind: wiki", async () => {
@@ -83,7 +92,13 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).toMatch(/writable_kinds: \[page, wiki\]/);
     // Iter 2: the gardener declares the lint workflow skill so the
     // executor's skill loader picks it up on each run.
-    expect(content).toMatch(/\nskills: \[lint\]\n/);
+    // Wiki-gardener now opts into both shipped workflow skills:
+    // `lint` for the periodic health check + `ingest` for the
+    // 5-step Make-like compilation pipeline (proposal A.6).
+    expect(content).toMatch(/\nskills: \[lint, ingest\]\n/);
+    // Sources-not-compilations declaration per Principle 5a — the
+    // gardener's synthesis operations read source pages only.
+    expect(content).toMatch(/\n {2}readable_kinds: \[source\]\n/);
 
     // Body declares the Phase-11 dependency surface
     expect(content).toContain("`lint.md`");

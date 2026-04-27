@@ -32,6 +32,7 @@ const NO_CTX: ToolCallContext = {
   jobId: "test",
   emitEvent: () => undefined,
   dataRoot: "",
+  fetch: globalThis.fetch,
 };
 
 /** Backdate a page's pages.updated_at to an earlier ISO timestamp. */

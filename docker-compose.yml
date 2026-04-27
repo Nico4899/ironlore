@@ -1,0 +1,62 @@
+# Docker compose for Ironlore — the documented Phase-10 deployment
+# shape per docs/07-tech-stack.md §Deployment shapes → Docker compose.
+#
+# Quick start:
+#
+#   docker compose up --build      # build the image + start the server
+#   open http://127.0.0.1:3000     # first run prints admin password to logs
+#   docker compose logs -f web     # follow logs to grab the bootstrap pw
+#
+# Persistence:
+#   The single `ironlore-data` volume holds the entire install
+#   root — projects/, jobs.sqlite, sessions.sqlite, ipc.token,
+#   password.salt, and .ironlore-install.json. `docker compose down`
+#   keeps it; `docker compose down -v` wipes it.
+#
+# Architecture today:
+#   The server is a single process. The `apps/worker` package is a
+#   stub (Phase-0 placeholder); job processing runs in-process in
+#   the web service via `WorkerPool`. When the worker is split out
+#   into a real long-running process, add a second service here
+#   that mounts the same `/data` volume and reads `IPC_TOKEN`.
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ironlore:local
+    container_name: ironlore-web
+    # Bind the container's 3000 to the host's loopback only — the
+    # default boot is single-user, no remote auth, no HTTPS. To
+    # expose to other hosts, override with `ports: ["0.0.0.0:443:3000"]`
+    # AND set `IRONLORE_PUBLIC_URL=https://your-domain` (and run
+    # behind a TLS-terminating reverse proxy).
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ironlore-data:/data
+    environment:
+      # Inherit defaults baked into the image (NODE_ENV, BIND, PORT,
+      # INSTALL_ROOT, SERVE_STATIC, TRUST_NETWORK_BIND). Operators
+      # can override here per-deployment without rebuilding.
+      #
+      # ANTHROPIC_API_KEY: ""       # uncomment to inject a provider key
+      # IRONLORE_METRICS: "true"    # opt-in /metrics for Prometheus
+      IRONLORE_BIND: "0.0.0.0"
+      IRONLORE_PORT: "3000"
+    restart: unless-stopped
+    # Liveness via /ready — the same endpoint the e2e specs poll.
+    # Returns 200 once seeding + project mount finish; the
+    # docker-compose health check is the canonical "is it up?"
+    # signal external supervisors should consume.
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/ready', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+
+volumes:
+  ironlore-data:
+    name: ironlore-data

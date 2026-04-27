@@ -55,3 +55,90 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm test
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    # The Playwright suite drives a real browser through the actual
+    # boot path (Hono API + Vite dev + onboarding wizard + editor
+    # save round-trip). Each spec self-spawns its servers on
+    # isolated ports under a temp install root — no shared state
+    # with the unit `test` job, so it can run in parallel.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # `--with-deps` pulls system libraries Chromium needs on a
+      # fresh GitHub runner; without it `chromium-headless` fails
+      # at start-up with libnss / libxkbcommon errors.
+      - name: Install Playwright browsers
+        run: pnpm --filter @ironlore/web exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      # Upload the HTML report on failure so a developer reading the
+      # CI log can see the failing screenshot + trace without
+      # re-running locally.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
+  docker:
+    name: Docker compose smoke
+    runs-on: ubuntu-latest
+    # Builds the runtime image, brings up `docker compose`, polls
+    # /ready until the health check turns green, then tears down.
+    # If /ready times out the job fails with the captured logs so
+    # a future regression in the boot path surfaces immediately.
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      # Build the image into the local Docker daemon (`load: true`)
+      # so `docker compose` can find it under the tag the compose
+      # file expects (`ironlore:local`).
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: ironlore:local
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: docker compose up
+        run: docker compose up -d
+      # Poll /ready for up to 90 s. The health check inside the
+      # compose file does the same thing, but waiting on it from
+      # the GitHub runner gives us a deterministic exit status
+      # rather than an opaque "still starting" state.
+      - name: Wait for /ready
+        run: |
+          for i in $(seq 1 45); do
+            if curl -sf http://127.0.0.1:3000/ready > /dev/null; then
+              echo "Server is ready (after ${i} attempts)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed to become ready in 90s"
+          exit 1
+      - name: Capture compose logs on failure
+        if: failure()
+        run: docker compose logs --no-color > compose.log || true
+      - name: Upload compose logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-compose-logs
+          path: compose.log
+          retention-days: 7
+      - name: docker compose down
+        if: always()
+        run: docker compose down -v

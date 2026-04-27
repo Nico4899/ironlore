@@ -88,6 +88,24 @@ export interface InstallRecord {
   created_at: string;
 }
 
+/**
+ * MCP server declaration in `project.yaml`. See
+ * docs/04-ai-and-agents.md §MCP compatibility and
+ * docs/05-jobs-and-security.md §MCP server lifecycle.
+ */
+export interface McpServerConfig {
+  /** Tool prefix — surfaced to agents as `mcp.<name>.<tool>`. */
+  name: string;
+  /** `stdio` spawns a subprocess; `http` POSTs JSON-RPC. */
+  transport: "stdio" | "http";
+  /** stdio: executable path. */
+  command?: string;
+  /** stdio: argv. */
+  args?: string[];
+  /** http: endpoint URL. Subject to project egress policy. */
+  url?: string;
+}
+
 /** project.yaml configuration. */
 export interface ProjectConfig {
   preset: ProjectPreset;
@@ -96,4 +114,19 @@ export interface ProjectConfig {
     policy: "open" | "allowlist" | "blocked";
     allowlist?: string[];
   };
+  mcp_servers?: McpServerConfig[];
+  /**
+   * `single-user` (default) skips ACL parsing entirely — every
+   * authenticated request can read + write every page. `multi-user`
+   * enables per-page `acl:` frontmatter enforcement.
+   */
+  mode?: "single-user" | "multi-user";
+  /**
+   * Phase-11 Airlock trust boundary. `normal` (default) → the
+   * project participates in cross-project `kb.global_search` fan-out.
+   * `strict` → agents in *other* projects can never see this
+   * project's pages, even at the cost of a downgraded run. The
+   * project's own `kb.search` is unaffected.
+   */
+  trust?: "normal" | "strict";
 }

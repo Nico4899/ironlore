@@ -1087,7 +1087,9 @@ function RunRateHeadroom({
       {/* Axis ticks — absolute local time per screen-home.jsx
        *  (`00:00 · 06:00 · 12:00 · 18:00 · NOW`). Computed from the
        *  current clock so the rail always reads "where are we today,"
-       *  regardless of when the user opens the app. */}
+       *  regardless of when the user opens the app. text3 not text4
+       *  so the time labels are AA-readable.
+       */}
       <div
         className="font-mono"
         style={{
@@ -1095,7 +1097,7 @@ function RunRateHeadroom({
           justifyContent: "space-between",
           marginTop: 6,
           fontSize: 10.5,
-          color: "var(--il-text4)",
+          color: "var(--il-text3)",
           letterSpacing: "0.06em",
         }}
       >
@@ -1191,7 +1193,9 @@ function RecentCard({
           className="font-mono uppercase truncate"
           style={{
             fontSize: 10.5,
-            color: "var(--il-text4)",
+            // Folder path is real navigation context — bumped from
+            // text4 → text3 so it clears WCAG AA contrast.
+            color: "var(--il-text3)",
             letterSpacing: "0.04em",
             marginBottom: 4,
           }}

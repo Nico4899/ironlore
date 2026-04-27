@@ -82,6 +82,31 @@ describe("ProjectConfigSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it("defaults trust to 'normal' when omitted", () => {
+    const result = ProjectConfigSchema.safeParse({ preset: "main", name: "Main" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.trust).toBe("normal");
+  });
+
+  it("accepts trust: 'strict' for projects opting out of cross-project fan-out", () => {
+    const result = ProjectConfigSchema.safeParse({
+      preset: "research",
+      name: "Confidential",
+      trust: "strict",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.trust).toBe("strict");
+  });
+
+  it("rejects unknown trust values", () => {
+    const result = ProjectConfigSchema.safeParse({
+      preset: "main",
+      name: "Main",
+      trust: "paranoid",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("InstallRecordSchema", () => {

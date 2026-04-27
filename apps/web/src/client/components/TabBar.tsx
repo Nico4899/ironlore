@@ -178,14 +178,14 @@ export function TabBar() {
     }
   }, []);
 
+  // The `New page` button visually sits in the tab strip but
+  // ARIA's `tablist` role disallows non-tab children. We split the
+  // strip into two flex siblings — the tablist itself only contains
+  // `role="tab"` rows; the new-page action lives next to it.
   if (openPaths.length === 0) {
-    // Show just the + tab when nothing is open
     return (
-      <div
-        role="tablist"
-        aria-label="Open files"
-        className="flex shrink-0 items-stretch border-b border-border bg-ironlore-slate"
-      >
+      <div className="flex shrink-0 items-stretch border-b border-border bg-ironlore-slate">
+        <div role="tablist" aria-label="Open files" className="flex" />
         <button
           type="button"
           onClick={handleNewFile}
@@ -202,57 +202,61 @@ export function TabBar() {
   const labels = disambiguateTabLabels(openPaths);
 
   return (
-    <div
-      role="tablist"
-      aria-label="Open files"
-      className="flex shrink-0 items-stretch overflow-x-auto border-b border-border bg-ironlore-slate"
-    >
-      {openPaths.map((path) => {
-        const label = labels.get(path) ?? path.split("/").pop() ?? path;
-        const closeLabel = path.split("/").pop() ?? path;
-        const type = detectPageType(path);
-        const active = path === activePath;
-        return (
-          <div
-            key={path}
-            role="tab"
-            aria-selected={active}
-            tabIndex={active ? 0 : -1}
-            data-tab-path={path}
-            onClick={() => onClick(path)}
-            onAuxClick={(e) => onAuxClick(e, path)}
-            onKeyDown={(e) => onKey(e, path)}
-            title={path}
-            className={`group relative flex cursor-pointer items-center gap-1.5 border-r border-border px-3 py-1.5 text-xs ${
-              active
-                ? "bg-background font-medium text-primary"
-                : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-            }`}
-          >
-            {active && (
-              <span
-                aria-hidden="true"
-                className="absolute inset-x-0 bottom-0 h-0.5 bg-ironlore-blue"
-              />
-            )}
-            {tabIcon(type)}
-            <span className="max-w-40 truncate">{label}</span>
-            <button
-              type="button"
-              onClick={(e) => onClose(e, path)}
-              aria-label={`Close ${closeLabel}`}
-              className={`ml-1 rounded p-0.5 hover:bg-ironlore-slate-hover ${
+    <div className="flex shrink-0 items-stretch overflow-x-auto border-b border-border bg-ironlore-slate">
+      <div role="tablist" aria-label="Open files" className="flex">
+        {openPaths.map((path) => {
+          const label = labels.get(path) ?? path.split("/").pop() ?? path;
+          const closeLabel = path.split("/").pop() ?? path;
+          const type = detectPageType(path);
+          const active = path === activePath;
+          return (
+            <div
+              key={path}
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              data-tab-path={path}
+              onClick={() => onClick(path)}
+              onAuxClick={(e) => onAuxClick(e, path)}
+              onKeyDown={(e) => onKey(e, path)}
+              title={path}
+              className={`group relative flex cursor-pointer items-center gap-1.5 border-r border-border px-3 py-1.5 text-xs ${
                 active
-                  ? "opacity-100"
-                  : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                  ? "bg-background font-medium text-primary"
+                  : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
               }`}
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        );
-      })}
-      {/* New file tab — always rightmost */}
+              {active && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-0 bottom-0 h-0.5 bg-ironlore-blue"
+                />
+              )}
+              {tabIcon(type)}
+              <span className="max-w-40 truncate">{label}</span>
+              {/* Close button is mouse-only (`tabindex=-1`) — ARIA's
+               *  `role=tab` forbids focusable descendants. Keyboard
+               *  users close the active tab via Delete or
+               *  Cmd/Ctrl+Backspace; see `onKey` above. */}
+              <button
+                type="button"
+                tabIndex={-1}
+                onClick={(e) => onClose(e, path)}
+                aria-label={`Close ${closeLabel}`}
+                className={`ml-1 rounded p-0.5 hover:bg-ironlore-slate-hover ${
+                  active
+                    ? "opacity-100"
+                    : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                }`}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {/* New-file action — sibling of the tablist, not a child, per
+       *  WAI-ARIA's allowed-children rule for `tablist`. */}
       <button
         type="button"
         onClick={handleNewFile}

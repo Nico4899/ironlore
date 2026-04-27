@@ -22,7 +22,7 @@ pnpm install
 ```sh
 pnpm dev                                          # Vite dev server (port 5173)
 cd apps/web && npx tsx watch src/server/index.ts  # API server (port 3000, separate terminal)
-pnpm test                                         # unit + integration tests (1070 tests)
+pnpm test                                         # unit + integration tests (1376 tests, 104 files)
 pnpm test:e2e                                     # e2e tests (Playwright)
 pnpm check                                        # lint + format (Biome)
 pnpm typecheck                                    # tsc -b
@@ -43,9 +43,12 @@ A random admin password is printed to stdout and written to `.ironlore-install.j
 
 Ironlore is BYOK (bring your own key). Configure a provider:
 
-- **Anthropic**: set `ANTHROPIC_API_KEY` before starting the server
-- **Ollama**: run Ollama on `localhost:11434` — auto-detected on startup
+- **Anthropic**: set `ANTHROPIC_API_KEY` before starting the server. Supports SSE streaming, prompt caching, and the Message Batches API for ~50% list-price savings on opt-in agent runs
+- **Ollama**: run Ollama on `localhost:11434` — auto-detected on startup. Provides both chat and embedding models (used by hybrid retrieval if no remote embedding key is set)
+- **OpenAI**: set `OPENAI_API_KEY` to use `text-embedding-3-small` for hybrid-retrieval embeddings. Chat models are not currently wired
 - **No provider**: the editor, search, terminal, and all viewers work without AI. The AI panel shows a hint until a provider is configured
+
+External MCP servers can be wired per project via `project.yaml` (`mcp:` block); their tools surface as `mcp.<server>.<tool>` in the agent palette. Ironlore also speaks MCP itself at `/mcp` so external clients can call its `kb.*` tools.
 
 ## Supported file types
 
@@ -76,8 +79,15 @@ Binary files can be uploaded via drag-and-drop onto the content area.
 | `IRONLORE_PORT` | `3000` | Listen port |
 | `IRONLORE_PUBLIC_URL` | — | Required for non-loopback bind (`https://` only) |
 | `IRONLORE_ALLOWED_ORIGINS` | same-origin | CORS allowlist (comma-separated, `*` rejected) |
+| `IRONLORE_TRUST_NETWORK_BIND` | `false` | Set `1` to bypass loopback-bind validation (Docker / Electron only — never on the public internet) |
+| `IRONLORE_INSTALL_ROOT` | `./projects` | Where projects live on disk |
+| `IRONLORE_SERVE_STATIC` | `false` | Serve the built SPA from `apps/web/dist/` (single-origin production / Electron / Docker) |
+| `IRONLORE_PROXY_TARGET` | — | When set, the dev server proxies API calls here instead of spawning its own |
 | `IRONLORE_METRICS` | `false` | Enable `/metrics` Prometheus endpoint |
-| `ANTHROPIC_API_KEY` | — | Anthropic API key for Claude models |
+| `IRONLORE_MULTI_USER` | `false` | Open registration flow + per-page ACL enforcement |
+| `IRONLORE_AIRLOCK` | `false` | Register `kb.global_search` (cross-project agent search with one-way egress downgrade) |
+| `ANTHROPIC_API_KEY` | — | Anthropic API key for Claude models + Message Batches |
+| `OPENAI_API_KEY` | — | OpenAI key for `text-embedding-3-small` (hybrid retrieval) |
 
 ## Project structure
 
@@ -90,23 +100,44 @@ ironlore/
 │   │       └── server/      Hono API (storage, search, auth, WebSocket,
 │   │                        jobs, providers, tools, agents, terminal)
 │   ├── worker/              Background job daemon (placeholder)
-│   └── electron/            Desktop shell (placeholder)
+│   └── electron/            Desktop shell (electron-builder, sandboxed BrowserWindow)
 ├── packages/
 │   ├── core/                Shared types, schemas, extractors
-│   ├── cli/                 ironlore CLI (lint, reindex, backup, restore, eval)
+│   ├── cli/                 ironlore CLI (lint, reindex, backup, restore, eval, user add, new-project)
 │   └── create-ironlore/    npx create-ironlore scaffolder
 ├── projects/main/           Default project (data/, .ironlore/, .git/)
+├── Dockerfile               Multi-stage Node 22-bookworm-slim image
+├── docker-compose.yml       Loopback-bound web service + named volume
 └── fixtures/kb/             Test fixture pages
 ```
+
+## Deployment
+
+- **Development**: split origin (Vite 5173 + Hono 3000)
+- **Single-origin (production)**: `IRONLORE_SERVE_STATIC=1 pnpm build && cd apps/web && node dist/server/index.js`
+- **Docker**: `docker compose up -d` — bind to `127.0.0.1:3000`, persistent volume `ironlore-data`
+- **Electron**: `pnpm --filter @ironlore/electron build && pnpm --filter @ironlore/electron dist` — produces a notarized desktop bundle (notarization secrets supplied at release time)
+
+## Multi-user mode
+
+```sh
+IRONLORE_MULTI_USER=1 pnpm dev          # enable user registration + ACLs
+pnpm --filter @ironlore/cli ironlore user add <username>
+```
+
+Per-page ACLs live in frontmatter (`acl: { read, write, owner }`). The first writer is stamped as owner. Sessions are Ed25519-signed cookies with server-side revocation; passwords are Argon2id.
 
 ## Security
 
 - **Auth**: Argon2id + Ed25519 session cookies, server-side revocation
 - **Rate limiting**: 5/min on auth, per-agent tool-call caps
 - **Path traversal**: `resolveSafe()` with realpath check, fuzz-tested (200 inputs)
-- **Egress**: all outbound HTTP via `fetchForProject()` with per-project allowlist
+- **Egress**: all outbound HTTP via `fetchForProject()` with per-project allowlist (`open | allowlist | offline`)
 - **Subprocess safety**: `spawnSafe()` with whitelist-only env (Biome rule enforced)
 - **File permissions**: sensitive files mode 0600, checked on startup
+- **Per-page ACLs** (multi-user): read/write/owner lists in page frontmatter, enforced server-side
+- **Airlock Protocol** (opt-in via `IRONLORE_AIRLOCK=1`): cross-project agent search via `kb.global_search` triggers a one-way egress downgrade. Once a foreign-project block enters the agent's transcript, every outbound HTTP call in the run throws `EgressDowngradedError` (HTTP 451). Per-run, not persisted across restarts
+- **Red-team review**: see [docs/security-review.md](docs/security-review.md). Zero findings above informational severity
 
 ## Design system
 

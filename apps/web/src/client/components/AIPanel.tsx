@@ -1,4 +1,4 @@
-import { ArrowUp, ChevronDown, Highlighter, Lightbulb, Sparkles, X } from "lucide-react";
+import { ArrowUp, ChevronDown, Highlighter, Lightbulb, Settings, Sparkles, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
@@ -6,6 +6,7 @@ import {
   type AgentConfigResponse,
   fetchAgentConfig,
   fetchAgents,
+  fetchProviders,
   getApiProject,
   revertJob,
   submitDryRunVerdict,
@@ -29,6 +30,7 @@ import {
   Reuleaux,
   StatusPip,
 } from "./primitives/index.js";
+import { SaveAsWikiDialog } from "./SaveAsWikiDialog.js";
 
 /**
  * Storage key pattern for cost-estimate acknowledgement per agent slug.
@@ -449,6 +451,7 @@ export function AIPanel() {
             </span>
           )}
           <span className="flex-1" />
+          <NetworkLockedBadge />
           <Key>⌘⇧A</Key>
         </div>
       </AgentPulse>
@@ -903,6 +906,37 @@ function AgentPauseBanner({ slug }: { slug: string }) {
 }
 
 function AIEmptyState() {
+  // Probe provider connectivity so the empty state can branch:
+  //  - any provider connected → existing tip-card layout
+  //  - none connected → "configure AI" card with clickable links to
+  //    Settings → Providers + a pointer at Ollama for the
+  //    no-API-key path.
+  // Stays a hint, not a hard block — sending a prompt with no
+  // provider still hits the existing "No AI provider configured"
+  // error path the executor emits, so the panel never silently
+  // pretends to work.
+  const [hasProvider, setHasProvider] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void fetchProviders()
+      .then((rows) => {
+        if (cancelled) return;
+        setHasProvider(rows.some((r) => r.status === "connected"));
+      })
+      .catch(() => {
+        // Endpoint failure (rare) → fall through to the prompt
+        // cards rather than nag the user.
+        if (!cancelled) setHasProvider(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (hasProvider === false) {
+    return <AIEmptyStateNoProvider />;
+  }
+
   return (
     <div className="mx-auto flex h-full max-w-[320px] flex-col justify-center gap-3">
       <div className="grid grid-cols-2 gap-3">
@@ -931,6 +965,60 @@ function AIEmptyState() {
             <li>“Find pages where we decided on the editor architecture.”</li>
             <li>“Draft a release note from yesterday's diffs.”</li>
           </ul>
+        }
+        wide
+      />
+    </div>
+  );
+}
+
+/**
+ * Empty-state shown when no AI provider has connected. Replaces the
+ * usual tip-cards so a non-technical user lands on a clear path:
+ * either install Ollama (zero-key local AI) or paste a Claude /
+ * OpenAI key in Settings → Providers. The "Open Settings" button
+ * jumps straight to the providers tab via the existing
+ * `toggleSettings("providers")` action.
+ */
+function AIEmptyStateNoProvider() {
+  const toggleSettings = useAppStore((s) => s.toggleSettings);
+  return (
+    <div className="mx-auto flex h-full max-w-[320px] flex-col justify-center gap-3">
+      <EmptyCard
+        icon={<Settings className="h-4 w-4 text-ironlore-blue" />}
+        title="Connect an AI provider"
+        body={
+          <>
+            <p className="mt-1 text-secondary">
+              Ironlore works without AI — but the panel only comes alive once a provider is
+              configured.
+            </p>
+            <ul className="mt-2 space-y-1.5 text-secondary">
+              <li>
+                <span className="font-medium text-primary">Local · free.</span> Install{" "}
+                <a
+                  href="https://ollama.com/download"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline decoration-dotted underline-offset-2 hover:text-ironlore-blue"
+                >
+                  Ollama
+                </a>{" "}
+                and run a model — Ironlore auto-detects it.
+              </li>
+              <li>
+                <span className="font-medium text-primary">Cloud · BYOK.</span> Paste an Anthropic
+                or OpenAI key into Settings → Providers.
+              </li>
+            </ul>
+            <button
+              type="button"
+              onClick={() => toggleSettings("providers")}
+              className="mt-3 rounded border border-ironlore-blue/40 bg-ironlore-blue/10 px-2.5 py-1 text-[11px] font-medium text-ironlore-blue hover:bg-ironlore-blue/20"
+            >
+              Open Settings → Providers
+            </button>
+          </>
         }
         wide
       />
@@ -1017,6 +1105,9 @@ function MessageList() {
             <div className="rounded-lg bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
           )}
           {msg.type === "run_finalized" && <RunFinalizedCard msg={msg} />}
+          {msg.type === "egress_downgraded" && (
+            <EgressDowngradedBanner reason={msg.reason} at={msg.at} />
+          )}
           {msg.type === "resume_divider" && (
             <div className="flex items-center gap-2 py-1 text-[10px] text-secondary">
               <div className="h-px flex-1 bg-border" />
@@ -1079,6 +1170,13 @@ function UserBubble({ text, timestamp }: { text: string; timestamp?: number }) {
  * `CitationText` so `[[Page#blk_…]]` still becomes a Blockref.
  */
 function AssistantReply({ text }: { text: string }) {
+  // Phase-11 query-to-wiki affordance — small "Save as wiki" link
+  // in the assistant header. Only shown when there's enough text
+  // to be worth saving (skip the streaming-empty case where the
+  // header renders before the first token lands).
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const showSave = text.trim().length > 24;
+
   return (
     <div className="leading-relaxed text-primary" style={{ fontSize: 13, lineHeight: 1.55 }}>
       <div className="mb-1 flex items-center gap-1.5">
@@ -1093,8 +1191,28 @@ function AssistantReply({ text }: { text: string }) {
         >
           assistant
         </span>
+        <span className="flex-1" />
+        {showSave && (
+          <button
+            type="button"
+            onClick={() => setSaveDialogOpen(true)}
+            title="Save this reply as a kind: wiki page"
+            className="rounded font-mono uppercase hover:text-ironlore-blue"
+            style={{
+              fontSize: 9.5,
+              letterSpacing: "0.06em",
+              padding: "1px 4px",
+              color: "var(--il-text4)",
+            }}
+          >
+            save as wiki
+          </button>
+        )}
       </div>
       <CitationText text={text} />
+      {saveDialogOpen && (
+        <SaveAsWikiDialog markdown={text} onClose={() => setSaveDialogOpen(false)} />
+      )}
     </div>
   );
 }
@@ -1425,13 +1543,105 @@ function RunFinalizedCard({
         </div>
         <div className="mt-0.5 text-secondary">
           {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
-          {" \u00B7 "}
+          {" \u00B7 version "}
           <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
           {"\u2026"}
           <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
           {reverted && " \u00B7 reverted"}
         </div>
         {revertError && <div className="mt-1 text-signal-red">{revertError}</div>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Phase-11 Airlock affordance — rendered once per run when
+ * `kb.global_search` returned a foreign-project hit and the
+ * executor's airlock session flipped egress to offline. After
+ * this point every provider call + connector fetch in the run
+ * throws `EgressDowngradedError` (HTTP 451).
+ *
+ * The card is informational, not actionable: the downgrade is
+ * one-way per run, so there's no "undo." The user's recourse is
+ * to start a new run if they need network access.
+ *
+ * Visual posture: amber instead of red — this is a deliberate,
+ * documented containment, not a failure. Mirrors the
+ * `signal-amber` rail used elsewhere for "intentional limit
+ * reached."
+ */
+/**
+ * Persistent chrome-level "network locked" badge. Visible the
+ * moment a Phase-11 Airlock downgrade lands, and stays visible
+ * for the rest of the conversation — until the user clears the
+ * messages or starts a new run. Mirrors the inline
+ * `EgressDowngradedBanner` (which fires once per run as a
+ * conversation card) at a higher visual altitude so the user can
+ * always see the security state without scrolling.
+ *
+ * Reads off the same `egress_downgraded` store message the inline
+ * banner uses, so any future change to event handling stays
+ * coherent across both surfaces. Renders nothing pre-downgrade.
+ */
+function NetworkLockedBadge() {
+  const downgraded = useAIPanelStore((s) => s.messages.some((m) => m.type === "egress_downgraded"));
+  if (!downgraded) return null;
+  return (
+    <span
+      role="status"
+      aria-label="Network locked: cross-project content entered this run; outbound network calls are blocked for the rest of the conversation"
+      title="Cross-project content entered this run. Outbound network calls are blocked for the rest of the conversation."
+      className="flex items-center gap-1 rounded-sm font-mono uppercase"
+      style={{
+        fontSize: 9.5,
+        letterSpacing: "0.06em",
+        padding: "2px 6px",
+        background: "color-mix(in oklch, var(--il-amber) 12%, transparent)",
+        border: "1px solid color-mix(in oklch, var(--il-amber) 35%, transparent)",
+        color: "var(--il-amber)",
+      }}
+    >
+      <Reuleaux size={6} color="var(--il-amber)" />
+      Network locked
+    </span>
+  );
+}
+
+function EgressDowngradedBanner({ reason, at }: { reason: string; at: string | null }) {
+  const formattedAt = (() => {
+    if (!at) return null;
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(new Date(at));
+    } catch {
+      return null;
+    }
+  })();
+
+  return (
+    <div
+      className="rounded-lg border px-3 py-2 text-xs"
+      role="status"
+      aria-live="polite"
+      style={{
+        borderColor: "color-mix(in oklch, var(--il-amber) 35%, transparent)",
+        background: "color-mix(in oklch, var(--il-amber) 8%, transparent)",
+        color: "var(--il-text)",
+      }}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="font-semibold" style={{ color: "var(--il-amber)" }}>
+          Egress downgraded
+        </div>
+        {formattedAt && <div className="font-mono text-secondary">{formattedAt}</div>}
+      </div>
+      <div className="mt-0.5 text-secondary">{reason}</div>
+      <div className="mt-1 text-secondary opacity-80">
+        Cross-project content entered this run, so outbound network calls are blocked for the rest
+        of the conversation. Start a new run to restore network access.
       </div>
     </div>
   );

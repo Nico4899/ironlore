@@ -1,7 +1,13 @@
 import { messages } from "@ironlore/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
-import { fetchRecentEdits, type RecentEdit, type SearchResult, searchPages } from "../lib/api.js";
+import {
+  fetchRecentEdits,
+  getApiProject,
+  type RecentEdit,
+  type SearchResult,
+  searchPages,
+} from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { Key, Meta, Reuleaux } from "./primitives/index.js";
 
@@ -33,6 +39,34 @@ function SearchCaret() {
         marginLeft: 2,
       }}
     />
+  );
+}
+
+/**
+ * Project badge — uppercase mono prefix that paints in front of a
+ * cross-project result's path so the user can tell at a glance which
+ * project a hit belongs to. Only rendered when ⌘K is in `scope=all`
+ * mode AND the row's `projectId` differs from the active project.
+ * The current project intentionally has no badge — a sea of badges
+ * on every row defeats the affordance.
+ */
+function ProjectBadge({ projectId }: { projectId: string }) {
+  return (
+    <span
+      className="font-mono uppercase"
+      style={{
+        fontSize: 9.5,
+        letterSpacing: "0.08em",
+        color: "var(--il-blue)",
+        background: "color-mix(in oklch, var(--il-blue) 14%, transparent)",
+        border: "1px solid color-mix(in oklch, var(--il-blue) 30%, transparent)",
+        padding: "1px 5px",
+        borderRadius: 3,
+        flexShrink: 0,
+      }}
+    >
+      p:{projectId}
+    </span>
   );
 }
 
@@ -97,6 +131,31 @@ export function SearchDialog() {
    */
   const [ftsMs, setFtsMs] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("ALL");
+  /**
+   * `false` → scope=current (default; only the active project's index
+   * is searched and the full LLM pipeline runs). `true` → scope=all
+   * (fan-out across every project; each result carries a projectId
+   * and gets a project badge if it isn't from the current project).
+   */
+  const [allProjects, setAllProjects] = useState(false);
+  /**
+   * Phase-11 user-facing semantic toggle. When on AND the server's
+   * embedding provider is reachable, the response merges semantic
+   * hits (chunk-vector cosine) with the FTS5 result set via RRF —
+   * surfaces concept matches the keyword path misses (e.g. query
+   * "how does the caching work" → "Redis implementation details"
+   * page). Persisted in localStorage so power users don't have to
+   * retoggle each session. The button is disabled when the server
+   * reports `semanticAvailable: false`.
+   */
+  const [semantic, setSemantic] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("ironlore.search.semantic") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [semanticAvailable, setSemanticAvailable] = useState<boolean>(true);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -123,9 +182,10 @@ export function SearchDialog() {
     setLoading(true);
     debounceRef.current = setTimeout(() => {
       const t0 = performance.now();
-      searchPages(query)
+      searchPages(query, 20, allProjects ? "all" : "current", semantic)
         .then((r) => {
-          setResults(r);
+          setResults(r.results);
+          setSemanticAvailable(r.semanticAvailable);
           setSelectedIdx(0);
           setFtsMs(Math.round(performance.now() - t0));
         })
@@ -139,7 +199,17 @@ export function SearchDialog() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query]);
+  }, [query, allProjects, semantic]);
+
+  // Persist the semantic preference whenever it flips so power users
+  // who turn it on don't have to retoggle each session.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("ironlore.search.semantic", semantic ? "1" : "0");
+    } catch {
+      /* storage denied — non-fatal */
+    }
+  }, [semantic]);
 
   const close = useCallback(() => {
     useAppStore.getState().toggleSearchDialog();
@@ -148,6 +218,9 @@ export function SearchDialog() {
     setSelectedIdx(0);
     setFtsMs(null);
     setTab("ALL");
+    // Scope reverts to current on close so re-opening the dialog
+    // doesn't surprise the user with a stale all-projects toggle.
+    setAllProjects(false);
   }, []);
 
   // Tab filtering: BLOCKS = results with a `#` fragment in the path
@@ -173,31 +246,69 @@ export function SearchDialog() {
   }, [results, tab]);
 
   const showRecent = !query.trim();
+  const currentProjectId = getApiProject();
+  /**
+   * Display tuples carry an optional `projectId` so the badge logic
+   * below can decide per-row whether to show a "p:other-project"
+   * prefix. Recent-edits don't carry one (they're always current).
+   */
   const displayItems = showRecent
-    ? recentEdits.map((e) => ({ path: e.path, title: e.path, snippet: "" }))
-    : filtered.map((r) => ({ path: r.path, title: r.title, snippet: r.snippet }));
+    ? recentEdits.map((e) => ({
+        path: e.path,
+        title: e.path,
+        snippet: "",
+        projectId: undefined as string | undefined,
+      }))
+    : filtered.map((r) => ({
+        path: r.path,
+        title: r.title,
+        snippet: r.snippet,
+        projectId: r.projectId,
+      }));
 
   const openPath = useCallback(
-    (path: string) => {
+    (path: string, projectId?: string) => {
       // Split any `path#blk_XXX` fragment so block id goes to provenance
       // while the editor opens the base path.
       const [basePath] = path.split("#");
       if (!basePath) return;
+      // Cross-project hit: drive a project-switch reload via
+      // `?project=<id>` (mirrors ProjectSwitcher) and append a
+      // `?path=` hint so the new session can deep-link into the file.
+      // In-project hits stay client-side.
+      if (projectId && projectId !== currentProjectId) {
+        const url = new URL(window.location.href);
+        url.searchParams.set("project", projectId);
+        url.searchParams.set("path", basePath);
+        window.location.href = url.toString();
+        return;
+      }
       useAppStore.getState().setActivePath(basePath);
       close();
     },
-    [close],
+    [close, currentProjectId],
   );
 
   const openInProvenance = useCallback(
-    (path: string) => {
+    (path: string, projectId?: string) => {
       const [basePath, fragment] = path.split("#");
       if (!basePath) return;
+      if (projectId && projectId !== currentProjectId) {
+        // Cross-project provenance open: switch project + deep-link
+        // into the file. The provenance pane itself can't open
+        // pre-reload because the target project's services aren't
+        // mounted yet.
+        const url = new URL(window.location.href);
+        url.searchParams.set("project", projectId);
+        url.searchParams.set("path", basePath);
+        window.location.href = url.toString();
+        return;
+      }
       useAppStore.getState().setActivePath(basePath);
       useAppStore.getState().openProvenance(basePath, fragment ?? "");
       close();
     },
-    [close],
+    [close, currentProjectId],
   );
 
   const handleKeyDown = useCallback(
@@ -215,8 +326,8 @@ export function SearchDialog() {
           e.preventDefault();
           const item = displayItems[selectedIdx];
           if (!item) break;
-          if (e.metaKey || e.ctrlKey) openInProvenance(item.path);
-          else openPath(item.path);
+          if (e.metaKey || e.ctrlKey) openInProvenance(item.path, item.projectId);
+          else openPath(item.path, item.projectId);
           break;
         }
         case "Tab": {
@@ -299,6 +410,76 @@ export function SearchDialog() {
             {query.length > 0 && <SearchCaret />}
           </div>
           {/*
+           * All-projects toggle — opt-in, off by default. When on the
+           * dialog fires `?scope=all` so results merge across every
+           * registered project; cross-project rows get a project
+           * badge. Off keeps the existing single-project pipeline
+           * (LLM expansion + rerank). Per docs/03 §Search Cmd+K.
+           */}
+          <button
+            type="button"
+            onClick={() => setAllProjects((v) => !v)}
+            className="font-mono uppercase outline-none"
+            aria-pressed={allProjects}
+            style={{
+              padding: "3px 8px",
+              fontSize: 10,
+              letterSpacing: "0.06em",
+              color: allProjects ? "var(--il-blue)" : "var(--il-text3)",
+              background: allProjects
+                ? "color-mix(in oklch, var(--il-blue) 14%, transparent)"
+                : "transparent",
+              border: `1px solid ${allProjects ? "color-mix(in oklch, var(--il-blue) 30%, transparent)" : "var(--il-border-soft)"}`,
+              borderRadius: 3,
+              cursor: "pointer",
+            }}
+          >
+            all projects
+          </button>
+          {/*
+           * Phase-11 semantic toggle — fires `?semantic=true` to merge
+           * chunk-vector cosine hits with the FTS5 result set via RRF.
+           * Disabled when the server reports `semanticAvailable: false`
+           * (no embedding provider configured). Persisted to
+           * localStorage so power users keep it on across sessions.
+           */}
+          <button
+            type="button"
+            onClick={() => semanticAvailable && setSemantic((v) => !v)}
+            className="font-mono uppercase outline-none"
+            aria-pressed={semantic && semanticAvailable}
+            disabled={!semanticAvailable}
+            title={
+              semanticAvailable
+                ? "Toggle semantic search (concept matches alongside keywords)"
+                : "Configure an embedding provider in Settings → Providers to enable semantic search"
+            }
+            style={{
+              padding: "3px 8px",
+              fontSize: 10,
+              letterSpacing: "0.06em",
+              color: !semanticAvailable
+                ? "var(--il-text4)"
+                : semantic
+                  ? "var(--il-blue)"
+                  : "var(--il-text3)",
+              background:
+                semantic && semanticAvailable
+                  ? "color-mix(in oklch, var(--il-blue) 14%, transparent)"
+                  : "transparent",
+              border: `1px solid ${
+                semantic && semanticAvailable
+                  ? "color-mix(in oklch, var(--il-blue) 30%, transparent)"
+                  : "var(--il-border-soft)"
+              }`,
+              borderRadius: 3,
+              cursor: semanticAvailable ? "pointer" : "not-allowed",
+              opacity: semanticAvailable ? 1 : 0.5,
+            }}
+          >
+            semantic
+          </button>
+          {/*
            * Timing chip — `fts5 · <state>`. `…` while in flight,
            * `<N>ms` once the round trip completes, hidden when the
            * query is empty.
@@ -372,11 +553,11 @@ export function SearchDialog() {
                 borderLeft: "2px solid var(--il-blue)",
                 cursor: "pointer",
               }}
-              onClick={() => openPath(topHit.path)}
+              onClick={() => openPath(topHit.path, topHit.projectId)}
               onMouseEnter={() => setSelectedIdx(0)}
             >
               <div
-                className="font-mono uppercase"
+                className="flex items-center gap-2 font-mono uppercase"
                 style={{
                   fontSize: 10.5,
                   letterSpacing: "0.06em",
@@ -384,7 +565,10 @@ export function SearchDialog() {
                   marginBottom: 4,
                 }}
               >
-                top hit · {topHit.path}
+                {topHit.projectId && topHit.projectId !== currentProjectId && (
+                  <ProjectBadge projectId={topHit.projectId} />
+                )}
+                <span>top hit · {topHit.path}</span>
               </div>
               <div
                 className="truncate"
@@ -418,11 +602,16 @@ export function SearchDialog() {
           {restHits.map((item, i) => {
             const idx = topHit ? i + 1 : i;
             const focused = idx === selectedIdx;
+            // Two rows can share the same `path` if they originated
+            // from different projects (scope=all fan-out merges by
+            // `projectId:path`). Prefix the React key with projectId
+            // so React doesn't reuse a row across projects.
+            const rowKey = item.projectId ? `${item.projectId}:${item.path}` : item.path;
             return (
               <button
-                key={item.path}
+                key={rowKey}
                 type="button"
-                onClick={() => openPath(item.path)}
+                onClick={() => openPath(item.path, item.projectId)}
                 onMouseEnter={() => setSelectedIdx(idx)}
                 className="grid w-full text-left outline-none"
                 style={{
@@ -438,6 +627,9 @@ export function SearchDialog() {
                 <Reuleaux size={7} color="var(--il-text3)" />
                 <div style={{ minWidth: 0 }}>
                   <div className="flex items-baseline gap-2">
+                    {item.projectId && item.projectId !== currentProjectId && (
+                      <ProjectBadge projectId={item.projectId} />
+                    )}
                     <span
                       className="font-mono truncate"
                       style={{ fontSize: 10.5, color: "var(--il-text3)" }}

@@ -1,11 +1,13 @@
 import { existsSync, statSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import type { WsEventInput } from "@ironlore/core";
-import { detectPageType, isBinaryExtension } from "@ironlore/core";
+import { detectPageType, isBinaryExtension, ulid } from "@ironlore/core";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
-import { assignBlockIds, parseBlocks, writeBlocksSidecar } from "./block-ids.js";
+import { type AclOp, AclViolation, assertCanAccess, parsePageAcl, stampOwner } from "./acl.js";
+import { assignBlockIds, parseBlocks, readBlocksSidecar, writeBlocksSidecar } from "./block-ids.js";
+import { computePageBlockTrust } from "./block-trust.js";
 import type { SearchIndex } from "./search-index.js";
 import { EtagMismatchError, type StorageWriter } from "./storage-writer.js";
 
@@ -90,12 +92,65 @@ const MIME_MAP: Record<string, string> = {
  */
 type BroadcastFn = (event: WsEventInput) => void;
 
+/**
+ * Per-project options threaded into the pages API. `mode` controls
+ * whether ACL parsing + checks run; `single-user` (default) skips
+ * the ACL path entirely so the existing single-user install pays
+ * no extra cost.
+ */
+export interface PagesApiOptions {
+  mode?: "single-user" | "multi-user";
+}
+
+/**
+ * Read the calling user's identity from the auth middleware. The
+ * middleware sets `userId` + `username` on the Hono context for
+ * every authenticated request. Routes that hit ACL checks should
+ * call this rather than reading the keys directly so future
+ * additions (role, email, etc.) live in one place.
+ */
+function authedUser(c: { get: (key: string) => unknown }): {
+  userId: string;
+  username: string;
+} {
+  return {
+    userId: (c.get("userId") as string | undefined) ?? "",
+    username: (c.get("username") as string | undefined) ?? "",
+  };
+}
+
+/**
+ * Run the ACL gate for `op` against the page's current content.
+ * No-op in single-user mode. Returns null on permit, a Hono Response
+ * on deny — caller returns the response unchanged.
+ */
+function checkAcl(
+  c: { json: (body: unknown, status?: number) => Response; get: (key: string) => unknown },
+  mode: "single-user" | "multi-user",
+  content: string,
+  op: AclOp,
+): Response | null {
+  if (mode === "single-user") return null;
+  const { userId, username } = authedUser(c);
+  try {
+    assertCanAccess(parsePageAcl(content), userId, username, op);
+    return null;
+  } catch (err) {
+    if (err instanceof AclViolation) {
+      return c.json({ error: err.message }, 403);
+    }
+    throw err;
+  }
+}
+
 export function createPagesApi(
   writer: StorageWriter,
   searchIndex: SearchIndex,
   broadcast?: BroadcastFn,
+  opts: PagesApiOptions = {},
 ): Hono {
   const api = new Hono();
+  const mode = opts.mode ?? "single-user";
 
   // -----------------------------------------------------------------------
   // List pages (tree) — served from SQLite index
@@ -171,6 +226,155 @@ export function createPagesApi(
   });
 
   // -----------------------------------------------------------------------
+  // Save an AI-panel conversation reply as a `kind: wiki` page —
+  // Phase-11 query-to-wiki workflow (A.6.2).
+  //
+  // Body: { title: string, markdown: string, parent?: string,
+  //         sourceIds?: string[] }
+  //
+  // The user is in the AI panel, the agent has just produced a
+  // useful reply, the user clicks "Save as wiki page". This endpoint
+  // creates a new `kind: wiki` page populated with the agent's
+  // text + frontmatter `source_ids` so the trust-score pipeline
+  // can later evaluate the citation chain (per Principle 5a +
+  // [docs/04-ai-and-agents.md §Trust score](../../../docs/04-ai-and-agents.md)).
+  //
+  // Mounted before the generic `/:path{.+}` GET so Hono's prefix
+  // match picks it first — same pattern the `/folders/...` and
+  // `/provenance/...` routes use.
+  // -----------------------------------------------------------------------
+  api.post("/from-conversation", async (c) => {
+    const body = await c.req.json<{
+      title: string;
+      markdown: string;
+      parent?: string;
+      sourceIds?: string[];
+    }>();
+    const { title, markdown, parent, sourceIds } = body;
+    if (!title || !markdown) {
+      return c.json({ error: "title and markdown required" }, 400);
+    }
+
+    const id = ulid();
+    const now = new Date().toISOString();
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "")
+      .slice(0, 60);
+    if (!slug) {
+      return c.json({ error: "title produced an empty slug" }, 400);
+    }
+    const dir = (parent ?? "wiki").replace(/^\/+|\/+$/g, "");
+    const path = dir ? `${dir}/${slug}.md` : `${slug}.md`;
+
+    // Frontmatter — flow-style `source_ids` so the YAML stays one
+    // line per array. Empty `sourceIds` is permitted (the user
+    // saved a reply that didn't cite anything); the lint pipeline
+    // will flag it as a provenance gap on the next run.
+    const ids = Array.isArray(sourceIds) ? sourceIds.filter((s) => typeof s === "string") : [];
+    const frontmatterLines = [
+      "---",
+      "schema: 1",
+      `id: ${id}`,
+      `title: ${title}`,
+      "kind: wiki",
+      `created: ${now}`,
+      `modified: ${now}`,
+      ids.length > 0 ? `source_ids: [${ids.join(", ")}]` : null,
+      "---",
+    ].filter(Boolean);
+    const content = `${frontmatterLines.join("\n")}\n\n# ${title}\n\n${markdown}\n`;
+
+    // Slug-collision check — the writer's `null`-etag write path
+    // is "create or overwrite," but Save-as-wiki should never
+    // overwrite. Pre-flight read: if the file exists, surface a
+    // 409 so the client can disambiguate the title.
+    try {
+      writer.read(path);
+      return c.json({ error: `A page already exists at ${path}` }, 409);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+        if (err instanceof ForbiddenError) {
+          return c.json({ error: "Forbidden" }, 403);
+        }
+        throw err;
+      }
+      // ENOENT — the slug is free, proceed to write.
+    }
+
+    try {
+      const denied = checkAcl(c, mode, content, "write");
+      if (denied) return denied;
+      const { etag } = await writer.write(path, content, null, "user");
+      searchIndex.indexPage(path, content, "user");
+      broadcast?.({
+        type: "tree:add",
+        path,
+        name: basename(path),
+        fileType: "markdown",
+      });
+      return c.json({ ok: true, id, path, etag });
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // Read block-level provenance + trust for a page (Phase-11 A.3.x).
+  //
+  // Returns the persisted `.blocks.json` sidecar's per-block `agent`,
+  // `compiled_at`, `derived_from` plus a server-computed trust state
+  // (`fresh | stale | unverified`) for the "show your work"
+  // affordance. Mounted before the generic `/:path{.+}` GET so Hono's
+  // prefix match picks it first — same pattern the `/folders/...`
+  // routes use.
+  //
+  // Trust score is derived at read time per
+  // [docs/04-ai-and-agents.md §Trust score](../../../docs/04-ai-and-agents.md);
+  // no `trust_score` column anywhere. The endpoint is read-only and
+  // honors the same ACL gate as `GET /:path` so a user that can read
+  // the page can read its provenance.
+  // -----------------------------------------------------------------------
+  api.get("/provenance/:path{.+}", (c) => {
+    const pagePath = c.req.param("path") ?? "";
+    if (!pagePath) return c.json({ error: "Path required" }, 400);
+    try {
+      const { content } = writer.read(pagePath);
+      const denied = checkAcl(c, mode, content, "read");
+      if (denied) return denied;
+      const sidecar = readBlocksSidecar(join(writer.getDataRoot(), pagePath));
+      if (!sidecar) {
+        // No provenance to surface — page is fully human-written or
+        // hasn't yet been touched by an agent. Empty array, not 404.
+        return c.json({ blocks: [] });
+      }
+      const trust = computePageBlockTrust(writer.getDataRoot(), pagePath);
+      const blocks = sidecar.blocks
+        .filter((b) => b.agent !== undefined)
+        .map((b) => ({
+          id: b.id,
+          agent: b.agent ?? null,
+          compiledAt: b.compiled_at ?? null,
+          derivedFrom: b.derived_from ?? [],
+          trust: trust.get(b.id) ?? null,
+        }));
+      return c.json({ blocks });
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return c.json({ error: "Not found" }, 404);
+      }
+      throw err;
+    }
+  });
+
+  // -----------------------------------------------------------------------
   // Read a page
   // -----------------------------------------------------------------------
   api.get("/:path{.+}", (c) => {
@@ -181,6 +385,8 @@ export function createPagesApi(
 
     try {
       const { content, etag } = writer.read(pagePath);
+      const denied = checkAcl(c, mode, content, "read");
+      if (denied) return denied;
       const blocks = parseBlocks(content);
 
       c.header("ETag", etag);
@@ -222,7 +428,7 @@ export function createPagesApi(
     }
 
     // Assign block IDs to new blocks before writing
-    const { markdown: annotated, blocks } = assignBlockIds(body.markdown);
+    let { markdown: annotated, blocks } = assignBlockIds(body.markdown);
 
     try {
       const parsedIfMatch = ifMatch ? parseEtag(ifMatch) : null;
@@ -231,6 +437,30 @@ export function createPagesApi(
 
       const absPath = join(writer.getDataRoot(), pagePath);
       const isNew = !existsSync(absPath);
+
+      // ACL check on existing pages — single-user mode is a no-op.
+      // For new pages there's nothing on disk to check; the caller
+      // becomes the owner via `stampOwner` below.
+      if (!isNew) {
+        const { content: existing } = writer.read(pagePath);
+        const denied = checkAcl(c, mode, existing, "write");
+        if (denied) return denied;
+      }
+
+      // First write of a multi-user page: stamp the caller as the
+      // page's owner so subsequent ACL evaluations resolve `owner`
+      // against them. Existing-owner pages are left untouched (no
+      // hijacking).
+      if (mode === "multi-user") {
+        const { userId } = authedUser(c);
+        if (userId) {
+          const stamped = stampOwner(annotated, userId);
+          if (stamped !== annotated) {
+            annotated = stamped;
+            blocks = assignBlockIds(stamped).blocks;
+          }
+        }
+      }
 
       const { etag } = await writer.write(pagePath, annotated, ifMatchQuoted);
 
@@ -292,6 +522,21 @@ export function createPagesApi(
 
     try {
       const ifMatchQuoted = ifMatch ? `"${parseEtag(ifMatch)}"` : null;
+
+      // ACL gate — only when the page exists + is markdown (binary
+      // files have no frontmatter, so ACL is N/A). Read first to
+      // grab the content for the parse.
+      if (mode === "multi-user" && extname(pagePath).toLowerCase() === ".md") {
+        try {
+          const { content: existing } = writer.read(pagePath);
+          const denied = checkAcl(c, mode, existing, "write");
+          if (denied) return denied;
+        } catch {
+          // ENOENT on a delete is benign — the writer.delete call
+          // below will surface the right error.
+        }
+      }
+
       await writer.delete(pagePath, ifMatchQuoted);
 
       // Remove from search index
@@ -350,6 +595,20 @@ export function createPagesApi(
 
     const srcAbs = join(writer.getDataRoot(), sourcePath);
     const isDirectory = existsSync(srcAbs) && statSync(srcAbs).isDirectory();
+
+    // ACL gate — moves are write operations against the source page.
+    // Only the source-side ACL applies; if the destination already
+    // exists at the target path the writer.move call will reject
+    // anyway. Single-user mode skips the parse.
+    if (mode === "multi-user" && !isDirectory && extname(sourcePath).toLowerCase() === ".md") {
+      try {
+        const { content: existing } = writer.read(sourcePath);
+        const denied = checkAcl(c, mode, existing, "write");
+        if (denied) return denied;
+      } catch {
+        // Source missing — let the move call surface the error.
+      }
+    }
 
     try {
       if (isDirectory) {

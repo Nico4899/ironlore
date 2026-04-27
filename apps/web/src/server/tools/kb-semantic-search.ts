@@ -1,4 +1,3 @@
-import { fetchForProject } from "../fetch-for-project.js";
 import type { EmbeddingProvider } from "../providers/embedding-types.js";
 import { ProviderRegistry } from "../providers/registry.js";
 import type { SearchIndex } from "../search-index.js";
@@ -46,12 +45,7 @@ interface SemanticSearchResult {
 export function createKbSemanticSearch(
   searchIndex: SearchIndex,
   embeddingProvider: EmbeddingProvider,
-  projectId: string,
-  projectDir: string,
 ): ToolImplementation {
-  const fetchFn = (url: string | URL, init?: RequestInit) => fetchForProject(projectDir, url, init);
-  const ctx = ProviderRegistry.buildContext(projectId, fetchFn);
-
   return {
     definition: {
       name: "kb.semantic_search",
@@ -72,13 +66,21 @@ export function createKbSemanticSearch(
       },
     },
 
-    async execute(args: unknown, _toolCtx: ToolCallContext): Promise<string> {
+    async execute(args: unknown, toolCtx: ToolCallContext): Promise<string> {
       const { query, limit = 10 } = args as { query: string; limit?: number };
       if (!query?.trim()) return JSON.stringify({ results: [] });
 
       const bm25Ranks = searchIndex.bm25PrefilterPaths(query, BM25_PREFILTER_SIZE);
       if (bm25Ranks.size === 0) return JSON.stringify({ results: [] });
       const candidates = [...bm25Ranks.keys()];
+
+      // Build the embedding ProjectContext per-call from the
+      // airlock-wrapped fetch on `toolCtx`. After a Phase-11
+      // downgrade this fetch throws `EgressDowngradedError` *before*
+      // the network is touched — closing the previous airlock-bypass
+      // path where the tool baked `fetchForProject` into a closure
+      // at registration time.
+      const ctx = ProviderRegistry.buildContext(toolCtx.projectId, toolCtx.fetch);
 
       // Embed the query. A provider failure must not poison the agent's
       // turn — fall back to BM25-ranked prefilter results. The caller's

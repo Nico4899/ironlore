@@ -82,6 +82,73 @@ export async function fetchPage(pagePath: string): Promise<PageResponse> {
   return res.json() as Promise<PageResponse>;
 }
 
+/**
+ * Block-level provenance + computed trust for the agent-stamped
+ * blocks on a page. Backs the "show your work" panel — empty array
+ * for fully human-written pages, one row per agent-stamped block
+ * otherwise.
+ *
+ * Trust is derived at read time per
+ * [docs/04-ai-and-agents.md §Trust score](docs/04-ai-and-agents.md);
+ * `fresh | stale | unverified` reflects the current source-page
+ * states relative to the block's `compiledAt`.
+ */
+export interface BlockTrustResponse {
+  state: "fresh" | "stale" | "unverified";
+  sources: number;
+  chainDepth: number;
+  newestSourceModified: string | null;
+  reason: string | null;
+}
+
+export interface BlockProvenanceRow {
+  id: string;
+  agent: string | null;
+  compiledAt: string | null;
+  derivedFrom: string[];
+  trust: BlockTrustResponse | null;
+}
+
+export async function fetchPageProvenance(pagePath: string): Promise<BlockProvenanceRow[]> {
+  const res = await apiFetch(`${pagesBase()}/provenance/${pagePath}`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { blocks: BlockProvenanceRow[] };
+  return data.blocks;
+}
+
+/**
+ * Save an AI-panel reply as a `kind: wiki` page. Phase-11
+ * query-to-wiki workflow (A.6.2): the user clicks "Save as wiki
+ * page" on an agent reply they want to keep, the panel collects
+ * the prose + any cited block-refs, and the server creates the
+ * page with `source_ids` populated for the trust pipeline.
+ *
+ * `parent` defaults to `wiki/` server-side. Returns the created
+ * page path so the caller can navigate to it.
+ */
+export interface SaveAsWikiResponse {
+  ok: true;
+  id: string;
+  path: string;
+  etag: string;
+}
+
+export async function saveReplyAsWikiPage(input: {
+  title: string;
+  markdown: string;
+  parent?: string;
+  sourceIds?: string[];
+}): Promise<SaveAsWikiResponse> {
+  const res = await apiFetch(`${pagesBase()}/from-conversation`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return (await res.json()) as SaveAsWikiResponse;
+}
+
 export async function savePage(
   pagePath: string,
   markdown: string,
@@ -191,6 +258,13 @@ export interface SearchResult {
   title: string;
   snippet: string;
   rank: number;
+  /**
+   * Project the result came from. Set only on `?scope=all` responses
+   * (the all-projects toggle in ⌘K). Single-project queries leave it
+   * undefined — callers can render a project badge prefix iff
+   * `projectId !== getApiProject()`.
+   */
+  projectId?: string;
 }
 
 export interface BacklinkEntry {
@@ -204,13 +278,56 @@ export interface RecentEdit {
   author: string;
 }
 
-/** Full-text search via FTS5. */
-export async function searchPages(query: string, limit = 20): Promise<SearchResult[]> {
+/**
+ * Full-text search via FTS5.
+ *
+ * `scope` controls how far the query reaches:
+ *   - `"current"` (default) — only the active project's index, full
+ *     LLM-expansion + rerank pipeline.
+ *   - `"all"` — fan-out across every registered project's index. Each
+ *     result carries a `projectId` field; the LLM expansion + rerank
+ *     stages are intentionally skipped server-side because they're
+ *     bound to one project's provider keys + egress allowlist.
+ *
+ * The `scope=all` path is exclusive to the user's ⌘K dialog. Agent
+ * tools (`kb.search`) stay single-project — see docs/08 §What this
+ * does not try to do.
+ */
+/**
+ * Phase-11 user-facing semantic search response shape. Adds the
+ * `semanticAvailable` field so the Cmd+K toggle can grey itself out
+ * when the project's embedding provider isn't configured.
+ */
+export interface SearchPagesResponse {
+  results: SearchResult[];
+  semanticAvailable: boolean;
+}
+
+export async function searchPages(
+  query: string,
+  limit = 20,
+  scope: "current" | "all" = "current",
+  /**
+   * When true AND the server has an embedding provider registered,
+   * runs the semantic-search pass alongside FTS5 and merges via RRF
+   * — surfaces concept matches the keyword path misses (the
+   * "Redis implementation details" / "how does the caching work?"
+   * gap). Silently a no-op when no provider is registered; check
+   * `semanticAvailable` on the response to know whether the toggle
+   * is meaningful.
+   */
+  semantic = false,
+): Promise<SearchPagesResponse> {
   const params = new URLSearchParams({ q: query, limit: String(limit) });
+  if (scope === "all") params.set("scope", "all");
+  if (semantic) params.set("semantic", "true");
   const res = await apiFetch(`${searchBase()}/search?${params}`);
   if (!res.ok) throw new ApiError(res.status, await res.text());
-  const data = (await res.json()) as { results: SearchResult[] };
-  return data.results;
+  const data = (await res.json()) as Partial<SearchPagesResponse>;
+  return {
+    results: data.results ?? [],
+    semanticAvailable: data.semanticAvailable ?? false,
+  };
 }
 
 /** Get pages that link to the given path. */
@@ -586,6 +703,67 @@ export async function fetchLibraryTemplates(): Promise<LibraryTemplate[]> {
 }
 
 /**
+ * Hybrid-retrieval embedding status. Returns null when no provider
+ * is configured (the API responds 503) so the Settings card can
+ * render a "connect a provider" affordance without throwing.
+ *
+ * `mismatched > 0` means the user swapped embedding models — old
+ * rows in `chunk_vectors` are technically queryable only when their
+ * dims still match, but quality drifts; the UI surfaces this as a
+ * "reindex recommended" hint.
+ */
+export interface EmbeddingsStatus {
+  total: number;
+  embedded: number;
+  missing: number;
+  mismatched: number;
+  model: string;
+  dims: number;
+  running: boolean;
+}
+
+export async function fetchEmbeddingsStatus(): Promise<EmbeddingsStatus | null> {
+  const res = await apiFetch(`${base()}/embeddings/status`);
+  if (res.status === 503) return null;
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const body = (await res.json()) as { ok: boolean } & EmbeddingsStatus;
+  if (!body.ok) return null;
+  return {
+    total: body.total,
+    embedded: body.embedded,
+    missing: body.missing,
+    mismatched: body.mismatched,
+    model: body.model,
+    dims: body.dims,
+    running: body.running,
+  };
+}
+
+/**
+ * Manual backfill tick — drains one batch of unembedded chunks
+ * synchronously. The Settings UI calls this in a loop until
+ * `remaining === 0`; the background worker continues running on
+ * its own interval regardless.
+ */
+export async function kickEmbeddingsBackfill(): Promise<{
+  processed: number;
+  remaining: number;
+  model: string;
+} | null> {
+  const res = await apiFetch(`${base()}/embeddings/backfill`, { method: "POST" });
+  if (res.status === 503) return null;
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const body = (await res.json()) as {
+    ok: boolean;
+    processed: number;
+    remaining: number;
+    model: string;
+  };
+  if (!body.ok) return null;
+  return { processed: body.processed, remaining: body.remaining, model: body.model };
+}
+
+/**
  * Activate a library persona template. On success the agent is live
  * under `data/.agents/<slug>/` with `active: true` in its frontmatter
  * and a corresponding `agent_state` row. 409 when already activated,
@@ -602,6 +780,44 @@ export async function activateAgent(slug: string): Promise<{ personaPath: string
     throw new ApiError(res.status, body.error ?? res.statusText);
   }
   return res.json() as Promise<{ personaPath: string }>;
+}
+
+/**
+ * Visual Agent Builder — POST shape for the
+ * `/api/projects/:id/agents` endpoint that compiles the form
+ * inputs into `.agents/<slug>/persona.md` (Phase-11 A.9.1).
+ *
+ * Mirrors the server's `BuildPersonaInput` exactly. No per-agent
+ * egress field — egress stays project-level by design (one
+ * `fetchForProject` chokepoint per project).
+ */
+export interface BuildAgentInput {
+  name: string;
+  slug: string;
+  role: string;
+  constraints: string[];
+  scopePath?: string;
+  canEditPages: boolean;
+  reviewBeforeMerge: boolean;
+  heartbeat?: string;
+}
+
+export async function buildAgent(input: BuildAgentInput): Promise<{
+  slug: string;
+  personaPath: string;
+}> {
+  const res = await apiFetch(`${base()}/agents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({ error: res.statusText }))) as {
+      error?: string;
+    };
+    throw new ApiError(res.status, body.error ?? res.statusText);
+  }
+  return res.json() as Promise<{ slug: string; personaPath: string }>;
 }
 
 /** Per-file diff row for an inbox entry. */
@@ -742,16 +958,21 @@ interface LoginResponse {
 }
 
 /**
- * First-run hint — returns `"terminal"` while the install record is
- * still on disk (fresh install, admin password was dumped to stdout),
- * `null` otherwise. Consumed by the LoginPage so a brand-new user
- * doesn't stare at a blank form wondering where the password lives.
+ * First-run hint — non-null while the install record is still on
+ * disk (fresh install, admin password not yet consumed), `null`
+ * afterwards. Two shapes:
+ *   - `"dialog"` when Ironlore runs under Electron — the desktop
+ *     shell shows the password in a native dialog + clipboard.
+ *   - `"terminal"` otherwise — the bootstrap script printed the
+ *     password to the server's stdout.
+ * Consumed by the LoginPage so a brand-new user doesn't stare at
+ * a blank form wondering where the password lives.
  */
-export async function fetchFirstRunHint(): Promise<"terminal" | null> {
+export async function fetchFirstRunHint(): Promise<"terminal" | "dialog" | null> {
   try {
     const res = await fetch("/api/auth/first-run-hint");
     if (!res.ok) return null;
-    const data = (await res.json()) as { hint: "terminal" | null };
+    const data = (await res.json()) as { hint: "terminal" | "dialog" | null };
     return data.hint;
   } catch {
     return null;

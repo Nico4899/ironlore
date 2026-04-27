@@ -122,6 +122,20 @@ export type ConversationMessage =
       timestamp?: number;
     }
   | { type: "error"; text: string; timestamp?: number }
+  | {
+      /**
+       * Phase-11 Airlock — emitted when `kb.global_search` returns a
+       * foreign-project hit and the run's egress is downgraded to
+       * offline for the rest of the conversation. Subsequent
+       * provider + connector calls throw `EgressDowngradedError`. The
+       * banner is one-shot per run — duplicate `egress.downgraded`
+       * events fold into the existing card.
+       */
+      type: "egress_downgraded";
+      reason: string;
+      at: string | null;
+      timestamp?: number;
+    }
   | { type: "resume_divider" };
 
 /**

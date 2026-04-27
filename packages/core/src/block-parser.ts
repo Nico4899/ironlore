@@ -24,8 +24,19 @@ export interface Block {
 }
 
 /**
- * The .blocks.json sidecar format — caches block-id to byte-range mapping.
- * Completely rebuildable from the markdown source; not a source of truth.
+ * The .blocks.json sidecar format — caches block-id to byte-range
+ * mapping plus per-block provenance metadata that the markdown content
+ * itself can't express.
+ *
+ * The (id, type, start, end) tuple is **rebuildable** from the markdown
+ * source — a fresh `parseBlocks()` reproduces it exactly. The provenance
+ * fields (`derived_from`, `agent`, `compiled_at`) are **authoritative**:
+ * they're set by the tool layer at write-time and would be lost on a
+ * naive .md → sidecar rebuild. Anyone reconstructing this sidecar from
+ * markdown alone must merge the existing provenance forward by block ID.
+ *
+ * See docs/01-content-model.md §Block IDs for the provenance model and
+ * docs/04-ai-and-agents.md §Wiki-gardener for the consumer.
  */
 export interface BlocksIndex {
   version: 1;
@@ -34,6 +45,29 @@ export interface BlocksIndex {
     type: string;
     start: number;
     end: number;
+    /**
+     * Block-refs (`pageId#blockId`) the block was synthesized from.
+     * Stamped by `kb.replace_block` / `kb.insert_after` when the model
+     * cites sources for an agent-authored block. Absent on
+     * human-written blocks; empty array means the agent explicitly
+     * declared no sources.
+     */
+    derived_from?: string[];
+    /**
+     * Calling persona's slug, stamped from `ToolCallContext.agentSlug`
+     * at sidecar-write time. Absent for human-written blocks (the
+     * editor's HTTP write path doesn't supply it). Read by the
+     * provenance-gap lint check to identify agent-authored blocks
+     * with empty `derived_from`.
+     */
+    agent?: string;
+    /**
+     * ISO-8601 timestamp at the moment the tool wrote this block.
+     * Different from the page's `updated_at` (which covers the
+     * whole file) — `compiled_at` is per-block and survives later
+     * edits to other blocks on the same page.
+     */
+    compiled_at?: string;
   }>;
 }
 

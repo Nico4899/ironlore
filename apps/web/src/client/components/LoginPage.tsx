@@ -15,11 +15,13 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // First-run hint — when `.ironlore-install.json` still sits on disk,
-  //  the admin password was printed to the server's terminal. Tell
-  //  the user that so they stop staring at a blank form. Fetches once
-  //  on mount; disappears on the next render after the install record
-  //  is consumed (password change handler deletes it).
-  const [firstRun, setFirstRun] = useState<"terminal" | null>(null);
+  //  the admin password was either printed to the server's terminal
+  //  ("terminal") or surfaced by the Electron shell in a native
+  //  dialog + clipboard ("dialog"). Tell the user which so they stop
+  //  staring at a blank form. Fetches once on mount; disappears on
+  //  the next render after the install record is consumed (password
+  //  change handler deletes it).
+  const [firstRun, setFirstRun] = useState<"terminal" | "dialog" | null>(null);
   useEffect(() => {
     let cancelled = false;
     void fetchFirstRunHint().then((hint) => {
@@ -99,8 +101,11 @@ export function LoginPage() {
 
         {/* First-run hint — rendered only while `install.json` is still
          *  on disk. Mono uppercase line with a blue Reuleaux so it reads
-         *  as a system notice, not an error. */}
-        {firstRun === "terminal" && (
+         *  as a system notice, not an error. The hint branches on where
+         *  the password was surfaced: "dialog" under Electron (the
+         *  desktop shell pre-copied it to the clipboard) or "terminal"
+         *  in headless deployments. */}
+        {firstRun !== null && (
           <div
             className="flex items-start gap-2 rounded-sm px-3 py-2 font-mono"
             style={{
@@ -120,10 +125,17 @@ export function LoginPage() {
                 first run
               </span>
               <span style={{ color: "var(--il-text4)" }}> · </span>
-              <span>
-                your admin password was printed to the server's terminal log when Ironlore started.
-                You'll be asked to change it right after login.
-              </span>
+              {firstRun === "dialog" ? (
+                <span>
+                  your admin password is in your clipboard — paste it below. The dialog window
+                  showed it once on launch; you'll pick a new one right after login.
+                </span>
+              ) : (
+                <span>
+                  your admin password was printed to the server's terminal log when Ironlore
+                  started. You'll be asked to change it right after login.
+                </span>
+              )}
             </span>
           </div>
         )}

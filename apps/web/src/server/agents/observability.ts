@@ -107,7 +107,19 @@ export interface AgentConfigResponse {
      */
     skills: string[] | null;
     budget: { tokens: number | null; toolCalls: number | null; fsyncMs: number | null } | null;
-    scope: { pages: string[] | null; writableKinds: string[] | null } | null;
+    scope: {
+      pages: string[] | null;
+      writableKinds: string[] | null;
+      /**
+       * Phase-11 sources-not-compilations enforcement convention
+       * (Principle 5a). Synthesis personas declare
+       * `readable_kinds: [source]` so future readers can verify
+       * the persona is shaped for hallucination-accumulation
+       * defense. Convention-only — not gated at the tool layer
+       * per the design call in 00-principles.md §5a.
+       */
+      readableKinds: string[] | null;
+    } | null;
     /**
      * The prose body of persona.md — everything after the closing
      * `---` of the YAML frontmatter. Surfaces in the Agent-detail
@@ -237,9 +249,20 @@ function parsePersonaFrontmatter(raw: string): AgentConfigResponse["persona"] {
         (k: unknown): k is string => typeof k === "string",
       ) as string[])
     : null;
+  // `readable_kinds` is the sources-not-compilations declaration
+  // from Principle 5a — synthesis personas pin it to `[source]`,
+  // navigation personas leave the wider `[source, wiki, page]`.
+  // Convention-only (per the design call); we surface the value so
+  // a reviewer can confirm a persona is shaped for the constraint
+  // without grepping the markdown body.
+  const scopeReadable = Array.isArray(scopeSrc?.readable_kinds)
+    ? (scopeSrc.readable_kinds.filter(
+        (k: unknown): k is string => typeof k === "string",
+      ) as string[])
+    : null;
   const scope =
-    scopePages !== null || scopeWritable !== null
-      ? { pages: scopePages, writableKinds: scopeWritable }
+    scopePages !== null || scopeWritable !== null || scopeReadable !== null
+      ? { pages: scopePages, writableKinds: scopeWritable, readableKinds: scopeReadable }
       : null;
 
   // Body — `afterFm` was already computed at the top of the function

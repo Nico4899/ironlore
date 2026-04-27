@@ -1,0 +1,62 @@
+# Keep the build context small and the layer cache predictable.
+# Only the workspace package.json + lockfile + biome config + the
+# real source need to land in the image; everything below is
+# either generated, machine-local, or already accessible via
+# `git checkout` post-build.
+
+# Node + caches
+node_modules
+**/node_modules
+.npm
+.pnpm-store
+
+# Build outputs (Stage 2 of the Dockerfile rebuilds these)
+**/dist
+apps/web/dist
+apps/electron/dist
+apps/electron/out
+**/dist-ssr
+**/.next
+**/.turbo
+**/.cache
+
+# Source maps + tsbuildinfo can leak local paths
+**/*.tsbuildinfo
+**/*.map
+
+# Project data — local installs leave seeds + sqlite files in the
+# tree; we never want them in the image.
+projects/
+data/
+**/.ironlore
+**/jobs.sqlite
+**/sessions.sqlite
+**/projects.sqlite
+ipc.token
+password.salt
+.ironlore-install.json
+
+# Test artifacts
+playwright-report
+test-results
+coverage
+
+# IDE + OS
+.vscode
+.idea
+.DS_Store
+.envrc
+.env
+.env.*
+
+# Git + CI
+.git
+.gitignore
+.github
+
+# Documentation that doesn't need to ship in the image
+docs
+
+# Editor swap files
+*.swp
+*.swo

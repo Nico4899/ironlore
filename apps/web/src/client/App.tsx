@@ -6,6 +6,7 @@ import { AppHeader } from "./components/AppHeader.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { CopyToProjectDialog } from "./components/CopyToProjectDialog.js";
+import { LintFindingsBanner } from "./components/LintFindingsBanner.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OnboardingWizard } from "./components/OnboardingWizard.js";
 import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
@@ -256,6 +257,7 @@ function AppShell() {
            *  the StatusBar's pip; an intrusive banner on top of the
            *  content area was redundant and noisy). */}
           <RecoveryBanner />
+          <LintFindingsBanner />
 
           {/* Content + panels */}
           <div className="flex flex-1 overflow-hidden">

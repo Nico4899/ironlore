@@ -26,6 +26,7 @@ const NO_CTX: ToolCallContext = {
   jobId: "test",
   emitEvent: () => undefined,
   dataRoot: "",
+  fetch: globalThis.fetch,
 };
 
 describe("SearchIndex.findOrphans + kb.lint_orphans", () => {
