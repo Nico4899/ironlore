@@ -103,25 +103,30 @@ export function createKbAppendMemory(): ToolImplementation {
       content += newEntry;
 
       // Disk-safety cap. Drop oldest entries until under the limit
-      // — keeps recent context fresh, evicts stale.
+      // — keeps recent context fresh, evicts stale. Stamp the
+      // eviction in a comment so a later reader sees the gap.
       if (Buffer.byteLength(content, "utf-8") > MAX_FILE_BYTES) {
         const headerEnd = content.indexOf("## Memory");
-        const headerBlock = headerEnd >= 0 ? content.slice(0, headerEnd + "## Memory\n\n".length) : "";
+        const headerBlock =
+          headerEnd >= 0 ? content.slice(0, headerEnd + "## Memory\n\n".length) : "";
         const body = content.slice(headerBlock.length);
         const lines = body.split("\n");
-        // Drop oldest entries (top of body) until under cap. Each
-        // bullet is one line; preserve trailing newline.
         let dropped = 0;
-        while (Buffer.byteLength(headerBlock + lines.join("\n"), "utf-8") > MAX_FILE_BYTES) {
+        // Reserve room for the eviction comment so the post-comment
+        // total honours the cap. Conservative reserve (~80 bytes) —
+        // the actual comment scales with the digit count of `dropped`
+        // but stays well under that.
+        const RESERVED_FOR_COMMENT = 80;
+        const target = MAX_FILE_BYTES - RESERVED_FOR_COMMENT;
+        while (Buffer.byteLength(headerBlock + lines.join("\n"), "utf-8") > target) {
           if (lines.length <= 1) break;
           lines.shift();
           dropped++;
         }
-        content = headerBlock + lines.join("\n");
-        if (dropped > 0) {
-          // Stamp the eviction so a later reader sees the gap.
-          content = headerBlock + `<!-- evicted ${dropped} oldest entries -->\n` + lines.join("\n");
-        }
+        content =
+          dropped > 0
+            ? headerBlock + `<!-- evicted ${dropped} oldest entries -->\n` + lines.join("\n")
+            : headerBlock + lines.join("\n");
       }
 
       writeFileSync(memoryPath, content, "utf-8");

@@ -53,6 +53,7 @@ import { createKbCreatePage } from "./tools/kb-create-page.js";
 import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
 import { createKbGlobalSearch } from "./tools/kb-global-search.js";
 import { createKbInsertAfter } from "./tools/kb-insert-after.js";
+import { createKbAppendMemory } from "./tools/kb-append-memory.js";
 import { createKbLintContradictions } from "./tools/kb-lint-contradictions.js";
 import { createKbLintCoverageGaps } from "./tools/kb-lint-coverage-gaps.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
@@ -276,6 +277,11 @@ async function start() {
     // at execute time, so a research-project run can't read main's
     // failure history.
     dispatcher.register(createKbQueryFailedRuns(jobsDb));
+    // Phase-11 cognitive-offloading tool — agents append facts to
+    // `.agents/<slug>/memory/<topic>.md` (Principle 5b). The
+    // executor hydrates these files into the system prompt at run
+    // start, so anything written here surfaces in the next run.
+    dispatcher.register(createKbAppendMemory());
 
     // Phase-11 Airlock — cross-project search with dynamic egress
     // downgrade. Off by default; opted in per-install via
