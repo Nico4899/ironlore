@@ -58,6 +58,7 @@ import { createKbLintCoverageGaps } from "./tools/kb-lint-coverage-gaps.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
 import { createKbLintProvenanceGaps } from "./tools/kb-lint-provenance-gaps.js";
 import { createKbLintStaleSources } from "./tools/kb-lint-stale-sources.js";
+import { createKbQueryFailedRuns } from "./tools/kb-query-failed-runs.js";
 import { createKbReadBlock } from "./tools/kb-read-block.js";
 import { createKbReadPage } from "./tools/kb-read-page.js";
 import { createKbReplaceBlock } from "./tools/kb-replace-block.js";
@@ -270,6 +271,11 @@ async function start() {
     dispatcher.register(createKbLintContradictions(services.searchIndex));
     dispatcher.register(createKbLintCoverageGaps(services.searchIndex));
     dispatcher.register(createKbLintProvenanceGaps(services.getDataRoot()));
+    // Phase-11 evolver-agent helper. Reads from the install-level
+    // jobsDb (shared across projects) but filters by `ctx.projectId`
+    // at execute time, so a research-project run can't read main's
+    // failure history.
+    dispatcher.register(createKbQueryFailedRuns(jobsDb));
 
     // Phase-11 Airlock — cross-project search with dynamic egress
     // downgrade. Off by default; opted in per-install via
