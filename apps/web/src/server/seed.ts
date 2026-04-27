@@ -1593,6 +1593,145 @@ After step 4 (and 5 if applicable):
 `,
   );
 
+  // Shared skill: evolve — the agent self-improvement loop. The
+  // Evolver loads this on its weekly heartbeat to read aggregated
+  // failure patterns from `kb.query_failed_runs` and propose a
+  // single targeted edit to a shared skill file. Always inbox-mode
+  // so the human approves the diff before merge — the safety
+  // property the SkillClaw-style loop trades on.
+  seedFile(
+    join(sharedSkillsDir, "evolve.md"),
+    `---
+name: Evolve
+description: Skill self-improvement — analyse failed agent runs, propose one targeted skill edit per heartbeat
+---
+
+# Evolve Skill
+
+A weekly self-improvement pass over the project's shared skill files.
+The agent reads aggregated failure patterns from the past week of
+agent runs, picks **exactly one** structured action, and proposes
+the resulting markdown edit on a staging branch the user approves
+through the Inbox.
+
+## When to run
+
+Loaded by the **Evolver** library persona on its weekly heartbeat
+(default Sunday 07:00). The persona declares
+\`review_mode: inbox\` — every edit lands on a branch named
+\`agents/evolver/<run-id>\` and waits for human approval. **Never
+merge without human review**; that's the entire safety property.
+
+## Inputs you always read first
+
+1. \`kb.query_failed_runs\` — call with default arguments
+   (\`sinceHours: 168\`, one week). Returns
+   \`{ window, perAgent, perTool }\`:
+   - \`perAgent[]\` — every agent with ≥1 failed-or-retried run in
+     the window, sorted by \`runCount\` desc. Each row carries
+     \`runCount\`, \`retryCount\`, \`lastError\` (truncated to 240
+     chars).
+   - \`perTool[]\` — every tool that emitted a \`tool.error\` event
+     in the window, sorted by \`errorCount\` desc.
+2. The skill file the pattern points at, if any. Use
+   \`kb.read_page\` against the path your analysis identifies (e.g.
+   \`.agents/.shared/skills/file-answer.md\`).
+3. The previous evolver run's journal entry (in
+   \`agents/evolver/memory/home.md\`) so repeat findings get
+   acknowledged rather than re-proposed every week.
+
+## The four actions
+
+Pick **exactly one** per run. The user can approve a small focused
+edit in seconds; reviewing a sweeping rewrite is friction that kills
+the loop's compounding value.
+
+### 1. \`improve_skill\` — the skill body is missing a constraint
+
+Use when: a skill is being invoked correctly per its description,
+but the agent is making a recurring mistake the skill body doesn't
+anticipate. E.g. "the researcher keeps batching 50 URLs at a time
+into \`http-get-with-auth\` and rate-limiting itself."
+
+Action: call \`kb.replace_block\` (or \`kb.insert_after\`) to add a
+constraint section. **Prefer the explicit \`NOT for:\` exclusion
+syntax** described below — it surfaces in BM25 and reads
+loud-and-clear in the agent's loaded prompt.
+
+### 2. \`optimize_description\` — the description misframes the skill
+
+Use when: agents are loading a skill in the wrong context (or
+failing to load it when they should). E.g. "the
+\`brand-voice\` skill says 'for marketing copy' but it's getting
+loaded by the researcher because the agent reads 'voice' as
+'tone'."
+
+Action: \`kb.replace_block\` against the skill's frontmatter
+description block, tightening or rewriting the trigger phrasing.
+Don't touch the body in this action.
+
+### 3. \`create_skill\` — a failure mode has no skill at all
+
+Use when: a recurring failure pattern (3+ failed runs across 2+
+agents) has no shared skill addressing it. E.g. multiple agents
+all hitting "kb.replace_block: ETag mismatch" because they re-read
+pages but don't re-read between successive edits.
+
+Action: \`kb.create_page\` at \`.agents/.shared/skills/<slug>.md\`
+with \`kind\` left absent (skills aren't pages or wikis). Frontmatter
+must include \`name\` + \`description\`. Body explains *when to load
+this skill* + *what constraints it imposes*.
+
+### 4. \`skip\` — nothing rises above noise this week
+
+Use when: the failures in the window are one-off (single retry,
+single agent, no clear pattern) or already addressed by a recent
+evolver edit the user approved.
+
+Action: close the run with \`agent.journal\` explaining what you
+saw and why no edit is warranted. No skill mutations.
+
+## The \`NOT for:\` exclusion syntax
+
+A small markdown convention that improves both human-readable
+intent and BM25 retrieval ranking. When a skill is *unsuitable*
+for a class of tasks, document it explicitly:
+
+\`\`\`markdown
+## NOT for:
+- batching more than 3 URLs at a time (the upstream rate-limits at
+  10 req/min and silently fails)
+- POST requests carrying secrets in the body (use the vault, not
+  the connector skill)
+- streaming endpoints (this skill assumes one-shot JSON; use
+  \`http-stream\` for SSE)
+\`\`\`
+
+The agent loading the skill sees these as hard constraints. The
+search index sees high keyword density on the failure modes — so
+when a future agent searches for "how do I batch URLs," the
+correct skill ("yes, here's how, but NOT more than 3") ranks above
+the wrong skill that doesn't mention the constraint at all.
+
+## Closing
+
+After your single action (or skip):
+
+1. Append a one-line entry to \`_log.md\`:
+   \`- <ISO timestamp> · evolve · <action> · <skill-path-or-skip-reason>\`.
+2. Close with \`agent.journal\`. The journal entry must:
+   - Name the action you picked (\`improve_skill\` / \`optimize_description\` / \`create_skill\` / \`skip\`).
+   - Cite at least 2 failed-run job IDs from \`kb.query_failed_runs\` so a
+     curious user can audit the evidence trail.
+   - State the one-sentence rationale ("agents kept hitting X, the
+     edit adds a constraint preventing X").
+
+The inbox entry the user sees in the UI is the diff your
+\`kb.replace_block\` / \`kb.create_page\` produced. Approving it
+merges to main; rejecting it discards the staging branch.
+`,
+  );
+
   // ─── Connector-skill examples ──────────────────────────────────────
   // Three worked-out templates for users authoring their own
   // upstream connectors. Each documents:
