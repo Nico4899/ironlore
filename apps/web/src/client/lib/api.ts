@@ -758,6 +758,44 @@ export async function activateAgent(slug: string): Promise<{ personaPath: string
   return res.json() as Promise<{ personaPath: string }>;
 }
 
+/**
+ * Visual Agent Builder — POST shape for the
+ * `/api/projects/:id/agents` endpoint that compiles the form
+ * inputs into `.agents/<slug>/persona.md` (Phase-11 A.9.1).
+ *
+ * Mirrors the server's `BuildPersonaInput` exactly. No per-agent
+ * egress field — egress stays project-level by design (one
+ * `fetchForProject` chokepoint per project).
+ */
+export interface BuildAgentInput {
+  name: string;
+  slug: string;
+  role: string;
+  constraints: string[];
+  scopePath?: string;
+  canEditPages: boolean;
+  reviewBeforeMerge: boolean;
+  heartbeat?: string;
+}
+
+export async function buildAgent(input: BuildAgentInput): Promise<{
+  slug: string;
+  personaPath: string;
+}> {
+  const res = await apiFetch(`${base()}/agents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({ error: res.statusText }))) as {
+      error?: string;
+    };
+    throw new ApiError(res.status, body.error ?? res.statusText);
+  }
+  return res.json() as Promise<{ slug: string; personaPath: string }>;
+}
+
 /** Per-file diff row for an inbox entry. */
 export interface InboxFileDiff {
   path: string;
