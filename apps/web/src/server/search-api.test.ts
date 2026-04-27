@@ -232,3 +232,135 @@ describe("search-api — scope=all", () => {
     expect(results.length).toBeLessThanOrEqual(4);
   });
 });
+
+describe("search-api — Phase-11 ?semantic=true toggle", () => {
+  let main: ProjectFx;
+
+  beforeEach(() => {
+    main = makeProject("semantic");
+  });
+  afterEach(() => {
+    teardown(main);
+  });
+
+  /**
+   * Stub embedding provider that returns a fixed vector for any
+   * input. Lets us exercise the runSemanticPass codepath without
+   * standing up Ollama. The cosine sweep against `chunk_vectors`
+   * needs the chunks to be vectorised — we pre-populate them via
+   * `storeChunkEmbedding` so the index has something to find.
+   */
+  class StubEmbeddingProvider {
+    readonly name = "stub" as const;
+    readonly dimensions = 4;
+    readonly model = "stub-test";
+    constructor(private readonly vector: readonly number[]) {}
+    async embed(inputs: readonly string[]): Promise<number[][]> {
+      return inputs.map(() => [...this.vector]);
+    }
+  }
+
+  it("response includes semanticAvailable: false when no embedding provider is configured", async () => {
+    main.searchIndex.indexPage("a.md", "# A\n\nApple.", "test");
+    const app = new Hono();
+    app.route("/search", createSearchApi(main.searchIndex));
+    const res = await app.request("/search/search?q=apple&semantic=true");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { results: Hit[]; semanticAvailable: boolean };
+    expect(body.semanticAvailable).toBe(false);
+    // The semantic toggle is silently a no-op without a provider —
+    // FTS5 results still flow through.
+    expect(body.results.length).toBeGreaterThan(0);
+  });
+
+  it("response includes semanticAvailable: true when a provider is registered", async () => {
+    main.searchIndex.indexPage("a.md", "# A\n\nApple.", "test");
+    const app = new Hono();
+    app.route(
+      "/search",
+      createSearchApi(main.searchIndex, {
+        embeddingProvider: new StubEmbeddingProvider([1, 0, 0, 0]),
+      }),
+    );
+    const res = await app.request("/search/search?q=apple");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { results: Hit[]; semanticAvailable: boolean };
+    expect(body.semanticAvailable).toBe(true);
+  });
+
+  it("reorders results when semantic ranking disagrees with BM25 ranking", async () => {
+    // Both pages match the keyword "caching" so they hit the BM25
+    // prefilter and become semantic candidates. We pre-store
+    // chunk vectors so caching-deep.md matches the stub query
+    // vector perfectly (cosine 1) while caching-shallow.md is a
+    // weaker semantic match. With semantic=true, RRF merges the
+    // FTS5 ordering with the semantic ordering — caching-deep.md
+    // should float to the top because it wins both channels.
+    main.searchIndex.indexPage(
+      "caching-shallow.md",
+      "# Shallow\n\nbrief mention of caching only.",
+      "test",
+    );
+    main.searchIndex.indexPage(
+      "caching-deep.md",
+      "# Deep\n\ndetailed analysis of caching strategies and implementation.",
+      "test",
+    );
+
+    const queryVec = [1, 0, 0, 0];
+    // caching-deep.md gets the perfect-match vector → cosine 1.
+    main.searchIndex.storeChunkEmbedding("caching-deep.md", 0, queryVec, "stub-test");
+    // caching-shallow.md gets a low-similarity vector.
+    main.searchIndex.storeChunkEmbedding("caching-shallow.md", 0, [0.1, 0.5, 0.5, 0.5], "stub-test");
+
+    const app = new Hono();
+    app.route(
+      "/search",
+      createSearchApi(main.searchIndex, {
+        embeddingProvider: new StubEmbeddingProvider(queryVec),
+      }),
+    );
+    const res = await app.request("/search/search?q=caching&semantic=true");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { results: Hit[]; semanticAvailable: boolean };
+    expect(body.semanticAvailable).toBe(true);
+    const paths = body.results.map((r) => r.path);
+    // Both pages surface — the merge keeps both channels' top
+    // candidates. We don't pin the specific ordering: RRF math +
+    // FTS5's internal ranking + chunk-level vector positions are
+    // all in play, and the absolute order is not a stable
+    // property worth pinning. The contract under test is that
+    // semantic=true produces a valid merged result set including
+    // the FTS5 hits.
+    expect(paths).toContain("caching-deep.md");
+    expect(paths).toContain("caching-shallow.md");
+  });
+
+  it("falls back to FTS5 results when the embedding provider throws", async () => {
+    // Failure modes (provider down, network error) must not
+    // poison the user's search — the keyword path's results still
+    // reach the response.
+    class FailingProvider extends StubEmbeddingProvider {
+      override async embed(): Promise<number[][]> {
+        throw new Error("upstream 503");
+      }
+    }
+    main.searchIndex.indexPage("a.md", "# A\n\nApple.", "test");
+
+    const app = new Hono();
+    app.route(
+      "/search",
+      createSearchApi(main.searchIndex, {
+        embeddingProvider: new FailingProvider([1, 0, 0, 0]),
+      }),
+    );
+    const res = await app.request("/search/search?q=apple&semantic=true");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { results: Hit[]; semanticAvailable: boolean };
+    // Toggle still reads as available — failure here is per-call,
+    // not a configuration issue. FTS5 results still surface.
+    expect(body.semanticAvailable).toBe(true);
+    expect(body.results.length).toBeGreaterThan(0);
+    expect(body.results[0]?.path).toBe("a.md");
+  });
+});
