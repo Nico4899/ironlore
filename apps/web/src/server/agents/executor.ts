@@ -8,6 +8,7 @@ import type { ChatMessage, ProjectContext, Provider } from "../providers/types.j
 import type { ToolDispatcher } from "../tools/dispatcher.js";
 import type { RunBudget, ToolCallContext } from "../tools/types.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
+import { loadAgentMemory } from "./memory-hydration.js";
 import { loadSkills } from "./skill-loader.js";
 
 /**
@@ -157,7 +158,18 @@ export async function executeAgentRun(
   // agent-local first, then `.shared/` — see skill-loader.ts.
   const persona = loadPersona(dataRoot, agentSlug);
   const skillsBlock = loadSkills(dataRoot, agentSlug, persona.skills);
-  const systemPrompt = skillsBlock ? `${persona.body}${skillsBlock}` : persona.body;
+  // Phase-11 cognitive offloading (Principle 5b). Hydrate every
+  // topic file under `.agents/<slug>/memory/` (except home.md, the
+  // journal log) so anything the agent appended via
+  // `kb.append_memory` in past runs surfaces in this run's prompt.
+  // Capped to keep the context budget bounded — see
+  // memory-hydration.ts.
+  const memoryBlock = loadAgentMemory(dataRoot, agentSlug);
+  const systemPrompt = [
+    persona.body,
+    memoryBlock ? `\n\n${memoryBlock}` : "",
+    skillsBlock ?? "",
+  ].join("");
 
   // Airlock session — wraps the run's fetch so a future
   // `kb.global_search` call can flip egress to offline. Per
