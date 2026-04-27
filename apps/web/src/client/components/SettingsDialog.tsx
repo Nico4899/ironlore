@@ -1634,9 +1634,7 @@ function AgentsTab() {
           Build a custom agent
         </button>
       </div>
-      <p
-        style={{ fontSize: 10.5, color: "var(--il-text3)", lineHeight: 1.5, marginBottom: 12 }}
-      >
+      <p style={{ fontSize: 10.5, color: "var(--il-text3)", lineHeight: 1.5, marginBottom: 12 }}>
         Skip the library — describe an agent's role and constraints in plain English, and the
         builder writes the persona file for you.
       </p>

@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { activateAgent } from "./activate.js";
-import { buildPersona, type BuildPersonaInput } from "./build-persona.js";
+import { type BuildPersonaInput, buildPersona } from "./build-persona.js";
 import { estimateRunCost } from "./cost-estimate.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
 import type { AgentInbox } from "./inbox.js";

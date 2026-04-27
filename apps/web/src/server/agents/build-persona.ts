@@ -83,10 +83,10 @@ export function buildPersona(
   input: BuildPersonaInput,
 ): BuildPersonaResult {
   // ─── Validation ────────────────────────────────────────────────
-  if (!input.name || !input.name.trim()) {
+  if (!input.name?.trim()) {
     return { ok: false, code: 400, error: "Name required." };
   }
-  if (!input.role || !input.role.trim()) {
+  if (!input.role?.trim()) {
     return { ok: false, code: 400, error: "Role required." };
   }
   if (!SLUG_RE.test(input.slug)) {
@@ -113,7 +113,7 @@ export function buildPersona(
 
   // ─── Compile frontmatter ───────────────────────────────────────
   const writableKinds = input.canEditPages ? "[page, wiki]" : "[]";
-  const scopePath = (input.scopePath && input.scopePath.trim()) || "/**";
+  const scopePath = input.scopePath?.trim() || "/**";
   const heartbeatLine = input.heartbeat ? `\nheartbeat: "${input.heartbeat}"` : "";
   const reviewLine = input.reviewBeforeMerge ? "\nreview_mode: inbox" : "";
 
@@ -134,9 +134,7 @@ export function buildPersona(
   ].join("\n");
 
   // ─── Compile body ──────────────────────────────────────────────
-  const constraintLines = input.constraints
-    .map((c) => c.trim())
-    .filter((c) => c.length > 0);
+  const constraintLines = input.constraints.map((c) => c.trim()).filter((c) => c.length > 0);
   const constraintsSection =
     constraintLines.length > 0
       ? `\n## Constraints\n\nThings this agent must NOT do:\n\n${constraintLines

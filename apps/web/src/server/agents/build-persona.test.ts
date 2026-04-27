@@ -98,10 +98,7 @@ describe("buildPersona", () => {
       name: "Strict Researcher",
       slug: "strict",
       role: "Source-verified summaries",
-      constraints: [
-        "Modify pages outside /research/",
-        "Reference sources you haven't read",
-      ],
+      constraints: ["Modify pages outside /research/", "Reference sources you haven't read"],
       canEditPages: true,
       reviewBeforeMerge: false,
     });

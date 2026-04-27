@@ -1,5 +1,5 @@
 import { Plus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type BuildAgentInput, buildAgent } from "../lib/api.js";
 
 /**
@@ -32,7 +32,11 @@ export function AgentBuilderDialog({
   const [slugTouched, setSlugTouched] = useState(false);
   const [role, setRole] = useState("");
   const [constraintDraft, setConstraintDraft] = useState("");
-  const [constraints, setConstraints] = useState<string[]>([]);
+  // Each constraint carries a synthetic `id` so React's keys stay
+  // stable when the user reorders / removes — entries are
+  // user-provided text and could legitimately repeat.
+  const [constraints, setConstraints] = useState<Array<{ id: string; text: string }>>([]);
+  const constraintIdRef = useRef(0);
   const [scopePath, setScopePath] = useState("/**");
   const [canEditPages, setCanEditPages] = useState(true);
   const [reviewBeforeMerge, setReviewBeforeMerge] = useState(false);
@@ -66,12 +70,13 @@ export function AgentBuilderDialog({
   const addConstraint = () => {
     const trimmed = constraintDraft.trim();
     if (!trimmed) return;
-    setConstraints((prev) => [...prev, trimmed]);
+    constraintIdRef.current += 1;
+    setConstraints((prev) => [...prev, { id: `c${constraintIdRef.current}`, text: trimmed }]);
     setConstraintDraft("");
   };
 
-  const removeConstraint = (i: number) => {
-    setConstraints((prev) => prev.filter((_, idx) => idx !== i));
+  const removeConstraint = (id: string) => {
+    setConstraints((prev) => prev.filter((c) => c.id !== id));
   };
 
   const handleSubmit = async () => {
@@ -86,7 +91,7 @@ export function AgentBuilderDialog({
         name: name.trim(),
         slug: slug.trim(),
         role: role.trim(),
-        constraints,
+        constraints: constraints.map((c) => c.text),
         scopePath: scopePath.trim() || undefined,
         canEditPages,
         reviewBeforeMerge,
@@ -228,7 +233,7 @@ export function AgentBuilderDialog({
               <ul className="mt-1 flex flex-col gap-1">
                 {constraints.map((c, i) => (
                   <li
-                    key={`${i}-${c}`}
+                    key={c.id}
                     className="flex items-start gap-1.5 rounded px-1.5 py-1"
                     style={{
                       background: "color-mix(in oklch, var(--il-amber) 6%, transparent)",
@@ -242,11 +247,11 @@ export function AgentBuilderDialog({
                     >
                       NEVER
                     </span>
-                    <span className="flex-1">{c}</span>
+                    <span className="flex-1">{c.text}</span>
                     <button
                       type="button"
                       aria-label={`Remove constraint ${i + 1}`}
-                      onClick={() => removeConstraint(i)}
+                      onClick={() => removeConstraint(c.id)}
                       className="rounded p-0.5 hover:bg-ironlore-slate-hover"
                     >
                       <X className="h-3 w-3" style={{ color: "var(--il-text3)" }} />
@@ -310,7 +315,11 @@ export function AgentBuilderDialog({
             <span className="font-mono uppercase" style={{ color: "var(--il-blue)" }}>
               Network access
             </span>
-            <span> · the agent uses this project's egress policy. Open it in Settings → Project to change which hosts agents can reach.</span>
+            <span>
+              {" "}
+              · the agent uses this project's egress policy. Open it in Settings → Project to change
+              which hosts agents can reach.
+            </span>
           </div>
 
           {error && (
@@ -343,14 +352,14 @@ export function AgentBuilderDialog({
   );
 }
 
-function FieldLabel({
-  children,
-  hint,
-}: {
-  children: React.ReactNode;
-  hint?: string;
-}) {
+function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: string }) {
+  // The input is passed via `children` — every callsite renders an
+  // <input> / <select> inside, so the label IS associated with a
+  // control. Biome's static rule can't see through the children
+  // prop; the suppression is the cleanest fix without adding a
+  // synthetic id-passing dance.
   return (
+    // biome-ignore lint/a11y/noLabelWithoutControl: input is passed through `children` at every callsite
     <label className="flex flex-col gap-1">
       <span className="flex items-center gap-2" style={{ color: "var(--il-text3)" }}>
         {children}
