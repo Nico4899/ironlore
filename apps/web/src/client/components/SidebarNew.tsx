@@ -814,6 +814,19 @@ export function SidebarNew() {
               </div>
             );
           })}
+
+          {/* "+ New page" sits as the last row of the file list, directly
+           *  under the lowermost file. Scrolls with the tree so users
+           *  always know where to add a page from. */}
+          <button
+            type="button"
+            onClick={handleNewPageFromSidebar}
+            className="mt-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-tertiary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            title="Create a new page in this folder"
+          >
+            <FilePlus className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1 truncate">New page</span>
+          </button>
         </div>
       )}
 
@@ -851,25 +864,6 @@ export function SidebarNew() {
             collapsed={collapsed}
             onClick={() => useAppStore.getState().toggleTerminal()}
           />
-        </div>
-      )}
-
-      {/* ─── New-page button (expanded only). Replaces the prior
-       *  "New folder" primary button; folder creation still lives on
-       *  the tree's right-click menu + context-folder actions. Per
-       *  the sidebar brief: "Add + button below file structure to
-       *  add new page and remove it from the editor view at the
-       *  top." */}
-      {!collapsed && (
-        <div className="flex items-center gap-1 border-t border-border px-2 py-2">
-          <button
-            type="button"
-            onClick={handleNewPageFromSidebar}
-            className="btn-depth flex flex-1 items-center justify-center gap-1.5 rounded-md border border-border py-1.5 text-xs text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-          >
-            <FilePlus className="h-3.5 w-3.5" />
-            New page
-          </button>
         </div>
       )}
 
