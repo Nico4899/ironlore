@@ -31,6 +31,7 @@ import {
   useAppStore,
 } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
+import { AgentBuilderDialog } from "./AgentBuilderDialog.js";
 
 type Tab = SettingsTab;
 
@@ -1431,6 +1432,8 @@ function AgentsTab() {
   // toast so the mistake stays anchored to the card it came from.
   const [activating, setActivating] = useState<string | null>(null);
   const [activateErr, setActivateErr] = useState<Record<string, string>>({});
+  // Visual Agent Builder modal — Phase-11 A.9.1.
+  const [builderOpen, setBuilderOpen] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -1613,6 +1616,44 @@ function AgentsTab() {
           );
         })}
       </div>
+
+      {/* Visual Agent Builder — Phase-11 A.9.1 entry point. The
+       *  dialog compiles plain-English form inputs into a properly-
+       *  shaped persona.md so non-technical users don't have to
+       *  edit YAML by hand. Clicking "Build a custom agent" opens
+       *  the modal; on success we reload the agent list so the
+       *  newly-built agent appears alongside library activations. */}
+      <div style={{ marginTop: 18, marginBottom: 8, display: "flex", alignItems: "center" }}>
+        <SectionLabel>Custom</SectionLabel>
+        <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          onClick={() => setBuilderOpen(true)}
+          className="rounded border border-ironlore-blue/50 px-2 py-0.5 text-[10px] font-medium text-ironlore-blue hover:bg-ironlore-blue/15"
+        >
+          Build a custom agent
+        </button>
+      </div>
+      <p
+        style={{ fontSize: 10.5, color: "var(--il-text3)", lineHeight: 1.5, marginBottom: 12 }}
+      >
+        Skip the library — describe an agent's role and constraints in plain English, and the
+        builder writes the persona file for you.
+      </p>
+
+      {builderOpen && (
+        <AgentBuilderDialog
+          onClose={() => setBuilderOpen(false)}
+          onCreated={(slug: string) => {
+            void reload();
+            setActivateErr((prev) => {
+              const next = { ...prev };
+              delete next[slug];
+              return next;
+            });
+          }}
+        />
+      )}
 
       {library && library.length > 0 && (
         <>
