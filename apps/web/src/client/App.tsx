@@ -6,6 +6,7 @@ import { AppHeader } from "./components/AppHeader.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { CopyToProjectDialog } from "./components/CopyToProjectDialog.js";
+import { LinkDialogContainer } from "./components/LinkDialog.js";
 import { LintFindingsBanner } from "./components/LintFindingsBanner.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OnboardingWizard } from "./components/OnboardingWizard.js";
@@ -304,6 +305,9 @@ function AppShell() {
 
       {/* Settings dialog */}
       {settingsOpen && <SettingsDialog />}
+
+      {/* Inline link-insertion dialog (replaces window.prompt) */}
+      <LinkDialogContainer />
 
       {/* Agent completion/failure toasts */}
       <AgentToastContainer />

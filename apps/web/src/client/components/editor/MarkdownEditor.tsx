@@ -625,19 +625,27 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           setBlockType(cb)(view.state, view.dispatch);
           view.focus();
         },
-        insertLink: () => {
+        insertLink: async () => {
           const linkMark = schema.marks.link;
           if (!linkMark) return;
-          const url = window.prompt("Link URL", "https://");
-          if (!url) return;
           const { from, to, empty } = view.state.selection;
+          const initialText = empty ? "" : view.state.doc.textBetween(from, to, " ");
+          const { openLinkDialog } = await import("../LinkDialog.js");
+          const result = await openLinkDialog({ text: initialText });
+          if (!result) return;
           const tr = view.state.tr;
+          const label = result.text || result.url;
           if (empty) {
-            // No selection — insert the URL itself as link text.
-            const text = view.state.schema.text(url, [linkMark.create({ href: url })]);
-            tr.insert(from, text);
+            // No selection — insert the chosen label as link text.
+            const node = view.state.schema.text(label, [linkMark.create({ href: result.url })]);
+            tr.insert(from, node);
+          } else if (result.text && result.text !== initialText) {
+            // User edited the label — replace selection with the new label.
+            const node = view.state.schema.text(label, [linkMark.create({ href: result.url })]);
+            tr.replaceWith(from, to, node);
           } else {
-            tr.addMark(from, to, linkMark.create({ href: url }));
+            // Keep selection text; just stamp the link mark on it.
+            tr.addMark(from, to, linkMark.create({ href: result.url }));
           }
           view.dispatch(tr);
           view.focus();
