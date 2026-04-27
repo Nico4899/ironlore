@@ -68,9 +68,7 @@ export function loadAgentMemory(dataRoot: string, agentSlug: string): string | n
   // Sort alphabetically so the same memory files always hydrate
   // in the same order — keeps prompt-cache hashes stable across
   // runs that didn't touch memory.
-  const topicFiles = entries
-    .filter((name) => name.endsWith(".md") && name !== "home.md")
-    .sort();
+  const topicFiles = entries.filter((name) => name.endsWith(".md") && name !== "home.md").sort();
   if (topicFiles.length === 0) return null;
 
   const sections: string[] = [];

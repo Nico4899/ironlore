@@ -125,8 +125,8 @@ export function createKbAppendMemory(): ToolImplementation {
         }
         content =
           dropped > 0
-            ? headerBlock + `<!-- evicted ${dropped} oldest entries -->\n` + lines.join("\n")
-            : headerBlock + lines.join("\n");
+            ? `${headerBlock}<!-- evicted ${dropped} oldest entries -->\n${lines.join("\n")}`
+            : `${headerBlock}${lines.join("\n")}`;
       }
 
       writeFileSync(memoryPath, content, "utf-8");

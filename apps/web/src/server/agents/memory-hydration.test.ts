@@ -52,9 +52,21 @@ describe("loadAgentMemory", () => {
   });
 
   it("concatenates topic files alphabetically with ## <topic> headings", () => {
-    writeMemory("general", "preferences.md", "# general — preferences\n\n## Memory\n\n- prefers ISO dates\n");
-    writeMemory("general", "decisions.md", "# general — decisions\n\n## Memory\n\n- chose Rust over Go\n");
-    writeMemory("general", "facts.md", "# general — facts\n\n## Memory\n\n- the user is left-handed\n");
+    writeMemory(
+      "general",
+      "preferences.md",
+      "# general — preferences\n\n## Memory\n\n- prefers ISO dates\n",
+    );
+    writeMemory(
+      "general",
+      "decisions.md",
+      "# general — decisions\n\n## Memory\n\n- chose Rust over Go\n",
+    );
+    writeMemory(
+      "general",
+      "facts.md",
+      "# general — facts\n\n## Memory\n\n- the user is left-handed\n",
+    );
 
     const out = loadAgentMemory(dataRoot, "general");
     expect(out).not.toBeNull();
@@ -69,11 +81,7 @@ describe("loadAgentMemory", () => {
   });
 
   it("strips the per-file `# <slug> — <topic>` header so the hydrated block doesn't double-heading", () => {
-    writeMemory(
-      "general",
-      "facts.md",
-      "# general — facts\n\n## Memory\n\n- one fact\n",
-    );
+    writeMemory("general", "facts.md", "# general — facts\n\n## Memory\n\n- one fact\n");
     const out = loadAgentMemory(dataRoot, "general");
     // Heading hierarchy: outer `# Agent memory`, inner `## facts`.
     // The file's own `# general — facts` is stripped; if it leaked
