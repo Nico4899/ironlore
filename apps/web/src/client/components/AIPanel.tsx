@@ -1543,7 +1543,7 @@ function RunFinalizedCard({
         </div>
         <div className="mt-0.5 text-secondary">
           {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
-          {" \u00B7 "}
+          {" \u00B7 version "}
           <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
           {"\u2026"}
           <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>

@@ -389,7 +389,7 @@ function InboxEntryCard({
 }) {
   const typeDisplay = useAppStore((s) => s.typeDisplay);
   const serif = typeDisplay === "serif";
-  const shortBranch = entry.branch.split("/").pop() || entry.branch;
+  const waypoint = entry.branch.split("/").pop() || entry.branch;
   const finalizedLabel = formatRelative(entry.finalizedAt, Date.now());
 
   return (
@@ -431,8 +431,8 @@ function InboxEntryCard({
           {entry.agentSlug}
         </span>
         <Meta
-          k="branch"
-          v={shortBranch}
+          k="waypoint"
+          v={waypoint}
           style={{ maxWidth: "10rem", overflow: "hidden", textOverflow: "ellipsis" }}
         />
         <Meta k="finalized" v={finalizedLabel} />

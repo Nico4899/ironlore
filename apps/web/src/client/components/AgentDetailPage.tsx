@@ -619,7 +619,7 @@ function RecentRunsTable({ runs }: { runs: AgentRunRecord[] | null }) {
               idx === 0 ? "color-mix(in oklch, var(--il-blue) 8%, transparent)" : "transparent",
             borderLeft: `2px solid ${idx === 0 ? "var(--il-blue)" : "transparent"}`,
           }}
-          title={`Job ${r.jobId}${r.commitShaEnd ? ` · ${r.commitShaEnd.slice(0, 7)}` : ""}`}
+          title={`Job ${r.jobId}${r.commitShaEnd ? ` · version ${r.commitShaEnd.slice(0, 7)}` : ""}`}
         >
           <span className="font-mono" style={{ fontSize: 11, color: "var(--il-text3)" }}>
             {formatClockTime(r.startedAt)}

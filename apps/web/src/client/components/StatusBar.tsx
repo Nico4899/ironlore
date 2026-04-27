@@ -67,7 +67,6 @@ export function StatusBar() {
           {locationLabel}
         </button>
       )}
-      <BranchLabel />
       <div className="flex-1" />
       <div className="flex items-center gap-3">
         {activity.runningCount > 0 && (
@@ -89,23 +88,6 @@ export function StatusBar() {
         <ConnectionPill connected={wsConnected} reconnecting={wsReconnecting} />
       </div>
     </footer>
-  );
-}
-
-/**
- * Branch label — `⎇ main` in mono. Static today because the user
- * doesn't switch branches in Ironlore (agents do, via inbox staging).
- * If the product surfaces HEAD detection later, this becomes a live
- * read from the git worker.
- */
-function BranchLabel() {
-  return (
-    <span className="flex items-center gap-1">
-      <span aria-hidden="true" style={{ color: "var(--il-text4)" }}>
-        ·
-      </span>
-      <span style={{ color: "var(--il-text3)" }}>⎇ main</span>
-    </span>
   );
 }
 
