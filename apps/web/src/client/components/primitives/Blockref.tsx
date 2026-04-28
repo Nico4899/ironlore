@@ -159,7 +159,7 @@ function BlockrefPreview({
           </>
         )}
         <span className="flex-1" />
-        <span style={{ color: "var(--il-text4)" }}>click to open</span>
+        <span style={{ color: "var(--il-text3)" }}>click to open</span>
       </div>
       <div className="il-blockref-preview__body">
         {body === null ? <span style={{ color: "var(--il-text4)" }}>Loading…</span> : body}
