@@ -121,10 +121,7 @@ export function RewriteLinksToastContainer() {
               borderLeft: "2px solid var(--il-blue)",
             }}
           >
-            <LinkIcon
-              className="mt-0.5 h-4 w-4 shrink-0"
-              style={{ color: "var(--il-blue)" }}
-            />
+            <LinkIcon className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--il-blue)" }} />
             <div className="min-w-0 flex-1">
               {t.status === "prompting" && (
                 <>

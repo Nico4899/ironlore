@@ -534,8 +534,7 @@ export function MarkdownEditor({
           //  §Selection as AI context). Empty selection clears.
           const cb = onSelectedBlockIdsChangeRef.current;
           if (cb) {
-            const ids =
-              from === to ? [] : harvestSelectedBlockIds(view, blockIdsRef.current);
+            const ids = from === to ? [] : harvestSelectedBlockIds(view, blockIdsRef.current);
             cb(ids);
           }
         }

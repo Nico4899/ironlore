@@ -97,9 +97,7 @@ describe("sanitizeHtml — disallowed tags are unwrapped, not dropped", () => {
     // The classic escape: outer disallowed tag gets unwrapped, inner
     //  payload smuggles handlers in. Cursor must re-sanitize the
     //  newly-exposed children, not skip over them.
-    const out = sanitizeHtml(
-      "<svg><img src=x onerror='alert(1)' /></svg>",
-    );
+    const out = sanitizeHtml("<svg><img src=x onerror='alert(1)' /></svg>");
     expect(out).not.toContain("onerror");
     expect(out).not.toContain("alert(1)");
   });

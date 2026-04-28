@@ -6,8 +6,8 @@ import {
   fetchRecentEdits,
   getApiProject,
   type RecentEdit,
-  searchAgents,
   type SearchResult,
+  searchAgents,
   searchPages,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
@@ -585,10 +585,7 @@ export function SearchDialog() {
                   opacity: a.paused ? 0.6 : 1,
                 }}
               >
-                <Reuleaux
-                  size={7}
-                  color={a.paused ? "var(--il-amber)" : "var(--il-blue)"}
-                />
+                <Reuleaux size={7} color={a.paused ? "var(--il-amber)" : "var(--il-blue)"} />
                 <div style={{ minWidth: 0 }}>
                   <div className="flex items-baseline gap-2">
                     {a.emoji && <span style={{ fontSize: 13 }}>{a.emoji}</span>}
@@ -698,72 +695,72 @@ export function SearchDialog() {
               renders its own row template above and skips this map. */}
           {tab !== "AGENTS" &&
             restHits.map((item, i) => {
-            const idx = topHit ? i + 1 : i;
-            const focused = idx === selectedIdx;
-            // Two rows can share the same `path` if they originated
-            // from different projects (scope=all fan-out merges by
-            // `projectId:path`). Prefix the React key with projectId
-            // so React doesn't reuse a row across projects.
-            const rowKey = item.projectId ? `${item.projectId}:${item.path}` : item.path;
-            return (
-              <button
-                key={rowKey}
-                type="button"
-                onClick={() => openPath(item.path, item.projectId)}
-                onMouseEnter={() => setSelectedIdx(idx)}
-                className="grid w-full text-left outline-none"
-                style={{
-                  padding: "11px 20px",
-                  borderTop: "1px solid var(--il-border-soft)",
-                  gridTemplateColumns: "auto 1fr auto",
-                  gap: 12,
-                  alignItems: "baseline",
-                  background: focused ? "var(--il-slate-hover)" : "transparent",
-                  cursor: "pointer",
-                }}
-              >
-                <Reuleaux size={7} color="var(--il-text3)" />
-                <div style={{ minWidth: 0 }}>
-                  <div className="flex items-baseline gap-2">
-                    {item.projectId && item.projectId !== currentProjectId && (
-                      <ProjectBadge projectId={item.projectId} />
-                    )}
-                    <span
-                      className="font-mono truncate"
-                      style={{ fontSize: 10.5, color: "var(--il-text3)" }}
-                    >
-                      {item.path}
-                    </span>
-                    {item.title && item.title !== item.path && (
+              const idx = topHit ? i + 1 : i;
+              const focused = idx === selectedIdx;
+              // Two rows can share the same `path` if they originated
+              // from different projects (scope=all fan-out merges by
+              // `projectId:path`). Prefix the React key with projectId
+              // so React doesn't reuse a row across projects.
+              const rowKey = item.projectId ? `${item.projectId}:${item.path}` : item.path;
+              return (
+                <button
+                  key={rowKey}
+                  type="button"
+                  onClick={() => openPath(item.path, item.projectId)}
+                  onMouseEnter={() => setSelectedIdx(idx)}
+                  className="grid w-full text-left outline-none"
+                  style={{
+                    padding: "11px 20px",
+                    borderTop: "1px solid var(--il-border-soft)",
+                    gridTemplateColumns: "auto 1fr auto",
+                    gap: 12,
+                    alignItems: "baseline",
+                    background: focused ? "var(--il-slate-hover)" : "transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Reuleaux size={7} color="var(--il-text3)" />
+                  <div style={{ minWidth: 0 }}>
+                    <div className="flex items-baseline gap-2">
+                      {item.projectId && item.projectId !== currentProjectId && (
+                        <ProjectBadge projectId={item.projectId} />
+                      )}
                       <span
+                        className="font-mono truncate"
+                        style={{ fontSize: 10.5, color: "var(--il-text3)" }}
+                      >
+                        {item.path}
+                      </span>
+                      {item.title && item.title !== item.path && (
+                        <span
+                          className="truncate"
+                          style={{
+                            fontSize: 13,
+                            color: "var(--il-text)",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {item.title}
+                        </span>
+                      )}
+                    </div>
+                    {item.snippet && (
+                      <div
                         className="truncate"
                         style={{
-                          fontSize: 13,
-                          color: "var(--il-text)",
-                          fontWeight: 500,
+                          fontSize: 12,
+                          color: "var(--il-text2)",
+                          marginTop: 3,
                         }}
                       >
-                        {item.title}
-                      </span>
+                        {renderSnippet(item.snippet)}
+                      </div>
                     )}
                   </div>
-                  {item.snippet && (
-                    <div
-                      className="truncate"
-                      style={{
-                        fontSize: 12,
-                        color: "var(--il-text2)",
-                        marginTop: 3,
-                      }}
-                    >
-                      {renderSnippet(item.snippet)}
-                    </div>
-                  )}
-                </div>
-                <Key>↵</Key>
-              </button>
-            );
-          })}
+                  <Key>↵</Key>
+                </button>
+              );
+            })}
         </div>
 
         {/* Footer — mono uppercase keyboard hints */}

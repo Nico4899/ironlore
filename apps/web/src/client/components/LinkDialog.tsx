@@ -191,7 +191,10 @@ export function LinkDialogContainer() {
 
         <div
           className="flex items-center justify-end gap-2 px-5 py-3"
-          style={{ borderTop: "1px solid var(--il-border-soft)", background: "var(--il-slate-elev)" }}
+          style={{
+            borderTop: "1px solid var(--il-border-soft)",
+            background: "var(--il-slate-elev)",
+          }}
         >
           <button
             type="button"

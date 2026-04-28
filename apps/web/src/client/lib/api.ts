@@ -394,10 +394,7 @@ export interface MovePageResponse extends SaveResponse {
 }
 
 /** Move a page to a new path. */
-export async function movePage(
-  sourcePath: string,
-  destination: string,
-): Promise<MovePageResponse> {
+export async function movePage(sourcePath: string, destination: string): Promise<MovePageResponse> {
   const res = await apiFetch(`${pagesBase()}/${sourcePath}/move`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
