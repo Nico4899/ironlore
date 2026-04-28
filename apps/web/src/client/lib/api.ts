@@ -382,15 +382,50 @@ export async function createPage(pagePath: string, content: string): Promise<Sav
   return res.json() as Promise<SaveResponse>;
 }
 
+/**
+ * Move-page response — superset of `SaveResponse` carrying the count
+ * of inbound `[[OldName]]` links the rename invalidated. Drives the
+ * sidebar's "Update N inbound links?" toast (docs/03-editor.md
+ * §Rename-rewrite). `inboundLinkCount` is `undefined` for directory
+ * moves where the server doesn't (yet) compute aggregate counts.
+ */
+export interface MovePageResponse extends SaveResponse {
+  inboundLinkCount?: number;
+}
+
 /** Move a page to a new path. */
-export async function movePage(sourcePath: string, destination: string): Promise<SaveResponse> {
+export async function movePage(
+  sourcePath: string,
+  destination: string,
+): Promise<MovePageResponse> {
   const res = await apiFetch(`${pagesBase()}/${sourcePath}/move`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ destination }),
   });
   if (!res.ok) throw new ApiError(res.status, await res.text());
-  return res.json() as Promise<SaveResponse>;
+  return res.json() as Promise<MovePageResponse>;
+}
+
+/**
+ * Rewrite every `[[OldName]]` reference into `[[NewName]]` across
+ * every page that linked to `oldPath`. The server walks all three
+ * common spellings (full path / no-ext / basename) so a user who
+ * wrote `[[notes/spoke]]` AND `[[spoke]]` AND `[[notes/spoke.md]]`
+ * gets every reference updated in one pass. Returns the count of
+ * source pages whose content actually changed.
+ */
+export async function rewriteBacklinks(
+  oldPath: string,
+  newPath: string,
+): Promise<{ updated: number }> {
+  const res = await apiFetch(`${pagesBase()}/rewrite-backlinks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ oldPath, newPath }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<{ updated: number }>;
 }
 
 /**

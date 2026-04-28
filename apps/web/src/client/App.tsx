@@ -8,6 +8,7 @@ import { ContentArea } from "./components/ContentArea.js";
 import { CopyToProjectDialog } from "./components/CopyToProjectDialog.js";
 import { LinkDialogContainer } from "./components/LinkDialog.js";
 import { LintFindingsBanner } from "./components/LintFindingsBanner.js";
+import { RewriteLinksToastContainer } from "./components/RewriteLinksToast.js";
 import { LoginPage } from "./components/LoginPage.js";
 import { OnboardingWizard } from "./components/OnboardingWizard.js";
 import { ProjectSwitcher } from "./components/ProjectSwitcher.js";
@@ -308,6 +309,9 @@ function AppShell() {
 
       {/* Inline link-insertion dialog (replaces window.prompt) */}
       <LinkDialogContainer />
+
+      {/* Rename → "Update N inbound links?" toast (Phase-2 Rename-rewrite) */}
+      <RewriteLinksToastContainer />
 
       {/* Agent completion/failure toasts */}
       <AgentToastContainer />

@@ -375,7 +375,9 @@ export function SidebarNew() {
   // Rename (optimistic). The tree store moves the node right away
   //  so the label flips in place; server failure rolls it back.
   //  Captures the original node's `type` before the move so the
-  //  rollback preserves the file kind.
+  //  rollback preserves the file kind. On success, surfaces a
+  //  rename-rewrite toast when other pages link to the old path —
+  //  see docs/03-editor.md §Rename-rewrite.
   const commitRename = useCallback(async (oldPath: string, newName: string) => {
     if (!newName.trim()) {
       setEditingPath(null);
@@ -387,12 +389,20 @@ export function SidebarNew() {
     setEditingPath(null);
     if (newPath === oldPath) return;
 
+    const surfaceRewriteToast = (count: number | undefined) => {
+      if (typeof count !== "number" || count <= 0) return;
+      void import("./RewriteLinksToast.js").then(({ showRewriteLinksToast }) => {
+        showRewriteLinksToast({ oldPath, newPath, count });
+      });
+    };
+
     const snapshot = useTreeStore.getState().nodes.find((n) => n.path === oldPath);
     if (!snapshot) {
       // Unknown node — don't try an optimistic move. Just issue
       //  the server call and let the watcher reconcile.
       try {
-        await movePage(oldPath, newPath);
+        const res = await movePage(oldPath, newPath);
+        surfaceRewriteToast(res.inboundLinkCount);
       } catch {
         /* */
       }
@@ -400,7 +410,8 @@ export function SidebarNew() {
     }
     useTreeStore.getState().moveNode(oldPath, newPath, newName, snapshot.type);
     try {
-      await movePage(oldPath, newPath);
+      const res = await movePage(oldPath, newPath);
+      surfaceRewriteToast(res.inboundLinkCount);
     } catch {
       useTreeStore.getState().moveNode(newPath, oldPath, snapshot.name, snapshot.type);
       window.alert("Rename failed — the old path was restored.");
