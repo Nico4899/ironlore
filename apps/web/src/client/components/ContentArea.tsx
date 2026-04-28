@@ -140,6 +140,10 @@ export function ContentArea() {
     useEditorStore.getState().setSelection(selection);
   }, []);
 
+  const handleSelectedBlockIdsChange = useCallback((blockIds: string[]) => {
+    useEditorStore.getState().setSelectedBlockIds(blockIds);
+  }, []);
+
   const handleConflictResolved = useCallback(() => {
     setConflict(null);
   }, []);
@@ -297,6 +301,7 @@ export function ContentArea() {
             status={status}
             onChange={handleChange}
             onSelectionChange={handleSelectionChange}
+            onSelectedBlockIdsChange={handleSelectedBlockIdsChange}
           />
         ) : fileType === "image" ? (
           <ImageViewer path={filePath} />
@@ -377,6 +382,7 @@ interface MarkdownContentProps {
   status: "clean" | "dirty" | "syncing" | "conflict";
   onChange: (markdown: string) => void;
   onSelectionChange: (selection: { from: number; to: number } | null) => void;
+  onSelectedBlockIdsChange: (blockIds: string[]) => void;
 }
 
 /**
@@ -414,6 +420,7 @@ function MarkdownContent({
   status,
   onChange,
   onSelectionChange,
+  onSelectedBlockIdsChange,
 }: MarkdownContentProps) {
   const etag = useEditorStore((s) => s.etag);
   const filePath = useEditorStore((s) => s.filePath);
@@ -557,6 +564,7 @@ function MarkdownContent({
           markdown={markdown}
           onChange={onChange}
           onSelectionChange={onSelectionChange}
+          onSelectedBlockIdsChange={onSelectedBlockIdsChange}
         />
       ) : (
         <SplitPane

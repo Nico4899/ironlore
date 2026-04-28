@@ -48,6 +48,12 @@ export function AIPanel() {
   const isStreaming = useAIPanelStore((s) => s.isStreaming);
   const contexts = useAIPanelStore((s) => s.contexts);
   const removeContext = useAIPanelStore((s) => s.removeContext);
+  // Block IDs covered by the current ProseMirror selection — fires
+  //  whenever the user highlights paragraphs in the editor. Drives
+  //  the "N blocks selected" pill in the composer and the
+  //  highlight-context payload sent on the next prompt
+  //  (docs/03-editor.md §Selection as AI context).
+  const selectedBlockIds = useEditorStore((s) => s.selectedBlockIds);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -137,7 +143,7 @@ export function AIPanel() {
     //  transient context pill for this send only. We read from the
     //  editor store at send time (not via subscription) so the
     //  composer doesn't re-render every time the user edits.
-    const { filePath, markdown } = useEditorStore.getState();
+    const { filePath, markdown, selectedBlockIds: ids } = useEditorStore.getState();
     const include = useAIPanelStore.getState().includeActiveFileAsContext;
     const sendContexts: ContextPill[] = [...contexts];
     if (include && filePath) {
@@ -148,6 +154,19 @@ export function AIPanel() {
         // Body is the live markdown buffer; the agent sees the
         //  user's working copy, not the on-disk snapshot.
         body: markdown,
+        path: filePath,
+      });
+    }
+    // Selection-as-AI-context (docs/03-editor.md §Selection as AI
+    //  context). When the editor has block-IDed paragraphs selected,
+    //  send their IDs so the agent can call `kb.read_block` to scope
+    //  its answer to specific paragraphs without re-reading the
+    //  whole page.
+    if (ids.length > 0 && filePath) {
+      sendContexts.push({
+        kind: "highlight",
+        label: `${ids.length} block${ids.length === 1 ? "" : "s"} selected`,
+        body: ids.map((id) => `[[${filePath}#${id}]]`).join(", "),
         path: filePath,
       });
     }
@@ -476,12 +495,33 @@ export function AIPanel() {
        * whole composer while streaming.
        */}
       <AgentPulse active={isStreaming} className="border-t border-border p-3">
-        {contexts.length > 0 && (
+        {(contexts.length > 0 || selectedBlockIds.length > 0) && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {contexts.map((ctx, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: pills are append-only and never reorder
               <ContextChip key={i} ctx={ctx} onRemove={() => removeContext(i)} />
             ))}
+            {selectedBlockIds.length > 0 && (
+              <span
+                className="font-mono"
+                title="Highlight a different range or click outside to clear."
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "2px 8px",
+                  fontSize: 10.5,
+                  letterSpacing: "0.04em",
+                  background: "color-mix(in oklch, var(--il-amber) 14%, transparent)",
+                  border: "1px solid color-mix(in oklch, var(--il-amber) 30%, transparent)",
+                  color: "var(--il-amber)",
+                  borderRadius: 3,
+                }}
+              >
+                <span aria-hidden="true">◆</span>
+                {selectedBlockIds.length} block{selectedBlockIds.length === 1 ? "" : "s"} selected
+              </span>
+            )}
           </div>
         )}
         <div

@@ -94,9 +94,25 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     //  into the user's view.
     if (fileType === "markdown") {
       const { frontmatter, body } = splitFrontmatter(content);
-      set({ filePath: path, markdown: body, frontmatter, etag, fileType, status: "clean" });
+      set({
+        filePath: path,
+        markdown: body,
+        frontmatter,
+        etag,
+        fileType,
+        status: "clean",
+        selectedBlockIds: [],
+      });
     } else {
-      set({ filePath: path, markdown: content, frontmatter: "", etag, fileType, status: "clean" });
+      set({
+        filePath: path,
+        markdown: content,
+        frontmatter: "",
+        etag,
+        fileType,
+        status: "clean",
+        selectedBlockIds: [],
+      });
     }
   },
   setMarkdown: (markdown) => set({ markdown, status: "dirty" }),

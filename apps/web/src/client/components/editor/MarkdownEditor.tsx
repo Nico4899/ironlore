@@ -180,6 +180,50 @@ interface MarkdownEditorProps {
   markdown: string;
   onChange: (markdown: string) => void;
   onSelectionChange?: (selection: { from: number; to: number } | null) => void;
+  /**
+   * Fired whenever the selection's covered block IDs change. Empty
+   * array clears the selection. Drives the AI panel composer's
+   * "N blocks selected" pill so the user can scope an agent prompt
+   * to specific paragraphs without copy-pasting them.
+   */
+  onSelectedBlockIdsChange?: (blockIds: string[]) => void;
+}
+
+/**
+ * Harvest the block IDs covered by a ProseMirror selection.
+ *
+ * Strategy: serialize just the selected slice through the same
+ * `wikiMarkdownSerializer` the rest of the editor uses, then match
+ * each line against the page's block-ID ledger by exact stripped
+ * text. The ledger entry's `text` field was captured from the source
+ * markdown by `stripBlockIds`, so unchanged blocks round-trip with
+ * identical text and find their ID. Edited blocks won't match —
+ * which is the right call: the agent shouldn't claim a stale
+ * block-ID for content the user has rewritten this session.
+ */
+function harvestSelectedBlockIds(
+  view: EditorView,
+  entries: Array<{ id: string; text: string }>,
+): string[] {
+  const { from, to } = view.state.selection;
+  if (from === to || entries.length === 0) return [];
+  const fragment = view.state.doc.slice(from, to).content;
+  // Wrap the fragment in a doc so the serializer has a top-node to
+  //  walk. `topNodeType.create(null, content)` is the canonical
+  //  ProseMirror lift for slice-to-doc.
+  const wrapper = view.state.schema.topNodeType.create(null, fragment);
+  const serialized = wikiMarkdownSerializer.serialize(wrapper);
+  const sliceLines = new Set(
+    serialized
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== ""),
+  );
+  const ids: string[] = [];
+  for (const e of entries) {
+    if (sliceLines.has(e.text.trim())) ids.push(e.id);
+  }
+  return ids;
 }
 
 /** UI state for the slash-command popup. */
@@ -210,13 +254,19 @@ interface WikiLinkMenuState {
   to: number;
 }
 
-export function MarkdownEditor({ markdown, onChange, onSelectionChange }: MarkdownEditorProps) {
+export function MarkdownEditor({
+  markdown,
+  onChange,
+  onSelectionChange,
+  onSelectedBlockIdsChange,
+}: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const blockIdsRef = useRef<Array<{ id: string; text: string }>>([]);
   const frontmatterRef = useRef<string>("");
   const onChangeRef = useRef(onChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
+  const onSelectedBlockIdsChangeRef = useRef(onSelectedBlockIdsChange);
   // Track whether we're programmatically updating (external markdown change)
   const suppressRef = useRef(false);
 
@@ -239,6 +289,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
   // Keep callback refs current without recreating the editor
   onChangeRef.current = onChange;
   onSelectionChangeRef.current = onSelectionChange;
+  onSelectedBlockIdsChangeRef.current = onSelectedBlockIdsChange;
 
   /**
    * Run a slash-menu item: delete the `/query` trigger text, then execute
@@ -476,9 +527,17 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           onChangeRef.current(frontmatterRef.current + withIds);
         }
 
-        if (tr.selectionSet && onSelectionChangeRef.current) {
+        if (tr.selectionSet) {
           const { from, to } = newState.selection;
-          onSelectionChangeRef.current(from === to ? null : { from, to });
+          onSelectionChangeRef.current?.(from === to ? null : { from, to });
+          // Block-ID harvest for AI-panel context (docs/03-editor.md
+          //  §Selection as AI context). Empty selection clears.
+          const cb = onSelectedBlockIdsChangeRef.current;
+          if (cb) {
+            const ids =
+              from === to ? [] : harvestSelectedBlockIds(view, blockIdsRef.current);
+            cb(ids);
+          }
         }
 
         // Table-toolbar anchor — surfaces only when the selection
