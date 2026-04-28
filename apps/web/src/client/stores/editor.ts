@@ -47,6 +47,14 @@ interface EditorStore {
   status: "clean" | "dirty" | "syncing" | "conflict";
   mode: "wysiwyg" | "source";
   selection: { from: number; to: number } | null;
+  /**
+   * Block IDs covered by the current ProseMirror selection. Empty
+   * when the selection is empty or covers no block-IDed nodes. Read
+   * by the AI panel composer so a non-empty editor selection becomes
+   * `kb.read_block` context on the next agent prompt — implements
+   * [docs/03-editor.md §Selection as AI context](../../../../docs/03-editor.md).
+   */
+  selectedBlockIds: string[];
   /** Epoch-ms of the last successful save. Drives the status-bar
    *  "Saved <N>s ago" indicator. Null until the first save in a session. */
   lastSavedAt: number | null;
@@ -56,6 +64,7 @@ interface EditorStore {
   setStatus: (status: EditorStore["status"]) => void;
   setMode: (mode: EditorStore["mode"]) => void;
   setSelection: (selection: EditorStore["selection"]) => void;
+  setSelectedBlockIds: (ids: string[]) => void;
   setEtag: (etag: string) => void;
   /**
    * Return the on-disk representation — frontmatter re-prepended to
@@ -75,6 +84,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   status: "clean",
   mode: "wysiwyg",
   selection: null,
+  selectedBlockIds: [],
   lastSavedAt: null,
 
   setFile: (path, content, etag, fileType) => {
@@ -97,6 +107,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     })),
   setMode: (mode) => set({ mode }),
   setSelection: (selection) => set({ selection }),
+  setSelectedBlockIds: (selectedBlockIds) => set({ selectedBlockIds }),
   setEtag: (etag) => set({ etag }),
   getFullContent: () => {
     const { frontmatter, markdown } = get();
