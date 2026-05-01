@@ -1,4 +1,6 @@
 import type { SearchIndex } from "../search-index.js";
+import type { StorageWriter } from "../storage-writer.js";
+import { checkToolAcl } from "./acl-gate.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 
 /**
@@ -57,6 +59,15 @@ export interface KbGlobalSearchOptions {
    * Optional so tests + simpler callers can omit it.
    */
   getProjectTrust?: (projectId: string) => "normal" | "strict" | undefined;
+  /**
+   * Phase-9 multi-user: per-project StorageWriter resolver, used to
+   * filter caller-project hits by the calling user's ACL. Foreign
+   * hits are NOT ACL-filtered — user identity doesn't span projects,
+   * and the Airlock downgrade already constrains the run's outbound
+   * flow on any cross-project content. Optional for back-compat
+   * with tests + single-user installs.
+   */
+  getProjectWriter?: (projectId: string) => StorageWriter | undefined;
 }
 
 export function createKbGlobalSearch(opts: KbGlobalSearchOptions): ToolImplementation {
@@ -147,10 +158,27 @@ export function createKbGlobalSearch(opts: KbGlobalSearchOptions): ToolImplement
         }
       }
 
-      const results = [...merged.values()]
+      let results = [...merged.values()]
         .sort((a, b) => b.score - a.score)
         .slice(0, limit)
         .map((e) => e.result);
+
+      // Phase-9 multi-user: ACL-filter the caller-project slice. The
+      //  calling user's identity doesn't span projects, so foreign
+      //  hits pass through; Airlock's downgrade already handles the
+      //  exfil concern there. We deliberately do NOT widen `limit`
+      //  to absorb filtered drops — the filter happens after RRF, so
+      //  some shrinkage on the caller-project side is acceptable.
+      if (ctx.acl && opts.getProjectWriter) {
+        const callerWriter = opts.getProjectWriter(ctx.projectId);
+        if (callerWriter) {
+          results = results.filter((r) => {
+            if (r.projectId !== ctx.projectId) return true;
+            const check = checkToolAcl(ctx, callerWriter, r.path, "read");
+            return check.ok;
+          });
+        }
+      }
 
       const crossedHits = results.some((r) => r.projectId !== ctx.projectId);
 

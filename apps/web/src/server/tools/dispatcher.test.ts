@@ -71,7 +71,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     indexes.push(index);
 
     const dispatcher = new ToolDispatcher();
-    dispatcher.register(createKbSearch(index));
+    dispatcher.register(createKbSearch(index, writer));
     dispatcher.register(createKbReadPage(writer));
     dispatcher.register(createKbReadBlock(writer));
     dispatcher.register(createKbReplaceBlock(writer, index));

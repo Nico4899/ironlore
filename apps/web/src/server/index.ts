@@ -321,6 +321,11 @@ async function start() {
               return undefined;
             }
           },
+          // Phase-9 multi-user — per-project writer resolver so the
+          //  global-search tool can filter caller-project hits by the
+          //  calling user's ACL. Foreign hits aren't ACL-checked
+          //  (user identity is project-local).
+          getProjectWriter: (pid) => servicesById.get(pid)?.writer,
         }),
       );
     }
