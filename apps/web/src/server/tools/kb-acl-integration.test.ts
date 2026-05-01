@@ -40,10 +40,7 @@ function writePage(dataDir: string, relPath: string, body: string): void {
   writeFileSync(abs, body, "utf-8");
 }
 
-function makeCtx(
-  dataRoot: string,
-  acl?: { userId: string; username: string },
-): ToolCallContext {
+function makeCtx(dataRoot: string, acl?: { userId: string; username: string }): ToolCallContext {
   return {
     projectId: "main",
     agentSlug: "editor",

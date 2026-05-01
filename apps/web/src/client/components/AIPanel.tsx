@@ -1113,11 +1113,7 @@ function MessageList() {
         // biome-ignore lint/suspicious/noArrayIndexKey: messages are append-only, no stable ID yet
         <div key={i} className="mb-3 text-sm">
           {msg.type === "user" && (
-            <UserBubble
-              text={msg.text}
-              attachments={msg.attachments}
-              timestamp={msg.timestamp}
-            />
+            <UserBubble text={msg.text} attachments={msg.attachments} timestamp={msg.timestamp} />
           )}
           {msg.type === "assistant" && <AssistantReply text={msg.text} />}
           {msg.type === "tool_call" && <ToolCallCard msg={msg} />}

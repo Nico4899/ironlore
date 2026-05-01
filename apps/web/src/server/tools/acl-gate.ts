@@ -76,9 +76,10 @@ export function checkToolAcl(
   // For the page itself, parse first so a non-default own-ACL wins
   //  over any ancestor inheritance.
   const own = parsePageAcl(target);
-  const acl = own.owner === null && own.read === null && own.write === null
-    ? loadEffectiveAcl(pagePath, reader)
-    : own;
+  const acl =
+    own.owner === null && own.read === null && own.write === null
+      ? loadEffectiveAcl(pagePath, reader)
+      : own;
 
   try {
     assertCanAccess(acl, ctx.acl.userId, ctx.acl.username, op);

@@ -600,8 +600,9 @@ describe("agent_runs — mode-aware accounting", () => {
     // without the column simulates a row written before the migration
     // landed; it must still be visible to canEnqueue's autonomous
     // filter so existing installs preserve their pre-fix behavior.
-    db.prepare("INSERT INTO agent_runs (project_id, slug, started_at, job_id) VALUES (?, ?, ?, ?)")
-      .run("main", "a", Date.now(), "j-legacy");
+    db.prepare(
+      "INSERT INTO agent_runs (project_id, slug, started_at, job_id) VALUES (?, ?, ?, ?)",
+    ).run("main", "a", Date.now(), "j-legacy");
 
     const rails = new AgentRails(db);
     rails.ensureState("main", "a");

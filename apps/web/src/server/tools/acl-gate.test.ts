@@ -301,9 +301,7 @@ describe("loadEffectiveAcl + isDefaultAcl — direct unit", () => {
 
   it("loadEffectiveAcl returns the page's own ACL when non-default", () => {
     const reader = (p: string): string | null =>
-      p === "page.md"
-        ? `---\nowner: alice-id\nacl:\n  read: [alice]\n---\n\n# Page\n`
-        : null;
+      p === "page.md" ? `---\nowner: alice-id\nacl:\n  read: [alice]\n---\n\n# Page\n` : null;
     const acl = loadEffectiveAcl("page.md", reader);
     expect(acl.owner).toBe("alice-id");
     expect(acl.read).toEqual(["alice"]);
@@ -323,9 +321,7 @@ describe("loadEffectiveAcl + isDefaultAcl — direct unit", () => {
   it("loadEffectiveAcl asking from an index.md doesn't recurse into itself", () => {
     // /team/index.md asking for its own effective ACL should return its own.
     const reader = (p: string): string | null =>
-      p === "team/index.md"
-        ? `---\nowner: alice-id\nacl:\n  read: [alice]\n---\n`
-        : null;
+      p === "team/index.md" ? `---\nowner: alice-id\nacl:\n  read: [alice]\n---\n` : null;
     const acl = loadEffectiveAcl("team/index.md", reader);
     expect(acl.read).toEqual(["alice"]);
   });
