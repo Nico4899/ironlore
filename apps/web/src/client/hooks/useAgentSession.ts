@@ -65,11 +65,29 @@ export function useAgentSession() {
   }, []);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    /**
+     * Send a user prompt to the agent.
+     *
+     * - `displayText` is what shows in the chat bubble (just what the
+     *   user typed).
+     * - `serverPrompt` is what's actually sent to the agent — usually
+     *   the typed draft prefixed with attached-file bodies and any
+     *   selection block-refs the AI panel composer included.
+     * - `attachments` are short labels (e.g. `persona.md`) that
+     *   render as chips above the bubble so the user can see what
+     *   file context rode along without the entire body being
+     *   inlined into the visible message.
+     *
+     * When `serverPrompt` is omitted it defaults to `displayText`
+     * (no attachments). Backwards-compatible with existing callers
+     * that just want to send a plain message.
+     */
+    async (displayText: string, serverPrompt?: string, attachments: string[] = []) => {
       const store = useAIPanelStore.getState();
       const slug = store.activeAgent;
+      const wirePrompt = serverPrompt ?? displayText;
 
-      store.addMessage({ type: "user", text, attachments: [] });
+      store.addMessage({ type: "user", text: displayText, attachments });
       // Reset the run-scoped token counter so the context-budget chip
       //  in the composer restarts from 0% used. Each `usage` event on
       //  the stream increments it via `incrementTokens` below.
@@ -86,7 +104,7 @@ export function useAgentSession() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: text,
+            prompt: wirePrompt,
             mode: "interactive",
             effort: store.effort,
             // Per-conversation runtime override (composer's `/model …`

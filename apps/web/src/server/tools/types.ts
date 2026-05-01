@@ -58,6 +58,30 @@ export interface ToolCallContext {
    * configurations, so no tool ever consults the field.
    */
   downgradeEgress?: (reason: string) => void;
+  /**
+   * Multi-user / ACL surface — present only when the project is
+   * configured for `mode: multi-user` (see `loadProjectConfig`). The
+   * tool ACL gate (`assertToolCanAccess`) short-circuits to
+   * "permit everything" when this field is absent, so the
+   * single-user code path stays branch-free.
+   *
+   * `userId` is the originating user's stable ID (the caller of the
+   * `POST /agents/:slug/run` HTTP route); `username` is its current
+   * display string. Both are threaded from `c.get("userId")` /
+   * `c.get("username")` set by the auth middleware, packed into the
+   * job payload at enqueue time, and unpacked here at execute time.
+   *
+   * Absent for runs without a user context: scheduled heartbeats and
+   * the `evolver` cron tick. Those runs land on the agent's persona
+   * scope, not a user identity. Tool ACL gates treat absence as
+   * "single-user-equivalent" (permit) — the structural rails
+   * (`writable_kinds`, project egress allow-list, branch-based
+   * inbox review) still apply.
+   */
+  acl?: {
+    userId: string;
+    username: string;
+  };
 }
 
 /**
