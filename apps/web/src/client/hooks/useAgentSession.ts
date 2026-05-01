@@ -75,6 +75,11 @@ export function useAgentSession() {
       store.resetTokens();
       store.setIsStreaming(true);
 
+      // Reset the resolution chip — the next event from the new run
+      //  will set it. Keeps the header chip honest about *this* turn,
+      //  not the previous one.
+      store.setLastResolution(null);
+
       try {
         const res = await fetch(`${BASE()}/agents/${slug}/run`, {
           method: "POST",
@@ -83,6 +88,14 @@ export function useAgentSession() {
             prompt: text,
             mode: "interactive",
             effort: store.effort,
+            // Per-conversation runtime override (composer's `/model …`
+            //  / `/provider …` slash commands). Sent through the same
+            //  payload field the action override uses; the server
+            //  resolver picks per field, so the runtime override
+            //  always loses to a per-message action override if one
+            //  is set in the same request.
+            modelOverride: store.runtimeOverride.model,
+            providerOverride: store.runtimeOverride.provider,
           }),
         });
 
@@ -249,6 +262,34 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
     case "session.paused":
       // Interactive session paused (client disconnected).
       break;
+
+    case "provider.resolved": {
+      // Server's resolver just produced the (provider, model, effort)
+      //  triple for this run. The header chip surfaces it so the
+      //  user can see which override level fired (e.g. "from
+      //  persona" / "from runtime" / "from action").
+      const provider = typeof data.provider === "string" ? data.provider : "";
+      const model = typeof data.model === "string" ? data.model : "";
+      const effort = typeof data.effort === "string" ? data.effort : "";
+      const source = (data.source ?? null) as
+        | { provider?: string; model?: string; effort?: string }
+        | null;
+      const notes = Array.isArray(data.notes) ? (data.notes as string[]) : [];
+      if (provider && model && effort && source) {
+        store.setLastResolution({
+          provider,
+          model,
+          effort,
+          source: {
+            provider: source.provider ?? "global",
+            model: source.model ?? "global",
+            effort: source.effort ?? "global",
+          },
+          notes,
+        });
+      }
+      break;
+    }
 
     case "diff_preview": {
       // Server is pausing on a destructive tool call pending the

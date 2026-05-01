@@ -234,6 +234,8 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
   tokensUsed: 0,
   effort: loadEffort(),
   includeActiveFileAsContext: loadIncludeActiveFile(),
+  runtimeOverride: {},
+  lastResolution: null,
 
   setJobId: (jobId) => set({ jobId }),
   // Stamp every inbound message with the current wall clock unless
@@ -251,7 +253,8 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
     })),
   setInputDraft: (draft) => set({ inputDraft: draft }),
   setIsStreaming: (streaming) => set({ isStreaming: streaming }),
-  setActiveAgent: (agent) => set({ activeAgent: agent }),
+  setActiveAgent: (agent) =>
+    set({ activeAgent: agent, runtimeOverride: {}, lastResolution: null }),
   setLastSeq: (seq) => set({ lastSeq: seq }),
   clearMessages: () => set({ messages: [], lastSeq: 0 }),
   addContext: (ctx) => set((s) => ({ contexts: [...s.contexts, ctx] })),
@@ -267,4 +270,6 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
     persistIncludeActiveFile(value);
     set({ includeActiveFileAsContext: value });
   },
+  setRuntimeOverride: (override) => set({ runtimeOverride: override }),
+  setLastResolution: (r) => set({ lastResolution: r }),
 }));
