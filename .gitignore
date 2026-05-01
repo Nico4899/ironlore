@@ -34,6 +34,7 @@ projects/*/.ironlore/
 
 # runtime project data created when server runs from apps/web/
 apps/web/projects/
+apps/web/.ironlore/
 
 # secrets and credentials
 .ironlore-install.json
