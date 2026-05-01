@@ -271,9 +271,11 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
       const provider = typeof data.provider === "string" ? data.provider : "";
       const model = typeof data.model === "string" ? data.model : "";
       const effort = typeof data.effort === "string" ? data.effort : "";
-      const source = (data.source ?? null) as
-        | { provider?: string; model?: string; effort?: string }
-        | null;
+      const source = (data.source ?? null) as {
+        provider?: string;
+        model?: string;
+        effort?: string;
+      } | null;
       const notes = Array.isArray(data.notes) ? (data.notes as string[]) : [];
       if (provider && model && effort && source) {
         store.setLastResolution({

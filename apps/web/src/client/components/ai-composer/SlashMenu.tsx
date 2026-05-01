@@ -188,8 +188,7 @@ function ModelPicker() {
           No override · use persona/global
         </button>
         {allModels.map(({ provider, model }) => {
-          const selected =
-            runtimeOverride.model === model && runtimeOverride.provider === provider;
+          const selected = runtimeOverride.model === model && runtimeOverride.provider === provider;
           return (
             <button
               key={`${provider}:${model}`}

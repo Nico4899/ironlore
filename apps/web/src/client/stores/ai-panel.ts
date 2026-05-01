@@ -253,8 +253,7 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
     })),
   setInputDraft: (draft) => set({ inputDraft: draft }),
   setIsStreaming: (streaming) => set({ isStreaming: streaming }),
-  setActiveAgent: (agent) =>
-    set({ activeAgent: agent, runtimeOverride: {}, lastResolution: null }),
+  setActiveAgent: (agent) => set({ activeAgent: agent, runtimeOverride: {}, lastResolution: null }),
   setLastSeq: (seq) => set({ lastSeq: seq }),
   clearMessages: () => set({ messages: [], lastSeq: 0 }),
   addContext: (ctx) => set((s) => ({ contexts: [...s.contexts, ctx] })),
