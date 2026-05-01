@@ -510,11 +510,14 @@ export function getHourlyHistogram(
   const windowEnd = now;
   const windowStart = windowEnd - bucketCount * HOUR_MS;
 
+  // Autonomous-only: this histogram visualises rate-cap consumption,
+  // and only autonomous heartbeats count against the cap (same filter
+  // as `AgentRails.canEnqueue()`).
   const rawRows = db
     .prepare(
       `SELECT CAST(started_at / ? AS INTEGER) AS hourBucket, COUNT(*) AS cnt
        FROM agent_runs
-       WHERE project_id = ? AND slug = ? AND started_at >= ?
+       WHERE project_id = ? AND slug = ? AND started_at >= ? AND mode = 'autonomous'
        GROUP BY hourBucket`,
     )
     .all(HOUR_MS, projectId, slug, windowStart) as Array<{ hourBucket: number; cnt: number }>;

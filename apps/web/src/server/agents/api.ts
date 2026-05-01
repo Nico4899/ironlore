@@ -82,10 +82,11 @@ export function createAgentApi(
       payload: { prompt: body.prompt ?? "", effort },
     });
 
-    // Record the run start for rate-limit tracking (autonomous only).
-    if (mode === "autonomous") {
-      rails.recordStart(projectId, slug, jobId);
-    }
+    // Record the run start for both modes. Rate-limit + histogram
+    // queries scope to `mode = 'autonomous'`; the runs listing
+    // surfaces both so users can see their own interactive activity
+    // alongside heartbeats.
+    rails.recordStart(projectId, slug, jobId, mode);
 
     return c.json({ jobId });
   });
