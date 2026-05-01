@@ -536,3 +536,80 @@ heartbeat: "not a cron"
     expect(cfg?.personaPath).toBeNull();
   });
 });
+
+// ─── interactive-vs-autonomous run accounting ──────────────────────
+//
+// Regression tests for the bug where interactive runs never landed
+// in `agent_runs`, so the agent detail page's runs list was blind to
+// user-driven activity. Fix: `recordStart` always inserts (with a
+// new `mode` column); rate-limit + histogram queries scope to
+// `mode = 'autonomous'` so the budget semantics are preserved.
+
+describe("agent_runs — mode-aware accounting", () => {
+  let db: JobsDb;
+
+  beforeEach(() => {
+    ({ db } = makeJobsDb());
+  });
+  afterEach(() => db.close());
+
+  it("getRecentRuns surfaces both interactive and autonomous runs", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+
+    // Two runs: one autonomous (heartbeat), one interactive (user).
+    rails.recordStart("main", "a", "j-auto", "autonomous");
+    rails.recordStart("main", "a", "j-int", "interactive");
+
+    const runs = getRecentRuns(db, "main", "a");
+    expect(runs.map((r) => r.jobId).sort()).toEqual(["j-auto", "j-int"]);
+  });
+
+  it("getHourlyHistogram counts only autonomous runs", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+
+    rails.recordStart("main", "a", "j-auto", "autonomous");
+    rails.recordStart("main", "a", "j-int-1", "interactive");
+    rails.recordStart("main", "a", "j-int-2", "interactive");
+
+    const h = getHourlyHistogram(db, "main", "a");
+    const total = h.buckets.reduce((a, b) => a + b, 0);
+    // Only the one autonomous run lands in the histogram.
+    expect(total).toBe(1);
+  });
+
+  it("AgentRails.canEnqueue ignores interactive runs in the rate-limit count", () => {
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+
+    // Force a tight per-hour cap so a single interactive run would
+    // trip it if it were counted.
+    db.prepare(
+      "UPDATE agent_state SET max_runs_per_hour = 1 WHERE project_id = 'main' AND slug = 'a'",
+    ).run();
+
+    rails.recordStart("main", "a", "j-int", "interactive");
+    const check = rails.canEnqueue("main", "a");
+    // Interactive runs don't consume the autonomous quota.
+    expect(check.allowed).toBe(true);
+  });
+
+  it("legacy rows (no mode column) default to autonomous and still count toward the cap", () => {
+    // The schema migration sets `DEFAULT 'autonomous'`. Inserting
+    // without the column simulates a row written before the migration
+    // landed; it must still be visible to canEnqueue's autonomous
+    // filter so existing installs preserve their pre-fix behavior.
+    db.prepare("INSERT INTO agent_runs (project_id, slug, started_at, job_id) VALUES (?, ?, ?, ?)")
+      .run("main", "a", Date.now(), "j-legacy");
+
+    const rails = new AgentRails(db);
+    rails.ensureState("main", "a");
+    db.prepare(
+      "UPDATE agent_state SET max_runs_per_hour = 1 WHERE project_id = 'main' AND slug = 'a'",
+    ).run();
+
+    const check = rails.canEnqueue("main", "a");
+    expect(check.allowed).toBe(false); // legacy row = autonomous = counts
+  });
+});
