@@ -72,7 +72,13 @@ import { createUploadsApi } from "./uploads-api.js";
 import type { Wal } from "./wal.js";
 import { WebSocketManager } from "./ws.js";
 
-const app = new Hono();
+// `strict: false` treats `/foo` and `/foo/` as the same route. Hono's
+// default is strict, which made `/api/projects/main/agents/` 404
+// while the bare form returned 200 — most clients normalise the
+// slash so the discrepancy was a footgun. With strict mode off, both
+// shapes hit the same handler and per-router slash mirroring becomes
+// unnecessary.
+const app = new Hono({ strict: false });
 
 // ---------------------------------------------------------------------------
 // State
