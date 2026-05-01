@@ -192,4 +192,3 @@ function escapeYamlString(value: string): string {
     .replace(/"/g, "'")
     .replace(/[\r\n]/g, " ");
 }
-

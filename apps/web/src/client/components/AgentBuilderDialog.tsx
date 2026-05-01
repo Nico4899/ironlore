@@ -439,10 +439,9 @@ function BoundariesPreview({
         Boundaries · receipt
       </div>
       <div style={{ color: "var(--il-text3)", marginBottom: 6 }}>
-        These will be appended to the agent's persona.md as a
-        <code> ## Boundaries</code> section. The runtime enforces them — this is the
-        human-readable mirror of <code>scope.pages</code>, <code>writable_kinds</code>,
-        <code> review_mode</code>, and <code>heartbeat</code>.
+        These will be appended to the agent's persona.md as a<code> ## Boundaries</code> section.
+        The runtime enforces them — this is the human-readable mirror of <code>scope.pages</code>,{" "}
+        <code>writable_kinds</code>,<code> review_mode</code>, and <code>heartbeat</code>.
       </div>
       <pre
         className="rounded"

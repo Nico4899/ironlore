@@ -96,9 +96,7 @@ function seedAgentDir(dataDir: string, slug: string, meta: Record<string, unknow
   const scopePages = Array.isArray((meta.scope as { pages?: string[] } | undefined)?.pages)
     ? ((meta.scope as { pages: string[] }).pages as string[])
     : ["/**"];
-  const writableKinds = Array.isArray(meta.writable_kinds)
-    ? (meta.writable_kinds as string[])
-    : [];
+  const writableKinds = Array.isArray(meta.writable_kinds) ? (meta.writable_kinds as string[]) : [];
   const boundaries = composeBoundariesSection({
     scopePages,
     canEditPages: writableKinds.length > 0,
