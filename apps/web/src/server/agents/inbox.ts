@@ -476,6 +476,16 @@ export class AgentInbox {
     return { success: true };
   }
 
+  /**
+   * Cheap existence check the API layer uses to return 404 instead of
+   * an empty array when a caller passes a bogus entryId. Distinct
+   * from `getEntry` (private) so we don't leak the row shape outside.
+   */
+  entryExists(id: string): boolean {
+    const row = this.db.prepare("SELECT 1 FROM inbox_entries WHERE id = ?").get(id);
+    return row !== undefined;
+  }
+
   private getEntry(id: string): InboxEntry | null {
     const row = this.db.prepare("SELECT * FROM inbox_entries WHERE id = ?").get(id) as
       | Record<string, unknown>

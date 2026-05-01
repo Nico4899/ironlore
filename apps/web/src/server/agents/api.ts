@@ -482,6 +482,11 @@ export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir:
   api.get("/:entryId/files", (c) => {
     const entryId = c.req.param("entryId") ?? "";
     if (!entryId) return c.json({ error: "Entry id required" }, 400);
+    // Distinguish "no such entry" (404) from "entry exists but has
+    // no files" (200, empty array). The previous handler conflated
+    // them by returning an empty array in both cases, hiding bad
+    // entry IDs from clients.
+    if (!inbox.entryExists(entryId)) return c.json({ error: "Entry not found" }, 404);
     const files = inbox.getFileDiffStats(entryId, projectDir);
     return c.json({ files });
   });
@@ -511,18 +516,25 @@ export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir:
     }
     const decision =
       body.decision === "approved" || body.decision === "rejected" ? body.decision : null;
-    return c.json(inbox.setFileDecision(entryId, body.path, decision));
+    const result = inbox.setFileDecision(entryId, body.path, decision);
+    // Surface the existing `{success: false, error: "Entry not found"}`
+    // envelope as HTTP 404 so clients can use status-code dispatch.
+    // Body shape is unchanged to keep existing callers compatible.
+    if (!result.success && result.error === "Entry not found") return c.json(result, 404);
+    return c.json(result);
   });
 
   api.post("/:entryId/approve", (c) => {
     const entryId = c.req.param("entryId") ?? "";
     const result = inbox.approveAll(entryId, projectDir);
+    if (!result.success && result.error === "Entry not found") return c.json(result, 404);
     return c.json(result);
   });
 
   api.post("/:entryId/reject", (c) => {
     const entryId = c.req.param("entryId") ?? "";
     const result = inbox.rejectAll(entryId, projectDir);
+    if (!result.success && result.error === "Entry not found") return c.json(result, 404);
     return c.json(result);
   });
 
