@@ -1,3 +1,4 @@
+import type { ProviderResolution } from "@ironlore/core";
 import type Database from "better-sqlite3";
 
 /**
@@ -85,6 +86,39 @@ export class AgentRails {
     this.db
       .prepare("INSERT INTO agent_runs (project_id, slug, started_at, job_id) VALUES (?, ?, ?, ?)")
       .run(projectId, slug, Date.now(), jobId);
+  }
+
+  /**
+   * Stamp the per-run provider resolution onto an existing
+   * `agent_runs` row. No-op when the row doesn't exist (interactive
+   * runs aren't tracked there); the AI panel surfaces those
+   * resolutions live via WS event instead.
+   *
+   * Powers the AgentDetail page's "Run 0042: anthropic / sonnet-4 /
+   * medium (from persona)" chip — the user can see at a glance which
+   * level of the override chain decided each field.
+   */
+  recordResolution(jobId: string, resolution: ProviderResolution): void {
+    this.db
+      .prepare(
+        `UPDATE agent_runs
+         SET provider        = ?,
+             model           = ?,
+             effort          = ?,
+             provider_source = ?,
+             model_source    = ?,
+             effort_source   = ?
+         WHERE job_id = ?`,
+      )
+      .run(
+        resolution.provider,
+        resolution.model,
+        resolution.effort,
+        resolution.source.provider,
+        resolution.source.model,
+        resolution.source.effort,
+        jobId,
+      );
   }
 
   /**

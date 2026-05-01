@@ -180,6 +180,30 @@ interface AIPanelStore {
    * icon + filename). Persisted.
    */
   includeActiveFileAsContext: boolean;
+  /**
+   * Per-conversation runtime override pinned by the user via the
+   * composer's `/model` / `/provider` slash commands. Lives next to
+   * the persona/global resolution chain — see
+   * [provider-resolution.ts](../../../packages/core/src/provider-resolution.ts)
+   * for the precedence rules. Cleared on agent switch.
+   */
+  runtimeOverride: {
+    provider?: "anthropic" | "ollama" | "openai" | "claude-cli";
+    model?: string;
+  };
+  /**
+   * Last `provider.resolved` event from the executor. Drives the
+   * "resolved as: <model> (from <level>)" chip in the AI panel
+   * header so the user can see exactly which override fired.
+   * Cleared on agent switch and on each new send.
+   */
+  lastResolution: {
+    provider: string;
+    model: string;
+    effort: string;
+    source: { provider: string; model: string; effort: string };
+    notes: string[];
+  } | null;
 
   setJobId: (jobId: string | null) => void;
   addMessage: (message: ConversationMessage) => void;
@@ -195,6 +219,8 @@ interface AIPanelStore {
   resetTokens: () => void;
   setEffort: (effort: EffortLevel) => void;
   setIncludeActiveFileAsContext: (value: boolean) => void;
+  setRuntimeOverride: (override: AIPanelStore["runtimeOverride"]) => void;
+  setLastResolution: (r: AIPanelStore["lastResolution"]) => void;
 }
 
 export const useAIPanelStore = create<AIPanelStore>((set) => ({

@@ -28,6 +28,19 @@ export interface AgentRunRecord {
   note: string | null;
   commitShaStart: string | null;
   commitShaEnd: string | null;
+  /**
+   * Resolved provider/model/effort triple for the run, plus the
+   * source level (action / runtime / persona / global) for each.
+   * Null when the run predates the resolution-persistence migration.
+   */
+  resolution: {
+    provider: string;
+    model: string;
+    effort: string;
+    providerSource: string;
+    modelSource: string;
+    effortSource: string;
+  } | null;
 }
 
 export interface AgentJournalEntry {
@@ -353,7 +366,13 @@ export function getRecentRuns(
          j.status        AS status,
          j.result        AS result,
          j.commit_sha_start AS commitShaStart,
-         j.commit_sha_end   AS commitShaEnd
+         j.commit_sha_end   AS commitShaEnd,
+         ar.provider        AS provider,
+         ar.model           AS model,
+         ar.effort          AS effort,
+         ar.provider_source AS providerSource,
+         ar.model_source    AS modelSource,
+         ar.effort_source   AS effortSource
        FROM agent_runs ar
        LEFT JOIN jobs j ON j.id = ar.job_id
        WHERE ar.project_id = ? AND ar.slug = ?
@@ -368,6 +387,12 @@ export function getRecentRuns(
     result: string | null;
     commitShaStart: string | null;
     commitShaEnd: string | null;
+    provider: string | null;
+    model: string | null;
+    effort: string | null;
+    providerSource: string | null;
+    modelSource: string | null;
+    effortSource: string | null;
   }>;
 
   // Step count comes from `tool_use` events. Batch the lookup so we
@@ -394,6 +419,17 @@ export function getRecentRuns(
     note: extractNote(r.result),
     commitShaStart: r.commitShaStart,
     commitShaEnd: r.commitShaEnd,
+    resolution:
+      r.provider && r.model && r.effort && r.providerSource && r.modelSource && r.effortSource
+        ? {
+            provider: r.provider,
+            model: r.model,
+            effort: r.effort,
+            providerSource: r.providerSource,
+            modelSource: r.modelSource,
+            effortSource: r.effortSource,
+          }
+        : null,
   }));
 }
 

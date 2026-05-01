@@ -432,6 +432,13 @@ async function start() {
       jobCtx.emitEvent("message.error", { text });
       return { status: "failed", result: text };
     }
+    // Stamp the resolution onto the agent_runs row (autonomous runs
+    //  only — interactive runs don't have a row, the call no-ops).
+    rails.recordResolution(job.id, resolved.resolution);
+    // Emit a structured event so the AI panel can surface the
+    //  "resolved as: <model> (from <level>)" chip + any
+    //  normalization notes (e.g. "effort dropped on Haiku").
+    jobCtx.emitEvent("provider.resolved", resolved.resolution);
     const projectContext = ProviderRegistry.buildContext(jobCtx.projectId, fetch);
     const result = await executeAgentRun(job, jobCtx, {
       provider: resolved.provider,

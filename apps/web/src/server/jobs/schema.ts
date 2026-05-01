@@ -131,4 +131,20 @@ function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_agent_runs_window
     ON agent_runs(project_id, slug, started_at)
   `);
+
+  // Phase-12: per-run provider resolution audit (provider override
+  //  chain — see packages/core/src/provider-resolution.ts). Six
+  //  columns: the resolved triple + the source level (action /
+  //  runtime / persona / global) for each. Additive so upgraded
+  //  installs pick them up without a schema rewrite.
+  const agentRunsCols = db.prepare("PRAGMA table_info(agent_runs)").all() as Array<{
+    name: string;
+  }>;
+  const has = (name: string) => agentRunsCols.some((c) => c.name === name);
+  if (!has("provider")) db.exec("ALTER TABLE agent_runs ADD COLUMN provider TEXT");
+  if (!has("model")) db.exec("ALTER TABLE agent_runs ADD COLUMN model TEXT");
+  if (!has("effort")) db.exec("ALTER TABLE agent_runs ADD COLUMN effort TEXT");
+  if (!has("provider_source")) db.exec("ALTER TABLE agent_runs ADD COLUMN provider_source TEXT");
+  if (!has("model_source")) db.exec("ALTER TABLE agent_runs ADD COLUMN model_source TEXT");
+  if (!has("effort_source")) db.exec("ALTER TABLE agent_runs ADD COLUMN effort_source TEXT");
 }
