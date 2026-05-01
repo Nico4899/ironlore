@@ -104,27 +104,30 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).toContain("`lint.md`");
     expect(content).toContain("`_log.md`");
     expect(content).toContain("`_index.md`");
-    // Must NOT carry the generic {{company_name}} templating the other
-    // specialists use — the gardener's role is vault-local.
+    // Regression guard: the role is vault-local, never substituted
+    //  through the {{company_name}} onboarding template.
     expect(content).not.toContain("{{company_name}}");
   });
 
-  it("leaves the technical-writer template on the generic {{company_name}} body", async () => {
+  it("does not seed retired library personas (Technical Writer / Product Manager / SEO Specialist / etc.)", async () => {
     await seed(dataDir);
 
-    // After the library trim, technical-writer is the only template
-    //  that still uses the {{company_name}}/{{company_description}}
-    //  onboarding-substitution body. wiki-gardener and evolver are
-    //  vault-local maintenance roles with their own bodies.
-    const writerPath = join(dataDir, ".agents", ".library", "technical-writer.md");
-    const content = readFileSync(writerPath, "utf-8");
-
-    expect(content).toContain("{{company_name}}");
-    expect(content).toContain("{{company_description}}");
-    // Regression guard: generic personas must not pick up the gardener
-    // body or its `skills: [lint]` declaration by accident.
-    expect(content).not.toContain("lint.md");
-    expect(content).not.toMatch(/skills: \[/);
+    // The library is now wiki-gardener + evolver (seeded here) plus
+    //  the researcher template (seeded by seed-agents.ts under a
+    //  directory shape). Anything else is persona theatre that the
+    //  Visual Agent Builder can produce on demand. Concrete files
+    //  named below were retired in earlier rounds; this test stops
+    //  them from sneaking back in via copy-paste.
+    for (const slug of [
+      "technical-writer",
+      "product-manager",
+      "seo-specialist",
+      "content-marketer",
+      "ceo",
+      "ux-researcher",
+    ]) {
+      expect(existsSync(join(dataDir, ".agents", ".library", `${slug}.md`))).toBe(false);
+    }
   });
 
   it("is idempotent — running seed() twice does not modify existing files", async () => {
