@@ -306,7 +306,11 @@ function DiffPreviewSummary({
         −{removed} +{added}
       </span>
       <span className="flex-1" />
-      {shortSha && <span style={{ color: "var(--il-text3)" }}>{shortSha}</span>}
+      {/* Phase-12 git-terminology cleanup (B.6): present the resolved
+       *   commit hash with a `version` label so the chrome reads as
+       *   product noun, not git-internal noun — consistent with the
+       *   AI panel + Agent Detail page renames. */}
+      {shortSha && <span style={{ color: "var(--il-text3)" }}>version {shortSha}</span>}
     </div>
   );
 }
