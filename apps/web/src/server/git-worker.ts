@@ -1,4 +1,6 @@
-import { type SimpleGit, simpleGit } from "simple-git";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { CheckRepoActions, type SimpleGit, simpleGit } from "simple-git";
 import type { Wal, WalEntry } from "./wal.js";
 
 /** Default time window for grouping commits by author (ms). */
@@ -23,6 +25,7 @@ interface CommitGroup {
 export class GitWorker {
   private git: SimpleGit;
   private wal: Wal;
+  private projectDir: string;
   private timer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private commitWindowMs: number;
@@ -30,6 +33,7 @@ export class GitWorker {
   constructor(projectDir: string, wal: Wal) {
     this.git = simpleGit(projectDir);
     this.wal = wal;
+    this.projectDir = projectDir;
     this.commitWindowMs = Number(
       process.env.IRONLORE_GIT_COMMIT_WINDOW ?? DEFAULT_COMMIT_WINDOW_MS,
     );
@@ -37,13 +41,28 @@ export class GitWorker {
 
   /**
    * Initialize git repo if needed and start the periodic drain.
+   *
+   * Repo detection uses two stacked checks because `simple-git`'s
+   * default `checkIsRepo()` walks **up** the parent tree — so if the
+   * project dir happens to live inside another repo (e.g. running
+   * the dev server from the ironlore source tree, where projects
+   * are scaffolded under `apps/web/projects/main`), it returns true
+   * for the *ancestor* repo and we skip `git init` entirely. Every
+   * subsequent `git add` / `commit` then operates against the
+   * source repo, which is silently masked here only because
+   * `apps/web/projects/` is in `.gitignore`.
+   *
+   * Belt-and-braces: a direct `.git` existence check on the project
+   * dir, plus `CheckRepoActions.IS_REPO_ROOT` so the simple-git
+   * answer also pins to "this exact directory is a repo root."
    */
   async start(): Promise<void> {
-    // Ensure git repo exists
-    const isRepo = await this.git.checkIsRepo();
-    if (!isRepo) {
+    const dotGit = join(this.projectDir, ".git");
+    const hasDotGitHere = existsSync(dotGit);
+    const isRoot = await this.git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT);
+    if (!hasDotGitHere || !isRoot) {
       await this.git.init();
-      console.log("Initialized git repository for project");
+      console.log(`Initialized git repository for project at ${this.projectDir}`);
     }
 
     // Start periodic drain
