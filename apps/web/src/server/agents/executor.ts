@@ -94,6 +94,15 @@ export interface ExecutorOptions {
       provenanceGaps: number;
     };
   }) => void;
+  /**
+   * Phase-9 multi-user: originating user's identity, threaded onto
+   * `ToolCallContext.acl` so tool calls (`kb.read_page`,
+   * `kb.replace_block`, `kb.search` filtering, etc.) honour per-page
+   * ACLs. Set only when the project is in `mode: multi-user` AND the
+   * run originated from a user-attached HTTP request — heartbeat /
+   * cron runs leave it absent and tools permit by default.
+   */
+  acl?: { userId: string; username: string };
 }
 
 /**
@@ -245,6 +254,11 @@ export async function executeAgentRun(
     fetch: airlock.fetch,
     downgradeEgress: (reason: string) => airlock.downgrade(reason),
     ...(effectiveDryRun ? { dryRunBridge: effectiveDryRun } : {}),
+    // Phase-9 multi-user — only present when the project is in
+    //  multi-user mode AND the run originated from a user-attached
+    //  HTTP request. Tool ACL gate (`checkToolAcl`) treats absence
+    //  as single-user-equivalent and short-circuits to permit.
+    ...(opts.acl ? { acl: opts.acl } : {}),
   };
 
   // Conversation history.

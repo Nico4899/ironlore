@@ -1,5 +1,6 @@
 import { parseBlocks } from "@ironlore/core";
 import type { StorageWriter } from "../storage-writer.js";
+import { checkToolAcl } from "./acl-gate.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 
 /**
@@ -31,8 +32,13 @@ export function createKbReadBlock(writer: StorageWriter): ToolImplementation {
         required: ["path", "blockId"],
       },
     },
-    async execute(args: unknown, _ctx: ToolCallContext): Promise<string> {
+    async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
       const { path, blockId } = args as { path: string; blockId: string };
+
+      // Phase-9 multi-user: gate on read access. Single-user runs +
+      //  cron-driven runs without a user identity skip the check.
+      const aclCheck = checkToolAcl(ctx, writer, path, "read");
+      if (!aclCheck.ok) return JSON.stringify(aclCheck.envelope);
 
       try {
         const { content, etag } = writer.read(path);

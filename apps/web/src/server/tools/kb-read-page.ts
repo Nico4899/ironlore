@@ -1,5 +1,6 @@
 import { parseBlocks } from "@ironlore/core";
 import type { StorageWriter } from "../storage-writer.js";
+import { checkToolAcl } from "./acl-gate.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 
 /**
@@ -9,6 +10,12 @@ import type { ToolCallContext, ToolImplementation } from "./types.js";
  * editing. The returned ETag must be passed back on any subsequent
  * `kb.replace_block` or `kb.delete_block` call for optimistic
  * concurrency.
+ *
+ * Phase-9 multi-user: gated by `checkToolAcl` for read access.
+ * Single-user installs and runs without a user identity (heartbeats /
+ * cron) skip the gate; multi-user runs that originated from a user
+ * session enforce the page's ACL (with ancestor `index.md`
+ * inheritance) before returning content.
  */
 export function createKbReadPage(writer: StorageWriter): ToolImplementation {
   return {
@@ -25,8 +32,10 @@ export function createKbReadPage(writer: StorageWriter): ToolImplementation {
         required: ["path"],
       },
     },
-    async execute(args: unknown, _ctx: ToolCallContext): Promise<string> {
+    async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
       const { path } = args as { path: string };
+      const aclCheck = checkToolAcl(ctx, writer, path, "read");
+      if (!aclCheck.ok) return JSON.stringify(aclCheck.envelope);
       try {
         const { content, etag } = writer.read(path);
         const blocks = parseBlocks(content).map((b) => ({
