@@ -131,7 +131,11 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       ctx,
       budget,
     );
-    expect(result.isError).toBe(false); // Tool returns structured error, not throw
+    // The dispatcher detects the `{"error": ...}` envelope and flips
+    // `isError`. Previously this returned `false` and the model
+    // treated the failure as success — see the AI-panel evolver
+    // run that finalized after silently dropping two writes.
+    expect(result.isError).toBe(true);
     const data = JSON.parse(result.result);
     expect(data.error).toContain("ETag mismatch");
     expect(data.currentEtag).toBeDefined();
@@ -149,6 +153,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       ctx,
       budget,
     );
+    expect(result.isError).toBe(true);
     const data = JSON.parse(result.result);
     expect(data.error).toContain("not found");
     expect(data.availableBlocks).toBeDefined();
@@ -163,6 +168,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       ctx,
       budget,
     );
+    expect(result.isError).toBe(true);
     const data = JSON.parse(result.result);
     expect(data.error).toBe("Page not found");
   });

@@ -113,11 +113,43 @@ export class ToolDispatcher {
     try {
       const result = await tool.execute(args, ctx);
       ctx.emitEvent("tool.result", { tool: name, result });
-      return { result, isError: false };
+      // Tools surface structured failures by returning a JSON
+      // envelope `{"error": "...", ...}` instead of throwing — the
+      // kb.* mutation family (insert_after, replace_block,
+      // create_page, delete_block) all use this for ETag mismatches,
+      // missing pages, writable_kinds violations, etc. Without
+      // flipping `isError`, the model receives those payloads with
+      // `is_error: false` and treats them as success, then writes a
+      // journal entry as if the edit landed (the AI-panel evolver
+      // run made this concrete: two `kb.insert_after` calls returned
+      // ETag-mismatch envelopes, the model rationalised them as a
+      // "timing issue" and finalized; only one of the three writes
+      // actually committed). Detect the envelope here so every kb
+      // tool gets the right `is_error` flag without per-tool changes.
+      const isError = hasTopLevelErrorField(result);
+      return { result, isError };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       ctx.emitEvent("tool.error", { tool: name, error: message });
       return { result: `Tool error: ${message}`, isError: true };
     }
+  }
+}
+
+function hasTopLevelErrorField(result: string): boolean {
+  // Peek at the result without forcing JSON parsing — most tool
+  // results are JSON-shaped strings, but a few return plain text. We
+  // only care about the `{"error": ...}` envelope; bail fast on
+  // anything that doesn't look like a JSON object.
+  if (typeof result !== "string" || result.length === 0 || result[0] !== "{") return false;
+  try {
+    const parsed = JSON.parse(result);
+    return (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      typeof (parsed as { error?: unknown }).error === "string"
+    );
+  } catch {
+    return false;
   }
 }

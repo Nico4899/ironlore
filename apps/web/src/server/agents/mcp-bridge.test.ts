@@ -148,9 +148,14 @@ describe("McpBridge — stdio discovery + dispatch", () => {
     await bridge.discoverAndRegister(dispatcher);
 
     const out = await dispatcher.call("mcp.stub.fail", {}, makeCtx(fx), makeBudget());
-    // The server set `isError: true`; bridge wraps the message in
-    // `{ error, server, tool }` so the model sees structured data.
-    expect(out.isError).toBe(false); // dispatcher succeeded, server-error is a string result
+    // The server set `isError: true`; the bridge wraps the message
+    // in `{ error, server, tool }`. The dispatcher detects that
+    // top-level `error` field and flips its own `isError` so the
+    // model receives `tool_result.is_error: true` and treats the
+    // call as failed (rather than parsing the JSON and possibly
+    // misinterpreting it as success — the kb.* failure mode that
+    // surfaced in the AI-panel evolver run).
+    expect(out.isError).toBe(true);
     const parsed = JSON.parse(out.result) as { error?: string; server?: string; tool?: string };
     expect(parsed.server).toBe("stub");
     expect(parsed.tool).toBe("fail");
