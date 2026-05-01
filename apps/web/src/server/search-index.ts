@@ -269,6 +269,40 @@ export class SearchIndex {
       )
     `);
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_chunk_vectors_path ON chunk_vectors(path)");
+
+    // Phase-11: Anthropic Contextual Retrieval — per-chunk LLM-generated
+    // context summary that lifts BM25 recall on indirect-term queries
+    // (the chunk doesn't contain the literal term but the page does).
+    // Two tables:
+    //   - `chunk_contexts` — durable shadow keyed (path, chunk_idx). Holds
+    //     the context text + which model produced it + when. The
+    //     `ContextualizationWorker` walks rows missing from this table
+    //     and fills them on a 30 s tick.
+    //   - `chunk_contexts_fts` — parallel FTS5 over the context text only.
+    //     `pages_chunks_fts` cannot be ALTER'd (FTS5 virtual tables don't
+    //     support column addition), so we keep contexts in a sibling
+    //     index and RRF-merge match results at search time.
+    // NULL fallback: when no chat provider is registered, neither table
+    // gets populated; FTS over `pages_chunks_fts` continues to work
+    // unchanged. See docs/04-ai-and-agents.md §Retrieval pipeline.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS chunk_contexts (
+        path         TEXT NOT NULL,
+        chunk_idx    INTEGER NOT NULL,
+        context      TEXT NOT NULL,
+        model        TEXT NOT NULL,
+        generated_at INTEGER NOT NULL,
+        PRIMARY KEY (path, chunk_idx)
+      )
+    `);
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_chunk_contexts_path ON chunk_contexts(path)");
+    this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS chunk_contexts_fts USING fts5(
+        path,
+        chunk_idx UNINDEXED,
+        context
+      )
+    `);
   }
 
   /**
@@ -292,6 +326,10 @@ export class SearchIndex {
       // so old embeddings no longer align with the new chunk_idx
       // numbering. Drop them — the backfill pass re-embeds.
       this.db.prepare("DELETE FROM chunk_vectors WHERE path = ?").run(pagePath);
+      // Same shift invalidates contextual-retrieval summaries — the
+      // ContextualizationWorker re-fills on its next tick.
+      this.db.prepare("DELETE FROM chunk_contexts WHERE path = ?").run(pagePath);
+      this.db.prepare("DELETE FROM chunk_contexts_fts WHERE path = ?").run(pagePath);
       const blocks = parseBlocks(content);
       if (blocks.length > 0) {
         const insertChunk = this.db.prepare(
@@ -369,6 +407,9 @@ export class SearchIndex {
       // Cascade hybrid-retrieval embeddings alongside the FTS rows —
       // a deleted page must not linger as ghost vectors.
       this.db.prepare("DELETE FROM chunk_vectors WHERE path = ?").run(pagePath);
+      // Cascade contextual-retrieval summaries for the same reason.
+      this.db.prepare("DELETE FROM chunk_contexts WHERE path = ?").run(pagePath);
+      this.db.prepare("DELETE FROM chunk_contexts_fts WHERE path = ?").run(pagePath);
     });
     txn();
 
@@ -851,6 +892,101 @@ export class SearchIndex {
   }
 
   /**
+   * Persist an Anthropic Contextual Retrieval summary for a single
+   * chunk. Writes to both the durable shadow table (`chunk_contexts`)
+   * and the parallel FTS5 index (`chunk_contexts_fts`) in one atomic
+   * pair so a query against the FTS index always finds a corresponding
+   * shadow row.
+   *
+   * Upserts on conflict: the worker may legitimately re-contextualise
+   * a chunk after a model swap, and an old context shouldn't survive.
+   */
+  storeChunkContext(
+    pagePath: string,
+    chunkIdx: number,
+    context: string,
+    model: string,
+  ): void {
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO chunk_contexts (path, chunk_idx, context, model, generated_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(path, chunk_idx) DO UPDATE SET
+             context = excluded.context,
+             model = excluded.model,
+             generated_at = excluded.generated_at`,
+        )
+        .run(pagePath, chunkIdx, context, model, Date.now());
+      // FTS5 has no UPSERT — delete + insert keeps the row keyed.
+      this.db
+        .prepare("DELETE FROM chunk_contexts_fts WHERE path = ? AND chunk_idx = ?")
+        .run(pagePath, chunkIdx);
+      this.db
+        .prepare(
+          "INSERT INTO chunk_contexts_fts (path, chunk_idx, context) VALUES (?, ?, ?)",
+        )
+        .run(pagePath, chunkIdx, context);
+    });
+    txn();
+  }
+
+  /**
+   * Enumerate chunks with FTS content but no contextual summary yet.
+   * Pulls the source page in the same row so the contextualization
+   * worker can prompt-cache against the full page text without an
+   * extra read.
+   */
+  getChunksMissingContexts(
+    limit = 10,
+  ): Array<{ path: string; chunkIdx: number; content: string }> {
+    return this.db
+      .prepare(
+        `SELECT c.path AS path, c.chunk_idx AS chunkIdx, c.content AS content
+         FROM pages_chunks_fts c
+         LEFT JOIN chunk_contexts ctx
+           ON ctx.path = c.path AND ctx.chunk_idx = c.chunk_idx
+         WHERE ctx.path IS NULL
+         LIMIT ?`,
+      )
+      .all(limit) as Array<{ path: string; chunkIdx: number; content: string }>;
+  }
+
+  /** How many chunks are still missing a context summary. */
+  countChunksMissingContexts(): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM pages_chunks_fts c
+         LEFT JOIN chunk_contexts ctx
+           ON ctx.path = c.path AND ctx.chunk_idx = c.chunk_idx
+         WHERE ctx.path IS NULL`,
+      )
+      .get() as { n: number };
+    return row.n;
+  }
+
+  /** How many chunks have a contextual summary attached. */
+  countChunksWithContexts(): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS n FROM chunk_contexts")
+      .get() as { n: number };
+    return row.n;
+  }
+
+  /**
+   * Read the full source-page markdown out of pages_fts. The
+   * Contextual-Retrieval prompt prepends the source page as the
+   * cache-key prefix; we re-read it here rather than asking callers
+   * to plumb the StorageWriter into the worker.
+   */
+  getPageContent(pagePath: string): string | null {
+    const row = this.db
+      .prepare("SELECT content FROM pages_fts WHERE path = ?")
+      .get(pagePath) as { content: string } | undefined;
+    return row?.content ?? null;
+  }
+
+  /**
    * How many chunk_vectors rows were produced by a model other than
    * `currentModel`. Surfaces a "model drift" badge on the status
    * endpoint — embeddings from a retired provider stay queryable by
@@ -1027,6 +1163,8 @@ export class SearchIndex {
       this.db.prepare("DELETE FROM recent_edits").run();
       this.db.prepare("DELETE FROM pages").run();
       this.db.prepare("DELETE FROM chunk_vectors").run();
+      this.db.prepare("DELETE FROM chunk_contexts").run();
+      this.db.prepare("DELETE FROM chunk_contexts_fts").run();
     });
     clear();
 
