@@ -391,6 +391,15 @@ async function start() {
       modelOverride?: string;
       /** Per-message action override from the composer's `/provider …` slash command. */
       providerOverride?: "anthropic" | "ollama" | "openai" | "claude-cli";
+      /**
+       * Phase-9 multi-user: forwarded from the originating
+       * `POST /agents/:slug/run` HTTP request. Used to populate
+       * `ToolCallContext.acl` so the tool ACL gate can enforce
+       * per-page read/write permissions on `kb.*` calls. Absent for
+       * cron / heartbeat runs that don't enter through the route.
+       */
+      userId?: string;
+      username?: string;
     };
     const agentSlug = job.owner_id ?? "general";
     if (!providerRegistry.hasAny()) {
@@ -447,6 +456,27 @@ async function start() {
     //  normalization notes (e.g. "effort dropped on Haiku").
     jobCtx.emitEvent("provider.resolved", resolved.resolution);
     const projectContext = ProviderRegistry.buildContext(jobCtx.projectId, fetch);
+
+    // Phase-9 multi-user: surface the project's mode + the originating
+    //  user's identity so `executeAgentRun` can pin them onto
+    //  `ToolCallContext.acl`. Single-user projects pass `acl: undefined`
+    //  unconditionally; multi-user projects with no user identity in
+    //  the payload (a heartbeat run) also pass `undefined` because the
+    //  ACL gate's "no user → permit" branch is the right semantic for
+    //  scheduled work that operates on the persona's scope rather than
+    //  a session.
+    let runProjectMode: "single-user" | "multi-user" = "single-user";
+    try {
+      const cfg = loadProjectConfig(services.projectDir);
+      if (cfg.mode === "multi-user") runProjectMode = "multi-user";
+    } catch {
+      // Missing / malformed project.yaml → safe single-user default.
+    }
+    const runAcl =
+      runProjectMode === "multi-user" && payload.userId && payload.username
+        ? { userId: payload.userId, username: payload.username }
+        : undefined;
+
     const result = await executeAgentRun(job, jobCtx, {
       provider: resolved.provider,
       projectContext,
@@ -458,6 +488,7 @@ async function start() {
       prompt: payload.prompt,
       dryRunBridge,
       backpressure,
+      ...(runAcl ? { acl: runAcl } : {}),
       // Phase-11 lint banner — when the wiki-gardener (or any
       // future lint workflow) finalizes via
       // `agent.journal({ lintReport: ... })`, fire one

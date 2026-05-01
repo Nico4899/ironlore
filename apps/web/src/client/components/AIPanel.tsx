@@ -1234,9 +1234,46 @@ function DiffPreviewItem({
  * uses `Intl.DateTimeFormat` so we always show local-time HH:MM,
  * rendered only when the message carries a `timestamp`.
  */
-function UserBubble({ text, timestamp }: { text: string; timestamp?: number }) {
+function UserBubble({
+  text,
+  attachments,
+  timestamp,
+}: {
+  text: string;
+  attachments: string[];
+  timestamp?: number;
+}) {
   return (
-    <div className="flex flex-col items-end">
+    <div className="flex flex-col items-end gap-1">
+      {/* Attachments ride above the bubble as compact chips so the
+       *  user can see what context was sent (file body, selection
+       *  block-refs) without the entire body inlined into the
+       *  message text. The `attachments` field carries just labels;
+       *  the full bodies were sent only to the agent (via the
+       *  serverPrompt arg of sendMessage). */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-1" style={{ maxWidth: "85%" }}>
+          {attachments.map((label, idx) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat (same file attached twice); index is the only stable identity within a single message
+              key={`${label}-${idx}`}
+              className="font-mono"
+              style={{
+                fontSize: 11,
+                letterSpacing: "0.02em",
+                padding: "1px 6px",
+                background: "color-mix(in oklch, var(--il-blue) 8%, transparent)",
+                border: "1px solid color-mix(in oklch, var(--il-blue) 22%, transparent)",
+                borderRadius: 2,
+                color: "var(--il-text3)",
+              }}
+              title={`Attached: ${label}`}
+            >
+              📎 {label}
+            </span>
+          ))}
+        </div>
+      )}
       <div
         style={{
           maxWidth: "85%",
@@ -1257,7 +1294,6 @@ function UserBubble({ text, timestamp }: { text: string; timestamp?: number }) {
             fontSize: 10.5,
             letterSpacing: "0.04em",
             color: "var(--il-text4)",
-            marginTop: 2,
           }}
         >
           {formatClockShort(timestamp)}

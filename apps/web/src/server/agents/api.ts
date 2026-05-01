@@ -83,8 +83,12 @@ export function createAgentApi(
     //  the executor only sets `acl` when project mode is `multi-user`.
     //  Heartbeat / cron runs don't pass through this route — they
     //  enqueue with no user context, and the gate permits.
-    const userId = (c.get("userId") as string | undefined) ?? "";
-    const username = (c.get("username") as string | undefined) ?? "";
+    // Hono's untyped Variables map rejects literal keys at the type
+    // level; cast the key to `never` to bypass the strict overload.
+    // The runtime semantics are unchanged — `c.get` returns whatever
+    // an upstream middleware set, or `undefined`.
+    const userId = (c.get("userId" as never) as string | undefined) ?? "";
+    const username = (c.get("username" as never) as string | undefined) ?? "";
 
     const jobId = pool.enqueue({
       projectId,
