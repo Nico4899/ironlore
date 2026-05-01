@@ -147,4 +147,16 @@ function initSchema(db: Database.Database): void {
   if (!has("provider_source")) db.exec("ALTER TABLE agent_runs ADD COLUMN provider_source TEXT");
   if (!has("model_source")) db.exec("ALTER TABLE agent_runs ADD COLUMN model_source TEXT");
   if (!has("effort_source")) db.exec("ALTER TABLE agent_runs ADD COLUMN effort_source TEXT");
+
+  // Run mode: previously every row was an autonomous heartbeat
+  // because interactive runs weren't recorded at all (so the agent
+  // detail page's "recent runs" list never showed user-driven
+  // activity). The column lets `recordStart` accept both modes
+  // unconditionally; rate-limit + histogram queries then filter
+  // back to `mode = 'autonomous'` to preserve their original
+  // semantics. Legacy rows default to 'autonomous' to match the
+  // pre-migration assumption.
+  if (!has("mode")) {
+    db.exec("ALTER TABLE agent_runs ADD COLUMN mode TEXT NOT NULL DEFAULT 'autonomous'");
+  }
 }
