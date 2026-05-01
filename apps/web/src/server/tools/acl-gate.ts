@@ -123,3 +123,65 @@ export function filterReadableForTool<T extends { path: string }>(
   }
   return out;
 }
+
+/**
+ * Permit-or-deny `kb.create_page`: the target page doesn't exist yet,
+ * so the gate inspects the closest ancestor `index.md`'s ACL instead.
+ * If no ancestor declares an ACL, the default (write = owner-only)
+ * applies — a brand-new page in a vault with no ancestor `index.md`
+ * is created freely (the user becomes the page's owner on first
+ * write via `stampOwner` upstream in pages-api / kb-create-page).
+ *
+ * `parent` is the directory the new page lands in (the `parent` arg
+ * to `kb.create_page`). Empty string = vault root.
+ */
+export function checkToolAclForCreate(
+  ctx: ToolCallContext,
+  writer: StorageWriter,
+  parent: string,
+): ToolAclResult {
+  if (!ctx.acl) return { ok: true };
+
+  const reader = (path: string): string | null => {
+    try {
+      return writer.read(path).content;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw err;
+    }
+  };
+
+  // Walk parent chain looking for an `index.md` with a non-default
+  //  ACL. We synthesize a "phantom child" path so `loadEffectiveAcl`
+  //  starts from the parent dir; the fake basename never matches an
+  //  existing file, so the helper proceeds to the inheritance walk.
+  const phantom = parent === "" ? "__new__.md" : `${parent}/__new__.md`;
+  const acl = loadEffectiveAcl(phantom, reader);
+
+  // Default ACL on a brand-new page: read=everyone, write=owner-only.
+  // For create, treat a fully-default ancestor chain as "permit" —
+  // the page hasn't been written yet, so there's no owner to compare
+  // against, and the user is about to become it. Once we have a
+  // non-default ancestor ACL, run the standard write check.
+  if (acl.owner === null && acl.read === null && acl.write === null) {
+    return { ok: true };
+  }
+
+  try {
+    assertCanAccess(acl, ctx.acl.userId, ctx.acl.username, "write");
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof AclViolation) {
+      return {
+        ok: false,
+        envelope: {
+          error: `ACL violation: user '${ctx.acl.username}' may not create pages under '${parent || "/"}'`,
+          status: 403,
+          path: parent,
+          op: "write",
+        },
+      };
+    }
+    throw err;
+  }
+}

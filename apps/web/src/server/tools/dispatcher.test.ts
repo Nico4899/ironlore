@@ -767,9 +767,11 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const dispatcher = new ToolDispatcher();
     // Hand-rolled tool that throws — exercises the catch branch.
     dispatcher.register({
-      name: "test.boom",
-      description: "throws on call",
-      inputSchema: { type: "object" },
+      definition: {
+        name: "test.boom",
+        description: "throws on call",
+        inputSchema: { type: "object" },
+      },
       execute: async () => {
         throw new Error("simulated failure");
       },

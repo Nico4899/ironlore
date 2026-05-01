@@ -1,8 +1,10 @@
 import { join } from "node:path";
 import { ulid } from "@ironlore/core";
+import { stampOwner } from "../acl.js";
 import { assignBlockIds, type BlockProvenance, writeBlocksSidecar } from "../block-ids.js";
 import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
+import { checkToolAclForCreate } from "./acl-gate.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 import { assertWritableKind, WritableKindsViolation } from "./writable-kinds-gate.js";
 
@@ -62,6 +64,13 @@ export function createKbCreatePage(
         throw err;
       }
 
+      // Phase-9 multi-user ACL gate — check the parent's effective
+      //  ACL because the target page doesn't exist yet. Single-user
+      //  runs + cron heartbeats permit. The user becomes the page's
+      //  owner on first write via `stampOwner` further down the chain.
+      const aclCheck = checkToolAclForCreate(ctx, writer, parent ?? "");
+      if (!aclCheck.ok) return JSON.stringify(aclCheck.envelope);
+
       const id = ulid();
       const now = new Date().toISOString();
       const slug = title
@@ -85,7 +94,14 @@ export function createKbCreatePage(
         .filter(Boolean)
         .join("\n");
 
-      const rawContent = `${frontmatter}\n\n# ${title}\n\n${markdown}\n`;
+      let rawContent = `${frontmatter}\n\n# ${title}\n\n${markdown}\n`;
+      // Phase-9 multi-user: stamp the originating user as the page's
+      //  owner, mirroring `pages-api.ts`'s first-PUT behaviour.
+      //  Single-user runs (no `ctx.acl`) skip the stamp — there's
+      //  only one user, ownership doesn't matter.
+      if (ctx.acl) {
+        rawContent = stampOwner(rawContent, ctx.acl.userId);
+      }
       // Stamp block IDs on the brand-new page so the sidecar has
       // consistent IDs to attach provenance to. `assignBlockIds`
       // returns the annotated content + parsed blocks.
