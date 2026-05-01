@@ -154,3 +154,60 @@ describe("GitWorker — drain and commit grouping", () => {
     expect(log.all[0]?.message).toContain("b.md");
   });
 });
+
+describe("GitWorker — repo root detection", () => {
+  // Regression test for the case where a project lives inside an
+  // ancestor git repo (e.g. dev install at `apps/web/projects/main`
+  // inside the ironlore source tree). Default `simple-git`
+  // `checkIsRepo()` walks up the parent tree and returns true for
+  // the ancestor, so the worker would skip `git init` and every
+  // subsequent commit would silently target the wrong repo. The
+  // patched `start()` checks for `.git` at the project dir
+  // specifically and inits regardless of any ancestor.
+
+  let outerDir: string;
+  let innerDir: string;
+  let writer: StorageWriter;
+  let worker: GitWorker;
+
+  beforeEach(async () => {
+    outerDir = join(tmpdir(), `git-worker-outer-${randomBytes(4).toString("hex")}`);
+    mkdirSync(outerDir, { recursive: true });
+    // Make the outer dir an actual git repo so checkIsRepo() walks up to it.
+    await simpleGit(outerDir).init();
+
+    innerDir = join(outerDir, "nested-project");
+    mkdirSync(join(innerDir, "data"), { recursive: true });
+    mkdirSync(join(innerDir, ".ironlore"), { recursive: true });
+
+    writer = new StorageWriter(innerDir);
+    worker = new GitWorker(innerDir, writer.getWal());
+  });
+
+  afterEach(() => {
+    worker.stop();
+    writer.close();
+    try {
+      rmSync(outerDir, { recursive: true, force: true });
+    } catch {
+      /* */
+    }
+  });
+
+  it("creates a project-local .git even when an ancestor repo exists", async () => {
+    await worker.start();
+    worker.stop();
+
+    // The project dir must have its own .git, distinct from the outer.
+    const innerGit = simpleGit(innerDir);
+    const isRoot = await innerGit.checkIsRepo("root" as never);
+    expect(isRoot).toBe(true);
+
+    const innerGitDir = (await innerGit.revparse(["--git-dir"])).trim();
+    // Resolve to absolute for a fair comparison (revparse can return ".git").
+    const absoluteInner = innerGitDir.startsWith("/") ? innerGitDir : join(innerDir, innerGitDir);
+    expect(absoluteInner).toBe(join(innerDir, ".git"));
+    expect(absoluteInner.startsWith(outerDir)).toBe(true); // sanity
+    expect(absoluteInner).not.toBe(join(outerDir, ".git"));
+  });
+});
