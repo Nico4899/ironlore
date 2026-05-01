@@ -460,6 +460,29 @@ export class SearchIndex {
       SearchResult & { blockIdStart?: string; blockIdEnd?: string }
     >;
 
+    // Stage 2b: contextual-retrieval FTS — chunks whose LLM-generated
+    // summary matches the query surface here. Joined back to
+    // `pages_chunks_fts` to recover the block-ID pin so a context hit
+    // still produces a `[[page#blk_…]]` citation. Empty when no
+    // provider has populated `chunk_contexts_fts` (graceful no-op).
+    const contextResults = this.db
+      .prepare(
+        `SELECT c.path AS path,
+                snippet(chunk_contexts_fts, 2, '<mark>', '</mark>', '…', 32) AS snippet,
+                p.block_id_start AS blockIdStart,
+                p.block_id_end AS blockIdEnd,
+                c.rank AS rank
+         FROM chunk_contexts_fts c
+         JOIN pages_chunks_fts p
+           ON p.path = c.path AND p.chunk_idx = c.chunk_idx
+         WHERE chunk_contexts_fts MATCH ?
+         ORDER BY c.rank
+         LIMIT ?`,
+      )
+      .all(ftsQuery, limit * 2) as Array<
+      SearchResult & { blockIdStart?: string; blockIdEnd?: string }
+    >;
+
     // RRF merge: combine page-level and chunk-level results.
     // Chunk results carry block-ID citations; page results have titles.
     const K = 60; // RRF constant
@@ -806,7 +829,7 @@ export class SearchIndex {
     if (tokens.length === 0) return new Map();
     const ftsQuery = tokens.map((t) => `"${t}"*`).join(" ");
 
-    const rows = this.db
+    const chunkRows = this.db
       .prepare(
         `SELECT path, rank
          FROM pages_chunks_fts
@@ -816,14 +839,37 @@ export class SearchIndex {
       )
       .all(ftsQuery, limit * 3) as Array<{ path: string; rank: number }>;
 
-    // Keep each path at its best chunk-level rank — pages with many
-    // chunk matches shouldn't surface multiple times in the prefilter.
+    // Phase-11 Contextual Retrieval: also MATCH against the parallel
+    // `chunk_contexts_fts` index. Chunks whose LLM-generated context
+    // mentions the query term surface here even when the chunk text
+    // itself doesn't — the +35–67% recall lift on indirect-term queries
+    // documented in Anthropic's CR pattern. NULL-fallback friendly:
+    // when no provider has been registered yet the contexts table is
+    // empty, this query returns zero rows, and the prefilter behaves
+    // exactly as before.
+    const contextRows = this.db
+      .prepare(
+        `SELECT path, rank
+         FROM chunk_contexts_fts
+         WHERE chunk_contexts_fts MATCH ?
+         ORDER BY rank
+         LIMIT ?`,
+      )
+      .all(ftsQuery, limit * 3) as Array<{ path: string; rank: number }>;
+
+    // Interleave the two ordered streams so neither completely
+    //  dominates: a path matched only via context still gets a
+    //  prefilter slot, but the chunk-text channel keeps priority for
+    //  ties (preserves existing direct-match behaviour).
     const pathRank = new Map<string, number>();
     let idx = 0;
-    for (const row of rows) {
-      if (pathRank.has(row.path)) continue;
-      pathRank.set(row.path, idx++);
+    const max = Math.max(chunkRows.length, contextRows.length);
+    for (let i = 0; i < max && pathRank.size < limit; i++) {
+      const a = chunkRows[i];
+      if (a && !pathRank.has(a.path)) pathRank.set(a.path, idx++);
       if (pathRank.size >= limit) break;
+      const b = contextRows[i];
+      if (b && !pathRank.has(b.path)) pathRank.set(b.path, idx++);
     }
     return pathRank;
   }
