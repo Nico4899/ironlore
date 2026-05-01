@@ -42,6 +42,7 @@ import { EmbeddingProviderRegistry } from "./providers/embedding-registry.js";
 import { getProviderKey } from "./providers/key-store.js";
 import { OllamaEmbeddingProvider } from "./providers/ollama-embedding.js";
 import { ProviderRegistry } from "./providers/registry.js";
+import { resolveProviderForRun } from "./providers/resolve.js";
 import { createProvidersApi } from "./providers-api.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { createSearchApi } from "./search-api.js";
@@ -376,10 +377,16 @@ async function start() {
   //  (dispatcher, services) from the job's project_id — one handler
   //  fans out across every project.
   pool.register("agent.run", async (job, jobCtx) => {
-    const payload = JSON.parse(job.payload) as { prompt?: string };
+    const payload = JSON.parse(job.payload) as {
+      prompt?: string;
+      effort?: "low" | "medium" | "high";
+      /** Per-message action override from the composer's `/model …` slash command. */
+      modelOverride?: string;
+      /** Per-message action override from the composer's `/provider …` slash command. */
+      providerOverride?: "anthropic" | "ollama" | "openai" | "claude-cli";
+    };
     const agentSlug = job.owner_id ?? "general";
-    const provider = providerRegistry.resolve();
-    if (!provider) {
+    if (!providerRegistry.hasAny()) {
       jobCtx.emitEvent("message.error", { text: "No AI provider configured" });
       return { status: "failed", result: "No AI provider configured" };
     }
@@ -389,17 +396,50 @@ async function start() {
       jobCtx.emitEvent("message.error", { text: `Unknown project ${jobCtx.projectId}` });
       return { status: "failed", result: `Unknown project ${jobCtx.projectId}` };
     }
+    // Resolve provider/model/effort through the four-level chain
+    //  (action → runtime → persona → global). Action overrides come
+    //  from the job payload; persona reads frontmatter; global is the
+    //  installed default per provider.
+    let resolved: Awaited<ReturnType<typeof resolveProviderForRun>>;
+    try {
+      resolved = resolveProviderForRun({
+        registry: providerRegistry,
+        globalDefaults: {
+          // Pick a reasonable default per the first registered provider.
+          //  When the action override changes that, the resolver swaps
+          //  the model field to the correct default for the new family.
+          provider: (providerRegistry.list()[0] ?? "anthropic") as
+            | "anthropic"
+            | "ollama"
+            | "openai"
+            | "claude-cli",
+          model:
+            providerRegistry.list()[0] === "ollama"
+              ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
+              : "claude-sonnet-4-20250514",
+          effort: "medium",
+        },
+        dataRoot: services.getDataRoot(),
+        agentSlug,
+        actionOverride: {
+          provider: payload.providerOverride,
+          model: payload.modelOverride,
+          effort: payload.effort,
+        },
+      });
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      jobCtx.emitEvent("message.error", { text });
+      return { status: "failed", result: text };
+    }
     const projectContext = ProviderRegistry.buildContext(jobCtx.projectId, fetch);
     const result = await executeAgentRun(job, jobCtx, {
-      provider,
+      provider: resolved.provider,
       projectContext,
       dispatcher,
       dataRoot: services.getDataRoot(),
       projectDir: services.projectDir,
-      model:
-        provider.name === "ollama"
-          ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
-          : "claude-sonnet-4-20250514",
+      model: resolved.model,
       agentSlug,
       prompt: payload.prompt,
       dryRunBridge,
