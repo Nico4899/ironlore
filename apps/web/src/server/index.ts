@@ -25,6 +25,7 @@ import { createAuthApi, SessionStore } from "./auth.js";
 import { bootstrap } from "./bootstrap.js";
 import { createCorsConfig } from "./cors.js";
 import { createCrossProjectCopyApi } from "./cross-project-copy.js";
+import { ContextualizationWorker } from "./contextualization-worker.js";
 import { EmbeddingWorker } from "./embedding-worker.js";
 import { createEmbeddingsApi } from "./embeddings-api.js";
 import { loadProjectConfig } from "./fetch-for-project.js";
@@ -625,6 +626,31 @@ async function start() {
     console.log(`Embedding worker started for ${embeddingWorkers.size} project(s)`);
   }
 
+  // Phase-11 Contextual Retrieval — drains chunks missing a CR summary
+  //  on a 30 s tick. Runs only when a chat provider is registered;
+  //  absent that, BM25 keeps working unaugmented (NULL-fallback contract
+  //  in `bm25PrefilterPaths`). Per-project worker so each project's
+  //  backlog drains independently and a slow Anthropic round-trip on
+  //  one project doesn't stall another.
+  const contextualizationWorkers = new Map<string, ContextualizationWorker>();
+  const startupChatProvider = providerRegistry.resolve();
+  if (startupChatProvider) {
+    for (const [projectId, services] of servicesById) {
+      const worker = new ContextualizationWorker(
+        services.searchIndex,
+        startupChatProvider,
+        projectId,
+        services.projectDir,
+      );
+      worker.onError = (err) => console.warn(`[ctx-worker] ${projectId}: ${err.message}`);
+      worker.start();
+      contextualizationWorkers.set(projectId, worker);
+    }
+    console.log(
+      `Contextualization worker started for ${contextualizationWorkers.size} project(s)`,
+    );
+  }
+
   // Create broadcast callback that forwards to the WebSocket manager
   // (wsManager is assigned below; the closure reads the module-level
   // reference at call time, so late binding is fine).
@@ -732,6 +758,8 @@ async function start() {
         searchIndex: services.searchIndex,
         provider: startupEmbeddingProvider,
         worker: embeddingWorkers.get(projectId) ?? null,
+        chatProvider: startupChatProvider,
+        contextualizationWorker: contextualizationWorkers.get(projectId) ?? null,
       }),
     );
   }

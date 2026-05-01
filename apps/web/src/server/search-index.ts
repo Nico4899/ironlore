@@ -523,6 +523,36 @@ export class SearchIndex {
       }
     }
 
+    // Fold context hits in with a slightly attenuated RRF weight —
+    //  context matches are real signal but should rank below a
+    //  literal-text match on the same path. Halving the contribution
+    //  preserves the recall lift without flipping the ordering for
+    //  the easy direct-match case.
+    const CONTEXT_WEIGHT = 0.5;
+    for (let i = 0; i < contextResults.length; i++) {
+      const r = contextResults[i];
+      if (!r) continue;
+      const key = r.path;
+      const existing = scoreMap.get(key);
+      const rrfScore = CONTEXT_WEIGHT / (K + i + 1);
+      if (existing) {
+        existing.score += rrfScore;
+      } else {
+        scoreMap.set(key, {
+          score: rrfScore,
+          result: { path: r.path, title: r.title ?? r.path, snippet: r.snippet, rank: r.rank },
+        });
+        // Pin block IDs from the joined chunk row so context-only hits
+        //  still cite the right block.
+        if (r.blockIdStart)
+          (scoreMap.get(key)!.result as unknown as Record<string, unknown>).blockIdStart =
+            r.blockIdStart;
+        if (r.blockIdEnd)
+          (scoreMap.get(key)!.result as unknown as Record<string, unknown>).blockIdEnd =
+            r.blockIdEnd;
+      }
+    }
+
     return [...scoreMap.values()]
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)

@@ -683,8 +683,6 @@ export function SidebarNew() {
        */}
       {!collapsed && (
         <div
-          role="tree"
-          aria-label="Files and folders"
           className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ease-in-out ${
             slideDir === "left"
               ? "-translate-x-full opacity-0"
@@ -692,6 +690,10 @@ export function SidebarNew() {
                 ? "translate-x-full opacity-0"
                 : "translate-x-0 opacity-100"
           }`}
+        >
+        <div
+          role="tree"
+          aria-label="Files and folders"
           onContextMenu={(e) => handleContextMenu(e)}
           onKeyDown={(e) => {
             // WAI-ARIA Authoring Practices §Tree View pattern.
@@ -825,10 +827,12 @@ export function SidebarNew() {
               </div>
             );
           })}
+        </div>
 
           {/* "+ New page" sits as the last row of the file list, directly
-           *  under the lowermost file. Scrolls with the tree so users
-           *  always know where to add a page from. */}
+           *  under the lowermost file. Scrolls with the tree (lives in the
+           *  same scroll container) but is a sibling of role="tree" so it
+           *  doesn't violate aria-required-children. */}
           <button
             type="button"
             onClick={handleNewPageFromSidebar}
