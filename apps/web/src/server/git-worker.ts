@@ -61,7 +61,14 @@ export class GitWorker {
     const hasDotGitHere = existsSync(dotGit);
     const isRoot = await this.git.checkIsRepo(CheckRepoActions.IS_REPO_ROOT);
     if (!hasDotGitHere || !isRoot) {
-      await this.git.init();
+      // Force `main` as the initial branch so the project repo's
+      // default doesn't depend on the host's `init.defaultBranch`
+      // (some hosts default to `master`). Code that talks back to
+      // the project (executor, inbox) reads the current branch
+      // dynamically rather than hardcoding a name, but pinning the
+      // initial value keeps the seeded layout consistent across
+      // installs.
+      await this.git.init(["--initial-branch=main"]);
       console.log(`Initialized git repository for project at ${this.projectDir}`);
     }
 
