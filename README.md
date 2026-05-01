@@ -34,8 +34,8 @@ On first start, Ironlore seeds `projects/main/data/` with:
 
 - **Getting Started** — 5 onboarding pages (pages, agents, search, shortcuts)
 - **Carousel** — sample files for every viewer type (PDF, CSV, PNG, SVG, Mermaid, TypeScript, plain text, log, VTT transcript, EML email, Jupyter notebook)
-- **Default agents** — General (read-only assistant) + Editor (page mutations)
-- **Agent library** — 20 specialist templates in `.agents/.library/` (CEO, Product Manager, Technical Writer, Wiki Gardener, etc.)
+- **Default agents** — Librarian (read-only KB assistant) + Editor (page mutations with dry-run + inline diff)
+- **Agent library** — three opt-in specialist templates with dedicated tooling: Wiki Gardener (lint detectors), Researcher (thesis-driven investigation), and Evolver (skill-improvement loop). Anything else is one Visual Agent Builder away
 
 A random admin password is printed to stdout and written to `.ironlore-install.json` (mode 0600). Save it — it will not be shown again. On first login you must change the password.
 
