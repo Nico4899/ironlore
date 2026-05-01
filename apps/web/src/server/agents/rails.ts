@@ -42,12 +42,17 @@ export class AgentRails {
       return { allowed: false, reason: "agent is paused" };
     }
 
-    // Check hourly rate limit.
+    // Check hourly rate limit. Only autonomous runs count: interactive
+    // runs are user-initiated and shouldn't be rate-limited against
+    // the heartbeat budget. The schema-migration default of
+    // 'autonomous' means legacy rows still count, preserving prior
+    // behavior on upgraded installs.
     const oneHourAgo = Date.now() - 3_600_000;
     const hourCount = (
       this.db
         .prepare(
-          "SELECT COUNT(*) AS cnt FROM agent_runs WHERE project_id = ? AND slug = ? AND started_at >= ?",
+          `SELECT COUNT(*) AS cnt FROM agent_runs
+           WHERE project_id = ? AND slug = ? AND started_at >= ? AND mode = 'autonomous'`,
         )
         .get(projectId, slug, oneHourAgo) as { cnt: number }
     ).cnt;
@@ -59,12 +64,13 @@ export class AgentRails {
       };
     }
 
-    // Check daily rate limit.
+    // Check daily rate limit (autonomous-only, same reason as above).
     const oneDayAgo = Date.now() - 86_400_000;
     const dayCount = (
       this.db
         .prepare(
-          "SELECT COUNT(*) AS cnt FROM agent_runs WHERE project_id = ? AND slug = ? AND started_at >= ?",
+          `SELECT COUNT(*) AS cnt FROM agent_runs
+           WHERE project_id = ? AND slug = ? AND started_at >= ? AND mode = 'autonomous'`,
         )
         .get(projectId, slug, oneDayAgo) as { cnt: number }
     ).cnt;
@@ -80,12 +86,25 @@ export class AgentRails {
   }
 
   /**
-   * Record that a job started for an agent (for rate-limit tracking).
+   * Record that a job started for an agent.
+   *
+   * Both modes get a row so the agent detail page's run history shows
+   * user-driven activity alongside heartbeats. Rate-limit and
+   * histogram queries scope to `mode = 'autonomous'` to preserve
+   * their original budget semantics — see `canEnqueue` and
+   * `getHourlyHistogram`.
    */
-  recordStart(projectId: string, slug: string, jobId: string): void {
+  recordStart(
+    projectId: string,
+    slug: string,
+    jobId: string,
+    mode: "interactive" | "autonomous" = "autonomous",
+  ): void {
     this.db
-      .prepare("INSERT INTO agent_runs (project_id, slug, started_at, job_id) VALUES (?, ?, ?, ?)")
-      .run(projectId, slug, Date.now(), jobId);
+      .prepare(
+        "INSERT INTO agent_runs (project_id, slug, started_at, job_id, mode) VALUES (?, ?, ?, ?, ?)",
+      )
+      .run(projectId, slug, Date.now(), jobId, mode);
   }
 
   /**
