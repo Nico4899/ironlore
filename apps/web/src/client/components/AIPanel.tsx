@@ -127,13 +127,22 @@ export function AIPanel() {
   const [costDialogOpen, setCostDialogOpen] = useState(false);
 
   const doSend = useCallback(
-    (fullPrompt: string) => {
-      sendMessage(fullPrompt);
+    (displayText: string, serverPrompt: string, attachmentLabels: string[]) => {
+      sendMessage(displayText, serverPrompt, attachmentLabels);
       setInputDraft("");
       useAIPanelStore.getState().clearContexts();
     },
     [sendMessage, setInputDraft],
   );
+
+  // Cost-estimate gate stashes the entire send payload (display +
+  // server + attachments) so handleCostConfirm can replay all three
+  // after the user acknowledges the price.
+  const [pendingSend, setPendingSend] = useState<{
+    display: string;
+    server: string;
+    attachments: string[];
+  } | null>(null);
 
   const handleSend = useCallback(() => {
     const draft = inputDraft.trim();
@@ -171,12 +180,17 @@ export function AIPanel() {
       });
     }
 
-    // Build the full prompt including all context pills.
+    // Build the server-bound prompt including all context pills —
+    // the agent needs the full file body etc. to reason about it.
+    // The locally-displayed message stays as just the typed draft so
+    // the chat transcript doesn't become a wall of inlined files;
+    // attachment labels render as chips alongside the bubble.
     const contextBlock =
       sendContexts.length > 0
         ? `${sendContexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n")}\n\n`
         : "";
-    const fullPrompt = contextBlock + draft;
+    const serverPrompt = contextBlock + draft;
+    const attachmentLabels = sendContexts.map((c) => c.label);
 
     // Cost-estimate gate: show on the first send per agent per
     // session. Any read/write failure of sessionStorage just skips
@@ -189,12 +203,12 @@ export function AIPanel() {
     }
 
     if (!alreadyAcknowledged) {
-      setPendingPrompt(fullPrompt);
+      setPendingSend({ display: draft, server: serverPrompt, attachments: attachmentLabels });
       setCostDialogOpen(true);
       return;
     }
 
-    doSend(fullPrompt);
+    doSend(draft, serverPrompt, attachmentLabels);
   }, [inputDraft, contexts, activeAgent, doSend]);
 
   const handleCostConfirm = useCallback(() => {
@@ -204,15 +218,15 @@ export function AIPanel() {
       /* storage denied — don't block the send */
     }
     setCostDialogOpen(false);
-    if (pendingPrompt !== null) {
-      doSend(pendingPrompt);
-      setPendingPrompt(null);
+    if (pendingSend !== null) {
+      doSend(pendingSend.display, pendingSend.server, pendingSend.attachments);
+      setPendingSend(null);
     }
-  }, [activeAgent, pendingPrompt, doSend]);
+  }, [activeAgent, pendingSend, doSend]);
 
   const handleCostCancel = useCallback(() => {
     setCostDialogOpen(false);
-    setPendingPrompt(null);
+    setPendingSend(null);
   }, []);
 
   /**

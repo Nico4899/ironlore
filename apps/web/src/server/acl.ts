@@ -113,6 +113,68 @@ export function assertCanAccess(acl: PageAcl, userId: string, username: string, 
 }
 
 /**
+ * Whether this ACL is "fully default" — owner unset, both lists null.
+ * The inheritance walker uses this to decide whether to climb to an
+ * ancestor `index.md` for a non-default ACL. Once a page declares
+ * even one field (typically `owner` after first write), inheritance
+ * stops at that page.
+ */
+export function isDefaultAcl(acl: PageAcl): boolean {
+  return acl.owner === null && acl.read === null && acl.write === null;
+}
+
+/**
+ * Resolve the *effective* ACL for a page by walking up the directory
+ * tree to the closest ancestor `index.md` that declares an ACL.
+ *
+ * `pagePath` is project-relative (e.g. `team/notes/standup.md`); the
+ * walker tries `team/notes/index.md`, `team/index.md`, `index.md`. If
+ * none of them declare an ACL the per-page default applies (read =
+ * everyone, write = owner-only).
+ *
+ * `readPage` is the dependency-injected reader so this helper stays
+ * test-agnostic of `StorageWriter`. Callers in production wire it to
+ * `(p) => writer.read(p).content`; tests pass a Map-backed stub.
+ *
+ * Why ancestor `index.md` and not the parent directory file: the file
+ * tree is a path, not a node. Directories don't carry frontmatter; the
+ * convention from docs/08 §Multi-user mode is "ACL inheritance lives
+ * on `<dir>/index.md`," which doubles as the human-visible README of
+ * the section.
+ */
+export function loadEffectiveAcl(
+  pagePath: string,
+  readPage: (path: string) => string | null,
+): PageAcl {
+  const own = (() => {
+    const content = readPage(pagePath);
+    return content === null ? { ...ACL_DEFAULT } : parsePageAcl(content);
+  })();
+  if (!isDefaultAcl(own)) return own;
+
+  // Walk ancestors. `team/notes/standup.md` → ["team/notes", "team", ""]
+  // and we read `<ancestor>/index.md` (or `index.md` at root).
+  let dir = pagePath.includes("/") ? pagePath.slice(0, pagePath.lastIndexOf("/")) : "";
+  // Already-an-index.md at the same level: don't ask itself.
+  if (pagePath === `${dir}/index.md` || pagePath === "index.md") {
+    dir = dir.includes("/") ? dir.slice(0, dir.lastIndexOf("/")) : "";
+  }
+  while (true) {
+    const candidate = dir === "" ? "index.md" : `${dir}/index.md`;
+    if (candidate !== pagePath) {
+      const content = readPage(candidate);
+      if (content !== null) {
+        const acl = parsePageAcl(content);
+        if (!isDefaultAcl(acl)) return acl;
+      }
+    }
+    if (dir === "") break;
+    dir = dir.includes("/") ? dir.slice(0, dir.lastIndexOf("/")) : "";
+  }
+  return own; // every ancestor was default → default rules
+}
+
+/**
  * On first write of a page (no `owner:` in frontmatter yet), stamp
  * the calling user's ID. Returns the (possibly modified) markdown.
  * Already-owned pages are returned unchanged so a foreign editor
