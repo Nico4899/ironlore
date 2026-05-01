@@ -861,22 +861,22 @@ explicit "edit this page" instructions from the user.
     scope: string;
   }> = [
     // Curated library — only personas that earn their place in a
-    //  knowledge-base product. The earlier "fake corporate team" set
-    //  (CEO / Content Marketer / SEO Specialist / etc.) was removed:
-    //  those are persona theatre for solo users, and any user who
-    //  needs them can build one with the Visual Agent Builder in
-    //  Settings → Agents in 30 seconds. The four below are the
-    //  shapes of what an agent CAN do, not staff for a pretend
-    //  company — see [docs/04-ai-and-agents.md §Default agents](../../docs/04-ai-and-agents.md).
-    {
-      slug: "technical-writer",
-      name: "Technical Writer",
-      emoji: "\u{1F4DD}",
-      dept: "Writing",
-      role: "Documentation drafts, API references, changelogs — broadly useful for any KB",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/**",
-    },
+    //  knowledge-base product. Each entry has dedicated tooling that
+    //  the Editor + Librarian defaults can't replicate:
+    //   - wiki-gardener: 5 lint detectors (orphans/stale-sources/
+    //     contradictions/coverage-gaps/provenance-gaps)
+    //   - evolver: kb.query_failed_runs + the inbox-merged skill-edit
+    //     loop
+    //   - researcher: thesis.md skill (decompose → evidence → verdict),
+    //     seeded by seed-agents.ts as a `.library/<slug>/` template
+    //     shape rather than the flat `<slug>.md` shape used here
+    //
+    //  Cut history: an earlier "fake corporate team" set
+    //  (CEO / Content Marketer / SEO Specialist / Product Manager /
+    //  Technical Writer / etc.) was retired because they were persona
+    //  theatre with no dedicated tooling — anyone wanting one can
+    //  build it through the Visual Agent Builder in Settings → Agents
+    //  in 30 seconds. See [docs/04-ai-and-agents.md §Default agents](../../docs/04-ai-and-agents.md).
     {
       slug: "wiki-gardener",
       name: "Wiki Gardener",

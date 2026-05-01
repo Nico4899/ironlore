@@ -152,6 +152,34 @@ describe("executor — review_mode: inbox honored regardless of run mode", () =>
     expect(parsed.inboxBranch).toBe(`agents/evolver/${job.id}`);
   });
 
+  it("restores HEAD to the project's actual default branch (not hardcoded 'main')", async () => {
+    // Some installs have `master` as the default branch (older host
+    // git config). The executor used to hardcode `git checkout main`
+    // at the end of an inbox run, which silently failed on those
+    // installs and left HEAD stuck on the staging branch. The fix
+    // captures the current branch via `git symbolic-ref` before
+    // staging and restores that exact branch after.
+    execSync("git branch -m main master", { cwd: projectDir, stdio: "pipe" });
+    writePersona(dataRoot, "evolver", "review_mode: inbox");
+    const job = makeJob({ mode: "interactive", owner_id: "evolver" });
+
+    await executeAgentRun(job, makeJobCtx(), {
+      provider: new StubProvider(),
+      projectContext,
+      dispatcher: new ToolDispatcher(),
+      dataRoot,
+      projectDir,
+      model: "claude-haiku-4-20250514",
+      agentSlug: "evolver",
+    });
+
+    const head = execSync("git symbolic-ref --short HEAD", {
+      cwd: projectDir,
+      encoding: "utf-8",
+    }).trim();
+    expect(head).toBe("master"); // restored to where we started, not "main"
+  });
+
   it("interactive run WITHOUT review_mode commits straight to main (no staging)", async () => {
     // Most agents (general, editor, etc.) don't set review_mode and
     // expect immediate writes. Make sure the fix doesn't accidentally

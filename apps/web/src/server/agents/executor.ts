@@ -122,8 +122,25 @@ export async function executeAgentRun(
   const inboxBranch = reviewMode === "inbox" ? `agents/${agentSlug}/${job.id}` : null;
   const effectiveDryRun = reviewMode === "dry_run" ? opts.dryRunBridge : undefined;
 
-  // Create and checkout inbox staging branch if needed.
+  // Capture the current branch name *before* creating the staging
+  // branch so we can switch back to it at the end of the run. The
+  // previous code hardcoded `git checkout main`, which silently
+  // failed on installs where the project's default branch was
+  // `master` (or anything else) — leaving HEAD stuck on the staging
+  // branch and contaminating subsequent runs.
+  let originBranch: string | null = null;
   if (inboxBranch) {
+    try {
+      originBranch = execSync("git symbolic-ref --short HEAD", {
+        cwd: projectDir,
+        encoding: "utf-8",
+        stdio: "pipe",
+      }).trim();
+    } catch {
+      // Detached HEAD or no commits yet — leave null; we just won't
+      // try to switch back later.
+    }
+
     try {
       execSync(`git checkout -b ${inboxBranch}`, {
         cwd: projectDir,
@@ -131,7 +148,7 @@ export async function executeAgentRun(
         stdio: "pipe",
       });
     } catch {
-      // Branch creation failed — proceed on main.
+      // Branch creation failed — proceed on whatever branch we're on.
     }
   }
 
@@ -507,16 +524,21 @@ export async function executeAgentRun(
     });
   }
 
-  // Switch back to main if we were on an inbox staging branch.
-  if (inboxBranch) {
+  // Switch back to whatever branch we were on before staging — captured
+  // up top via `git symbolic-ref`. Hardcoding "main" used to silently
+  // leave HEAD on the staging branch when the project repo's default
+  // was named differently (e.g. `master`), which then caused every
+  // following run to compound commits onto the previous staging
+  // branch instead of the user's actual main line.
+  if (inboxBranch && originBranch) {
     try {
-      execSync("git checkout main", {
+      execSync(`git checkout ${originBranch}`, {
         cwd: projectDir,
         encoding: "utf-8",
         stdio: "pipe",
       });
     } catch {
-      // Checkout back to main failed — log but don't fail the run.
+      // Checkout back failed — log but don't fail the run.
     }
   }
 
