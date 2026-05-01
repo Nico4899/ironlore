@@ -109,11 +109,15 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).not.toContain("{{company_name}}");
   });
 
-  it("leaves other library personas on the generic {{company_name}} body", async () => {
+  it("leaves the technical-writer template on the generic {{company_name}} body", async () => {
     await seed(dataDir);
 
-    const ceoPath = join(dataDir, ".agents", ".library", "ceo.md");
-    const content = readFileSync(ceoPath, "utf-8");
+    // After the library trim, technical-writer is the only template
+    //  that still uses the {{company_name}}/{{company_description}}
+    //  onboarding-substitution body. wiki-gardener and evolver are
+    //  vault-local maintenance roles with their own bodies.
+    const writerPath = join(dataDir, ".agents", ".library", "technical-writer.md");
+    const content = readFileSync(writerPath, "utf-8");
 
     expect(content).toContain("{{company_name}}");
     expect(content).toContain("{{company_description}}");

@@ -21,10 +21,14 @@ import type Database from "better-sqlite3";
 export function seedAgents(dataDir: string, jobsDb: Database.Database): void {
   const now = Date.now();
 
-  // General agent — read-only Ask mode, no mutation tools.
+  // Librarian — the read-mostly default agent. Slug stays "general"
+  //  for the reserved routing key + back-compat; the user-facing
+  //  name is "Librarian" because that's the actual role (find + cite,
+  //  no mutations). Per docs/04-ai-and-agents.md §Default agents,
+  //  this agent is seeded into every project and not deletable.
   seedAgentDir(dataDir, "general", {
-    name: "General",
-    emoji: "🔍",
+    name: "Librarian",
+    emoji: "📚",
     role: "Read-only assistant — searches pages, cites block-level sources, never mutates content",
     provider: "anthropic",
     active: true,

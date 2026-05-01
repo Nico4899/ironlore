@@ -787,13 +787,18 @@ FTS5 search index.
   mkdirSync(agentLibDir, { recursive: true });
   mkdirSync(sharedSkillsDir, { recursive: true });
 
-  // General agent (seeded, not deletable)
+  // Librarian agent (seeded, not deletable). Slug stays "general"
+  //  for routing/back-compat; display name is "Librarian" — fits the
+  //  KB metaphor and reads as a concrete role rather than the
+  //  generic "General" placeholder. The slug is the reserved
+  //  routing key per build-persona.ts; the user-facing name is what
+  //  changes here.
   seedFile(
     join(dataDir, AGENTS_DIR, "general", "persona.md"),
     `---
-name: General
+name: Librarian
 slug: general
-emoji: "\u{1F4AC}"
+emoji: "\u{1F4DA}"
 type: default
 role: "Knowledge base assistant — read-mostly, citation-grounded answers"
 provider: anthropic
@@ -803,7 +808,7 @@ scope:
   writable_kinds: []
 ---
 
-You are the General assistant for this Ironlore knowledge base. Your role is
+You are the Librarian for this Ironlore knowledge base. Your role is
 to help users find and understand information across their pages.
 
 ## Behavior
@@ -855,176 +860,22 @@ explicit "edit this page" instructions from the user.
     heartbeat: string;
     scope: string;
   }> = [
-    {
-      slug: "ceo",
-      name: "CEO",
-      emoji: "\u{1F451}",
-      dept: "Executive",
-      role: "Strategic direction, weekly priorities, decision log",
-      heartbeat: "0 8 * * 1",
-      scope: "/strategy/**",
-    },
-    {
-      slug: "content-marketer",
-      name: "Content Marketer",
-      emoji: "\u{270D}\u{FE0F}",
-      dept: "Marketing",
-      role: "Blog posts, guides, thought leadership",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/marketing/**",
-    },
-    {
-      slug: "social-media-manager",
-      name: "Social Media Manager",
-      emoji: "\u{1F4F1}",
-      dept: "Marketing",
-      role: "Social posts, engagement tracking, trend analysis",
-      heartbeat: "0 10 * * 1-5",
-      scope: "/social/**",
-    },
-    {
-      slug: "seo-specialist",
-      name: "SEO Specialist",
-      emoji: "\u{1F50D}",
-      dept: "Marketing",
-      role: "Keyword research, content optimization, rank tracking",
-      heartbeat: "0 9 * * 1,4",
-      scope: "/seo/**",
-    },
-    {
-      slug: "product-manager",
-      name: "Product Manager",
-      emoji: "\u{1F4CB}",
-      dept: "Product",
-      role: "Feature specs, roadmap updates, user feedback synthesis",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/product/**",
-    },
-    {
-      slug: "ux-researcher",
-      name: "UX Researcher",
-      emoji: "\u{1F9EA}",
-      dept: "Product",
-      role: "User interviews, usability findings, persona updates",
-      heartbeat: "0 10 * * 2,4",
-      scope: "/research/**",
-    },
-    {
-      slug: "developer-advocate",
-      name: "Developer Advocate",
-      emoji: "\u{1F4E3}",
-      dept: "Engineering",
-      role: "Technical tutorials, API docs, community engagement",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/devrel/**",
-    },
+    // Curated library — only personas that earn their place in a
+    //  knowledge-base product. The earlier "fake corporate team" set
+    //  (CEO / Content Marketer / SEO Specialist / etc.) was removed:
+    //  those are persona theatre for solo users, and any user who
+    //  needs them can build one with the Visual Agent Builder in
+    //  Settings → Agents in 30 seconds. The four below are the
+    //  shapes of what an agent CAN do, not staff for a pretend
+    //  company — see [docs/04-ai-and-agents.md §Default agents](../../docs/04-ai-and-agents.md).
     {
       slug: "technical-writer",
       name: "Technical Writer",
       emoji: "\u{1F4DD}",
-      dept: "Engineering",
-      role: "Documentation, API references, changelogs",
+      dept: "Writing",
+      role: "Documentation drafts, API references, changelogs — broadly useful for any KB",
       heartbeat: "0 9 * * 1-5",
-      scope: "/docs/**",
-    },
-    {
-      slug: "data-analyst",
-      name: "Data Analyst",
-      emoji: "\u{1F4CA}",
-      dept: "Analytics",
-      role: "Metrics dashboards, trend reports, cohort analysis",
-      heartbeat: "0 8 * * 1",
-      scope: "/analytics/**",
-    },
-    {
-      slug: "sales-enablement",
-      name: "Sales Enablement",
-      emoji: "\u{1F4BC}",
-      dept: "Sales",
-      role: "Battle cards, objection handling, case studies",
-      heartbeat: "0 9 * * 1,3,5",
-      scope: "/sales/**",
-    },
-    {
-      slug: "customer-success",
-      name: "Customer Success",
-      emoji: "\u{1F91D}",
-      dept: "Support",
-      role: "FAQ maintenance, onboarding guides, health scores",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/support/**",
-    },
-    {
-      slug: "recruiter",
-      name: "Recruiter",
-      emoji: "\u{1F465}",
-      dept: "People",
-      role: "Job descriptions, candidate pipelines, interview guides",
-      heartbeat: "0 9 * * 1,3",
-      scope: "/people/**",
-    },
-    {
-      slug: "legal-analyst",
-      name: "Legal Analyst",
-      emoji: "\u{2696}\u{FE0F}",
-      dept: "Legal",
-      role: "Policy summaries, compliance tracking, contract templates",
-      heartbeat: "0 9 * * 1",
-      scope: "/legal/**",
-    },
-    {
-      slug: "finance-analyst",
-      name: "Finance Analyst",
-      emoji: "\u{1F4B0}",
-      dept: "Finance",
-      role: "Budget tracking, forecast models, expense reports",
-      heartbeat: "0 8 * * 1",
-      scope: "/finance/**",
-    },
-    {
-      slug: "competitive-intel",
-      name: "Competitive Intelligence",
-      emoji: "\u{1F50E}",
-      dept: "Strategy",
-      role: "Competitor tracking, market landscape, SWOT analysis",
-      heartbeat: "0 9 * * 1,4",
-      scope: "/competitive/**",
-    },
-    {
-      slug: "brand-strategist",
-      name: "Brand Strategist",
-      emoji: "\u{1F3A8}",
-      dept: "Marketing",
-      role: "Brand guidelines, messaging frameworks, visual identity",
-      heartbeat: "0 10 * * 1",
-      scope: "/brand/**",
-    },
-    {
-      slug: "newsletter-editor",
-      name: "Newsletter Editor",
-      emoji: "\u{1F4E8}",
-      dept: "Marketing",
-      role: "Newsletter drafts, subscriber segmentation, A/B tests",
-      heartbeat: "0 9 * * 2,4",
-      scope: "/newsletter/**",
-    },
-    {
-      slug: "partnerships-manager",
-      name: "Partnerships Manager",
-      emoji: "\u{1F91D}",
-      dept: "Business Dev",
-      role: "Partner profiles, integration opportunities, co-marketing",
-      heartbeat: "0 9 * * 1,3",
-      scope: "/partnerships/**",
-    },
-    {
-      slug: "community-manager",
-      name: "Community Manager",
-      emoji: "\u{1F30D}",
-      dept: "Community",
-      role: "Community health, event planning, contributor recognition",
-      heartbeat: "0 10 * * 1-5",
-      scope: "/community/**",
+      scope: "/**",
     },
     {
       slug: "wiki-gardener",
