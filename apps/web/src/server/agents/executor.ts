@@ -111,13 +111,15 @@ export async function executeAgentRun(
 
   // Parse the agent's review mode from persona frontmatter. `inbox`
   // runs land on a staging branch for approval; `dry_run` runs pause
-  // on every destructive tool call and wait for user verdict.
+  // on every destructive tool call and wait for user verdict. Both
+  // are honored regardless of `job.mode` — the user explicitly opted
+  // into a review step by setting the persona field; silently
+  // bypassing it for interactive sessions would commit straight to
+  // main and surprise the user, which is exactly the bug the
+  // evolver-via-AI-panel run surfaced. Symmetry with `dry_run`
+  // (already mode-agnostic on the next line).
   const reviewMode = parseReviewMode(dataRoot, agentSlug);
-  const inboxBranch =
-    job.mode === "autonomous" && reviewMode === "inbox" ? `agents/${agentSlug}/${job.id}` : null;
-  // Dry-run bridge is attached whenever the persona declares it, even
-  // for interactive sessions — the user explicitly wants a review step
-  // regardless of job mode.
+  const inboxBranch = reviewMode === "inbox" ? `agents/${agentSlug}/${job.id}` : null;
   const effectiveDryRun = reviewMode === "dry_run" ? opts.dryRunBridge : undefined;
 
   // Create and checkout inbox staging branch if needed.
