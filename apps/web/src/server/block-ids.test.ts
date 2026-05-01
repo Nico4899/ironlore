@@ -79,9 +79,47 @@ code
     const types = blocks.map((b) => b.type);
     expect(types).toEqual(["heading", "paragraph", "list", "code", "blockquote", "hr", "table"]);
   });
+
+  it("skips a leading YAML frontmatter region", () => {
+    const md = "---\ntitle: Hi\ntags: [x]\n---\n\n# Body\n\nA paragraph.";
+    const blocks = parseBlocks(md);
+    const types = blocks.map((b) => b.type);
+    expect(types).toEqual(["heading", "paragraph"]);
+    expect(blocks[0]?.text).toBe("# Body");
+    expect(blocks[1]?.text).toBe("A paragraph.");
+  });
+
+  it("recovers from a previously-corrupted opening fence", () => {
+    // Older versions of this parser stamped a block-ID onto the
+    // opening `---`. Make sure the fence is still recognised so we
+    // don't re-emit blocks for the YAML body and compound the damage.
+    const md =
+      "--- <!-- #blk_01ABCABCABCABCABCABCABCABA -->\ntitle: Hi\ntags: [x]\n---\n\n# Body";
+    const blocks = parseBlocks(md);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]?.type).toBe("heading");
+    expect(blocks[0]?.text).toBe("# Body");
+  });
+
+  it("treats a bare `---` not at the file head as an hr block", () => {
+    const md = "# Title\n\n---\n\nMore text";
+    const blocks = parseBlocks(md);
+    const types = blocks.map((b) => b.type);
+    expect(types).toEqual(["heading", "hr", "paragraph"]);
+  });
 });
 
 describe("assignBlockIds", () => {
+  it("does not stamp block IDs onto frontmatter fences or YAML body", () => {
+    const original = "---\ntitle: Hi\ntags: [x]\n---\n\n# Body";
+    const { markdown } = assignBlockIds(original);
+    expect(markdown).toContain("---\ntitle: Hi\ntags: [x]\n---");
+    expect(markdown).toMatch(/# Body <!-- #blk_[A-Z0-9]{26} -->/);
+    // Exactly one block-ID — for the heading. None on the fences.
+    const ids = markdown.match(/<!-- #blk_[A-Z0-9]{26} -->/g) ?? [];
+    expect(ids).toHaveLength(1);
+  });
+
   it("injects IDs as HTML comments", () => {
     const { markdown } = assignBlockIds("# Title\n\nParagraph text.");
     expect(markdown).toContain("<!-- #blk_");
