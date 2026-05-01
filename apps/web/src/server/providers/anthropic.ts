@@ -290,6 +290,34 @@ function mapBatchStatus(raw: string | undefined): BatchStatus {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Wire-name translation for tool identifiers.
+ *
+ * Anthropic enforces `^[a-zA-Z0-9_-]{1,128}$` on tool names, which
+ * rejects the dots we use as namespace separators (`kb.search`,
+ * `mcp.<server>.<tool>`, `agent.journal`). We translate only at the
+ * Anthropic wire boundary so the rest of the system — dispatcher,
+ * persona frontmatter, journals, tests, docs — keeps the dotted
+ * form. Substitution is deterministic, so we don't need a per-request
+ * lookup table: any encoded tool name decodes back unambiguously as
+ * long as no internal tool name contains the literal substring
+ * `_dot_`. Current tools satisfy that invariant.
+ *
+ * Applied at three boundaries:
+ *   - `convertTools` — outbound tool definitions in the request body
+ *   - `convertMessages` — replayed prior `tool_use` blocks in multi-turn runs
+ *   - `parseSSEStream` — inbound `tool_use.name` from the model
+ */
+const WIRE_DOT_SUBSTITUTE = "_dot_";
+
+export function encodeToolNameForWire(internal: string): string {
+  return internal.split(".").join(WIRE_DOT_SUBSTITUTE);
+}
+
+export function decodeToolNameFromWire(wire: string): string {
+  return wire.split(WIRE_DOT_SUBSTITUTE).join(".");
+}
+
 function buildSystemBlock(opts: ChatOptions): unknown[] {
   const block: Record<string, unknown> = {
     type: "text",
@@ -310,7 +338,14 @@ function convertMessages(messages: ChatMessage[]): Array<{ role: string; content
     if (msg.role === "tool_use") {
       return {
         role: "assistant",
-        content: [{ type: "tool_use", id: msg.id, name: msg.name, input: msg.input }],
+        content: [
+          {
+            type: "tool_use",
+            id: msg.id,
+            name: encodeToolNameForWire(msg.name),
+            input: msg.input,
+          },
+        ],
       };
     }
     if (msg.role === "tool_result") {
@@ -332,7 +367,7 @@ function convertMessages(messages: ChatMessage[]): Array<{ role: string; content
 
 function convertTools(tools: ToolDefinition[]): unknown[] {
   return tools.map((t) => ({
-    name: t.name,
+    name: encodeToolNameForWire(t.name),
     description: t.description,
     input_schema: t.inputSchema,
   }));
@@ -382,7 +417,7 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncIterable<
           const block = event.content_block as Record<string, unknown>;
           if (block?.type === "tool_use") {
             currentToolId = block.id as string;
-            currentToolName = block.name as string;
+            currentToolName = decodeToolNameFromWire(block.name as string);
             currentToolInput = "";
           }
         }
