@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openJobsDb } from "../jobs/schema.js";
-import { buildPersona } from "./build-persona.js";
+import { buildPersona, composeBoundariesSection } from "./build-persona.js";
 
 /**
  * Visual Agent Builder — Phase-11 A.9.1.
@@ -250,6 +250,93 @@ describe("buildPersona", () => {
     expect(personaCron).toContain('heartbeat: "0 6 * * 0"');
   });
 
+  it("emits a ## Boundaries section in the body that mirrors the structural fields", () => {
+    // The Boundaries section is the human-readable receipt of the
+    //  scope.pages / writable_kinds / review_mode / heartbeat fields
+    //  in frontmatter. Pin its presence + the field-specific copy so
+    //  a refactor that loses it breaks the test.
+    const result = buildPersona(dataDir, db, "main", {
+      name: "Bounded",
+      slug: "bounded",
+      role: "Edit pages with review",
+      constraints: [],
+      scopePath: "/research/**",
+      canEditPages: true,
+      reviewBeforeMerge: true,
+      heartbeat: "0 9 * * 1-5",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    const persona = readFileSync(result.personaPath, "utf-8");
+    expect(persona).toContain("## Boundaries");
+    expect(persona).toContain("`/research/**`");
+    expect(persona).toContain("Can edit `kind: page` and `kind: wiki`");
+    expect(persona).toContain("Inbox approval");
+    expect(persona).toContain("Weekdays at 09:00");
+    // The "enforced by the runtime" framing is what distinguishes
+    //  this from a constitutional-prompt / system-prompt approach.
+    expect(persona).toContain("enforced by the runtime");
+  });
+
+  it("Boundaries section flips to read-only when canEditPages is false", () => {
+    const result = buildPersona(dataDir, db, "main", {
+      name: "Reader",
+      slug: "reader",
+      role: "Answer questions",
+      constraints: [],
+      canEditPages: false,
+      reviewBeforeMerge: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    const persona = readFileSync(result.personaPath, "utf-8");
+    expect(persona).toContain("Read-only");
+    expect(persona).toContain("No mutations");
+    // No review-mode call-out for a read-only agent — the field is
+    //  irrelevant when there's nothing to review.
+  });
+
+  it("Boundaries Schedule line says 'Manual only' when no heartbeat is set", () => {
+    const result = buildPersona(dataDir, db, "main", {
+      name: "Manual",
+      slug: "manual",
+      role: "Run on demand",
+      constraints: [],
+      canEditPages: true,
+      reviewBeforeMerge: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    const persona = readFileSync(result.personaPath, "utf-8");
+    expect(persona).toContain("Manual only");
+  });
+
+  it("Boundaries 'Review' line distinguishes inbox vs auto-commit modes", () => {
+    const inbox = buildPersona(dataDir, db, "main", {
+      name: "Inbox",
+      slug: "inbox-agent",
+      role: "X",
+      constraints: [],
+      canEditPages: true,
+      reviewBeforeMerge: true,
+    });
+    expect(inbox.ok).toBe(true);
+    if (!inbox.ok) throw new Error("unreachable");
+    expect(readFileSync(inbox.personaPath, "utf-8")).toContain("Inbox approval");
+
+    const direct = buildPersona(dataDir, db, "main", {
+      name: "Direct",
+      slug: "direct",
+      role: "X",
+      constraints: [],
+      canEditPages: true,
+      reviewBeforeMerge: false,
+    });
+    expect(direct.ok).toBe(true);
+    if (!direct.ok) throw new Error("unreachable");
+    expect(readFileSync(direct.personaPath, "utf-8")).toContain("commit directly to `main`");
+  });
+
   it("escapes embedded quotes in name + role to keep YAML well-formed", () => {
     // A naive template would emit `role: "...he said "hi"..."` which
     // breaks the YAML quote pairing. Pin defensive escaping so a
@@ -268,5 +355,79 @@ describe("buildPersona", () => {
     // Quotes converted to apostrophes — the YAML stays unambiguously parsable.
     expect(persona).toContain("name: The 'Quoted' One");
     expect(persona).toContain("role: \"Find what they call 'the source of truth'\"");
+  });
+});
+
+describe("composeBoundariesSection", () => {
+  // Pure-function tests for the helper that the AgentBuilderDialog
+  //  preview, the SettingsDialog SecurityTab, and the seed-agents
+  //  Librarian + Editor bodies all share. Every consumer renders
+  //  the exact string this returns; pin the format here so a refactor
+  //  that drops the "enforced by the runtime" framing or the
+  //  field labels surfaces in tests instead of in the UI.
+
+  it("renders the four field labels in fixed order", () => {
+    const out = composeBoundariesSection({
+      scopePages: ["/**"],
+      canEditPages: true,
+      reviewBeforeMerge: true,
+      heartbeat: "0 9 * * 1",
+    });
+    const scopeIdx = out.indexOf("**Scope:**");
+    const writeIdx = out.indexOf("**Write access:**");
+    const reviewIdx = out.indexOf("**Review:**");
+    const scheduleIdx = out.indexOf("**Schedule:**");
+    expect(scopeIdx).toBeGreaterThanOrEqual(0);
+    expect(writeIdx).toBeGreaterThan(scopeIdx);
+    expect(reviewIdx).toBeGreaterThan(writeIdx);
+    expect(scheduleIdx).toBeGreaterThan(reviewIdx);
+  });
+
+  it("humanises known cron presets back to dropdown labels", () => {
+    const cases: Array<[string | undefined, string]> = [
+      [undefined, "Manual only"],
+      ["0 * * * *", "Every hour"],
+      ["0 9 * * *", "Daily at 09:00"],
+      ["0 9 * * 1-5", "Weekdays at 09:00"],
+      ["0 9 * * 1", "Weekly (Mon 09:00)"],
+      ["0 7 * * 0", "Weekly (Sun 07:00)"],
+    ];
+    for (const [cron, label] of cases) {
+      const out = composeBoundariesSection({
+        scopePages: ["/**"],
+        canEditPages: true,
+        reviewBeforeMerge: false,
+        heartbeat: cron,
+      });
+      expect(out).toContain(label);
+    }
+  });
+
+  it("falls back to 'Custom cron' when the cron isn't a known preset", () => {
+    const out = composeBoundariesSection({
+      scopePages: ["/**"],
+      canEditPages: true,
+      reviewBeforeMerge: false,
+      heartbeat: "13 4 * * 2,5",
+    });
+    expect(out).toContain("Custom cron: `13 4 * * 2,5`");
+  });
+
+  it("renders multiple scope globs as a comma-separated list", () => {
+    const out = composeBoundariesSection({
+      scopePages: ["/marketing/**", "/research/**"],
+      canEditPages: true,
+      reviewBeforeMerge: false,
+    });
+    expect(out).toContain("`/marketing/**`, `/research/**`");
+  });
+
+  it("defaults empty scope to whole-vault label", () => {
+    const out = composeBoundariesSection({
+      scopePages: [],
+      canEditPages: true,
+      reviewBeforeMerge: false,
+    });
+    expect(out).toContain("`/**` (whole vault)");
   });
 });

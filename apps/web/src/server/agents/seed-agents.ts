@@ -81,11 +81,28 @@ function seedAgentDir(dataDir: string, slug: string, meta: Record<string, unknow
   mkdirSync(join(agentDir, "skills"), { recursive: true });
 
   const frontmatter = buildFrontmatter(slug, meta);
-  const body =
+  const intro =
     typeof meta.role === "string"
-      ? `\nYou are the ${meta.name} assistant for this Ironlore knowledge base.\n${meta.role}.\n`
-      : "";
-  writeFileSync(personaPath, `${frontmatter}\n${body}`, "utf-8");
+      ? `\nYou are the ${meta.name} assistant for this Ironlore knowledge base.\n${meta.role}.\n\n`
+      : "\n";
+
+  // Boundaries section — same composer the Visual Agent Builder
+  //  uses, so default agents and custom-built ones produce
+  //  identically-shaped sections.
+  const scopePages = Array.isArray((meta.scope as { pages?: string[] } | undefined)?.pages)
+    ? ((meta.scope as { pages: string[] }).pages as string[])
+    : ["/**"];
+  const writableKinds = Array.isArray(meta.writable_kinds)
+    ? (meta.writable_kinds as string[])
+    : [];
+  const boundaries = composeBoundariesSection({
+    scopePages,
+    canEditPages: writableKinds.length > 0,
+    reviewBeforeMerge: meta.review_mode === "inbox",
+    heartbeat: typeof meta.heartbeat === "string" ? meta.heartbeat : undefined,
+  });
+
+  writeFileSync(personaPath, `${frontmatter}\n${intro}${boundaries}`, "utf-8");
 }
 
 function seedLibraryTemplate(dataDir: string, slug: string, meta: Record<string, unknown>): void {
