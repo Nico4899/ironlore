@@ -2,6 +2,14 @@ import { ulid } from "./ulid.js";
 
 const BLOCK_ID_RE = /<!-- #blk_([A-Z0-9]{26}) -->/;
 
+/**
+ * YAML frontmatter fence detector. A bare `---` line opens/closes
+ * frontmatter; we also tolerate `--- <!-- #blk_... -->` so files an
+ * older parser corrupted (by stamping a block-ID onto the fence) are
+ * still recognised and the fence isn't mistaken for body content.
+ */
+const FRONTMATTER_FENCE_RE = /^---(?:\s|<!--|$)/;
+
 export type BlockKind =
   | "heading"
   | "paragraph"
@@ -86,6 +94,27 @@ export function parseBlocks(markdown: string): Block[] {
 
   let offset = 0;
   let i = 0;
+
+  // Skip a leading YAML frontmatter region. We emit no block for it
+  // so `assignBlockIds` won't stamp an ID onto the `---` fences —
+  // doing so makes line 1 no longer parse as YAML (the opener must be
+  // exactly `---`), which then cascades into editor save round-trips
+  // that collapse the YAML body into a setext-2 heading.
+  //
+  // The fence detector tolerates a trailing block-ID comment so files
+  // an older parser already corrupted (line 1 = `--- <!-- #blk... -->`)
+  // are still recognised as having frontmatter and skipped correctly.
+  if (lines[0] !== undefined && FRONTMATTER_FENCE_RE.test(lines[0])) {
+    for (let j = 1; j < lines.length; j++) {
+      if (FRONTMATTER_FENCE_RE.test(lines[j] ?? "")) {
+        let advance = 0;
+        for (let k = 0; k <= j; k++) advance += (lines[k] ?? "").length + 1;
+        offset = advance;
+        i = j + 1;
+        break;
+      }
+    }
+  }
 
   while (i < lines.length) {
     const line = lines[i] ?? "";
