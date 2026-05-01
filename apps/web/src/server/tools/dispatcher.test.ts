@@ -730,4 +730,66 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const { content } = writer.read("no-bridge.md");
     expect(content).toContain("Straight write.");
   });
+
+  // -------------------------------------------------------------------------
+  // tool.result / tool.error duration measurement
+  // -------------------------------------------------------------------------
+  //
+  // Regression for the "every tool reads 0ms in the AI panel" bug.
+  // Duration was measured client-side from `Date.now() - msg.timestamp`,
+  // but `tool.call` and `tool.result` events land in the same 500ms
+  // poll batch and were stamped in the same JS tick — so every
+  // duration rounded to ~0ms regardless of how long the tool actually
+  // ran. The fix moves measurement into the dispatcher (server-side)
+  // and emits the result on the event payload.
+
+  it("emits durationMs on tool.result events", async () => {
+    const { dispatcher, dataRoot, budget } = setup();
+    const events: Array<{ kind: string; data: Record<string, unknown> }> = [];
+    const ctx: ToolCallContext = {
+      projectId: "main",
+      agentSlug: "editor",
+      jobId: "test-job",
+      emitEvent: (kind, data) => events.push({ kind, data: data as Record<string, unknown> }),
+      dataRoot,
+      fetch: globalThis.fetch,
+    };
+
+    await dispatcher.call("kb.search", { query: "anything" }, ctx, budget);
+
+    const resultEvt = events.find((e) => e.kind === "tool.result");
+    expect(resultEvt).toBeDefined();
+    expect(typeof resultEvt?.data.durationMs).toBe("number");
+    expect(resultEvt?.data.durationMs as number).toBeGreaterThanOrEqual(0);
+  });
+
+  it("emits durationMs on tool.error events when the tool throws", async () => {
+    const dispatcher = new ToolDispatcher();
+    // Hand-rolled tool that throws — exercises the catch branch.
+    dispatcher.register({
+      name: "test.boom",
+      description: "throws on call",
+      inputSchema: { type: "object" },
+      execute: async () => {
+        throw new Error("simulated failure");
+      },
+    });
+
+    const events: Array<{ kind: string; data: Record<string, unknown> }> = [];
+    const ctx: ToolCallContext = {
+      projectId: "main",
+      agentSlug: "editor",
+      jobId: "test-job",
+      emitEvent: (kind, data) => events.push({ kind, data: data as Record<string, unknown> }),
+      dataRoot: "/tmp",
+      fetch: globalThis.fetch,
+    };
+
+    const out = await dispatcher.call("test.boom", {}, ctx, makeBudget());
+    expect(out.isError).toBe(true);
+
+    const errEvt = events.find((e) => e.kind === "tool.error");
+    expect(errEvt).toBeDefined();
+    expect(typeof errEvt?.data.durationMs).toBe("number");
+  });
 });

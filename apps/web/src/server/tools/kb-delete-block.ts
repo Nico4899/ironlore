@@ -74,6 +74,10 @@ export function createKbDeleteBlock(
         etag: string;
       };
 
+      // Phase-9 multi-user ACL gate.
+      const aclCheck = checkToolAcl(ctx, writer, path, "write");
+      if (!aclCheck.ok) return JSON.stringify(aclCheck.envelope);
+
       let currentContent: string;
       try {
         const read = writer.read(path);
