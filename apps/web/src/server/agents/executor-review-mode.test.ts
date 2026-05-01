@@ -180,6 +180,39 @@ describe("executor — review_mode: inbox honored regardless of run mode", () =>
     expect(head).toBe("master"); // restored to where we started, not "main"
   });
 
+  it("restores HEAD even when the provider errors mid-run", async () => {
+    // Failure paths used to skip the restore entirely, leaving HEAD
+    // stuck on the staging branch and contaminating every subsequent
+    // run. Verify a provider error still triggers the restore.
+    writePersona(dataRoot, "evolver", "review_mode: inbox");
+    const job = makeJob({ mode: "interactive", owner_id: "evolver" });
+
+    class ErroringProvider implements Provider {
+      readonly name = "anthropic" as const;
+      readonly supportsTools = true;
+      readonly supportsPromptCache = true;
+      async *chat(_o: ChatOptions, _c: ProjectContext): AsyncIterable<ChatEvent> {
+        yield { type: "error", message: "simulated 400" };
+      }
+    }
+
+    await executeAgentRun(job, makeJobCtx(), {
+      provider: new ErroringProvider(),
+      projectContext,
+      dispatcher: new ToolDispatcher(),
+      dataRoot,
+      projectDir,
+      model: "claude-haiku-4-20250514",
+      agentSlug: "evolver",
+    });
+
+    const head = execSync("git symbolic-ref --short HEAD", {
+      cwd: projectDir,
+      encoding: "utf-8",
+    }).trim();
+    expect(head).toBe("main");
+  });
+
   it("interactive run WITHOUT review_mode commits straight to main (no staging)", async () => {
     // Most agents (general, editor, etc.) don't set review_mode and
     // expect immediate writes. Make sure the fix doesn't accidentally

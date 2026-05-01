@@ -152,6 +152,24 @@ export async function executeAgentRun(
     }
   }
 
+  // Restoring HEAD to the captured `originBranch` must run on every
+  // exit path — success, validation failure, provider error, WS
+  // disconnect, or thrown exception. Keep the logic in one closure
+  // so the cleanup contract is explicit and a future early-return
+  // doesn't silently leave HEAD on the staging branch.
+  const restoreOriginBranch = (): void => {
+    if (!inboxBranch || !originBranch) return;
+    try {
+      execSync(`git checkout ${originBranch}`, {
+        cwd: projectDir,
+        encoding: "utf-8",
+        stdio: "pipe",
+      });
+    } catch {
+      // Checkout back failed — log but don't fail the run.
+    }
+  };
+
   // Capture git HEAD before the run for commit-range tracking.
   let commitShaStart: string | null = null;
   try {
@@ -291,6 +309,7 @@ export async function executeAgentRun(
         `tool set (kb.search, kb.read_page, kb.read_block) for the batched turn, or ` +
         `remove \`batch: true\` from the persona.`;
       jobCtx.emitEvent("message.error", { text: reason });
+      restoreOriginBranch();
       return { status: "failed", result: reason };
     }
     return runBatchedTurn({
@@ -382,6 +401,7 @@ export async function executeAgentRun(
 
     if (providerError) {
       jobCtx.emitEvent("message.error", { text: providerError });
+      restoreOriginBranch();
       return { status: "failed", result: providerError };
     }
 
@@ -472,6 +492,7 @@ export async function executeAgentRun(
       if (nextMessage === null) {
         // WS disconnected — pause the job, don't finalize.
         jobCtx.emitEvent("session.paused", { reason: "client_disconnected" });
+        restoreOriginBranch();
         return { status: "done", result: "paused" };
       }
       messages.push({ role: "user", content: nextMessage });
@@ -524,23 +545,7 @@ export async function executeAgentRun(
     });
   }
 
-  // Switch back to whatever branch we were on before staging — captured
-  // up top via `git symbolic-ref`. Hardcoding "main" used to silently
-  // leave HEAD on the staging branch when the project repo's default
-  // was named differently (e.g. `master`), which then caused every
-  // following run to compound commits onto the previous staging
-  // branch instead of the user's actual main line.
-  if (inboxBranch && originBranch) {
-    try {
-      execSync(`git checkout ${originBranch}`, {
-        cwd: projectDir,
-        encoding: "utf-8",
-        stdio: "pipe",
-      });
-    } catch {
-      // Checkout back failed — log but don't fail the run.
-    }
-  }
+  restoreOriginBranch();
 
   return {
     status: "done",
