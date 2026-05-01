@@ -123,7 +123,6 @@ export function AIPanel() {
   // skip it. sessionStorage clears on tab close, so reopening the
   // app re-shows the estimate — intentional since pricing could
   // change between sessions.
-  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [costDialogOpen, setCostDialogOpen] = useState(false);
 
   const doSend = useCallback(
