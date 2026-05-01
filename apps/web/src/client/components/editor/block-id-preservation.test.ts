@@ -206,16 +206,14 @@ describe("splitFrontmatter", () => {
     // Older block-ID stampers wrote `--- <!-- #blk_... -->` onto the
     // opening fence, breaking YAML parsing. The editor reattaches
     // the normalised frontmatter on save so the file self-heals.
-    const md =
-      "--- <!-- #blk_01ABCABCABCABCABCABCABCABA -->\ntitle: Hi\n---\n\n# Body";
+    const md = "--- <!-- #blk_01ABCABCABCABCABCABCABCABA -->\ntitle: Hi\n---\n\n# Body";
     const { frontmatter, body } = splitFrontmatter(md);
     expect(frontmatter).toBe("---\ntitle: Hi\n---\n");
     expect(body).toBe("\n# Body");
   });
 
   it("normalises a corrupted closing fence too", () => {
-    const md =
-      "---\ntitle: Hi\n--- <!-- #blk_01ABCABCABCABCABCABCABCABA -->\n\n# Body";
+    const md = "---\ntitle: Hi\n--- <!-- #blk_01ABCABCABCABCABCABCABCABA -->\n\n# Body";
     const { frontmatter, body } = splitFrontmatter(md);
     expect(frontmatter).toBe("---\ntitle: Hi\n---\n");
     expect(body).toBe("\n# Body");

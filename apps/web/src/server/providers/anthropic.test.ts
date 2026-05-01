@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  AnthropicProvider,
-  decodeToolNameFromWire,
-  encodeToolNameForWire,
-} from "./anthropic.js";
+import { AnthropicProvider, decodeToolNameFromWire, encodeToolNameForWire } from "./anthropic.js";
 import type { ChatEvent, ProjectContext } from "./types.js";
 
 /**

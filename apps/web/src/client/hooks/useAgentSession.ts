@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { pushAgentToast } from "../components/AgentToast.js";
 import { getApiProject } from "../lib/api.js";
 import { useAIPanelStore } from "../stores/ai-panel.js";
+import { useEditorStore } from "../stores/editor.js";
 
 const BASE = (): string => `/api/projects/${getApiProject()}`;
 
@@ -295,14 +296,59 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
 
     case "diff_preview": {
       // Server is pausing on a destructive tool call pending the
-      // user's verdict. Render the diff with approve/reject controls.
+      // user's verdict. Two surfaces compete here:
+      //
+      //   1. **In-editor inline plugin** (preferred) — when the
+      //      target page is already open, push a `PendingEdit` into
+      //      the editor store. The ProseMirror inline-diff plugin
+      //      reads this list and renders ghost decorations keyed to
+      //      `blockId`; Tab accepts via the same DryRunBridge call
+      //      the AI-panel card uses.
+      //   2. **AI-panel `DiffPreview` card** (fallback) — when the
+      //      target isn't open, render the existing card. The card's
+      //      "Open page" button bridges into surface 1 by navigating.
+      //
+      // The structured fields (`op`, `blockId`, `currentMd`,
+      // `proposedMd`) ride alongside the legacy `diff` string so
+      // both surfaces have what they need without two events.
+      const pageId = (data.pageId as string) ?? "";
+      const toolCallId = (data.toolCallId as string) ?? "";
+      const op = data.op as "replace" | "insert" | "delete" | undefined;
+      const blockId = typeof data.blockId === "string" ? data.blockId : undefined;
+      const currentMd = typeof data.currentMd === "string" ? data.currentMd : undefined;
+      const proposedMd = typeof data.proposedMd === "string" ? data.proposedMd : undefined;
+
+      const editor = useEditorStore.getState();
+      const targetIsOpen =
+        pageId.length > 0 && editor.filePath === pageId && editor.fileType === "markdown";
+
+      // Route to the inline plugin only when we have the structured
+      //  trio AND the page is open. Older agent runs that don't emit
+      //  the structured fields fall back to the card path.
+      if (targetIsOpen && op !== undefined && blockId !== undefined && toolCallId.length > 0) {
+        editor.pushPendingEdit({
+          toolCallId,
+          op,
+          blockId,
+          pageId,
+          currentMd,
+          proposedMd,
+          agentSlug: store.activeAgent,
+        });
+        break;
+      }
+
       store.addMessage({
         type: "diff_preview",
-        toolCallId: (data.toolCallId as string) ?? "",
+        toolCallId,
         tool: (data.tool as string) ?? "unknown",
-        pageId: (data.pageId as string) ?? "",
+        pageId,
         diff: (data.diff as string) ?? "",
         approved: null,
+        ...(op !== undefined ? { op } : {}),
+        ...(blockId !== undefined ? { blockId } : {}),
+        ...(currentMd !== undefined ? { currentMd } : {}),
+        ...(proposedMd !== undefined ? { proposedMd } : {}),
       });
       break;
     }

@@ -15,11 +15,15 @@ import { EditorState, type Transaction } from "prosemirror-state";
 import { columnResizing, goToNextCell, tableEditing } from "prosemirror-tables";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { submitDryRunVerdict } from "../../lib/api.js";
+import { useAIPanelStore } from "../../stores/ai-panel.js";
 import { useAppStore } from "../../stores/app.js";
+import { type PendingEdit, useEditorStore } from "../../stores/editor.js";
 import { useTreeStore } from "../../stores/tree.js";
 import { CodeBlockView, codeHighlightPlugin } from "./code-block-view.js";
 import { csvPastePlugin } from "./csv-paste-plugin.js";
 import { type EditorCommands, registerEditorCommands } from "./editor-commands.js";
+import { inlineDiffPlugin, setPendingEdits } from "./inline-diff-plugin.js";
 import {
   buildSlashItems,
   filterSlashItems,
@@ -388,6 +392,34 @@ export function MarkdownEditor({
     const state = EditorState.create({
       doc,
       plugins: [
+        // Phase-11 inline-diff plugin — registered FIRST so its
+        //  Tab / ⌘⇧Backspace handlers get first dibs on the
+        //  keystroke when an Editor-agent run has parked a
+        //  PendingEdit. With no pending edits the plugin is inert
+        //  (handleKeyDown short-circuits on empty list) so list
+        //  Tab-to-sink + table cell navigation behave unchanged.
+        inlineDiffPlugin({
+          getBlockEntries: () => blockIdsRef.current,
+          onAccept: (edit: PendingEdit) => {
+            const jobId = useAIPanelStore.getState().jobId;
+            // Drop locally first so the decoration disappears the
+            //  instant the user hits Tab — the server round-trip is
+            //  best-effort, exactly like the AI-panel card path.
+            useEditorStore.getState().removePendingEdit(edit.toolCallId);
+            if (jobId) {
+              void submitDryRunVerdict(jobId, edit.toolCallId, "approve").catch(() => {
+                // Swallow — verdict is a best-effort unblock.
+              });
+            }
+          },
+          onReject: (edit: PendingEdit) => {
+            const jobId = useAIPanelStore.getState().jobId;
+            useEditorStore.getState().removePendingEdit(edit.toolCallId);
+            if (jobId) {
+              void submitDryRunVerdict(jobId, edit.toolCallId, "reject").catch(() => {});
+            }
+          },
+        }),
         buildInputRules(schema),
         keymap({
           "Mod-z": undo,
@@ -764,6 +796,27 @@ export function MarkdownEditor({
     view.dispatch(tr);
     suppressRef.current = false;
   }, [markdown]);
+
+  // Phase-11 inline-diff plugin: bridge the Zustand `pendingEdits`
+  //  slice into the ProseMirror plugin's state via meta transactions.
+  //  ProseMirror state can't subscribe to React stores directly, so
+  //  every change in `pendingEdits` triggers a `setPendingEdits()`
+  //  dispatch which the plugin reads off of `tr.getMeta(inlineDiffKey)`.
+  //  Initial mount runs a no-op dispatch (empty list) so the plugin's
+  //  decoration set is initialised cleanly even on a brand-new view.
+  useEffect(() => {
+    const unsub = useEditorStore.subscribe((s, prev) => {
+      if (s.pendingEdits === prev.pendingEdits) return;
+      const view = viewRef.current;
+      if (!view) return;
+      setPendingEdits(view, s.pendingEdits);
+    });
+    // Sync the current state once on mount so a view created after
+    //  a pending edit was already pushed picks it up.
+    const view = viewRef.current;
+    if (view) setPendingEdits(view, useEditorStore.getState().pendingEdits);
+    return unsub;
+  }, []);
 
   const bodyText = markdown.replace(/^---[\s\S]*?^---[\r\n]*/m, "").trim();
   const headingOnly = /^#{1,6}\s+\S+\s*$/.test(bodyText);

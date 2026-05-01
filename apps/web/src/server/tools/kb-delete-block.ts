@@ -61,6 +61,9 @@ export function createKbDeleteBlock(
       return {
         pageId: path,
         diff: renderDeleteDiff(blockId, target.text),
+        op: "delete",
+        blockId,
+        currentMd: target.text,
       };
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {

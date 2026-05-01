@@ -11,7 +11,7 @@ import {
   revertJob,
   submitDryRunVerdict,
 } from "../lib/api.js";
-import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
+import { type ContextPill, type ConversationMessage, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { ContextBudgetChip } from "./ai-composer/ContextBudgetChip.js";
@@ -1105,43 +1105,7 @@ function MessageList() {
           {msg.type === "journal" && (
             <JournalCard text={msg.text} step={msg.step} totalSteps={msg.totalSteps} />
           )}
-          {msg.type === "diff_preview" && (
-            <DiffPreview
-              pageId={msg.pageId}
-              blockId={msg.blockId}
-              commitSha={msg.commitSha}
-              diff={msg.diff}
-              approved={msg.approved}
-              onApprove={() => {
-                const jobId = useAIPanelStore.getState().jobId;
-                if (!jobId || !msg.toolCallId) return;
-                // Mark locally before the round-trip so the buttons
-                // hide immediately; the server call is best-effort,
-                // because if the bridge has already timed out there's
-                // nothing the user can do to un-timeout it.
-                const msgs = useAIPanelStore.getState().messages;
-                const target = msgs[i];
-                if (target?.type === "diff_preview") {
-                  (target as { approved: boolean | null }).approved = true;
-                  useAIPanelStore.setState({ messages: [...msgs] });
-                }
-                void submitDryRunVerdict(jobId, msg.toolCallId, "approve").catch(() => {
-                  // Swallow — the verdict is a best-effort unblock.
-                });
-              }}
-              onReject={() => {
-                const jobId = useAIPanelStore.getState().jobId;
-                if (!jobId || !msg.toolCallId) return;
-                const msgs = useAIPanelStore.getState().messages;
-                const target = msgs[i];
-                if (target?.type === "diff_preview") {
-                  (target as { approved: boolean | null }).approved = false;
-                  useAIPanelStore.setState({ messages: [...msgs] });
-                }
-                void submitDryRunVerdict(jobId, msg.toolCallId, "reject").catch(() => {});
-              }}
-            />
-          )}
+          {msg.type === "diff_preview" && <DiffPreviewItem msg={msg} index={i} />}
           {msg.type === "error" && (
             <div className="rounded-lg bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
           )}
@@ -1159,6 +1123,87 @@ function MessageList() {
         </div>
       ))}
     </>
+  );
+}
+
+/**
+ * Wraps the AI-panel `DiffPreview` card with the approve/reject + open-page
+ * affordances. Phase-11 inline-diff plugin (docs/03-editor.md §Pending-edit
+ * decorations) routes diff_preview events to the editor when the target
+ * page is open; this component only renders when the page is NOT open
+ * OR the run is older than the structured-fields rollout. The "Open
+ * page" button bridges the two surfaces — clicking it sets the active
+ * path so ContentArea remounts the editor on the target file, and the
+ * pending-edit re-fires through `useAgentSession` because the underlying
+ * `diff_preview` message is still pinned to the conversation; on next
+ * render the inline plugin picks it up.
+ */
+function DiffPreviewItem({
+  msg,
+  index,
+}: {
+  msg: Extract<ConversationMessage, { type: "diff_preview" }>;
+  index: number;
+}) {
+  const editorFilePath = useEditorStore((s) => s.filePath);
+  const pageIsOpen = msg.pageId.length > 0 && editorFilePath === msg.pageId;
+  return (
+    <DiffPreview
+      pageId={msg.pageId}
+      blockId={msg.blockId}
+      commitSha={msg.commitSha}
+      diff={msg.diff}
+      approved={msg.approved}
+      showOpenPageButton={!pageIsOpen && msg.pageId.length > 0 && msg.approved === null}
+      onOpenPage={() => {
+        // Switch the active path; ContentArea remounts the editor
+        //  on the target file and the diff_preview event already in
+        //  the conversation will route to the inline plugin once
+        //  `useEditorStore.filePath` matches. We also push the edit
+        //  to the editor store directly so the user doesn't have to
+        //  wait for a fresh round-trip.
+        if (msg.op !== undefined && msg.blockId !== undefined && msg.toolCallId.length > 0) {
+          useEditorStore.getState().pushPendingEdit({
+            toolCallId: msg.toolCallId,
+            op: msg.op,
+            blockId: msg.blockId,
+            pageId: msg.pageId,
+            currentMd: msg.currentMd,
+            proposedMd: msg.proposedMd,
+            agentSlug: useAIPanelStore.getState().activeAgent,
+          });
+        }
+        useAppStore.getState().setActivePath(msg.pageId);
+      }}
+      onApprove={() => {
+        const jobId = useAIPanelStore.getState().jobId;
+        if (!jobId || !msg.toolCallId) return;
+        // Mark locally before the round-trip so the buttons hide
+        //  immediately; the server call is best-effort, because if
+        //  the bridge has already timed out there's nothing the
+        //  user can do to un-timeout it.
+        const msgs = useAIPanelStore.getState().messages;
+        const target = msgs[index];
+        if (target?.type === "diff_preview") {
+          (target as { approved: boolean | null }).approved = true;
+          useAIPanelStore.setState({ messages: [...msgs] });
+        }
+        void submitDryRunVerdict(jobId, msg.toolCallId, "approve").catch(() => {
+          // Swallow — the verdict is a best-effort unblock.
+        });
+      }}
+      onReject={() => {
+        const jobId = useAIPanelStore.getState().jobId;
+        if (!jobId || !msg.toolCallId) return;
+        const msgs = useAIPanelStore.getState().messages;
+        const target = msgs[index];
+        if (target?.type === "diff_preview") {
+          (target as { approved: boolean | null }).approved = false;
+          useAIPanelStore.setState({ messages: [...msgs] });
+        }
+        void submitDryRunVerdict(jobId, msg.toolCallId, "reject").catch(() => {});
+      }}
+    />
   );
 }
 

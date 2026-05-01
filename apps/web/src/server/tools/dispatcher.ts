@@ -77,6 +77,15 @@ export class ToolDispatcher {
             tool: name,
             pageId: diff.pageId,
             diff: diff.diff,
+            // Phase-11 inline-diff plugin: structured fields are
+            //  forwarded to the WS event so the client-side editor
+            //  can render block-anchored ghost decorations on the
+            //  in-editor surface when the user is on the target page.
+            //  Older clients keep using `diff` as before.
+            ...(diff.op !== undefined ? { op: diff.op } : {}),
+            ...(diff.blockId !== undefined ? { blockId: diff.blockId } : {}),
+            ...(diff.currentMd !== undefined ? { currentMd: diff.currentMd } : {}),
+            ...(diff.proposedMd !== undefined ? { proposedMd: diff.proposedMd } : {}),
           });
           const verdict = await ctx.dryRunBridge.awaitVerdict(diffId);
           if (verdict === "reject" || verdict === "timeout") {

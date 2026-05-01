@@ -73,6 +73,10 @@ export function createKbReplaceBlock(
       return {
         pageId: path,
         diff: renderReplaceDiff(target.text, markdown, blockId),
+        op: "replace",
+        blockId,
+        currentMd: target.text,
+        proposedMd: markdown,
       };
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {

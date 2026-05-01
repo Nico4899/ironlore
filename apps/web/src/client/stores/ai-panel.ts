@@ -109,6 +109,17 @@ export type ConversationMessage =
       blockId?: string;
       /** Commit SHA once the approved edit has landed. */
       commitSha?: string;
+      /**
+       * Phase-11 inline-diff plugin (docs/03-editor.md §Pending-edit
+       * decorations). When the target page is open in the editor,
+       * `useAgentSession` consumes these structured fields to push a
+       * `PendingEdit` into `useEditorStore` instead of rendering this
+       * card. When the page isn't open the card stays — these fields
+       * are unused and the user clicks "Open page" to navigate.
+       */
+      op?: "replace" | "insert" | "delete";
+      currentMd?: string;
+      proposedMd?: string;
       timestamp?: number;
     }
   | {

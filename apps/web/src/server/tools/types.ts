@@ -62,11 +62,34 @@ export interface ToolCallContext {
 
 /**
  * Unified diff for a proposed mutation. `pageId` is the target page's
- * path; `diff` is a rendered `+`/`-` block ready for display.
+ * path; `diff` is a rendered `+`/`-` block ready for display by the
+ * fallback AI-panel card.
+ *
+ * The structured trio (`op` + `blockId` + `currentMd` / `proposedMd`)
+ * is what the in-editor inline-diff plugin reads to render
+ * block-anchored ghost decorations. They're optional only because
+ * older `computeDiff` impls predate them; every shipped kb mutation
+ * tool fills them in. Splitting the structured surface from the
+ * rendered string lets the AI-panel card stay text-only without
+ * teaching it to re-render markdown.
  */
 export interface DryRunDiff {
   pageId: string;
   diff: string;
+  /** Operation kind — drives the inline plugin's decoration shape:
+   *  `replace` strikes the old block + ghosts the new text after it,
+   *  `insert` ghosts the new text after the anchor block,
+   *  `delete` strikes the old block with no ghost. */
+  op?: "replace" | "insert" | "delete";
+  /** Target block ID — anchor for the inline decoration. For
+   *  `insert_after` this is the block the new content lands AFTER. */
+  blockId?: string;
+  /** The block's current markdown text (replace/delete). Omitted for
+   *  pure insertions where there's nothing to strike through. */
+  currentMd?: string;
+  /** The proposed markdown text (replace/insert). Omitted for
+   *  deletions. */
+  proposedMd?: string;
 }
 
 export interface ToolImplementation {

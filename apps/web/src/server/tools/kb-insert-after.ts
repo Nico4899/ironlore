@@ -81,6 +81,9 @@ export function createKbInsertAfter(
       return {
         pageId: path,
         diff: renderInsertDiff(blockId, markdown),
+        op: "insert",
+        blockId,
+        proposedMd: markdown,
       };
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {

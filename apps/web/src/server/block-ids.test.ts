@@ -93,8 +93,7 @@ code
     // Older versions of this parser stamped a block-ID onto the
     // opening `---`. Make sure the fence is still recognised so we
     // don't re-emit blocks for the YAML body and compound the damage.
-    const md =
-      "--- <!-- #blk_01ABCABCABCABCABCABCABCABA -->\ntitle: Hi\ntags: [x]\n---\n\n# Body";
+    const md = "--- <!-- #blk_01ABCABCABCABCABCABCABCABA -->\ntitle: Hi\ntags: [x]\n---\n\n# Body";
     const blocks = parseBlocks(md);
     expect(blocks).toHaveLength(1);
     expect(blocks[0]?.type).toBe("heading");
