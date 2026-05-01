@@ -74,12 +74,29 @@ export function createAgentApi(
       }
     }
 
+    // Phase-9 multi-user: forward the originating user's identity into
+    //  the job payload so the executor can populate `ToolCallContext.acl`
+    //  and the tool ACL gate (`checkToolAcl`) can deny `kb.read_page` /
+    //  `kb.replace_block` calls the user wouldn't be allowed to make
+    //  through the HTTP route. Single-user installs (auth still on, but
+    //  one user) ride the same field; the gate short-circuits because
+    //  the executor only sets `acl` when project mode is `multi-user`.
+    //  Heartbeat / cron runs don't pass through this route — they
+    //  enqueue with no user context, and the gate permits.
+    const userId = (c.get("userId") as string | undefined) ?? "";
+    const username = (c.get("username") as string | undefined) ?? "";
+
     const jobId = pool.enqueue({
       projectId,
       kind: "agent.run",
       mode,
       ownerId: slug,
-      payload: { prompt: body.prompt ?? "", effort },
+      payload: {
+        prompt: body.prompt ?? "",
+        effort,
+        ...(userId.length > 0 ? { userId } : {}),
+        ...(username.length > 0 ? { username } : {}),
+      },
     });
 
     // Record the run start for both modes. Rate-limit + histogram
