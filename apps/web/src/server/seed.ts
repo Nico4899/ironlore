@@ -165,10 +165,12 @@ with a persona definition — you can read them, edit them, or commit them.
 
 ## The agent library
 
-Dozens of specialist personas live in \`.agents/.library/\` as inactive
-templates — Product Manager, Technical Writer, SEO Specialist, Wiki
-Gardener, and more. Activate one by flipping \`active: true\` in its
-frontmatter. Each specialist has a scheduled heartbeat (cron) and a scope
+Three specialist personas live in \`.agents/.library/\` as inactive
+templates: **Wiki Gardener** (orphan / stale-source / contradiction
+audits), **Researcher** (thesis-driven investigation with verdicts), and
+**Evolver** (self-improvement loop that proposes edits to shared skill
+files). Each has dedicated tooling that the Editor + Librarian defaults
+can't replicate, and each has a scheduled heartbeat (cron) plus a scope
 that limits which folders it can read or write.
 
 The fastest way to activate a template is from the UI: open
@@ -176,6 +178,11 @@ The fastest way to activate a template is from the UI: open
 and click **Activate**. The button copies the persona to
 \`.agents/<slug>/persona.md\` and registers an \`agent_state\` row so the
 heartbeat scheduler picks it up on the next tick — no restart needed.
+
+Need a persona the library doesn't ship? Use **Settings → Agents →
+Custom** to compose one through the Visual Agent Builder — name, role,
+constraints, scope, and review mode all map to the same persona-yaml
+shape the seeded templates use.
 
 ## Wiki Gardener
 
@@ -1038,21 +1045,12 @@ ${p.role}.
   curious user can audit the evidence trail behind the proposed
   change.
 `
-          : `
-You are {{company_name}}'s ${p.name}. Company description: {{company_description}}.
-Current goals: {{goals}}.
-
-## Responsibilities
-
-${p.role}.
-
-## Guidelines
-
-- Work within your assigned scope: \`${p.scope}\`
-- Use structured kb.* tools for all edits
-- File a journal entry at the end of each run
-- Respect page kinds: never modify \`kind: source\` pages
-`;
+          : "";
+    if (!body) {
+      throw new Error(
+        `seed.ts: no persona body wired up for slug '${p.slug}'. Add a branch in the body composer.`,
+      );
+    }
 
     seedFile(join(agentLibDir, `${p.slug}.md`), `${frontmatter}\n${body}`);
   }
