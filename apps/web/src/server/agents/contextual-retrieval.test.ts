@@ -57,7 +57,9 @@ describe("generateChunkContext", () => {
     expect(provider.callCount).toBe(1);
     expect(provider.lastOpts?.systemPrompt).toContain("Q3 results follow.");
     expect(provider.lastOpts?.systemPrompt).toContain("Source document begins");
-    expect(provider.lastOpts?.messages[0]?.content).toContain("Revenue grew 12%");
+    const userMsg = provider.lastOpts?.messages[0];
+    expect(userMsg?.role).toBe("user");
+    expect(userMsg && "content" in userMsg ? userMsg.content : "").toContain("Revenue grew 12%");
     // Prompt-cache flag follows the provider's capability.
     expect(provider.lastOpts?.cacheSystemPrompt).toBe(true);
   });

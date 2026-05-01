@@ -691,143 +691,143 @@ export function SidebarNew() {
                 : "translate-x-0 opacity-100"
           }`}
         >
-        <div
-          role="tree"
-          aria-label="Files and folders"
-          onContextMenu={(e) => handleContextMenu(e)}
-          onKeyDown={(e) => {
-            // WAI-ARIA Authoring Practices §Tree View pattern.
-            // Drilling, not expansion, models the existing UX:
-            // ArrowRight enters a directory; ArrowLeft pops up.
-            // Renames and inputs claim their own keys via
-            // stopPropagation, so the rename input above stays
-            // usable while focus is technically inside the tree.
-            if (visibleItems.length === 0) return;
-            const focused = visibleItems[focusedTreeIdx];
-            switch (e.key) {
-              case "ArrowDown": {
-                e.preventDefault();
-                focusTreeItem(Math.min(focusedTreeIdx + 1, visibleItems.length - 1));
-                return;
-              }
-              case "ArrowUp": {
-                e.preventDefault();
-                focusTreeItem(Math.max(focusedTreeIdx - 1, 0));
-                return;
-              }
-              case "Home": {
-                e.preventDefault();
-                focusTreeItem(0);
-                return;
-              }
-              case "End": {
-                e.preventDefault();
-                focusTreeItem(visibleItems.length - 1);
-                return;
-              }
-              case "ArrowRight": {
-                if (focused?.type === "directory") {
+          <div
+            role="tree"
+            aria-label="Files and folders"
+            onContextMenu={(e) => handleContextMenu(e)}
+            onKeyDown={(e) => {
+              // WAI-ARIA Authoring Practices §Tree View pattern.
+              // Drilling, not expansion, models the existing UX:
+              // ArrowRight enters a directory; ArrowLeft pops up.
+              // Renames and inputs claim their own keys via
+              // stopPropagation, so the rename input above stays
+              // usable while focus is technically inside the tree.
+              if (visibleItems.length === 0) return;
+              const focused = visibleItems[focusedTreeIdx];
+              switch (e.key) {
+                case "ArrowDown": {
                   e.preventDefault();
-                  drillInto(focused.path);
+                  focusTreeItem(Math.min(focusedTreeIdx + 1, visibleItems.length - 1));
+                  return;
                 }
-                return;
-              }
-              case "ArrowLeft": {
-                if (sidebarFolder) {
+                case "ArrowUp": {
                   e.preventDefault();
-                  drillUp();
+                  focusTreeItem(Math.max(focusedTreeIdx - 1, 0));
+                  return;
                 }
-                return;
+                case "Home": {
+                  e.preventDefault();
+                  focusTreeItem(0);
+                  return;
+                }
+                case "End": {
+                  e.preventDefault();
+                  focusTreeItem(visibleItems.length - 1);
+                  return;
+                }
+                case "ArrowRight": {
+                  if (focused?.type === "directory") {
+                    e.preventDefault();
+                    drillInto(focused.path);
+                  }
+                  return;
+                }
+                case "ArrowLeft": {
+                  if (sidebarFolder) {
+                    e.preventDefault();
+                    drillUp();
+                  }
+                  return;
+                }
+                case " ":
+                case "Enter": {
+                  if (!focused) return;
+                  if (editingPath === focused.path) return;
+                  e.preventDefault();
+                  if (focused.type === "directory") drillInto(focused.path);
+                  else openFile(focused.path);
+                  return;
+                }
               }
-              case " ":
-              case "Enter": {
-                if (!focused) return;
-                if (editingPath === focused.path) return;
-                e.preventDefault();
-                if (focused.type === "directory") drillInto(focused.path);
-                else openFile(focused.path);
-                return;
-              }
-            }
-          }}
-        >
-          {visibleItems.length === 0 && (
-            <div className="py-8 text-center text-xs text-secondary">No pages yet</div>
-          )}
-          {visibleItems.map((item, itemIdx) => {
-            const isDir = item.type === "directory";
-            const isActive = activePath === item.path;
-            const isEditing = editingPath === item.path;
+            }}
+          >
+            {visibleItems.length === 0 && (
+              <div className="py-8 text-center text-xs text-secondary">No pages yet</div>
+            )}
+            {visibleItems.map((item, itemIdx) => {
+              const isDir = item.type === "directory";
+              const isActive = activePath === item.path;
+              const isEditing = editingPath === item.path;
 
-            const isDropTarget = isDir && dropTarget === item.path;
-            const isFocusedRow = itemIdx === focusedTreeIdx;
-            return (
-              // The row is `role="treeitem"` (semantic). Keyboard
-              // activation is handled by the parent tree's
-              // `onKeyDown`, not this row, so biome's
-              // useKeyWithClickEvents rule is satisfied at the
-              // tree level rather than per-row.
-              // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard activation handled at tree-container level
-              <div
-                key={item.path}
-                ref={(el) => {
-                  treeItemRefs.current[itemIdx] = el;
-                }}
-                className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-(--motion-snap) ${
-                  isActive
-                    ? "sidebar-item-active text-primary"
-                    : isDropTarget
-                      ? "border border-ironlore-blue bg-ironlore-slate-hover text-primary"
-                      : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-                }`}
-                draggable={!isDir && !isEditing}
-                onDragStart={(e) => !isDir && handleDragStart(e, item.path)}
-                onDragOver={(e) => handleDragOver(e, item.path, isDir)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => {
-                  if (isDir) void handleDrop(e, item.path);
-                }}
-                onClick={() => {
-                  if (isEditing) return;
-                  setFocusedTreeIdx(itemIdx);
-                  if (isDir) drillInto(item.path);
-                  else openFile(item.path);
-                }}
-                onContextMenu={(e) => {
-                  e.stopPropagation();
-                  handleContextMenu(e, item.path, item.type, item.name);
-                }}
-                role="treeitem"
-                aria-level={1}
-                aria-selected={isActive}
-                {...(isDir ? { "aria-expanded": false } : {})}
-                tabIndex={isFocusedRow ? 0 : -1}
-              >
-                <FileIcon type={item.type} />
-                {isEditing ? (
-                  <input
-                    className="flex-1 rounded border border-ironlore-blue bg-transparent px-1 text-sm text-primary focus:outline-none"
-                    value={editingValue}
-                    onChange={(e) => setEditingValue(e.target.value)}
-                    onBlur={() => commitRename(item.path, editingValue)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") commitRename(item.path, editingValue);
-                      if (e.key === "Escape") setEditingPath(null);
-                    }}
-                    // biome-ignore lint/a11y/noAutofocus: inline rename needs immediate focus
-                    autoFocus
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span className="flex-1 truncate">{item.name}</span>
-                )}
-                {isDir && !isEditing && (
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-secondary opacity-0 group-hover:opacity-100" />
-                )}
-              </div>
-            );
-          })}
-        </div>
+              const isDropTarget = isDir && dropTarget === item.path;
+              const isFocusedRow = itemIdx === focusedTreeIdx;
+              return (
+                // The row is `role="treeitem"` (semantic). Keyboard
+                // activation is handled by the parent tree's
+                // `onKeyDown`, not this row, so biome's
+                // useKeyWithClickEvents rule is satisfied at the
+                // tree level rather than per-row.
+                // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard activation handled at tree-container level
+                <div
+                  key={item.path}
+                  ref={(el) => {
+                    treeItemRefs.current[itemIdx] = el;
+                  }}
+                  className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-(--motion-snap) ${
+                    isActive
+                      ? "sidebar-item-active text-primary"
+                      : isDropTarget
+                        ? "border border-ironlore-blue bg-ironlore-slate-hover text-primary"
+                        : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+                  }`}
+                  draggable={!isDir && !isEditing}
+                  onDragStart={(e) => !isDir && handleDragStart(e, item.path)}
+                  onDragOver={(e) => handleDragOver(e, item.path, isDir)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => {
+                    if (isDir) void handleDrop(e, item.path);
+                  }}
+                  onClick={() => {
+                    if (isEditing) return;
+                    setFocusedTreeIdx(itemIdx);
+                    if (isDir) drillInto(item.path);
+                    else openFile(item.path);
+                  }}
+                  onContextMenu={(e) => {
+                    e.stopPropagation();
+                    handleContextMenu(e, item.path, item.type, item.name);
+                  }}
+                  role="treeitem"
+                  aria-level={1}
+                  aria-selected={isActive}
+                  {...(isDir ? { "aria-expanded": false } : {})}
+                  tabIndex={isFocusedRow ? 0 : -1}
+                >
+                  <FileIcon type={item.type} />
+                  {isEditing ? (
+                    <input
+                      className="flex-1 rounded border border-ironlore-blue bg-transparent px-1 text-sm text-primary focus:outline-none"
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      onBlur={() => commitRename(item.path, editingValue)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename(item.path, editingValue);
+                        if (e.key === "Escape") setEditingPath(null);
+                      }}
+                      // biome-ignore lint/a11y/noAutofocus: inline rename needs immediate focus
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="flex-1 truncate">{item.name}</span>
+                  )}
+                  {isDir && !isEditing && (
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-secondary opacity-0 group-hover:opacity-100" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
           {/* "+ New page" sits as the last row of the file list, directly
            *  under the lowermost file. Scrolls with the tree (lives in the

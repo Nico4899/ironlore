@@ -23,9 +23,9 @@ import { AgentRails } from "./agents/rails.js";
 import { seedAgents } from "./agents/seed-agents.js";
 import { createAuthApi, SessionStore } from "./auth.js";
 import { bootstrap } from "./bootstrap.js";
+import { ContextualizationWorker } from "./contextualization-worker.js";
 import { createCorsConfig } from "./cors.js";
 import { createCrossProjectCopyApi } from "./cross-project-copy.js";
-import { ContextualizationWorker } from "./contextualization-worker.js";
 import { EmbeddingWorker } from "./embedding-worker.js";
 import { createEmbeddingsApi } from "./embeddings-api.js";
 import { loadProjectConfig } from "./fetch-for-project.js";
@@ -646,9 +646,7 @@ async function start() {
       worker.start();
       contextualizationWorkers.set(projectId, worker);
     }
-    console.log(
-      `Contextualization worker started for ${contextualizationWorkers.size} project(s)`,
-    );
+    console.log(`Contextualization worker started for ${contextualizationWorkers.size} project(s)`);
   }
 
   // Create broadcast callback that forwards to the WebSocket manager

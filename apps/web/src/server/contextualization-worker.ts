@@ -1,7 +1,7 @@
 import { generateChunkContext } from "./agents/contextual-retrieval.js";
 import { fetchForProject } from "./fetch-for-project.js";
-import type { Provider } from "./providers/types.js";
 import { ProviderRegistry } from "./providers/registry.js";
+import type { Provider } from "./providers/types.js";
 import type { SearchIndex } from "./search-index.js";
 
 /**

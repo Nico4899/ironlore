@@ -141,7 +141,10 @@ async function consumeChat(
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`generateChunkContext timed out after ${ms}ms`)), ms);
+    const t = setTimeout(
+      () => reject(new Error(`generateChunkContext timed out after ${ms}ms`)),
+      ms,
+    );
     if (typeof t.unref === "function") t.unref();
     p.then(
       (v) => {

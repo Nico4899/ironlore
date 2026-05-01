@@ -237,7 +237,12 @@ describe("embeddings-api status — contextualization block", () => {
 
     const res = await api.fetch(new Request("http://x/status"));
     const body = (await res.json()) as {
-      contextualization: { total: number; contextualized: number; missing: number; running: boolean };
+      contextualization: {
+        total: number;
+        contextualized: number;
+        missing: number;
+        running: boolean;
+      };
     };
     expect(body.contextualization.total).toBe(2);
     expect(body.contextualization.missing).toBe(2);

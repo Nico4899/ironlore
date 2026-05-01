@@ -538,18 +538,19 @@ export class SearchIndex {
       if (existing) {
         existing.score += rrfScore;
       } else {
-        scoreMap.set(key, {
-          score: rrfScore,
-          result: { path: r.path, title: r.title ?? r.path, snippet: r.snippet, rank: r.rank },
-        });
+        const newResult: SearchResult = {
+          path: r.path,
+          title: r.title ?? r.path,
+          snippet: r.snippet,
+          rank: r.rank,
+        };
         // Pin block IDs from the joined chunk row so context-only hits
         //  still cite the right block.
         if (r.blockIdStart)
-          (scoreMap.get(key)!.result as unknown as Record<string, unknown>).blockIdStart =
-            r.blockIdStart;
+          (newResult as unknown as Record<string, unknown>).blockIdStart = r.blockIdStart;
         if (r.blockIdEnd)
-          (scoreMap.get(key)!.result as unknown as Record<string, unknown>).blockIdEnd =
-            r.blockIdEnd;
+          (newResult as unknown as Record<string, unknown>).blockIdEnd = r.blockIdEnd;
+        scoreMap.set(key, { score: rrfScore, result: newResult });
       }
     }
 
@@ -977,12 +978,7 @@ export class SearchIndex {
    * Upserts on conflict: the worker may legitimately re-contextualise
    * a chunk after a model swap, and an old context shouldn't survive.
    */
-  storeChunkContext(
-    pagePath: string,
-    chunkIdx: number,
-    context: string,
-    model: string,
-  ): void {
+  storeChunkContext(pagePath: string, chunkIdx: number, context: string, model: string): void {
     const txn = this.db.transaction(() => {
       this.db
         .prepare(
@@ -999,9 +995,7 @@ export class SearchIndex {
         .prepare("DELETE FROM chunk_contexts_fts WHERE path = ? AND chunk_idx = ?")
         .run(pagePath, chunkIdx);
       this.db
-        .prepare(
-          "INSERT INTO chunk_contexts_fts (path, chunk_idx, context) VALUES (?, ?, ?)",
-        )
+        .prepare("INSERT INTO chunk_contexts_fts (path, chunk_idx, context) VALUES (?, ?, ?)")
         .run(pagePath, chunkIdx, context);
     });
     txn();
@@ -1013,9 +1007,7 @@ export class SearchIndex {
    * worker can prompt-cache against the full page text without an
    * extra read.
    */
-  getChunksMissingContexts(
-    limit = 10,
-  ): Array<{ path: string; chunkIdx: number; content: string }> {
+  getChunksMissingContexts(limit = 10): Array<{ path: string; chunkIdx: number; content: string }> {
     return this.db
       .prepare(
         `SELECT c.path AS path, c.chunk_idx AS chunkIdx, c.content AS content
@@ -1043,9 +1035,7 @@ export class SearchIndex {
 
   /** How many chunks have a contextual summary attached. */
   countChunksWithContexts(): number {
-    const row = this.db
-      .prepare("SELECT COUNT(*) AS n FROM chunk_contexts")
-      .get() as { n: number };
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM chunk_contexts").get() as { n: number };
     return row.n;
   }
 
@@ -1056,9 +1046,9 @@ export class SearchIndex {
    * to plumb the StorageWriter into the worker.
    */
   getPageContent(pagePath: string): string | null {
-    const row = this.db
-      .prepare("SELECT content FROM pages_fts WHERE path = ?")
-      .get(pagePath) as { content: string } | undefined;
+    const row = this.db.prepare("SELECT content FROM pages_fts WHERE path = ?").get(pagePath) as
+      | { content: string }
+      | undefined;
     return row?.content ?? null;
   }
 
