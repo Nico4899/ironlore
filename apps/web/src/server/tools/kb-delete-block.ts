@@ -3,6 +3,7 @@ import { parseBlocks } from "@ironlore/core";
 import { assignBlockIds, writeBlocksSidecar } from "../block-ids.js";
 import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
+import { checkToolAcl } from "./acl-gate.js";
 import { extractPageKind } from "./page-kind.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 import { assertWritableKind, WritableKindsViolation } from "./writable-kinds-gate.js";

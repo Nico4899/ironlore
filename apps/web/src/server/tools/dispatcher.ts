@@ -110,9 +110,18 @@ export class ToolDispatcher {
       }
     }
 
+    // Wall-clock timer for the tool execution. Measured here (not
+    // client-side) because the client processes `tool.call` and
+    // `tool.result` events in the same poll batch, so its
+    // `Date.now() - Date.now()` always rounded to ~0ms — every tool
+    // appeared to take 0ms in the AI panel regardless of how long it
+    // actually ran. The number we emit is the time `tool.execute`
+    // spent including any I/O it did.
+    const startedAt = performance.now();
     try {
       const result = await tool.execute(args, ctx);
-      ctx.emitEvent("tool.result", { tool: name, result });
+      const durationMs = Math.round(performance.now() - startedAt);
+      ctx.emitEvent("tool.result", { tool: name, result, durationMs });
       // Tools surface structured failures by returning a JSON
       // envelope `{"error": "...", ...}` instead of throwing — the
       // kb.* mutation family (insert_after, replace_block,
@@ -129,8 +138,9 @@ export class ToolDispatcher {
       const isError = hasTopLevelErrorField(result);
       return { result, isError };
     } catch (err) {
+      const durationMs = Math.round(performance.now() - startedAt);
       const message = err instanceof Error ? err.message : String(err);
-      ctx.emitEvent("tool.error", { tool: name, error: message });
+      ctx.emitEvent("tool.error", { tool: name, error: message, durationMs });
       return { result: `Tool error: ${message}`, isError: true };
     }
   }

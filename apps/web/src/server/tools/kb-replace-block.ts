@@ -89,6 +89,11 @@ export function createKbReplaceBlock(
         derived_from?: string[];
       };
 
+      // Phase-9 multi-user: gate on write access before doing anything
+      //  destructive. Single-user runs + cron heartbeats permit.
+      const aclCheck = checkToolAcl(ctx, writer, path, "write");
+      if (!aclCheck.ok) return JSON.stringify(aclCheck.envelope);
+
       // Read current content.
       let currentContent: string;
       try {

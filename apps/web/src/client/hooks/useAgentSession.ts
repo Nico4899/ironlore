@@ -213,17 +213,19 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
 
     case "tool.result": {
       // Find the last tool_call message and attach the result.
+      // `durationMs` is now measured server-side by the dispatcher
+      // and rides on the event payload. The previous client-side
+      // computation (`Date.now() - msg.timestamp`) always read ~0ms
+      // because tool.call and tool.result land in the same 500ms
+      // poll batch and were stamped in the same JS tick.
       const msgs = store.messages;
       for (let i = msgs.length - 1; i >= 0; i--) {
         const msg = msgs[i];
         if (msg?.type === "tool_call" && msg.result === undefined) {
-          const mutable = msg as { result?: unknown; durationMs?: number; timestamp?: number };
+          const mutable = msg as { result?: unknown; durationMs?: number };
           mutable.result = data.result;
-          // Stamp duration so the ToolCallCard's StatusPip can show
-          //  `180ms` per screen-editor.jsx. Only when we have both a
-          //  start timestamp and we haven't already stamped.
-          if (mutable.timestamp != null && mutable.durationMs == null) {
-            mutable.durationMs = Date.now() - mutable.timestamp;
+          if (typeof data.durationMs === "number") {
+            mutable.durationMs = data.durationMs;
           }
           useAIPanelStore.setState({ messages: [...msgs] });
           break;
@@ -237,10 +239,10 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
       for (let i = msgs2.length - 1; i >= 0; i--) {
         const msg = msgs2[i];
         if (msg?.type === "tool_call" && msg.result === undefined) {
-          const mutable = msg as { result?: unknown; durationMs?: number; timestamp?: number };
+          const mutable = msg as { result?: unknown; durationMs?: number };
           mutable.result = `Error: ${data.error}`;
-          if (mutable.timestamp != null && mutable.durationMs == null) {
-            mutable.durationMs = Date.now() - mutable.timestamp;
+          if (typeof data.durationMs === "number") {
+            mutable.durationMs = data.durationMs;
           }
           useAIPanelStore.setState({ messages: [...msgs2] });
           break;
