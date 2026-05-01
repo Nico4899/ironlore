@@ -470,6 +470,7 @@ export function AIPanel() {
             </span>
           )}
           <span className="flex-1" />
+          <ResolutionChip />
           <NetworkLockedBadge />
           <Key>⌘⇧A</Key>
         </div>
@@ -1624,6 +1625,80 @@ function RunFinalizedCard({
  * banner uses, so any future change to event handling stays
  * coherent across both surfaces. Renders nothing pre-downgrade.
  */
+/**
+ * Resolution chip — surfaces the per-run provider/model/effort triple
+ * that the four-level resolver chose for the current turn, plus the
+ * source level (action / runtime / persona / global) for each field.
+ *
+ * Renders nothing until the first `provider.resolved` event lands —
+ * before that there's nothing to display. The tooltip carries the
+ * full breakdown so a glance reads "haiku" while a hover reveals
+ * "model from action; effort from persona; provider from global +
+ * note: 'effort dropped on Haiku'".
+ *
+ * Wired through `useAIPanelStore.lastResolution` — see
+ * `useAgentSession`'s `provider.resolved` handler.
+ */
+function ResolutionChip() {
+  const resolution = useAIPanelStore((s) => s.lastResolution);
+  if (!resolution) return null;
+  const { model, source, notes, provider, effort } = resolution;
+  // Compact display — full model name in mono, with a small badge
+  //  marking which level set the model. Tooltip carries the full
+  //  three-field breakdown + any normalization notes.
+  const sourceBadge = source.model.charAt(0).toUpperCase(); // A / R / P / G
+  const tooltip = [
+    `provider: ${provider} (from ${source.provider})`,
+    `model: ${model} (from ${source.model})`,
+    `effort: ${effort} (from ${source.effort})`,
+    ...notes.map((n) => `note: ${n}`),
+  ].join("\n");
+  return (
+    <span
+      role="status"
+      aria-label={`Resolved as ${provider} ${model} ${effort}; model source ${source.model}`}
+      title={tooltip}
+      className="flex items-center gap-1 rounded-sm font-mono"
+      style={{
+        fontSize: 10,
+        letterSpacing: "0.04em",
+        padding: "2px 6px",
+        background: "color-mix(in oklch, var(--il-blue) 10%, transparent)",
+        border: "1px solid color-mix(in oklch, var(--il-blue) 25%, transparent)",
+        color: "var(--il-text2)",
+        maxWidth: 180,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span aria-hidden="true" style={{ color: "var(--il-blue)", fontSize: 9, letterSpacing: 0 }}>
+        {sourceBadge}
+      </span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{shortModelName(model)}</span>
+    </span>
+  );
+}
+
+/**
+ * Trim a long model name down to the chip's width budget without
+ * losing the recognizable family/version. `claude-sonnet-4-20250514`
+ * → `sonnet-4`. `llama3.2:latest` → `llama3.2`. Provider-specific
+ * heuristics — keeping it small and explicit beats a generic
+ * truncation that hides the part the user actually cares about.
+ */
+function shortModelName(model: string): string {
+  // Anthropic: claude-<family>-<version>-<date> → <family>-<version>
+  const claudeMatch = /^claude-([^-]+)-([^-]+)/.exec(model);
+  if (claudeMatch?.[1] && claudeMatch[2]) return `${claudeMatch[1]}-${claudeMatch[2]}`;
+  // OpenAI: gpt-4o-mini → gpt-4o-mini (already short)
+  if (model.startsWith("gpt-") && model.length <= 16) return model;
+  // Ollama: llama3.2:latest → llama3.2 (drop the tag)
+  const colonIdx = model.indexOf(":");
+  if (colonIdx > 0) return model.slice(0, colonIdx);
+  return model.length <= 16 ? model : `${model.slice(0, 14)}…`;
+}
+
 function NetworkLockedBadge() {
   const downgraded = useAIPanelStore((s) => s.messages.some((m) => m.type === "egress_downgraded"));
   if (!downgraded) return null;
