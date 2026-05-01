@@ -268,7 +268,7 @@ async function start() {
   const mcpBridgesById = new Map<string, McpBridge>();
   for (const [projectId, services] of servicesById) {
     const dispatcher = new ToolDispatcher();
-    dispatcher.register(createKbSearch(services.searchIndex));
+    dispatcher.register(createKbSearch(services.searchIndex, services.writer));
     dispatcher.register(createKbReadPage(services.writer));
     dispatcher.register(createKbReadBlock(services.writer));
     dispatcher.register(createKbReplaceBlock(services.writer, services.searchIndex));
