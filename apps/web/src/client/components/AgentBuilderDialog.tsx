@@ -1,5 +1,6 @@
+import { composeBoundariesSection } from "@ironlore/core";
 import { Plus, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type BuildAgentInput, buildAgent } from "../lib/api.js";
 
 /**
@@ -301,6 +302,19 @@ export function AgentBuilderDialog({
             </select>
           </FieldLabel>
 
+          {/* Boundaries preview — renders the same string the
+           *  server will write to persona.md so the user sees their
+           *  agent's structural envelope before clicking Create.
+           *  Mirrors composeBoundariesSection() in
+           *  packages/core/src/boundaries.ts — single source of truth.
+           */}
+          <BoundariesPreview
+            scopePath={scopePath}
+            canEditPages={canEditPages}
+            reviewBeforeMerge={reviewBeforeMerge}
+            heartbeat={heartbeat}
+          />
+
           {/* Project-egress note — calling out the architectural boundary */}
           <div
             className="rounded p-2"
@@ -368,6 +382,86 @@ function FieldLabel({ children, hint }: { children: React.ReactNode; hint?: stri
         <span style={{ color: "var(--il-text4)", fontSize: 10.5, lineHeight: 1.4 }}>{hint}</span>
       )}
     </label>
+  );
+}
+
+/**
+ * Live-updating preview of the `## Boundaries` section the server
+ * will write into persona.md. Calls the same `composeBoundariesSection`
+ * helper from `@ironlore/core` that `buildPersona()` uses, so what
+ * the user sees in the form is exactly what lands on disk.
+ *
+ * Intentionally rendered inline (not a collapsible "Show preview")
+ * because the whole point of the section is "tell the user what
+ * they're agreeing to before they click Create" — hiding it behind
+ * a toggle defeats the purpose.
+ */
+function BoundariesPreview({
+  scopePath,
+  canEditPages,
+  reviewBeforeMerge,
+  heartbeat,
+}: {
+  scopePath: string;
+  canEditPages: boolean;
+  reviewBeforeMerge: boolean;
+  heartbeat: string;
+}) {
+  const text = useMemo(() => {
+    return composeBoundariesSection({
+      scopePages: scopePath.trim() ? [scopePath.trim()] : [],
+      canEditPages,
+      reviewBeforeMerge,
+      heartbeat: heartbeat === "manual" ? undefined : heartbeat,
+    });
+  }, [scopePath, canEditPages, reviewBeforeMerge, heartbeat]);
+
+  return (
+    <div
+      className="rounded p-2"
+      style={{
+        background: "color-mix(in oklch, var(--il-amber) 6%, transparent)",
+        border: "1px solid color-mix(in oklch, var(--il-amber) 25%, transparent)",
+        fontSize: 10.5,
+        color: "var(--il-text2)",
+        lineHeight: 1.5,
+      }}
+    >
+      <div
+        className="font-mono uppercase"
+        style={{
+          color: "var(--il-amber)",
+          fontSize: 10,
+          letterSpacing: "0.06em",
+          marginBottom: 4,
+        }}
+      >
+        Boundaries · receipt
+      </div>
+      <div style={{ color: "var(--il-text3)", marginBottom: 6 }}>
+        These will be appended to the agent's persona.md as a
+        <code> ## Boundaries</code> section. The runtime enforces them — this is the
+        human-readable mirror of <code>scope.pages</code>, <code>writable_kinds</code>,
+        <code> review_mode</code>, and <code>heartbeat</code>.
+      </div>
+      <pre
+        className="rounded"
+        style={{
+          background: "var(--il-bg)",
+          border: "1px solid var(--il-border-soft)",
+          padding: "6px 8px",
+          fontFamily: "var(--font-mono)",
+          fontSize: 10.5,
+          color: "var(--il-text)",
+          whiteSpace: "pre-wrap",
+          margin: 0,
+          maxHeight: 220,
+          overflowY: "auto",
+        }}
+      >
+        {text}
+      </pre>
+    </div>
   );
 }
 

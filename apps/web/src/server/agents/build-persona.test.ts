@@ -1,10 +1,11 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { composeBoundariesSection } from "@ironlore/core";
 import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openJobsDb } from "../jobs/schema.js";
-import { buildPersona, composeBoundariesSection } from "./build-persona.js";
+import { buildPersona } from "./build-persona.js";
 
 /**
  * Visual Agent Builder — Phase-11 A.9.1.

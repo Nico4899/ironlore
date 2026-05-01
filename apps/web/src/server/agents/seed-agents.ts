@@ -1,8 +1,12 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { AGENTS_DIR, AGENTS_LIBRARY_DIR, AGENTS_SHARED_DIR } from "@ironlore/core";
+import {
+  AGENTS_DIR,
+  AGENTS_LIBRARY_DIR,
+  AGENTS_SHARED_DIR,
+  composeBoundariesSection,
+} from "@ironlore/core";
 import type Database from "better-sqlite3";
-import { composeBoundariesSection } from "./build-persona.js";
 
 /**
  * Seed the agent filesystem layout and agent_state rows for the

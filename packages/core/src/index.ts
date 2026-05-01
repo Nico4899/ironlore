@@ -1,4 +1,5 @@
 export * from "./block-parser.js";
+export * from "./boundaries.js";
 export * from "./constants.js";
 export * from "./contrast.js";
 export * from "./egress.js";
