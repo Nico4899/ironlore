@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reinsertBlockIds, stripBlockIds } from "./MarkdownEditor.js";
+import { reinsertBlockIds, splitFrontmatter, stripBlockIds } from "./MarkdownEditor.js";
 
 /**
  * Block-ID preservation tests.
@@ -184,5 +184,50 @@ describe("reinsertBlockIds — content-based matching", () => {
 
     const restored = reinsertBlockIds(edited, entries);
     expect(restored.split("\n").filter((l) => l.includes("blk_"))).toHaveLength(2);
+  });
+});
+
+describe("splitFrontmatter", () => {
+  it("extracts a clean YAML frontmatter region", () => {
+    const md = "---\ntitle: Hi\n---\n\n# Body";
+    const { frontmatter, body } = splitFrontmatter(md);
+    expect(frontmatter).toBe("---\ntitle: Hi\n---\n");
+    expect(body).toBe("\n# Body");
+  });
+
+  it("returns empty frontmatter when the file has none", () => {
+    const md = "# Just a body\n\nWith a paragraph.";
+    const { frontmatter, body } = splitFrontmatter(md);
+    expect(frontmatter).toBe("");
+    expect(body).toBe(md);
+  });
+
+  it("normalises a corrupted opening fence (block-ID comment appended) on extract", () => {
+    // Older block-ID stampers wrote `--- <!-- #blk_... -->` onto the
+    // opening fence, breaking YAML parsing. The editor reattaches
+    // the normalised frontmatter on save so the file self-heals.
+    const md =
+      "--- <!-- #blk_01ABCABCABCABCABCABCABCABA -->\ntitle: Hi\n---\n\n# Body";
+    const { frontmatter, body } = splitFrontmatter(md);
+    expect(frontmatter).toBe("---\ntitle: Hi\n---\n");
+    expect(body).toBe("\n# Body");
+  });
+
+  it("normalises a corrupted closing fence too", () => {
+    const md =
+      "---\ntitle: Hi\n--- <!-- #blk_01ABCABCABCABCABCABCABCABA -->\n\n# Body";
+    const { frontmatter, body } = splitFrontmatter(md);
+    expect(frontmatter).toBe("---\ntitle: Hi\n---\n");
+    expect(body).toBe("\n# Body");
+  });
+
+  it("does not match a `---` that isn't at the file head", () => {
+    // A thematic break in the body should never be mistaken for
+    // frontmatter just because the file happens to start with text
+    // that looks YAML-shaped.
+    const md = "# Title\n\n---\n\nMore body";
+    const { frontmatter, body } = splitFrontmatter(md);
+    expect(frontmatter).toBe("");
+    expect(body).toBe(md);
   });
 });

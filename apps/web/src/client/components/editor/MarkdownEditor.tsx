@@ -47,16 +47,39 @@ import "./editor.css";
 const BLOCK_ID_RE = /<!-- #blk_[A-Z0-9]{26} -->/g;
 
 /**
- * YAML frontmatter at the top of a markdown file. ProseMirror has no schema
- * for it, so leaving it in would render as prose. We peel it off before
- * parsing and restore it verbatim on serialize.
+ * YAML frontmatter at the top of a markdown file. ProseMirror has no
+ * schema for it, so leaving it in would render as prose. We peel it
+ * off before parsing and restore it on serialize.
+ *
+ * The fence pattern tolerates a trailing block-ID HTML comment
+ * (e.g. `--- <!-- #blk_... -->`) on either fence — older versions of
+ * the server's block-ID stamper corrupted seed files this way, and a
+ * strict regex would miss the frontmatter entirely, dump the YAML
+ * body into ProseMirror as content, and let the next save round-trip
+ * collapse it into a setext-2 heading. The reattach path normalises
+ * back to clean fences so the file self-heals on save.
  */
-const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+const FRONTMATTER_RE =
+  /^---(?:[ \t]*<!--[^>]*-->)?\r?\n[\s\S]*?\r?\n---(?:[ \t]*<!--[^>]*-->)?\r?\n?/;
 
-function splitFrontmatter(markdown: string): { frontmatter: string; body: string } {
+export function splitFrontmatter(markdown: string): { frontmatter: string; body: string } {
   const match = markdown.match(FRONTMATTER_RE);
   if (!match) return { frontmatter: "", body: markdown };
-  return { frontmatter: match[0], body: markdown.slice(match[0].length) };
+  return {
+    frontmatter: normalizeFrontmatterFences(match[0]),
+    body: markdown.slice(match[0].length),
+  };
+}
+
+/**
+ * Strip block-ID HTML comments from the YAML fences so the saved
+ * file is parseable as YAML again. The opening fence must be exactly
+ * `---` for any YAML loader to recognise it.
+ */
+function normalizeFrontmatterFences(raw: string): string {
+  return raw
+    .replace(/^---[ \t]*<!--[^>]*-->/, "---")
+    .replace(/\n---[ \t]*<!--[^>]*-->(\r?\n?)$/, "\n---$1");
 }
 
 /**
