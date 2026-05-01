@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { activateAgent } from "./activate.js";
 import { searchInstalledAgents } from "./agent-search.js";
@@ -202,12 +202,18 @@ export function createAgentApi(
   //  config per slug so the user can review scopes, tools, and rate
   //  caps across every installed agent.
   // -----------------------------------------------------------------------
-  api.get("/", (c) => {
+  // Mirror both with-and-without trailing slash. Hono's router is
+  // strict and `api.get("/", ...)` only matches the with-slash URL,
+  // leaving the bare form to 404. Most HTTP clients normalise away
+  // trailing slashes, so register both paths.
+  const listAgents = (c: Context) => {
     const rows = jobsDb
       .prepare("SELECT slug, status FROM agent_state WHERE project_id = ? ORDER BY slug")
       .all(projectId) as Array<{ slug: string; status: "active" | "paused" }>;
     return c.json({ agents: rows });
-  });
+  };
+  api.get("/", listAgents);
+  api.get("", listAgents);
 
   // -----------------------------------------------------------------------
   // Free-text agent search — backs the Cmd+K dialog's `AGENTS` tab.
@@ -464,10 +470,14 @@ export function createJobApi(
 export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir: string): Hono {
   const api = new Hono();
 
-  api.get("/", (c) => {
+  // Mirror with/without trailing slash — same Hono strictness as the
+  // agents list above.
+  const listInbox = (c: Context) => {
     const entries = inbox.getPending(projectId);
     return c.json({ entries });
-  });
+  };
+  api.get("/", listInbox);
+  api.get("", listInbox);
 
   api.get("/:entryId/files", (c) => {
     const entryId = c.req.param("entryId") ?? "";
