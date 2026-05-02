@@ -214,7 +214,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const { writer, dispatcher, ctx, budget, index } = setup();
     const { markdown } = assignBlockIds("# Title\n\nFindable content.\n");
     await writer.write("findme.md", markdown, null);
-    index.indexPage("findme.md", markdown);
+    index.indexPage("findme.md", markdown, "test");
 
     const result = await dispatcher.call(
       "kb.search",

@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import type { BlocksIndex } from "@ironlore/core";
+import type { Block, BlocksIndex } from "@ironlore/core";
 
 // `assignBlockIds` + `parseBlocks` + `Block` types live in
 // `@ironlore/core` so the CLI's `repair --add-block-ids` retrofit and
