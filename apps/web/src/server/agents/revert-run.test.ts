@@ -69,12 +69,15 @@ function makeJob(overrides: Partial<JobRow>): JobRow {
 
 describe("revertAgentRun", () => {
   let projectDir: string;
+  let seedSha: string;
 
   beforeEach(() => {
     const repo = makeTmpRepo();
     projectDir = repo.projectDir;
     // Initial commit so there's a parent for the first agent commit.
-    commit(projectDir, "seed.md", "seed\n", "initial");
+    // Capture its SHA — tests that simulate a "0-commit run" use it
+    // as both start and end (the canonical no-op signature).
+    seedSha = commit(projectDir, "seed.md", "seed\n", "initial");
   });
 
   afterEach(() => {
@@ -92,10 +95,16 @@ describe("revertAgentRun", () => {
   });
 
   it("reverts a single-commit run cleanly", () => {
+    // Correct semantics: a run that produced one commit has
+    // `start = parent_sha, end = new_sha`. Previously this test
+    // used `start === end === shaA`, which is the *bug pattern*
+    // (a 0-commit run that the new guard now refuses) — the only
+    // reason the assertion passed was that `git log shaA^..shaA`
+    // happens to return the single commit at shaA.
     const shaA = commit(projectDir, "a.md", "agent wrote a\n", "agent: add a");
 
     const result = revertAgentRun(
-      makeJob({ commit_sha_start: shaA, commit_sha_end: shaA }),
+      makeJob({ commit_sha_start: seedSha, commit_sha_end: shaA }),
       projectDir,
     );
 
@@ -106,6 +115,35 @@ describe("revertAgentRun", () => {
     // File should be gone (or rather, deleted by the revert commit).
     const log = execSync("git log --format=%s", { cwd: projectDir, encoding: "utf-8" });
     expect(log).toContain("Revert");
+  });
+
+  it("refuses to revert a 0-commit run (start === end)", () => {
+    // The smoking-gun bug from the AI-panel audit: wiki-gardener
+    // ran an analysis that wrote nothing (`filesChanged: []`,
+    // `commitShaStart === commitShaEnd === 668da795`), yet
+    // POST /jobs/.../revert returned `success: true` and reported
+    // commit 668da795 as "reverted" — that commit was the project's
+    // *initial state*, not anything this run touched. The guard
+    // refuses these jobs at the function boundary so chat-only
+    // turns can't accidentally roll back unrelated history.
+    const result = revertAgentRun(
+      makeJob({ commit_sha_start: seedSha, commit_sha_end: seedSha }),
+      projectDir,
+    );
+    expect(result.success).toBe(false);
+    expect(result.revertedCommits).toEqual([]);
+    expect(result.error).toMatch(/no commits|start === end/i);
+
+    // Project HEAD must be untouched — the seed commit is still HEAD.
+    const head = execSync("git rev-parse HEAD", {
+      cwd: projectDir,
+      encoding: "utf-8",
+    }).trim();
+    expect(head).toBe(seedSha);
+
+    // No revert commit was created.
+    const log = execSync("git log --format=%s", { cwd: projectDir, encoding: "utf-8" });
+    expect(log).not.toContain("Revert");
   });
 
   it("reverts a multi-commit range in newest-first order", () => {

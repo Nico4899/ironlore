@@ -11,6 +11,7 @@ import { reindex } from "./commands/reindex.js";
 import { repair } from "./commands/repair.js";
 import { restore } from "./commands/restore.js";
 import { userAdd } from "./commands/user.js";
+import { vaultLint } from "./commands/vault-lint.js";
 
 const program = new Command();
 
@@ -108,6 +109,24 @@ program
       json: opts.json ?? false,
       perfOnly: opts.perfOnly ?? false,
       qualityOnly: opts.qualityOnly ?? false,
+    }),
+  );
+
+program
+  .command("vault-lint")
+  .description(
+    "Vault-content health check (orphans / stale sources / contradictions / coverage gaps / " +
+      "provenance gaps). Mirrors the Wiki Gardener agent's five detectors. Exits 0 when clean, " +
+      "1 when any finding exists — slot into CI as `pnpm vault-lint && deploy`.",
+  )
+  .option("--project <id>", "Project ID to lint", "main")
+  .option("--verbose", "Print the first few offenders per detector")
+  .option("--json", "Machine-readable JSON output")
+  .action((opts) =>
+    vaultLint({
+      project: opts.project,
+      verbose: opts.verbose ?? false,
+      json: opts.json ?? false,
     }),
   );
 

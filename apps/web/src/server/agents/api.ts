@@ -438,6 +438,17 @@ export function createJobApi(
     if (!job.commit_sha_start || !job.commit_sha_end) {
       return c.json({ error: "Job has no commit range to revert" }, 400);
     }
+    // 0-commit jobs (chat-only runs / runs that produced no writes)
+    // have start === end and would otherwise revert the project's
+    // prior HEAD by accident. Refuse with HTTP 400 so the SPA
+    // surfaces a clear error instead of "successfully reverting"
+    // something the run didn't touch.
+    if (job.commit_sha_start === job.commit_sha_end) {
+      return c.json(
+        { error: "Nothing to revert: this run produced no commits." },
+        400,
+      );
+    }
 
     const result = revertAgentRun(job, projectDir);
     return c.json(result);
