@@ -1536,10 +1536,15 @@ Score → confidence: high (3-5), medium (1-2), low (0), reject (<0).
   //  skill at `.agents/<slug>/skills/brand-voice.md`.
 
   // Shared skill: lint — wiki health check loaded by the Wiki Gardener.
-  // Implements the four-class lint contract from docs/04-ai-and-agents.md
-  // §Workflow skills — lint.md. Orphans use a real primitive today;
-  // stale sources, contradiction flags, and provenance gaps document
-  // honest stub status so the model does not fabricate findings.
+  // Implements the five-class lint contract from docs/04-ai-and-agents.md
+  // §Workflow skills — lint.md. Every detector is a real shipped tool
+  // (`kb.lint_orphans` / `_stale_sources` / `_contradictions` /
+  // `_coverage_gaps` / `_provenance_gaps`); the body must NOT describe
+  // any check as a stub or "not yet available" — the on-disk
+  // `_maintenance/lint-2026-05-02.md` report carried that stale
+  // disclaimer because the model fabricated it from priors, and the
+  // `## Do not fabricate` block + seed.test.ts assertions below pin
+  // the correct shape so future drift surfaces loudly.
   seedFile(
     join(sharedSkillsDir, "lint.md"),
     `---
@@ -1627,8 +1632,9 @@ sorted by citation count descending. Threshold of 3 keeps stray
 typos and one-off references out of the report.
 
 Report each gap as a row: \`| target | citations | first 3 citing pages |\`.
-A coverage gap is a prompt for the user to write the page (or for
-a future ingest workflow to draft a stub); flag, do not auto-create.
+A coverage gap is a prompt for the user to write the missing page (or
+for a future ingest workflow to draft an initial draft); flag, do not
+auto-create.
 
 ### 5. Provenance gaps — agent-authored blocks missing \`derived_from\`
 
@@ -1699,6 +1705,17 @@ journal call without \`lintReport\` finalizes the run silently:
   }
 }
 \`\`\`
+
+## Do not fabricate
+
+Every detector above is **shipped today** as a real \`kb.lint_*\` tool.
+If a tool returns zero results, render \`None.\` in that section's body
+— do not insert any disclaimer about the detector's availability,
+implementation status, or roadmap position. Earlier lint reports
+carried such disclaimers because an older draft of this skill
+mis-described some detectors; that framing is stale and must not be
+repeated. Trust the tool output; the absence of findings is itself a
+useful signal.
 `,
   );
 

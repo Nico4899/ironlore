@@ -437,6 +437,66 @@ describe("AnthropicProvider — SSE parsing", () => {
     expect(toolResultBlock?.type).toBe("tool_result");
     expect(toolResultBlock?.tool_use_id).toBe("tu_1");
   });
+
+  it("wraps non-object tool_use.input on replay so the wire shape is always valid (regression)", async () => {
+    // Belt-and-braces against the empty-string + non-object input
+    //  bugs: the SSE parser already normalises fresh tool_uses, but
+    //  legacy in-memory history, hand-built fixtures, or a future
+    //  bug in another producer could still land a non-object on
+    //  the conversation array. `convertMessages` must wrap anything
+    //  that's not an object so Anthropic's "tool_use.input: Input
+    //  should be an object" 400 can never recur from the replay path.
+    let capturedBody: unknown = null;
+    const capturingFetch: typeof globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      const body = encodeSseStream([frame({ type: "message_stop" })]);
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+
+    await collect(
+      provider.chat(
+        {
+          model: "claude-haiku-4-20250514",
+          systemPrompt: "",
+          messages: [
+            { role: "user", content: "begin" },
+            // Empty string — what the pre-patch parser stored for
+            //  no-arg tools. Must end up as an object on the wire.
+            { role: "tool_use", id: "tu_empty", name: "kb.lint_orphans", input: "" },
+            // Array — also rejected by Anthropic's schema. Must wrap.
+            { role: "tool_use", id: "tu_array", name: "kb.search", input: [1, 2, 3] },
+            // Null — same.
+            { role: "tool_use", id: "tu_null", name: "kb.read_page", input: null },
+            // Object — should pass through unchanged.
+            { role: "tool_use", id: "tu_ok", name: "kb.search", input: { query: "ok" } },
+          ],
+        },
+        ctx(capturingFetch),
+      ),
+    );
+
+    const payload = capturedBody as {
+      messages: Array<{ role: string; content: Array<Record<string, unknown>> }>;
+    };
+
+    const inputs = payload.messages
+      .filter((m) => m.role === "assistant")
+      .map((m) => m.content[0]?.input);
+
+    // Every input must be a plain object (not array, not null, not primitive).
+    for (const input of inputs) {
+      expect(input).not.toBeNull();
+      expect(typeof input).toBe("object");
+      expect(Array.isArray(input)).toBe(false);
+    }
+
+    // Round-trip preservation: the legitimate object passed through unchanged.
+    expect(inputs[3]).toEqual({ query: "ok" });
+    // Wrapped values are recoverable via `_value` for debugging.
+    expect((inputs[0] as { _value?: unknown })._value).toBe("");
+    expect((inputs[1] as { _value?: unknown })._value).toEqual([1, 2, 3]);
+    expect((inputs[2] as { _value?: unknown })._value).toBeNull();
+  });
 });
 
 describe("AnthropicProvider — wire-name encoding for tool identifiers", () => {

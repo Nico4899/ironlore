@@ -336,6 +336,19 @@ function buildSystemBlock(opts: ChatOptions): unknown[] {
 function convertMessages(messages: ChatMessage[]): Array<{ role: string; content: unknown }> {
   return messages.map((msg) => {
     if (msg.role === "tool_use") {
+      // Anthropic's wire schema requires `tool_use.input` to be a
+      //  JSON object — not a string, array, or primitive. The SSE
+      //  parser already normalises fresh tool_uses (see
+      //  `content_block_stop` handler), but legacy data, hand-built
+      //  test fixtures, or a future bug in another producer could
+      //  still land a non-object on the conversation history. Wrap
+      //  defensively so the request always succeeds; the original
+      //  shape is preserved under `_value` so a model can still see
+      //  what was originally there if it asks to re-read history.
+      const safeInput =
+        msg.input !== null && typeof msg.input === "object" && !Array.isArray(msg.input)
+          ? msg.input
+          : { _value: msg.input };
       return {
         role: "assistant",
         content: [
@@ -343,7 +356,7 @@ function convertMessages(messages: ChatMessage[]): Array<{ role: string; content
             type: "tool_use",
             id: msg.id,
             name: encodeToolNameForWire(msg.name),
-            input: msg.input,
+            input: safeInput,
           },
         ],
       };
