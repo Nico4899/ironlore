@@ -414,6 +414,184 @@ for the fuller skills-vs-tools framing.
 `,
   );
 
+  // Inbox onboarding — the sidebar's right-hand tab is the Inbox,
+  //  so a user who's never been told what it does will see a
+  //  badge-counted tab with no context. This doc explains the
+  //  staging-branch + per-file approval flow that the Wiki Gardener
+  //  and Evolver default to via `review_mode: inbox`.
+  seedFile(
+    join(dataDir, "getting-started", "inbox.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: The Inbox
+kind: page
+created: ${now}
+modified: ${now}
+tags: [onboarding, agents]
+icon: lucide:inbox
+---
+
+# The Inbox
+
+The Inbox is the second tab in your sidebar (next to Files). It's
+where autonomous agent runs land for review **before** they merge
+into your vault. Click the tab; you'll see one entry per pending
+run, each showing what changed, when, and which agent did it.
+
+## Why it exists
+
+Some agents commit straight to the project's default branch — the
+**Editor** for interactive prompts, the **Librarian** which only
+reads. Others queue their changes for you to review first. The
+Wiki Gardener and Evolver default to that *queued* mode (their
+personas declare \`review_mode: inbox\`); custom agents can opt in
+the same way. The contract is simple: an inbox-mode run lands on a
+staging branch named \`agents/<slug>/<run-id>\`, and the Inbox tab
+turns that branch into an approve/reject UI.
+
+## What you'll see in an entry
+
+Each Inbox entry shows:
+
+- **Agent + timestamp** — who proposed the change and when it
+  finished.
+- **Per-file diff** — every file the run touched, with the same
+  unified diff you'd get from \`git diff\`. Long diffs collapse;
+  click to expand.
+- **Per-file decision toggle** — *approved* / *rejected* / *unset*
+  on every path. The default is unset (treated as approve when you
+  hit Approve All).
+- **Approve All / Reject All** — the two terminal actions. Approve
+  All cherry-picks every non-rejected file into a single commit on
+  the default branch and deletes the staging branch; Reject All
+  drops the branch without committing anything.
+
+When you approve a partial set (some files rejected), the entry
+status becomes \`partial\` and the commit message records exactly
+which paths landed.
+
+## Reverting
+
+Every Inbox approval ends as a normal git commit. If you change
+your mind ten minutes later, the **Revert** button on the
+\`run_finalized\` card in the AI panel undoes the whole commit
+range — same plumbing as \`git revert\`, surfaced in the UI so you
+don't have to drop into a terminal.
+
+## Read next
+
+- [AI agents](agents) — for the agent-side picture (who emits
+  inbox entries, how to opt in).
+- [Pages and markdown](pages-and-markdown) — for the per-file
+  ETag / block-ID conventions the diffs are scoped to.
+`,
+  );
+
+  // Multi-user mode onboarding — Phase-9 ACLs are opt-in but
+  //  power-user-relevant. Without this doc, the only signal the
+  //  feature exists is the \`mode: multi-user\` line in
+  //  \`project.yaml\` schema.
+  seedFile(
+    join(dataDir, "getting-started", "multi-user.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Multi-user mode
+kind: page
+created: ${now}
+modified: ${now}
+tags: [onboarding, security]
+icon: lucide:users
+---
+
+# Multi-user mode
+
+By default, Ironlore runs **single-user**: one admin password set
+at first launch, every page readable + writable by that admin.
+Multi-user mode is opt-in per project — flip a flag in
+\`project.yaml\`, add users with the CLI, then per-page ACLs in
+markdown frontmatter decide who can read or write what.
+
+## Turning it on
+
+Edit your project's \`project.yaml\`:
+
+\`\`\`yaml
+mode: multi-user
+\`\`\`
+
+Then add a user. The CLI prints an initial password (shown once
+— save it):
+
+\`\`\`sh
+ironlore user add bob
+\`\`\`
+
+Bob is forced to change his password on first login (same flag the
+bootstrap admin uses).
+
+## Per-page ACLs
+
+Pages declare access in their YAML frontmatter:
+
+\`\`\`yaml
+---
+title: Q3 Salary Bands
+owner: alice
+acl:
+  read:  [alice, bob]
+  write: [alice]
+---
+\`\`\`
+
+Defaults: \`read = everyone\`, \`write = owner-only\`. Three
+special tokens are recognised: \`everyone\` (anyone authenticated),
+\`owner\` (resolves against the page's \`owner:\` field), and any
+literal username.
+
+Owner is **stamped automatically** on first PUT — whoever creates
+a page becomes its owner. Subsequent writes from anyone else hit
+the ACL gate; an unauthorised write returns 403 and the WAL never
+records the attempt.
+
+## Inheritance from \`index.md\`
+
+Pages without an explicit \`acl:\` block inherit from the closest
+ancestor folder's \`index.md\`. Drop a restrictive ACL on
+\`team/private/index.md\` and every page below it without its own
+ACL inherits the same rules. A page's own ACL always wins over an
+inherited one.
+
+## Agent runs honour ACLs too
+
+When an agent run originates from an HTTP request, the calling
+user's identity is threaded through to the tool layer.
+\`kb.read_page\` denies pages the user can't read, \`kb.search\`
+filters its result list, and \`kb.replace_block\` /
+\`kb.delete_block\` deny writes the user wouldn't be allowed to
+make through the editor. Heartbeat / cron runs (no user context)
+operate on the persona's project scope, constrained by
+\`writable_kinds\` + the inbox review path.
+
+## Single-user installs are unaffected
+
+The entire ACL path short-circuits when \`mode\` is
+\`single-user\` (the default). No parser cost, no gate cost.
+Multi-user is opt-in by design — most solo installs don't need
+it, and shipping it as the default would force every page to
+declare an owner just to be writable.
+
+## Read next
+
+- [Pages and markdown](pages-and-markdown) — frontmatter shape +
+  block-ID conventions.
+- [The Inbox](inbox) — multi-user installs benefit from the
+  staging-branch review flow even more, since two users can
+  triage each other's autonomous runs.
+`,
+  );
+
   // -------------------------------------------------------------------------
   // Convention pages — seeded empty so the Wiki Gardener has somewhere to
   // write. Described in docs/04-ai-and-agents.md §Convention pages. Both are
