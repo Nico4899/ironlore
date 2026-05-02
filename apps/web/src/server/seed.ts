@@ -157,11 +157,14 @@ with a persona definition — you can read them, edit them, or commit them.
 
 ## Two default agents
 
-- **General** — read-only assistant. Searches your pages, cites
+- **Librarian** — read-only assistant. Searches your pages, cites
   block-level sources, and never mutates anything. Good for "what did we
-  decide about X?" questions.
+  decide about X?" questions. (The persona's URL slug is \`general\` for
+  routing back-compat — the user-facing name is Librarian.)
 - **Editor** — handles explicit edit requests. Shows a dry-run diff before
-  writing. Respects \`kind: source\` pages (never touches them).
+  writing, plus inline ghost-text decorations on the active page so you
+  can Tab-to-accept proposed edits without leaving the editor surface.
+  Respects \`kind: source\` pages (never touches them).
 
 ## The agent library
 
@@ -1158,8 +1161,10 @@ the report and decides what to act on.
 
 ## When to run
 
-Loaded by the Wiki Gardener on its weekly heartbeat. Can also be invoked
-by the General agent on demand ("run the lint skill").
+Loaded by the Wiki Gardener on its weekly heartbeat. Any agent that
+declares \`skills: [lint]\` in its persona frontmatter (or that the user
+points at the skill on demand) gets the same recipe — the skill is
+agent-agnostic.
 
 ## Inputs you always read first
 
