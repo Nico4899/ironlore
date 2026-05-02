@@ -131,6 +131,14 @@ export async function executeAgentRun(
   const inboxBranch = reviewMode === "inbox" ? `agents/${agentSlug}/${job.id}` : null;
   const effectiveDryRun = reviewMode === "dry_run" ? opts.dryRunBridge : undefined;
 
+  // Required-tool gate (Bug 2 — anti-fabrication). If the persona
+  // declares `required_tools: [...]`, finalize attempts (`agent.journal`)
+  // are rejected until each declared tool has been called at least once
+  // this run. Every tool the model dispatches is added to the set
+  // below so the journal gate can read it. Empty list → no gating.
+  const requiredTools = parseRequiredTools(dataRoot, agentSlug);
+  const calledTools = new Set<string>();
+
   // Capture the current branch name *before* creating the staging
   // branch so we can switch back to it at the end of the run. The
   // previous code hardcoded `git checkout main`, which silently
@@ -433,6 +441,32 @@ export async function executeAgentRun(
 
       // Execute each tool call sequentially.
       for (const tc of pendingToolCalls) {
+        // Required-tool gate: refuse to finalize via `agent.journal`
+        // until every persona-declared `required_tools` entry has
+        // been called this run. The model receives a structured
+        // error envelope (Bug 3 fix sets is_error: true), so it can
+        // course-correct: call the missing tool, then retry the
+        // journal. Empty requiredTools list → never trips.
+        if (tc.name === "agent.journal" && requiredTools.length > 0) {
+          const missing = requiredTools.filter((t) => !calledTools.has(t));
+          if (missing.length > 0) {
+            const reason =
+              `Cannot finalize: this agent's persona requires ${missing.join(", ")} ` +
+              `to be called at least once per run before agent.journal. Call the missing ` +
+              `tool(s) with real arguments — do not infer their results — then retry agent.journal.`;
+            const synthetic = JSON.stringify({ error: reason, missing });
+            jobCtx.emitEvent("tool.call", { tool: tc.name, args: tc.input });
+            jobCtx.emitEvent("tool.result", { tool: tc.name, result: synthetic, durationMs: 0 });
+            messages.push({
+              role: "tool_result",
+              id: tc.id,
+              content: synthetic,
+              is_error: true,
+            });
+            continue;
+          }
+        }
+
         const { result, isError } = await dispatcher.call(
           tc.name,
           tc.input,
@@ -440,6 +474,11 @@ export async function executeAgentRun(
           budget,
           tc.id,
         );
+
+        // Track for the required-tool gate above. Only successful
+        // calls count — a tool that errored didn't actually produce
+        // the data the persona requires the model to ground on.
+        if (!isError) calledTools.add(tc.name);
 
         messages.push({ role: "tool_result", id: tc.id, content: result, is_error: isError });
 
@@ -488,14 +527,21 @@ export async function executeAgentRun(
 
     // No tool calls — the provider finished its turn with text only.
     // For autonomous mode without journal, this means the agent is done
-    // but didn't journal. Emit a synthetic journal.
+    // but didn't journal. Emit a synthetic journal — but honor the
+    // required-tool gate: a model that gave up on calling
+    // `kb.query_failed_runs` shouldn't get its narrative auto-saved
+    // as if it succeeded. Surface the missing-tool reason as the
+    // synthetic journal text so the run's audit trail tells the
+    // truth about what happened.
     if (job.mode === "autonomous" && !journalEmitted) {
-      await dispatcher.call(
-        "agent.journal",
-        { text: assistantText || "(run completed without explicit journal entry)" },
-        toolCtx,
-        budget,
-      );
+      const missing = requiredTools.filter((t) => !calledTools.has(t));
+      const journalText =
+        missing.length > 0
+          ? `Run did not finalize: persona requires ${missing.join(", ")} ` +
+            `but the model never called ${missing.length === 1 ? "it" : "them"}. ` +
+            `Original assistant text: ${assistantText || "(empty)"}`
+          : assistantText || "(run completed without explicit journal entry)";
+      await dispatcher.call("agent.journal", { text: journalText }, toolCtx, budget);
       journalEmitted = true;
     }
 
@@ -634,6 +680,47 @@ function parseDeclaredSkills(raw: string): string[] | null {
       .map((s) => s.replace(/^["']|["']$/g, ""));
   }
   return null;
+}
+
+/**
+ * Parse the persona's YAML frontmatter for `required_tools: [a, b]`
+ * (flow) or block list. The executor uses this to gate
+ * `agent.journal`: a finalize attempt while a required tool hasn't
+ * been called this run is rejected with a structured error so the
+ * model can correct course (call the missing tool and try again)
+ * instead of finalizing on fabricated data — the AI-panel evolver
+ * run made this concrete by claiming `kb.query_failed_runs`-style
+ * statistics without ever calling that tool.
+ *
+ * Returns the declared tool names (e.g. `["kb.query_failed_runs"]`)
+ * or an empty array when the field is absent.
+ */
+function parseRequiredTools(dataRoot: string, slug: string): string[] {
+  const personaPath = join(dataRoot, ".agents", slug, "persona.md");
+  if (!existsSync(personaPath)) return [];
+  const raw = readFileSync(personaPath, "utf-8");
+  const fmMatch = /^---[^\n]*\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+  if (!fmMatch?.[1]) return [];
+  const fm = fmMatch[1];
+
+  // Flow: `required_tools: [a, b]`
+  const flow = /^required_tools\s*:\s*\[([^\]]*)\]\s*$/m.exec(fm);
+  if (flow?.[1] !== undefined) {
+    return flow[1]
+      .split(",")
+      .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+      .filter(Boolean);
+  }
+  // Block: `required_tools:\n  - a\n  - b`
+  const block = /^required_tools\s*:\s*\r?\n((?:[ \t]+-[^\n]*\r?\n?)+)/m.exec(fm);
+  if (block?.[1]) {
+    return block[1]
+      .split(/\r?\n/)
+      .map((line) => /^\s*-\s*(.+?)\s*$/.exec(line)?.[1])
+      .filter((s): s is string => Boolean(s))
+      .map((s) => s.replace(/^["']|["']$/g, ""));
+  }
+  return [];
 }
 
 /**

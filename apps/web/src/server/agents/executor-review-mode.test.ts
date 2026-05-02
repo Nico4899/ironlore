@@ -1,12 +1,22 @@
 import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { JobContext, JobRow } from "../jobs/types.js";
 import type { ChatEvent, ChatOptions, ProjectContext, Provider } from "../providers/types.js";
+import { createAgentJournal } from "../tools/agent-journal.js";
 import { ToolDispatcher } from "../tools/dispatcher.js";
+
+/** Build a dispatcher pre-registered with agent.journal so the executor's
+ *  finalize call actually writes to disk. Tests can register additional
+ *  tools on the returned dispatcher. */
+function makeDispatcherWithJournal(dataRoot: string): ToolDispatcher {
+  const d = new ToolDispatcher();
+  d.register(createAgentJournal(dataRoot));
+  return d;
+}
 import { executeAgentRun } from "./executor.js";
 
 /**
@@ -95,6 +105,177 @@ function makeJobCtx(): JobContext {
     signal: new AbortController().signal,
   };
 }
+
+describe("executor — required_tools gate (anti-fabrication)", () => {
+  let projectDir: string;
+  let dataRoot: string;
+
+  beforeEach(() => {
+    ({ projectDir, dataRoot } = makeTmpProject());
+  });
+
+  afterEach(() => {
+    try {
+      rmSync(projectDir, { recursive: true, force: true });
+    } catch {
+      /* */
+    }
+  });
+
+  // Stub provider that scripts a sequence of turns: each generator
+  // call yields the next scripted turn. Tests script the model
+  // emitting a `tool_use` for `agent.journal` directly, then a
+  // text-only turn so the executor exits the loop.
+  class ScriptedProvider implements Provider {
+    readonly name = "anthropic" as const;
+    readonly supportsTools = true;
+    readonly supportsPromptCache = true;
+    private turn = 0;
+    constructor(private readonly turns: ChatEvent[][]) {}
+    async *chat(_o: ChatOptions, _c: ProjectContext): AsyncIterable<ChatEvent> {
+      const events = this.turns[this.turn++] ?? [{ type: "done", stopReason: "end_turn" }];
+      for (const e of events) yield e;
+    }
+  }
+
+  it("rejects agent.journal when a required tool was never called", async () => {
+    writePersona(dataRoot, "evolver", "required_tools: [kb.query_failed_runs]");
+
+    // Capture tool.result events so we can inspect the synthetic
+    // error envelope the gate emitted instead of running the journal.
+    const events: Array<{ kind: string; data: unknown }> = [];
+    const jobCtx: JobContext = {
+      projectId: "main",
+      workerId: "test-worker",
+      emitEvent: (kind, data) => events.push({ kind, data }),
+      markEgressDowngraded: () => undefined,
+      signal: new AbortController().signal,
+    };
+
+    // Model immediately tries to journal without calling
+    // kb.query_failed_runs first.
+    const provider = new ScriptedProvider([
+      [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "agent.journal",
+          input: { text: "fabricated summary" },
+        },
+        { type: "done", stopReason: "tool_use" },
+      ],
+      [{ type: "text", text: "ok" }, { type: "done", stopReason: "end_turn" }],
+    ]);
+
+    await executeAgentRun(makeJob({ owner_id: "evolver" }), jobCtx, {
+      provider,
+      projectContext,
+      dispatcher: makeDispatcherWithJournal(dataRoot),
+      dataRoot,
+      projectDir,
+      model: "claude-haiku-4-20250514",
+      agentSlug: "evolver",
+    });
+
+    // The gate should have produced a synthetic tool.result with
+    // an error envelope mentioning the missing tool.
+    const journalResult = events.find(
+      (e) =>
+        e.kind === "tool.result" &&
+        (e.data as { tool?: string }).tool === "agent.journal" &&
+        typeof (e.data as { result?: string }).result === "string" &&
+        (e.data as { result: string }).result.includes("kb.query_failed_runs"),
+    );
+    expect(journalResult).toBeDefined();
+
+    // The journal must NOT have been written.
+    const journalPath = join(dataRoot, ".agents", "evolver", "memory", "home.md");
+    expect(existsSync(journalPath)).toBe(false);
+  });
+
+  it("allows agent.journal once the required tool has been called", async () => {
+    // Register a stub kb.query_failed_runs the model can dispatch,
+    // alongside the real agent.journal handler.
+    const dispatcher = makeDispatcherWithJournal(dataRoot);
+    dispatcher.register({
+      definition: {
+        name: "kb.query_failed_runs",
+        description: "stub",
+        inputSchema: { type: "object" },
+      },
+      execute: async () => JSON.stringify({ perAgent: [], window: { sinceHours: 168 } }),
+    });
+
+    writePersona(dataRoot, "evolver", "required_tools: [kb.query_failed_runs]");
+
+    const provider = new ScriptedProvider([
+      [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "kb.query_failed_runs",
+          input: {},
+        },
+        { type: "done", stopReason: "tool_use" },
+      ],
+      [
+        {
+          type: "tool_use",
+          id: "tu_2",
+          name: "agent.journal",
+          input: { text: "real summary" },
+        },
+        { type: "done", stopReason: "tool_use" },
+      ],
+      [{ type: "text", text: "ok" }, { type: "done", stopReason: "end_turn" }],
+    ]);
+
+    await executeAgentRun(makeJob({ owner_id: "evolver" }), makeJobCtx(), {
+      provider,
+      projectContext,
+      dispatcher,
+      dataRoot,
+      projectDir,
+      model: "claude-haiku-4-20250514",
+      agentSlug: "evolver",
+    });
+
+    // Journal should now exist with the real summary.
+    const journalPath = join(dataRoot, ".agents", "evolver", "memory", "home.md");
+    expect(existsSync(journalPath)).toBe(true);
+    expect(readFileSync(journalPath, "utf-8")).toContain("real summary");
+  });
+
+  it("agents with no required_tools field are unaffected", async () => {
+    writePersona(dataRoot, "general", "name: General");
+
+    const provider = new ScriptedProvider([
+      [
+        {
+          type: "tool_use",
+          id: "tu_1",
+          name: "agent.journal",
+          input: { text: "hi" },
+        },
+        { type: "done", stopReason: "tool_use" },
+      ],
+      [{ type: "text", text: "ok" }, { type: "done", stopReason: "end_turn" }],
+    ]);
+
+    await executeAgentRun(makeJob({ owner_id: "general" }), makeJobCtx(), {
+      provider,
+      projectContext,
+      dispatcher: makeDispatcherWithJournal(dataRoot),
+      dataRoot,
+      projectDir,
+      model: "claude-haiku-4-20250514",
+      agentSlug: "general",
+    });
+
+    const journalPath = join(dataRoot, ".agents", "general", "memory", "home.md");
+    expect(existsSync(journalPath)).toBe(true);
+  });
+});
 
 describe("executor — review_mode: inbox honored regardless of run mode", () => {
   let projectDir: string;

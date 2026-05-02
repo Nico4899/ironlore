@@ -923,6 +923,14 @@ explicit "edit this page" instructions from the user.
     // loop trades on: the AI suggests a plain-text markdown edit,
     // the human approves it.
     const reviewLine = p.slug === "evolver" ? "\nreview_mode: inbox" : "";
+    // The evolver's whole job is grounding skill edits in failed-run
+    // data. Declare `kb.query_failed_runs` as required so the
+    // executor refuses to finalize via `agent.journal` until the
+    // model has actually called it — guards against the AI-panel
+    // failure mode where the model fabricated failure statistics
+    // and wrote a journal entry as if the analysis had run.
+    const requiredToolsLine =
+      p.slug === "evolver" ? "\nrequired_tools: [kb.query_failed_runs]" : "";
     // Per Principle 5a, synthesis personas declare
     // `readable_kinds: [source]` so the sources-not-compilations
     // constraint is visible in their config. The wiki-gardener
@@ -945,7 +953,7 @@ role: "${p.role}"
 provider: anthropic
 heartbeat: "${p.heartbeat}"
 budget: { period: monthly, runs: 40 }
-active: false${skillsLine}${reviewLine}
+active: false${skillsLine}${reviewLine}${requiredToolsLine}
 scope:
   pages: ["${p.scope}"]
   tags: []
@@ -1010,11 +1018,16 @@ ${p.role}.
    choice (improve_skill / optimize_description / create_skill /
    skip), the \`NOT for:\` exclusion-syntax convention, and the
    exact diff format the user sees in the Inbox.
-2. Call \`kb.query_failed_runs\` (default 168 hours = one week) to
-   pull aggregated failure patterns across every agent that ran in
-   this project. Look for: agents with >2 failed runs, tools that
-   error repeatedly across agents, the same error string surfacing
-   from multiple runs.
+2. **You MUST call \`kb.query_failed_runs\`** (default 168 hours =
+   one week) to pull aggregated failure patterns across every agent
+   that ran in this project. The executor enforces this: a
+   finalize attempt via \`agent.journal\` will be rejected until
+   you have actually called the tool with real arguments. Do not
+   infer failure data from search results, memory, or general
+   knowledge — the structured output of this tool is the only
+   ground truth your proposed edit may cite. Look for: agents with
+   >2 failed runs, tools that error repeatedly across agents, the
+   same error string surfacing from multiple runs.
 3. Read the relevant shared skill file via \`kb.read_page\` if a
    pattern points at one.
 4. Pick **exactly one** action per run — quality over volume:
