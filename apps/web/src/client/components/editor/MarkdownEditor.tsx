@@ -15,13 +15,13 @@ import { EditorState, type Transaction } from "prosemirror-state";
 import { columnResizing, goToNextCell, tableEditing } from "prosemirror-tables";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { submitDryRunVerdict } from "../../lib/api.js";
 import {
   ensurePageLoadedExternal,
   lookupBlockPreview,
   PREVIEW_HOVER_DELAY_MS,
   PREVIEW_MAX_CHARS,
 } from "../../hooks/useBlockPreview.js";
+import { submitDryRunVerdict } from "../../lib/api.js";
 import { useAIPanelStore } from "../../stores/ai-panel.js";
 import { useAppStore } from "../../stores/app.js";
 import { type PendingEdit, useEditorStore } from "../../stores/editor.js";
