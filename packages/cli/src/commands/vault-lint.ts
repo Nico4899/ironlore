@@ -202,9 +202,9 @@ function detectCoverageGaps(db: Database.Database): DetectorResult {
         "FROM backlinks GROUP BY target_path HAVING n >= ?",
     )
     .all(minMentions) as Array<{ target: string; n: number }>;
-  const pages = db
-    .prepare("SELECT path FROM pages WHERE file_type = 'markdown'")
-    .all() as Array<{ path: string }>;
+  const pages = db.prepare("SELECT path FROM pages WHERE file_type = 'markdown'").all() as Array<{
+    path: string;
+  }>;
   const resolvedTargets = new Set<string>();
   for (const page of pages) {
     for (const cand of linkTargetCandidates(page.path)) resolvedTargets.add(cand);

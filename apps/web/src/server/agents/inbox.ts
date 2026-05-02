@@ -273,6 +273,18 @@ export class AgentInbox {
     const entry = this.getEntry(entryId);
     if (!entry) return { success: false, error: "Entry not found" };
 
+    // Pre-flight: if the branch is already gone the user effectively
+    // rejected this entry through some other surface. Mark it
+    // resolved and return a friendly message — a raw git stderr
+    // ("error: branch '...' not found") used to leak through.
+    if (!this.branchExists(projectDir, entry.branch)) {
+      this.setStatus(entryId, "stale");
+      return {
+        success: false,
+        error: `Staging branch '${entry.branch}' no longer exists; entry marked stale.`,
+      };
+    }
+
     const gitDir = join(projectDir, ".git");
     try {
       execSync(`git --git-dir="${gitDir}" --work-tree="${projectDir}" branch -D ${entry.branch}`, {

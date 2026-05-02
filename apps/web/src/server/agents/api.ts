@@ -515,10 +515,12 @@ export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir:
     const entryId = c.req.param("entryId") ?? "";
     if (!entryId) return c.json({ error: "Entry id required" }, 400);
     // Distinguish "no such entry" (404) from "entry exists but has
-    // no files" (200, empty array). The previous handler conflated
-    // them by returning an empty array in both cases, hiding bad
-    // entry IDs from clients.
-    if (!inbox.entryExists(entryId)) return c.json({ error: "Entry not found" }, 404);
+    // no files" (200, empty array). Passing projectDir also catches
+    // entries whose staging branch has been deleted out of band —
+    // entryExists demotes them to 'stale' and returns false.
+    if (!inbox.entryExists(entryId, projectDir)) {
+      return c.json({ error: "Entry not found" }, 404);
+    }
     const files = inbox.getFileDiffStats(entryId, projectDir);
     return c.json({ files });
   });

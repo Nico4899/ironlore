@@ -62,14 +62,14 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
   //  "27 binaries" rather than as a bug. Directories are also `pages`
   //  rows (file_type='directory') but excluded from FTS.
   const markdownCount = (
-    db
-      .prepare("SELECT COUNT(*) AS cnt FROM pages WHERE file_type = 'markdown'")
-      .get() as { cnt: number }
+    db.prepare("SELECT COUNT(*) AS cnt FROM pages WHERE file_type = 'markdown'").get() as {
+      cnt: number;
+    }
   ).cnt;
   const directoriesCount = (
-    db
-      .prepare("SELECT COUNT(*) AS cnt FROM pages WHERE file_type = 'directory'")
-      .get() as { cnt: number }
+    db.prepare("SELECT COUNT(*) AS cnt FROM pages WHERE file_type = 'directory'").get() as {
+      cnt: number;
+    }
   ).cnt;
   const binariesCount = pagesCount - markdownCount - directoriesCount;
   const backlinksCount = (
