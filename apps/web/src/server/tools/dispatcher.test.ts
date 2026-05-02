@@ -208,6 +208,106 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     expect(content).toContain("kind: wiki");
   });
 
+  // Bug 8 regression — files created under `.agents/**/skills/` must
+  // use the skill convention (`{name, description}`), not the page
+  // convention (`{schema, id, title, kind, ...}`). The hallucinated
+  // `conversation-initialization.md` from the AI-panel evolver run
+  // had page frontmatter, which the skill-loader's discovery surface
+  // doesn't recognise as a skill.
+  it("kb.create_page emits skill-shaped frontmatter for `.agents/.shared/skills/` paths", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: ".agents/.shared/skills",
+        title: "My Skill",
+        markdown: "# My Skill\n\nDoes a thing.",
+        description: "Does a thing concisely",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    expect(data.path).toMatch(/\.agents\/\.shared\/skills\/my-skill\.md$/);
+
+    const { content } = writer.read(data.path);
+    expect(content).toContain("name: My Skill");
+    expect(content).toContain("description: Does a thing concisely");
+    // No page-shaped fields should leak in.
+    expect(content).not.toContain("schema:");
+    expect(content).not.toContain("kind:");
+    expect(content).not.toMatch(/^id:/m);
+  });
+
+  it("kb.create_page falls back to title when description is omitted on a skill path", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: ".agents/.shared/skills",
+        title: "Bare Skill",
+        markdown: "Body.",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    // Description defaults to the title rather than being omitted —
+    // the skill loader's BM25 surface needs *something* searchable.
+    expect(content).toContain("description: Bare Skill");
+  });
+
+  it("kb.create_page detects per-agent skills dirs, not just .shared", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: ".agents/wiki-gardener/skills",
+        title: "Local Skill",
+        markdown: "Body.",
+        description: "Local-only skill",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    expect(content).toContain("name: Local Skill");
+    expect(content).not.toContain("schema:");
+  });
+
+  it("kb.create_page leaves non-skill paths on the page convention", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Regular Page",
+        markdown: "Body.",
+        kind: "wiki",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    expect(content).toContain("schema: 1");
+    expect(content).toContain("title: Regular Page");
+    expect(content).toContain("kind: wiki");
+    // `name`/`description` belong to the skill envelope, not pages.
+    expect(content).not.toMatch(/^name:/m);
+    expect(content).not.toMatch(/^description:/m);
+  });
+
   it("agent.journal appends to memory/home.md", async () => {
     const { dispatcher, ctx, budget, dataRoot } = setup();
 

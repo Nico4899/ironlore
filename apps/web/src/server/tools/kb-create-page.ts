@@ -20,7 +20,10 @@ export function createKbCreatePage(
       name: "kb.create_page",
       description:
         "Create a new page. Returns the assigned page ID. The page is written through " +
-        "StorageWriter so it gets block IDs, an ETag, git history, and FTS5 indexing.",
+        "StorageWriter so it gets block IDs, an ETag, git history, and FTS5 indexing. " +
+        "When the parent path is under `.agents/**/skills/`, the file is shaped as a skill " +
+        "(`name` + `description` frontmatter only) so the skill-loader and BM25 surface can " +
+        "discover it correctly. Pass a one-line `description` so other agents can find it.",
       inputSchema: {
         type: "object",
         properties: {
@@ -28,30 +31,44 @@ export function createKbCreatePage(
             type: "string",
             description: "Parent directory relative to data/ (e.g., 'wiki')",
           },
-          title: { type: "string", description: "Page title" },
+          title: { type: "string", description: "Page title (becomes `name` for skills)" },
           markdown: { type: "string", description: "Initial page body (markdown)" },
           kind: {
             type: "string",
             enum: ["page", "source", "wiki"],
-            description: "Page kind (default: page)",
+            description: "Page kind (default: page). Ignored for skill paths.",
           },
           tags: {
             type: "array",
             items: { type: "string" },
-            description: "Optional tags",
+            description: "Optional tags. Ignored for skill paths.",
+          },
+          description: {
+            type: "string",
+            description:
+              "Required for skill paths (`.agents/**/skills/`). One-line summary that surfaces in BM25 + the skill-discovery UI.",
           },
         },
         required: ["parent", "title", "markdown"],
       },
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
-      const { parent, title, markdown, kind, tags } = args as {
+      const { parent, title, markdown, kind, tags, description } = args as {
         parent: string;
         title: string;
         markdown: string;
         kind?: "page" | "source" | "wiki";
         tags?: string[];
+        description?: string;
       };
+
+      // Detect skill paths: any agent's `skills/` dir, including the
+      // shared `.agents/.shared/skills/`. Skills must use the
+      // `{name, description}` convention (see skill-loader.ts) — page
+      // frontmatter (`schema`, `id`, `title`, `kind`) was previously
+      // emitted here for every create, which produced files the
+      // discovery layer didn't recognise as skills.
+      const isSkillPath = /(?:^|\/)\.agents\/[^/]+\/skills(?:\/|$)/.test(parent);
 
       // writable_kinds gate — `kind` comes from input rather than an
       // existing page; default to "page" when unspecified.
@@ -80,19 +97,25 @@ export function createKbCreatePage(
         .slice(0, 60);
       const path = parent ? `${parent}/${slug}.md` : `${slug}.md`;
 
-      const frontmatter = [
-        "---",
-        `schema: 1`,
-        `id: ${id}`,
-        `title: ${title}`,
-        kind ? `kind: ${kind}` : null,
-        `created: ${now}`,
-        `modified: ${now}`,
-        tags && tags.length > 0 ? `tags: [${tags.join(", ")}]` : null,
-        "---",
-      ]
-        .filter(Boolean)
-        .join("\n");
+      // Skills get a minimal `{name, description}` envelope so the
+      // skill-loader's frontmatter strip leaves a clean body and the
+      // discovery surface can read both fields. Pages get the full
+      // `{schema, id, title, kind, created, modified, tags}` shape.
+      const frontmatter = isSkillPath
+        ? ["---", `name: ${title}`, `description: ${description ?? title}`, "---"].join("\n")
+        : [
+            "---",
+            `schema: 1`,
+            `id: ${id}`,
+            `title: ${title}`,
+            kind ? `kind: ${kind}` : null,
+            `created: ${now}`,
+            `modified: ${now}`,
+            tags && tags.length > 0 ? `tags: [${tags.join(", ")}]` : null,
+            "---",
+          ]
+            .filter(Boolean)
+            .join("\n");
 
       let rawContent = `${frontmatter}\n\n# ${title}\n\n${markdown}\n`;
       // Phase-9 multi-user: stamp the originating user as the page's
