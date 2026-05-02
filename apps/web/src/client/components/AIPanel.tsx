@@ -1514,11 +1514,7 @@ function truncate(s: string, max: number): string {
  * header just omits the suffix.
  */
 function deriveResultSummary(tool: string, result: unknown): string | null {
-  if (
-    tool !== "kb.search" &&
-    tool !== "kb.semantic_search" &&
-    tool !== "kb.global_search"
-  ) {
+  if (tool !== "kb.search" && tool !== "kb.semantic_search" && tool !== "kb.global_search") {
     return null;
   }
   // Tool results are JSON strings (per dispatcher contract) or
@@ -1642,10 +1638,7 @@ function ToolCallCard({
           </span>
         )}
         {resultSummary && (
-          <span
-            className="font-mono truncate"
-            style={{ fontSize: 10.5, color: "var(--il-text4)" }}
-          >
+          <span className="font-mono truncate" style={{ fontSize: 10.5, color: "var(--il-text4)" }}>
             → {resultSummary}
           </span>
         )}
@@ -1755,10 +1748,10 @@ function RunFinalizedCard({
           <div className="flex items-baseline gap-2">
             <span className="font-semibold text-primary">Run finalized</span>
             {/* Routing pill: inbox-staged vs. direct-to-main. Without
-              * this the user couldn't tell whether the run had merged
-              * already or was waiting for them to approve in /inbox —
-              * the same surface ambiguity Bug 9 in the audit
-              * called out. */}
+             * this the user couldn't tell whether the run had merged
+             * already or was waiting for them to approve in /inbox —
+             * the same surface ambiguity Bug 9 in the audit
+             * called out. */}
             {msg.filesChanged.length > 0 && (
               <span
                 className="font-mono uppercase"
@@ -1786,10 +1779,10 @@ function RunFinalizedCard({
             )}
           </div>
           {/* Only show the revert button when there's actually
-            * something to revert: a real commit range (start \u2260 end)
-            * AND at least one changed file. A chat-only turn that
-            * produced zero commits used to render "Revert this run"
-            * even though clicking it would have nothing to undo. */}
+           * something to revert: a real commit range (start \u2260 end)
+           * AND at least one changed file. A chat-only turn that
+           * produced zero commits used to render "Revert this run"
+           * even though clicking it would have nothing to undo. */}
           {!reverted &&
             msg.commitShaStart &&
             msg.commitShaEnd &&
@@ -2033,7 +2026,7 @@ function CitationText({ text }: { text: string }) {
   });
 
   // No markdown features to render and no citations? Cheap path.
-  if (citations.length === 0 && !/[#*`>\[\]\-]|\n\n/.test(masked)) {
+  if (citations.length === 0 && !/[#*`>[\]-]|\n\n/.test(masked)) {
     return <span style={{ whiteSpace: "pre-wrap" }}>{text}</span>;
   }
 
