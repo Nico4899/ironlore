@@ -187,6 +187,47 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     expect(result.result).toContain("Budget exhausted");
   });
 
+  // Bug 4 regression — kb.search used to return the prose string
+  // `"No results found."` for the empty case and a JSON array for
+  // the populated case. Two shapes for the same logical answer
+  // forced downstream consumers (the AI panel result-count chip,
+  // the model parsing the result) to handle both. Now always a
+  // JSON array.
+  it("kb.search returns [] for the empty case (not the prose string)", async () => {
+    const { dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.search",
+      { query: "definitely-no-such-content-xyzzy" },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    // Must be JSON-parseable as an array (not the legacy
+    // "No results found." string).
+    const parsed = JSON.parse(result.result) as unknown;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toEqual([]);
+  });
+
+  it("kb.search returns the same shape for populated queries", async () => {
+    const { writer, dispatcher, ctx, budget, index } = setup();
+    const { markdown } = assignBlockIds("# Title\n\nFindable content.\n");
+    await writer.write("findme.md", markdown, null);
+    index.indexPage("findme.md", markdown);
+
+    const result = await dispatcher.call(
+      "kb.search",
+      { query: "Findable" },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(result.result) as unknown;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect((parsed as unknown[]).length).toBeGreaterThan(0);
+  });
+
   it("kb.create_page creates a page and returns the ID", async () => {
     const { writer, dispatcher, ctx, budget } = setup();
 

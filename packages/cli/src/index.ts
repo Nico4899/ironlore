@@ -72,6 +72,12 @@ program
   .description("Check and repair data integrity")
   .option("--project <id>", "Project ID to repair", "main")
   .option("--dry-run", "Report issues without fixing")
+  .option(
+    "--add-block-ids",
+    "Walk every .md page in the project and stamp `<!-- #blk_… -->` IDs on " +
+      "any block that's missing one. Idempotent. Use to retrofit existing " +
+      "vaults to the seeder's day-zero block-ID coverage.",
+  )
   .action(repair);
 
 program
