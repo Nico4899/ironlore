@@ -526,8 +526,15 @@ export class AgentInbox {
       .prepare("SELECT branch, status FROM inbox_entries WHERE id = ?")
       .get(id) as { branch: string; status: InboxEntry["status"] } | undefined;
     if (!row) return false;
+    // `stale` is a tombstone status — the row exists but the branch
+    // is gone and there's nothing meaningful to do with it. Treat
+    // it the same as a missing row so /files / /diff / /decision
+    // all 404 cleanly.
+    if (row.status === "stale") return false;
     if (!projectDir) return true;
-    if (row.status !== "pending") return true; // already resolved — branch may legitimately be gone
+    // Resolved entries (approved/rejected/partial) — the branch may
+    // legitimately be gone (the resolution itself deleted it).
+    if (row.status !== "pending") return true;
     if (this.branchExists(projectDir, row.branch)) return true;
     // Pending row + missing branch → demote to stale so the next
     // listing skips it and approve/reject return 404.
