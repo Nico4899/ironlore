@@ -2085,8 +2085,16 @@ function CitationText({ text }: { text: string }) {
             <Blockref
               page={seg.page}
               block={seg.blockId || undefined}
-              onClick={() => useAppStore.getState().openProvenance(seg.page, seg.blockId)}
-              title={`Open ${seg.page}${seg.blockId ? `#${seg.blockId}` : ""}`}
+              // Click opens the cited page in the editor (not the
+              //  provenance pane). Users want the file, not the
+              //  metadata — provenance is still reachable via the
+              //  editor toolbar's Provenance button. The native
+              //  `title` attr is intentionally omitted: the custom
+              //  `BlockrefPreview` card already announces the target,
+              //  and stacking a browser tooltip above it produced
+              //  the "Open maintenance/…" double-ghost surface users
+              //  were seeing.
+              onClick={() => useAppStore.getState().setActivePath(seg.page)}
             />
           </span>
         ),
