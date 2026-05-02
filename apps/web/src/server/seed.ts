@@ -6,34 +6,26 @@ import { assignBlockIds } from "./block-ids.js";
 
 /**
  * Write a file only if it doesn't already exist. Non-destructive seeding.
+ *
+ * For markdown files (`.md`), the content is run through
+ * `assignBlockIds` first so every block ships with a stable
+ * `<!-- #blk_… -->` ID from day one. This brings the
+ * eval-scorecard "block-ID coverage" metric up from ~13% to 100%
+ * on a fresh install and lets `kb.replace_block`, the inline-diff
+ * plugin's anchor lookup, and citation rendering address the
+ * onboarding pages without waiting for the user's first save.
+ *
+ * Non-markdown files (carousel binaries, CSV, SVG, .eml, .ipynb,
+ * notes.txt, server.log, etc.) bypass the stamp — block IDs are a
+ * markdown-prose convention. The seeder is non-destructive in
+ * either branch: an existing file keeps its content unchanged.
  */
 function seedFile(filePath: string, content: string): void {
   if (existsSync(filePath)) return;
   const dir = dirname(filePath);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(filePath, content, "utf-8");
-}
-
-/**
- * Same as `seedFile`, but pre-stamps `<!-- #blk_… -->` comments on
- * every block before writing. Markdown-only — call `seedFile`
- * directly for binaries (carousel images, PDFs, CSV, etc.) and for
- * stub pages where block IDs would be noise.
- *
- * Routing seeded markdown through `assignBlockIds` brings the
- * eval-scorecard "block-ID coverage" metric up from ~13% to 100% on
- * a fresh install — every shipped page now starts addressable at the
- * block level for `kb.replace_block`, citation rendering, and the
- * inline-diff plugin's anchor lookup. The seeder is non-destructive,
- * so existing installs keep their files unchanged; only fresh
- * `bootstrap()`-on-empty layouts pick up the stamps.
- */
-function seedMarkdownFile(filePath: string, content: string): void {
-  if (existsSync(filePath)) return;
-  const stamped = assignBlockIds(content).markdown;
-  const dir = dirname(filePath);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(filePath, stamped, "utf-8");
+  const final = filePath.endsWith(".md") ? assignBlockIds(content).markdown : content;
+  writeFileSync(filePath, final, "utf-8");
 }
 
 /**
