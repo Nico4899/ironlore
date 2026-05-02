@@ -202,3 +202,110 @@ describe("Auth API", () => {
     expect(meRes.status).toBe(401);
   });
 });
+
+// Bug 8 regression — auth middleware silently ignored
+// `?project=<typo>` and the user landed on the previous project
+// with no signal. Now sets X-Ironlore-Invalid-Project so a SPA
+// (or DevTools) can surface the typo.
+
+describe("Auth middleware — invalid project query", () => {
+  let installRoot: string;
+  let store: SessionStore;
+
+  beforeEach(() => {
+    installRoot = mkdtempSync(join(tmpdir(), "ironlore-mw-"));
+    mkdirSync(installRoot, { recursive: true });
+    writeFileSync(
+      join(installRoot, INSTALL_JSON),
+      JSON.stringify({
+        admin_username: "admin",
+        initial_password: "TestPassword123456789012",
+        created_at: new Date().toISOString(),
+      }),
+      { mode: SENSITIVE_FILE_MODE },
+    );
+    store = new SessionStore(installRoot);
+  });
+
+  afterEach(() => {
+    store.close();
+    rmSync(installRoot, { recursive: true, force: true });
+  });
+
+  /** Helper: spin up a tiny Hono app with the auth middleware mounted
+   *  on `/api/projects/*` (matching the production layout) and an
+   *  echo handler. Returns the app + a logged-in cookie. */
+  async function setupApp(opts: { isProjectValid?: (id: string) => boolean }) {
+    const { api, middleware } = createAuthApi(installRoot, store, opts);
+
+    // Login via the auth API to get a real session cookie.
+    const loginRes = await api.request("/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "admin",
+        password: "TestPassword123456789012",
+      }),
+    });
+    const setCookie = loginRes.headers.get("set-cookie") ?? "";
+    const cookie = (/ironlore_session=([^;]+)/.exec(setCookie) ?? [])[1] ?? "";
+
+    // The bootstrap admin sits behind a must-change-password gate.
+    // Settle the password change so the middleware lets `/api/projects/*`
+    // requests through (otherwise every test below 403s).
+    await api.request("/change-password", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `ironlore_session=${cookie}`,
+      },
+      body: JSON.stringify({
+        currentPassword: "TestPassword123456789012",
+        newPassword: "NewLongPassword987654321!",
+      }),
+    });
+
+    // Build the test app — middleware then a trivial echo route.
+    const app = new Hono();
+    app.use("/api/projects/*", middleware);
+    app.get("/api/projects/main/echo", (c) => c.json({ ok: true }));
+
+    return { app, cookie };
+  }
+
+  it("sets X-Ironlore-Invalid-Project when ?project=<unknown> is requested", async () => {
+    const { app, cookie } = await setupApp({
+      isProjectValid: (id) => id === "main" || id === "my-research",
+    });
+
+    const res = await app.request("/api/projects/main/echo?project=research", {
+      headers: { Cookie: `ironlore_session=${cookie}` },
+    });
+    expect(res.status).toBe(200); // request still succeeds (graceful fallback)
+    expect(res.headers.get("X-Ironlore-Invalid-Project")).toBe("research");
+  });
+
+  it("does NOT set the header when the project ID is valid", async () => {
+    const { app, cookie } = await setupApp({
+      isProjectValid: (id) => id === "main" || id === "my-research",
+    });
+
+    const res = await app.request("/api/projects/main/echo?project=my-research", {
+      headers: { Cookie: `ironlore_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Ironlore-Invalid-Project")).toBeNull();
+  });
+
+  it("does NOT set the header when no ?project= query is present", async () => {
+    const { app, cookie } = await setupApp({
+      isProjectValid: (id) => id === "main",
+    });
+
+    const res = await app.request("/api/projects/main/echo", {
+      headers: { Cookie: `ironlore_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("X-Ironlore-Invalid-Project")).toBeNull();
+  });
+});

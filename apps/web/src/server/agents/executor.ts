@@ -272,11 +272,31 @@ export async function executeAgentRun(
   // Conversation history.
   const messages: ChatMessage[] = [];
 
-  // Seed with the initial prompt if provided.
+  // Seed with the initial prompt. For autonomous runs (heartbeat
+  //  fires, "Run now" CTA on Agent Detail, evolver cron) the user
+  //  isn't typing — the persona body + loaded skills already define
+  //  what the agent should do, but Anthropic's Messages API rejects
+  //  an empty `messages` array with HTTP 400 ("messages: at least
+  //  one message is required"). The fix is a generic kick-off
+  //  message that points the agent at its own configuration; the
+  //  system prompt does the actual work.
+  //
+  //  This was the bug behind the "messages required" failure
+  //  pattern the evolver agent recorded across general / editor /
+  //  wiki-gardener / evolver runs — every autonomous fire crashed
+  //  before the first turn until this message was supplied.
   const payload = JSON.parse(job.payload) as { prompt?: string };
-  const initialPrompt = opts.prompt ?? payload.prompt;
-  if (initialPrompt) {
-    messages.push({ role: "user", content: initialPrompt });
+  const initialPrompt = (opts.prompt ?? payload.prompt ?? "").trim();
+  const effectivePrompt =
+    initialPrompt.length > 0
+      ? initialPrompt
+      : "Begin your scheduled run. Follow the workflow described in your persona and any loaded skills; finalize with `agent.journal` when done.";
+  messages.push({ role: "user", content: effectivePrompt });
+  // Only echo the prompt to the event stream when it was *user-supplied*.
+  //  The synthetic kick-off is plumbing the user shouldn't see in the
+  //  AI panel transcript — surfacing it would clutter the conversation
+  //  with "Begin your scheduled run." for every heartbeat.
+  if (initialPrompt.length > 0) {
     jobCtx.emitEvent("message.user", { text: initialPrompt });
   }
 
