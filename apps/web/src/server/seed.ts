@@ -190,13 +190,16 @@ shape the seeded templates use.
 ## Wiki Gardener
 
 The Wiki Gardener is the default opt-in maintenance persona. Activate it
-once and a weekly heartbeat runs four lint checks across your vault:
+once and a weekly heartbeat runs five lint checks across your vault:
 
 - **Orphans** — markdown pages with zero inbound wiki-links.
 - **Stale sources** — wiki pages older than the \`kind: source\` pages
   they cite.
 - **Contradiction flags** — typed wiki-links the author wrote with
   \`[[other | contradicts]]\` (or \`disagrees\` / \`refutes\`).
+- **Coverage gaps** — concepts cited by ≥ 3 distinct pages via
+  \`[[term]]\` wiki-links that don't resolve to any existing page.
+  Highlights what the vault keeps referring to but never wrote up.
 - **Provenance gaps** — agent-authored blocks that shipped without a
   \`derived_from\` citation in the \`.blocks.json\` sidecar.
 
@@ -302,7 +305,7 @@ substitute \`Ctrl\` for \`Cmd\`.
 | Shortcut | Action |
 |---|---|
 | \`Cmd+K\` | Open command palette / search |
-| \`Cmd+P\` | Jump to recent page |
+| \`Cmd+P\` | Open project switcher |
 | \`Cmd+B\` | Toggle sidebar |
 | \`Cmd+Shift+A\` | Toggle AI panel |
 | \`Cmd+\`\` | Toggle terminal |
