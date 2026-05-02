@@ -30,6 +30,9 @@ interface LintOptions {
   project: string;
   fix?: boolean;
   check?: string;
+  /** New canonical flag — `--all-projects` (commander camelCases). */
+  allProjects?: boolean;
+  /** Legacy alias — `--all`. Deprecated; logs a one-line warning. */
   all?: boolean;
 }
 
@@ -43,6 +46,20 @@ export function lint(options: LintOptions): void {
     process.exit(1);
   }
 
+  // Resolve the all-projects flag from either form. The legacy
+  //  `--all` was confusing because it overloaded the word "all" —
+  //  callers reasonably expected it to mean "all check categories"
+  //  given the surrounding `--check <category>` flag. Renamed to
+  //  `--all-projects` for clarity; the legacy spelling still works
+  //  but warns once so scripts get nudged toward the new name.
+  if (options.all && !options.allProjects) {
+    console.warn(
+      "ironlore: `--all` is deprecated; use `--all-projects` instead. " +
+        "(The flag scope is unchanged: index-consistency across every project.)",
+    );
+  }
+  const allProjects = options.allProjects ?? options.all ?? false;
+
   const categories: Category[] = options.check ? [options.check as Category] : [...CATEGORIES];
 
   console.log(`\nironlore lint${options.fix ? " --fix" : ""}`);
@@ -53,7 +70,7 @@ export function lint(options: LintOptions): void {
       case "index-consistency":
         console.log(`\n  [${cat}]`);
         if (options.fix) {
-          reindex({ project: options.project, all: options.all });
+          reindex({ project: options.project, all: allProjects });
         } else {
           console.log("    Run with --fix to rebuild the FTS5 index.");
         }
