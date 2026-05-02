@@ -146,6 +146,19 @@ export class AgentInbox {
     const entry = this.getEntry(entryId);
     if (!entry) return { success: false, error: "Entry not found" };
 
+    // Pre-flight branch check: a pending entry whose branch has
+    // already been deleted (manual cleanup, history rewrite, the
+    // user ran reject from a different surface) used to fail with
+    // raw git stderr like `merge: agents/.../X - not something we
+    // can merge`. Demote to 'stale' and return a structured error.
+    if (!this.branchExists(projectDir, entry.branch)) {
+      this.setStatus(entryId, "stale");
+      return {
+        success: false,
+        error: `Staging branch '${entry.branch}' no longer exists; entry marked stale.`,
+      };
+    }
+
     const gitDir = join(projectDir, ".git");
     const decisions = this.getFileDecisions(entryId);
     const rejected = Object.entries(decisions)
