@@ -1184,6 +1184,79 @@ ${p.role}.
     seedFile(join(agentLibDir, `${p.slug}.md`), `${frontmatter}\n${body}`);
   }
 
+  // Shared-skills README — orients a user who drills into
+  //  `.agents/.shared/skills/` via the file tree. Without it, the
+  //  directory is ~7 .md files with no signal that they're prompt
+  //  fragments rather than executable code, or that activation
+  //  happens via persona frontmatter rather than per-call import.
+  seedFile(
+    join(sharedSkillsDir, "index.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Shared Skills
+kind: page
+created: ${now}
+modified: ${now}
+tags: [meta, agents]
+icon: lucide:notebook-pen
+---
+
+# Shared Skills
+
+A **skill** is a markdown file that any agent can opt into via
+\`skills: [name]\` in its persona frontmatter. The skill body is
+appended to the agent's system prompt at run-start. Think of it as
+*prompt-as-content* — versioned, diffable, and editable in the same
+editor as your wiki.
+
+Resolution order is **agent-local first, then \`.shared/\`**. A
+skill named \`thesis.md\` in \`.agents/researcher/skills/\` shadows
+a project-wide \`thesis.md\` here, so an agent can specialise
+without touching the shared file.
+
+## Frontmatter convention
+
+\`\`\`yaml
+---
+name: <Display Name>
+description: <One-line summary used in BM25 + the skill-discovery UI>
+---
+\`\`\`
+
+Both fields are required. The \`description\` is what the
+**Evolver** agent rewrites when it observes agents loading the
+skill in the wrong context.
+
+## What ships here
+
+- **\`lint.md\`** — five-class wiki health check. Loaded by the
+  Wiki Gardener.
+- **\`ingest.md\`** — five-step Make-like compilation pipeline
+  (Diff → Summarize → Extract → Write → Images) for raw
+  \`kind: source\` material into \`kind: wiki\` syntheses.
+- **\`evolve.md\`** — drives the Evolver's per-week
+  improve/optimize/create/skip choice over the shared skills.
+- **\`file-answer.md\`** — single + multi-extraction modes for
+  saving an AI answer or a session transcript as a wiki page with
+  proper \`derived_from\` provenance.
+- **Connector recipes** — \`github-issue-search.md\`,
+  \`webhook-trigger.md\`, \`http-get-with-auth.md\`. Each documents
+  the four-section connector contract (egress allowlist entry, auth
+  handoff, request shape, error shapes) and demonstrates the
+  pattern against a real provider so the model has working code to
+  imitate.
+
+## Editing a skill
+
+Skills are markdown — edit the file, save, the next agent run
+loads the new version. No rebuild, no restart. The Evolver will
+propose edits via the **Inbox** when it spots a recurring failure
+mode that points at one of these files; you approve or reject in
+the existing review flow.
+`,
+  );
+
   // Shared skill: file-answer (single + multi-extraction modes)
   seedFile(
     join(sharedSkillsDir, "file-answer.md"),
