@@ -45,8 +45,23 @@ export function createKbReadPage(writer: StorageWriter): ToolImplementation {
         }));
         return JSON.stringify({ content, etag, blocks });
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") {
           return JSON.stringify({ error: "Page not found", path });
+        }
+        if (code === "EISDIR") {
+          // Wrap the raw Node errno so the model sees a structured
+          // envelope (and the dispatcher's `is_error` flag fires
+          // correctly via top-level `error` detection). The audit
+          // caught wiki-gardener's `kb.read_page("wiki")` returning
+          // a raw `EISDIR: illegal operation on a directory, read`
+          // string instead of telling the model what the path
+          // actually was — and how to recover.
+          return JSON.stringify({
+            error: `Path '${path}' is a directory, not a page. Use kb.search to list its contents or pick a specific .md file inside it.`,
+            path,
+            kind: "directory",
+          });
         }
         throw err;
       }

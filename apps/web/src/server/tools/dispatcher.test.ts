@@ -173,6 +173,33 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     expect(data.error).toBe("Page not found");
   });
 
+  // Bug 6 regression — kb.read_page used to surface raw `EISDIR:
+  // illegal operation on a directory, read` from the dispatcher's
+  // catch-all when the model passed a directory path. Now wrapped
+  // as a structured envelope so the model can recover (call
+  // kb.search instead) and the dispatcher's is_error gate fires
+  // via the top-level `error` field.
+  it("EISDIR (directory path) returns a structured envelope, not raw errno", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    // Create a real directory the writer can stat.
+    await writer.write("wiki/page.md", "# Real page\n", null);
+
+    const result = await dispatcher.call(
+      "kb.read_page",
+      { path: "wiki" }, // points at the directory, not a .md file
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(true);
+    const data = JSON.parse(result.result);
+    expect(data.error).toMatch(/directory, not a page/);
+    expect(data.path).toBe("wiki");
+    expect(data.kind).toBe("directory");
+    // Raw Node errno suppressed.
+    expect(data.error).not.toContain("EISDIR");
+    expect(data.error).not.toContain("illegal operation");
+  });
+
   it("budget exhaustion returns a budget-exhausted signal", async () => {
     const { dispatcher, ctx } = setup();
     const budget: RunBudget = {

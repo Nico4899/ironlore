@@ -155,4 +155,38 @@ heartbeat: "0 6 * * 0"`,
     expect(rows[0]?.name).toBeNull();
     expect(rows[0]?.role).toBeNull();
   });
+
+  // Bug 5 regression — the library directory ships an `index.md`
+  // README (page-shaped frontmatter, no template fields) plus may
+  // accumulate `_*` notes. Both produced ghost rows in the listing
+  // with `slug: "index"` / `slug: "_notes"` and all-null fields.
+  // Filter by reserved name so they never reach the listing.
+
+  it("does not surface index.md as a library template", () => {
+    const libDir = join(dataDir, ".agents", ".library");
+    mkdirSync(libDir, { recursive: true });
+    writeFileSync(
+      join(libDir, "index.md"),
+      "---\nschema: 1\nid: 01ABC\ntitle: Agent Library\nkind: page\n---\n\n# Agent Library\n",
+      "utf-8",
+    );
+    writeFlat(dataDir, "wiki-gardener", `name: Wiki Gardener`);
+
+    const rows = listLibraryTemplates(dataDir);
+    expect(rows.map((r) => r.slug)).toEqual(["wiki-gardener"]);
+  });
+
+  it("does not surface `_*` files as library templates", () => {
+    const libDir = join(dataDir, ".agents", ".library");
+    mkdirSync(libDir, { recursive: true });
+    writeFileSync(
+      join(libDir, "_notes.md"),
+      "---\nname: Internal Notes\n---\n",
+      "utf-8",
+    );
+    writeFlat(dataDir, "wiki-gardener", `name: Wiki Gardener`);
+
+    const rows = listLibraryTemplates(dataDir);
+    expect(rows.map((r) => r.slug)).toEqual(["wiki-gardener"]);
+  });
 });
