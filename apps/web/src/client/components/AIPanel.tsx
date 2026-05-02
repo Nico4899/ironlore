@@ -439,11 +439,18 @@ export function AIPanel() {
   const { agents } = useWorkspaceActivity();
   const stepLabel = agents.find((a) => a.slug === activeAgent)?.stepLabel ?? null;
 
+  // Mirror the sidebar's width so the two flanking columns stay
+  //  visually balanced — when the user resizes the sidebar via its
+  //  drag handle, the AI panel grows or shrinks alongside it. Same
+  //  220–420 clamp the sidebar uses (enforced in the store), so no
+  //  separate clamp is needed here.
+  const sidebarWidth = useAppStore((s) => s.sidebarWidth);
+
   return (
     <aside
       className="flex shrink-0 flex-col border-l border-border bg-ironlore-slate-elevated"
       style={{
-        width: "380px",
+        width: sidebarWidth,
         boxShadow: "inset 1px 0 0 var(--color-border), -4px 0 12px oklch(0 0 0 / 0.15)",
       }}
       aria-label="AI panel"
