@@ -798,9 +798,21 @@ export function SidebarNew() {
                     handleContextMenu(e, item.path, item.type, item.name);
                   }}
                   role="treeitem"
-                  aria-level={1}
+                  // `aria-level` reflects the current drill depth so
+                  //  screen readers announce nested folders correctly.
+                  //  Root listing = level 1; one-deep folder = level 2;
+                  //  etc. Computed from `sidebarFolder`'s slash count.
+                  aria-level={
+                    sidebarFolder === "" ? 1 : sidebarFolder.split("/").filter(Boolean).length + 1
+                  }
                   aria-selected={isActive}
-                  {...(isDir ? { "aria-expanded": false } : {})}
+                  // `aria-expanded` deliberately omitted: the sidebar
+                  //  uses drill-into navigation rather than tree
+                  //  expand/collapse, so claiming `aria-expanded={false}`
+                  //  every time was a false signal to assistive tech.
+                  //  Drop the attribute and let directories carry their
+                  //  semantics through `role="treeitem"` + the click
+                  //  handler that switches `sidebarFolder`.
                   tabIndex={isFocusedRow ? 0 : -1}
                 >
                   <FileIcon type={item.type} />
