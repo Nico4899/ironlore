@@ -65,7 +65,27 @@ export class ProjectServices {
     this.started = true;
 
     const recovery = this.writer.recover();
-    const indexResult = await this.searchIndex.reindexAll(this.getDataRoot());
+
+    // Skip the boot-time `reindexAll` when the index is already
+    //  populated AND the WAL replay didn't touch any files. The file
+    //  watcher keeps the index in sync with on-disk changes during
+    //  every previous run, so a clean shutdown leaves a fully-current
+    //  index that doesn't need to be rebuilt. Triggers that DO need a
+    //  rebuild:
+    //    - first boot ever / wiped index → countPagesTotal === 0
+    //    - WAL replay wrote pages back to disk (the writer's recover
+    //      path mutates files but not the search index, so a rebuild
+    //      is the only way to catch up)
+    //    - explicit `ironlore reindex` CLI invocation (calls
+    //      `reindexAll` directly, bypassing this gate)
+    //  Avoiding the rebuild also eliminates the SQLITE_BUSY contention
+    //  surface that bites when a leftover dev process is still holding
+    //  the index-DB write lock from a prior crashed run.
+    const pagesAlreadyIndexed = this.searchIndex.countPagesTotal();
+    const needsReindex = pagesAlreadyIndexed === 0 || recovery.recovered > 0;
+    const indexResult = needsReindex
+      ? await this.searchIndex.reindexAll(this.getDataRoot())
+      : { indexed: pagesAlreadyIndexed };
 
     this.gitWorker = new GitWorker(this.projectDir, this.wal);
     await this.gitWorker.start();

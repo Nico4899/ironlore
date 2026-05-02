@@ -978,6 +978,21 @@ export class SearchIndex {
   }
 
   /**
+   * Total number of pages tracked in the index. Used by
+   * `ProjectServices.start()` to decide whether to skip the
+   * boot-time `reindexAll`: a populated index means the previous
+   * run committed and the file watcher kept it in sync, so wiping
+   * + rebuilding on every restart is wasted work AND a needless
+   * write-lock contention surface against any leftover process
+   * holding the DB. Zero rows = fresh install or wiped index =
+   * full reindex needed.
+   */
+  countPagesTotal(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM pages").get() as { n: number };
+    return row.n;
+  }
+
+  /**
    * Persist an Anthropic Contextual Retrieval summary for a single
    * chunk. Writes to both the durable shadow table (`chunk_contexts`)
    * and the parallel FTS5 index (`chunk_contexts_fts`) in one atomic

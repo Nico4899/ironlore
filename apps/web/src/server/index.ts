@@ -826,9 +826,7 @@ async function start() {
     void projectId;
   }
   if (contextualizationWorkers.size > 0) {
-    console.log(
-      `Contextualization worker started for ${contextualizationWorkers.size} project(s)`,
-    );
+    console.log(`Contextualization worker started for ${contextualizationWorkers.size} project(s)`);
   }
 
   // Middleware for per-project routes (same authMiddleware covers
@@ -1035,6 +1033,30 @@ async function start() {
       socket.destroy();
     }
   });
+
+  // Graceful shutdown — `tsx watch` (and any `kill <pid>` / Ctrl-C
+  //  in the dev terminal) sends SIGTERM/SIGINT. Without an explicit
+  //  handler, Node prints the signal but the listening socket stays
+  //  half-bound, so the next watch-restart fails immediately with
+  //  `EADDRINUSE: address already in use 127.0.0.1:3000`. Closing
+  //  the server releases the port; the `setTimeout` is a hard cap
+  //  so a wedged in-flight request can't keep the process alive
+  //  forever (5 s is plenty for a local dev request to finish or
+  //  be abandoned).
+  const shutdown = (signal: NodeJS.Signals): void => {
+    console.log(`Received ${signal}, closing server…`);
+    server.close((err) => {
+      if (err) console.error("server.close error:", err);
+      process.exit(err ? 1 : 0);
+    });
+    setTimeout(() => {
+      console.warn("server.close timed out after 5s, forcing exit.");
+      process.exit(1);
+    }, 5000).unref();
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+  process.on("SIGHUP", shutdown);
 }
 
 start().catch((err) => {
