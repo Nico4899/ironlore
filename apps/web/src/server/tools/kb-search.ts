@@ -47,9 +47,12 @@ export function createKbSearch(
       const fanout = ctx.acl ? cap * 3 : cap;
       const results = searchIndex.search(query, fanout);
       const permitted = filterReadableForTool(ctx, writer, results).slice(0, cap);
-      if (permitted.length === 0) {
-        return "No results found.";
-      }
+      // Always return a JSON array — the empty case used to return
+      // the prose string `"No results found."`, which forced
+      // downstream consumers (the AI panel's result-count chip, the
+      // model's own JSON-parse path) to handle two shapes for the
+      // same logical answer. The empty array is unambiguous: zero
+      // results, JSON-parseable, same code path either way.
       return JSON.stringify(
         permitted.map((r) => ({ path: r.path, title: r.title, snippet: r.snippet })),
       );
