@@ -216,6 +216,27 @@ async function start() {
   const backpressure = new BackpressureController();
   const inbox = new AgentInbox(jobsDb);
 
+  // Sweep stale inbox entries on boot. A `pending` row whose staging
+  // branch has been deleted out of band (manual cleanup, prior
+  // reject from a different surface, history rewrite) used to sit
+  // in the listing forever and fail with raw git stderr the moment
+  // someone tried to approve/reject. Demote those rows to `'stale'`
+  // up front so the listing stays clean and approve/reject return
+  // a structured 404 instead.
+  for (const [projectId, services] of servicesById) {
+    try {
+      const demoted = inbox.pruneStaleEntries(projectId, services.projectDir);
+      if (demoted > 0) {
+        console.log(`Inbox: pruned ${demoted} stale entr${demoted === 1 ? "y" : "ies"} in ${projectId}`);
+      }
+    } catch (err) {
+      console.warn(
+        `Inbox prune failed for ${projectId}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   // Provider registry — auto-detect Ollama, register Anthropic from env.
   const providerRegistry = new ProviderRegistry();
   // Anthropic key sourced from env > key-store. Env wins so

@@ -455,3 +455,145 @@ describe("AgentInbox — approve/reject against real git", () => {
     expect(branchExists(projectDir, "agents/editor/all-rej")).toBe(false);
   });
 });
+
+// Bug 3 regression — entries whose staging branch was deleted out
+// of band used to sit in the listing forever and fail with raw git
+// stderr on approve/reject. The fixes:
+//   - entryExists(id, projectDir) verifies branch existence and
+//     demotes pending → stale when missing
+//   - approveAll / rejectAll pre-flight the same check and return
+//     a structured envelope
+//   - pruneStaleEntries() runs on boot to clean the listing up front
+
+describe("AgentInbox — stale-entry handling", () => {
+  let projectDir: string;
+  let inbox: AgentInbox;
+  let close: () => void;
+
+  beforeEach(() => {
+    const repo = makeTmpRepo();
+    projectDir = repo.projectDir;
+    ({ inbox, close } = makeInbox());
+    // Set up an entry whose branch was just deleted out of band.
+    execSync("git checkout -b agents/editor/orphan", { cwd: projectDir, stdio: "pipe" });
+    writeFileSync(join(projectDir, "ghost.md"), "ghost\n");
+    execSync("git add -A", { cwd: projectDir, stdio: "pipe" });
+    execSync("git commit -m agent-ghost", { cwd: projectDir, stdio: "pipe" });
+    execSync("git checkout main", { cwd: projectDir, stdio: "pipe" });
+    execSync("git branch -D agents/editor/orphan", { cwd: projectDir, stdio: "pipe" });
+
+    inbox.createEntry({
+      id: "stale1",
+      projectId: "main",
+      agentSlug: "editor",
+      branch: "agents/editor/orphan",
+      jobId: "ghost",
+      filesChanged: ["ghost.md"],
+      startedAt: 1,
+      finalizedAt: 2,
+    });
+  });
+
+  afterEach(() => {
+    close();
+    try {
+      rmSync(projectDir, { recursive: true, force: true });
+    } catch {
+      /* */
+    }
+  });
+
+  it("entryExists(id, projectDir) returns false when the branch is gone — and demotes the row to stale", () => {
+    expect(inbox.entryExists("stale1")).toBe(true); // row-only check passes
+    expect(inbox.entryExists("stale1", projectDir)).toBe(false); // branch check fails
+    // Listing should now exclude it (status moved to 'stale').
+    expect(inbox.getPending("main")).toHaveLength(0);
+  });
+
+  it("entryExists is unchanged for entries with a live branch", () => {
+    execSync("git checkout -b agents/editor/live", { cwd: projectDir, stdio: "pipe" });
+    writeFileSync(join(projectDir, "live.md"), "live\n");
+    execSync("git add -A", { cwd: projectDir, stdio: "pipe" });
+    execSync("git commit -m agent-live", { cwd: projectDir, stdio: "pipe" });
+    execSync("git checkout main", { cwd: projectDir, stdio: "pipe" });
+
+    inbox.createEntry({
+      id: "live1",
+      projectId: "main",
+      agentSlug: "editor",
+      branch: "agents/editor/live",
+      jobId: "live",
+      filesChanged: ["live.md"],
+      startedAt: 1,
+      finalizedAt: 2,
+    });
+    expect(inbox.entryExists("live1", projectDir)).toBe(true);
+  });
+
+  it("approveAll on a stale entry returns a structured error envelope (no raw git stderr)", () => {
+    const result = inbox.approveAll("stale1", projectDir);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Staging branch");
+    expect(result.error).not.toContain("not something we can merge"); // raw git stderr suppressed
+  });
+
+  it("rejectAll on a stale entry returns a structured error envelope", () => {
+    const result = inbox.rejectAll("stale1", projectDir);
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Staging branch");
+    // Raw git stderr ("error: branch '...' not found") suppressed.
+    expect(result.error).not.toContain("Command failed");
+    expect(result.error).not.toContain("not found");
+  });
+
+  it("pruneStaleEntries demotes orphaned pending rows in bulk", () => {
+    // The setup beforeEach already created `stale1` with a missing
+    // branch. Add a second one and a live one for good measure.
+    execSync("git checkout -b agents/editor/another-orphan", { cwd: projectDir, stdio: "pipe" });
+    writeFileSync(join(projectDir, "g2.md"), "g2\n");
+    execSync("git add -A", { cwd: projectDir, stdio: "pipe" });
+    execSync("git commit -m g2", { cwd: projectDir, stdio: "pipe" });
+    execSync("git checkout main", { cwd: projectDir, stdio: "pipe" });
+    execSync("git branch -D agents/editor/another-orphan", { cwd: projectDir, stdio: "pipe" });
+
+    inbox.createEntry({
+      id: "stale2",
+      projectId: "main",
+      agentSlug: "editor",
+      branch: "agents/editor/another-orphan",
+      jobId: "g2",
+      filesChanged: ["g2.md"],
+      startedAt: 1,
+      finalizedAt: 2,
+    });
+
+    const demoted = inbox.pruneStaleEntries("main", projectDir);
+    expect(demoted).toBe(2);
+    expect(inbox.getPending("main")).toHaveLength(0);
+  });
+
+  it("pruneStaleEntries leaves resolved (non-pending) entries untouched", () => {
+    // An already-approved entry whose branch is gone (it was deleted
+    // by the merge itself) is correctly resolved — must not be
+    // demoted to 'stale'.
+    inbox.createEntry({
+      id: "approved1",
+      projectId: "main",
+      agentSlug: "editor",
+      branch: "agents/editor/never-existed",
+      jobId: "j",
+      filesChanged: [],
+      startedAt: 1,
+      finalizedAt: 2,
+    });
+    // Manually mark it approved (mirrors approveAll's setStatus call).
+    (inbox as unknown as { setStatus: (id: string, s: string) => void }).setStatus(
+      "approved1",
+      "approved",
+    );
+
+    const demoted = inbox.pruneStaleEntries("main", projectDir);
+    // stale1 still pending → demoted. approved1 already resolved → untouched.
+    expect(demoted).toBe(1);
+  });
+});
