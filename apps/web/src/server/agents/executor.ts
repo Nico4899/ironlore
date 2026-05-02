@@ -602,6 +602,11 @@ export async function executeAgentRun(
       commitShaStart,
       commitShaEnd,
       filesChanged,
+      // Surface the staging-branch destination so the AI panel can
+      // tell the user "this landed in the inbox for review" rather
+      // than implying it merged straight to main. Null/absent →
+      // direct commit (no review_mode: inbox).
+      inboxBranch,
     });
   }
 

@@ -1691,6 +1691,7 @@ function RunFinalizedCard({
     commitShaEnd: string;
     filesChanged: string[];
     revertedAt: number | null;
+    inboxBranch?: string | null;
   };
 }) {
   const [reverting, setReverting] = useState(false);
@@ -1740,7 +1741,39 @@ function RunFinalizedCard({
       />
       <div className="px-3 py-2">
         <div className="flex items-center justify-between">
-          <div className="font-semibold text-primary">Run finalized</div>
+          <div className="flex items-baseline gap-2">
+            <span className="font-semibold text-primary">Run finalized</span>
+            {/* Routing pill: inbox-staged vs. direct-to-main. Without
+              * this the user couldn't tell whether the run had merged
+              * already or was waiting for them to approve in /inbox —
+              * the same surface ambiguity Bug 9 in the audit
+              * called out. */}
+            {msg.filesChanged.length > 0 && (
+              <span
+                className="font-mono uppercase"
+                style={{
+                  fontSize: 10,
+                  letterSpacing: "0.04em",
+                  padding: "1px 5px",
+                  borderRadius: 2,
+                  color: msg.inboxBranch ? "var(--il-amber)" : "var(--il-text3)",
+                  background: msg.inboxBranch
+                    ? "color-mix(in oklch, var(--il-amber) 12%, transparent)"
+                    : "var(--il-slate-elev)",
+                  border: msg.inboxBranch
+                    ? "1px solid color-mix(in oklch, var(--il-amber) 28%, transparent)"
+                    : "1px solid var(--il-border-soft)",
+                }}
+                title={
+                  msg.inboxBranch
+                    ? `Awaiting your review on staging branch ${msg.inboxBranch}`
+                    : "Committed directly to the project's default branch"
+                }
+              >
+                {msg.inboxBranch ? "pending review" : "merged"}
+              </span>
+            )}
+          </div>
           {/* Only show the revert button when there's actually
             * something to revert: a real commit range (start \u2260 end)
             * AND at least one changed file. A chat-only turn that

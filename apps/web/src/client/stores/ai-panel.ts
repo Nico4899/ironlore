@@ -130,6 +130,14 @@ export type ConversationMessage =
       commitShaEnd: string;
       filesChanged: string[];
       revertedAt: number | null;
+      /**
+       * Staging branch the run committed to when the persona declared
+       * `review_mode: inbox`. Null/absent → direct commit on the
+       * project's default branch. The AI panel surfaces this so the
+       * user can tell at a glance whether the run is awaiting their
+       * approval in the Inbox or has already merged.
+       */
+      inboxBranch?: string | null;
       timestamp?: number;
     }
   | { type: "error"; text: string; timestamp?: number }

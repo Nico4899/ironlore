@@ -402,6 +402,7 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
       const commitShaStart = (data.commitShaStart as string) ?? "";
       const commitShaEnd = (data.commitShaEnd as string) ?? "";
       const filesChanged = Array.isArray(data.filesChanged) ? (data.filesChanged as string[]) : [];
+      const inboxBranch = typeof data.inboxBranch === "string" ? data.inboxBranch : null;
       if (commitShaStart && commitShaEnd) {
         store.addMessage({
           type: "run_finalized",
@@ -411,6 +412,7 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
           commitShaEnd,
           filesChanged,
           revertedAt: null,
+          inboxBranch,
         });
       }
       break;
