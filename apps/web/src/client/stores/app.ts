@@ -1,12 +1,20 @@
 import { DEFAULT_PROJECT_ID } from "@ironlore/core";
 import { create } from "zustand";
 
-// Spec: sidebar range 220–420, AI panel fixed 380 — see docs/09-ui-and-brand.md
+// Spec: sidebar range 220–420 — see docs/09-ui-and-brand.md.
+//  AI panel uses the same range so the two flanking columns share a
+//  resize grammar (drag handle, clamp, localStorage persistence) and
+//  a user can balance the layout however they want.
 export const SIDEBAR_MIN_WIDTH = 220;
 export const SIDEBAR_MAX_WIDTH = 420;
 export const SIDEBAR_DEFAULT_WIDTH = 260;
 
+export const AI_PANEL_MIN_WIDTH = 220;
+export const AI_PANEL_MAX_WIDTH = 420;
+export const AI_PANEL_DEFAULT_WIDTH = 380;
+
 const SIDEBAR_WIDTH_KEY = "ironlore.sidebarWidth";
+const AI_PANEL_WIDTH_KEY = "ironlore.aiPanelWidth";
 const THEME_KEY = "ironlore.theme";
 const DENSITY_KEY = "ironlore.density";
 const ACCENT_HUE_KEY = "ironlore.accentHue";
@@ -107,6 +115,17 @@ function loadSidebarWidth(): number {
     return clamp(n, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
   } catch {
     return SIDEBAR_DEFAULT_WIDTH;
+  }
+}
+
+function loadAiPanelWidth(): number {
+  try {
+    const raw = window.localStorage.getItem(AI_PANEL_WIDTH_KEY);
+    const n = raw ? Number.parseInt(raw, 10) : Number.NaN;
+    if (!Number.isFinite(n)) return AI_PANEL_DEFAULT_WIDTH;
+    return clamp(n, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH);
+  } catch {
+    return AI_PANEL_DEFAULT_WIDTH;
   }
 }
 
@@ -245,6 +264,13 @@ function loadMotifs(): MotifSettings {
 interface AppStore {
   currentProjectId: string;
   sidebarWidth: number;
+  /**
+   * AI panel width in pixels. Independent of `sidebarWidth` so the
+   * user can tune each flank to their reading style — same
+   * 220–420 clamp as the sidebar; persisted via
+   * `ironlore.aiPanelWidth`.
+   */
+  aiPanelWidth: number;
   sidebarOpen: boolean;
   aiPanelOpen: boolean;
   searchDialogOpen: boolean;
@@ -341,6 +367,7 @@ interface AppStore {
    */
   setMotif: <K extends keyof MotifSettings>(key: K, value: MotifSettings[K]) => void;
   setSidebarWidth: (width: number) => void;
+  setAiPanelWidth: (width: number) => void;
   setWsConnected: (connected: boolean) => void;
   setWsReconnecting: (reconnecting: boolean) => void;
   openProvenance: (pagePath: string, blockId: string) => void;
@@ -358,6 +385,14 @@ interface AppStore {
 function persistSidebarWidth(width: number): void {
   try {
     window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(width));
+  } catch {
+    // Storage denied — width still lives in memory for the session.
+  }
+}
+
+function persistAiPanelWidth(width: number): void {
+  try {
+    window.localStorage.setItem(AI_PANEL_WIDTH_KEY, String(width));
   } catch {
     // Storage denied — width still lives in memory for the session.
   }
@@ -406,6 +441,7 @@ function persistMotifs(motifs: MotifSettings): void {
 export const useAppStore = create<AppStore>((set) => ({
   currentProjectId: DEFAULT_PROJECT_ID,
   sidebarWidth: loadSidebarWidth(),
+  aiPanelWidth: loadAiPanelWidth(),
   sidebarOpen: true,
   aiPanelOpen: false,
   searchDialogOpen: false,
@@ -538,6 +574,11 @@ export const useAppStore = create<AppStore>((set) => ({
     const clamped = clamp(width, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH);
     persistSidebarWidth(clamped);
     set({ sidebarWidth: clamped });
+  },
+  setAiPanelWidth: (width) => {
+    const clamped = clamp(width, AI_PANEL_MIN_WIDTH, AI_PANEL_MAX_WIDTH);
+    persistAiPanelWidth(clamped);
+    set({ aiPanelWidth: clamped });
   },
   setWsConnected: (connected) => set({ wsConnected: connected }),
   setWsReconnecting: (reconnecting) => set({ wsReconnecting: reconnecting }),
