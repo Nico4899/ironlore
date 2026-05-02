@@ -1459,11 +1459,21 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Derive the `(page · #block)` target-label for a tool-call header
- * from its `args` payload. `kb.replace_block` / `kb.insert_after` /
- * `kb.delete_block` all carry `{ page / pageId, blockId }`; other
- * tools (kb.search etc.) get a null target and the header degrades
- * to the bare tool name.
+ * Derive the `(page · #block)` / `("query")` target-label for a
+ * tool-call header from its `args` payload.
+ *
+ * Resolution order (first match wins):
+ *   1. `{ page / pageId / path } + blockId` → `page · #block` (kb mutations)
+ *   2. `{ page / pageId / path }` alone     → bare path (kb.read_page etc.)
+ *   3. `blockId` alone                       → `#block`
+ *   4. `{ query }`                           → `"query"` (kb.search,
+ *      kb.semantic_search, kb.global_search)
+ *   5. `{ text }`                            → `"text snippet"` (agent.journal)
+ *
+ * Without #4/#5, repeat `kb.search` calls in the AI panel were
+ * indistinguishable — every row read just `kb.search` with no hint
+ * of what was being searched for. The user couldn't tell five
+ * identical calls apart without expanding each one.
  */
 function deriveToolTarget(args: unknown): string | null {
   if (!args || typeof args !== "object") return null;
@@ -1480,6 +1490,14 @@ function deriveToolTarget(args: unknown): string | null {
   if (page && block) return `${truncate(page, 22)} · #${block}`;
   if (page) return truncate(page, 28);
   if (block) return `#${block}`;
+  if (typeof bag.query === "string" && bag.query.length > 0) {
+    return `"${truncate(bag.query, 36)}"`;
+  }
+  if (typeof bag.text === "string" && bag.text.length > 0) {
+    // Strip newlines so multi-line journals don't break the row.
+    const single = bag.text.replace(/\s+/g, " ");
+    return `"${truncate(single, 36)}"`;
+  }
   return null;
 }
 
