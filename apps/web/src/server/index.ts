@@ -180,6 +180,11 @@ async function start() {
   for (const p of projectList) {
     servicesById.set(p.id, ProjectServices.forProject(installRoot, p.id));
   }
+  // Surface the bundle count to the `/health` handler. The handler
+  //  reads `projectCount` at request time, so a project added at
+  //  runtime via `POST /api/projects` updates this field below where
+  //  the new bundle is added to the map.
+  projectCount = servicesById.size;
 
   const {
     api: authApi,
@@ -909,6 +914,11 @@ async function start() {
     //  exist until the server restarts — that's explicit in the
     //  response.
     projectRegistry.ensureProject(id, name, preset);
+    // Bump the count so `/health` reflects the new total even
+    //  before the user restarts. The bundle isn't mounted yet but
+    //  the project IS known to the registry, so the count semantics
+    //  match `GET /api/projects`.
+    projectCount = projectRegistry.list().length;
 
     return c.json(
       {

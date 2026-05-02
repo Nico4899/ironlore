@@ -44,7 +44,15 @@ program
   .option("--project <id>", "Project ID to flush", "main")
   .action(flush);
 
-program.command("migrate").description("Run pending database migrations").action(migrate);
+program
+  .command("migrate")
+  .description(
+    "Run pending database migrations (install-global today; the --project flag is " +
+      "accepted for symmetry with sibling commands but doesn't change behaviour " +
+      "until Phase-1 per-project migrations ship).",
+  )
+  .option("--project <id>", "Project scope (currently no-op; reserved for Phase 1)")
+  .action(migrate);
 
 program
   .command("repair")
