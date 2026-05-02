@@ -126,6 +126,45 @@ describe("AnthropicProvider — SSE parsing", () => {
     expect(toolUse?.input).toEqual({ query: "alpha" });
   });
 
+  it("emits `input: {}` for a no-arg tool — never the empty string (regression)", async () => {
+    // No-arg tools (e.g. `kb.lint_orphans`) emit zero
+    //  `input_json_delta` events between content_block_start and
+    //  content_block_stop. The earlier code defaulted to the empty
+    //  string in that case, then replayed it back to Anthropic on
+    //  the next turn — Anthropic rejected with HTTP 400
+    //  "messages.N.content.0.tool_use.input: Input should be an
+    //  object" the moment any subsequent tool call replayed history.
+    const body = encodeSseStream([
+      frame({ type: "message_start", message: { usage: { input_tokens: 3 } } }),
+      frame({
+        type: "content_block_start",
+        content_block: { type: "tool_use", id: "tu_zero", name: "kb.lint_orphans" },
+      }),
+      // <-- no input_json_delta frames at all
+      frame({ type: "content_block_stop" }),
+      frame({ type: "message_stop" }),
+    ]);
+
+    const events = await collect(
+      provider.chat(
+        { model: "claude-haiku-4-20250514", systemPrompt: "", messages: [] },
+        ctx(mockFetch(body)),
+      ),
+    );
+
+    const toolUse = events.find(
+      (e): e is Extract<ChatEvent, { type: "tool_use" }> => e.type === "tool_use",
+    );
+    expect(toolUse).toBeDefined();
+    expect(toolUse?.input).toEqual({});
+    // Belt-and-braces against future regressions: input must be an
+    //  object literal (not array, not primitive, not null) for
+    //  Anthropic's wire schema.
+    expect(typeof toolUse?.input).toBe("object");
+    expect(Array.isArray(toolUse?.input)).toBe(false);
+    expect(toolUse?.input).not.toBeNull();
+  });
+
   it("surfaces prompt-cache token usage on done", async () => {
     const body = encodeSseStream([
       frame({
