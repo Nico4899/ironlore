@@ -17,7 +17,12 @@ const program = new Command();
 program
   .name("ironlore")
   .description("Ironlore — self-hosted knowledge base with AI agents")
-  .version("0.0.1");
+  .version("0.0.1")
+  // Show command-specific help text on argument-parse errors so a
+  //  user who fat-fingers `--in` on `restore` (or `--out` on a
+  //  command that doesn't take it) sees the canonical flag list
+  //  instead of just the bare "unknown option" line. Cheap UX win.
+  .showHelpAfterError("(run with --help to see available options)");
 
 program
   .command("lint")
@@ -73,11 +78,19 @@ program
   .description("Create a backup archive of the knowledge base")
   .option("--project <id>", "Project ID to backup", "main")
   .option("-o, --output <path>", "Output path for the archive")
+  // `--out` is the spelling many users reach for first; aliased to
+  //  `--output` in the backup action so the canonical flag name
+  //  stays the documented one.
+  .option("--out <path>", "Alias for --output")
   .action(backup);
 
 program
   .command("restore")
-  .description("Restore from a backup archive")
+  .description(
+    "Restore from a backup archive. The archive path is a positional argument: " +
+      "`ironlore restore ./backup.tar`. (There is no --in / --input flag — pass the " +
+      "path directly.)",
+  )
   .argument("<archive>", "Path to the backup archive")
   .option("--project <id>", "Project ID to restore into", "main")
   .action(restore);

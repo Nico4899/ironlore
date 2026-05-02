@@ -11,7 +11,9 @@
 export function migrate(opts: { project?: string } = {}): void {
   console.log("Running pending migrations...");
   if (opts.project) {
-    console.log(`(Scope: install-global — '--project ${opts.project}' is recorded but Phase-0 migrations are not per-project.)`);
+    console.log(
+      `(Scope: install-global — '--project ${opts.project}' is recorded but Phase-0 migrations are not per-project.)`,
+    );
   }
   console.log("No pending migrations.");
   console.log("(Phase 0 stub — migrations implementation ships in Phase 1)");
