@@ -865,6 +865,44 @@ kbd {
 }
 
 /*
+ * AI panel resize handle — mirror of `.il-sidebar-resize` but
+ * anchored to the LEFT edge of the AI panel (which sits on the
+ * right side of the viewport, so the user-facing edge is its left).
+ * Same hit-target geometry, same hover/focus blue-glow.
+ */
+.il-ai-panel-resize {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  outline: none;
+  z-index: 1;
+  transition: background var(--motion-snap) ease-out;
+}
+.il-ai-panel-resize::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 3px;
+  width: 1px;
+  background: var(--il-border);
+  transition: width var(--motion-snap) ease-out,
+              right var(--motion-snap) ease-out,
+              background var(--motion-snap) ease-out;
+}
+.il-ai-panel-resize:hover::before,
+.il-ai-panel-resize:focus-visible::before,
+.il-ai-panel-resize:active::before {
+  width: 3px;
+  right: 2px;
+  background: var(--il-blue);
+  box-shadow: 0 0 8px var(--il-blue-glow);
+}
+
+/*
  * Collapsed-sidebar top tile. The logo sits in the cell at rest; on
  * hover (or keyboard focus on the button itself) an expand-chevron
  * fades up and overlays it. Both children stack via absolute

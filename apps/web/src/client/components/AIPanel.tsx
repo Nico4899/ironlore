@@ -13,7 +13,7 @@ import {
 } from "../lib/api.js";
 import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
 import { type ContextPill, type ConversationMessage, useAIPanelStore } from "../stores/ai-panel.js";
-import { useAppStore } from "../stores/app.js";
+import { AI_PANEL_MAX_WIDTH, AI_PANEL_MIN_WIDTH, useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { ContextBudgetChip } from "./ai-composer/ContextBudgetChip.js";
 import { type MentionCandidate, MentionPicker } from "./ai-composer/MentionPicker.js";
@@ -439,22 +439,90 @@ export function AIPanel() {
   const { agents } = useWorkspaceActivity();
   const stepLabel = agents.find((a) => a.slug === activeAgent)?.stepLabel ?? null;
 
-  // Mirror the sidebar's width so the two flanking columns stay
-  //  visually balanced — when the user resizes the sidebar via its
-  //  drag handle, the AI panel grows or shrinks alongside it. Same
-  //  220–420 clamp the sidebar uses (enforced in the store), so no
-  //  separate clamp is needed here.
-  const sidebarWidth = useAppStore((s) => s.sidebarWidth);
+  // Independently resizable, persisted, clamped 220..420 — same
+  //  grammar as the sidebar's drag handle but on the AI panel's
+  //  LEFT edge (drag leftward = wider panel since the panel grows
+  //  toward the viewport's interior). State lives in the store as
+  //  `aiPanelWidth` so a refresh restores the user's last size.
+  const aiPanelWidth = useAppStore((s) => s.aiPanelWidth);
+  const resizeState = useRef<{ dragging: boolean }>({ dragging: false });
+
+  const handleResizeDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    resizeState.current.dragging = true;
+    (e.target as Element).setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }, []);
+  const handleResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeState.current.dragging) return;
+    // The AI panel's right edge sits at the viewport's right edge,
+    //  so the live width is `viewportWidth - clientX`. Snap to the
+    //  minimum if the user drags past it (forgiving collapse intent
+    //  rather than leaving a sub-spec sliver). The store clamps to
+    //  AI_PANEL_MIN..AI_PANEL_MAX before persisting.
+    const viewportWidth = window.innerWidth;
+    const raw = viewportWidth - e.clientX;
+    const next = raw < AI_PANEL_MIN_WIDTH - 20 ? AI_PANEL_MIN_WIDTH : raw;
+    useAppStore.getState().setAiPanelWidth(next);
+  }, []);
+  const handleResizeUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    resizeState.current.dragging = false;
+    (e.target as Element).releasePointerCapture(e.pointerId);
+  }, []);
+  const handleResizeKey = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const step = e.shiftKey ? 20 : 5;
+      // ArrowLeft widens the panel, ArrowRight narrows it — the
+      //  panel sits on the right, so the gesture follows the same
+      //  direction as the visible edge motion.
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        useAppStore.getState().setAiPanelWidth(aiPanelWidth + step);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        useAppStore.getState().setAiPanelWidth(aiPanelWidth - step);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        useAppStore.getState().setAiPanelWidth(AI_PANEL_MAX_WIDTH);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        useAppStore.getState().setAiPanelWidth(AI_PANEL_MIN_WIDTH);
+      }
+    },
+    [aiPanelWidth],
+  );
 
   return (
     <aside
-      className="flex shrink-0 flex-col border-l border-border bg-ironlore-slate-elevated"
+      className="relative flex shrink-0 flex-col border-l border-border bg-ironlore-slate-elevated"
       style={{
-        width: sidebarWidth,
+        width: aiPanelWidth,
         boxShadow: "inset 1px 0 0 var(--color-border), -4px 0 12px oklch(0 0 0 / 0.15)",
       }}
       aria-label="AI panel"
     >
+      {/*
+       * Left-edge resize handle — mirrors the sidebar's right-edge
+       * handle (docs/09-ui-and-brand.md §Sidebar resize). 1 px at
+       * rest, thickens to 3 px `var(--il-blue)` on hover/focus, 6 px
+       * absolute-positioned hit target. ArrowLeft/Right ±5 (±20 with
+       * Shift), Home/End jump to max/min (Home widens because the
+       * "open" direction for a right-anchored panel is leftward).
+       */}
+      {/* biome-ignore lint/a11y/useSemanticElements: <hr> has no interactive affordance; this separator must accept pointer, focus, and key events */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize AI panel"
+        aria-valuemin={AI_PANEL_MIN_WIDTH}
+        aria-valuemax={AI_PANEL_MAX_WIDTH}
+        aria-valuenow={aiPanelWidth}
+        tabIndex={0}
+        onPointerDown={handleResizeDown}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeUp}
+        onKeyDown={handleResizeKey}
+        className="il-ai-panel-resize"
+      />
       {/* Header — matches screen-editor.jsx AI panel header:
        *   · StatusPip (Reuleaux inside) for running/idle state
        *   · agent slug as a button → opens detail page
