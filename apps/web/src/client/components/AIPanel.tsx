@@ -11,6 +11,7 @@ import {
   revertJob,
   submitDryRunVerdict,
 } from "../lib/api.js";
+import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
 import { type ContextPill, type ConversationMessage, useAIPanelStore } from "../stores/ai-panel.js";
 import { useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
@@ -1994,38 +1995,94 @@ function EgressDowngradedBanner({ reason, at }: { reason: string; at: string | n
 }
 
 /**
- * Render text with clickable `[[Page#blk_…]]` citations.
- * Clicking a citation opens the provenance pane scrolled to that block.
+ * Render the assistant's reply text as **markdown** (headings, lists,
+ * bold, code, etc.) while preserving clickable `[[Page#blk_…]]`
+ * citations as `<Blockref>` chips.
+ *
+ * Strategy: pre-replace citations in the markdown source with
+ * sentinel placeholders, run the result through `renderMarkdownSafe`,
+ * then split the rendered HTML on the same placeholders and
+ * interleave React `<Blockref>` components at each cut. The
+ * placeholder uses an HTML-comment shape so the markdown processor
+ * passes it through untouched (sanitiser strips comments after this
+ * function's split, but our split runs before sanitisation could
+ * matter — `renderMarkdownSafe` keeps the placeholder as plain text).
+ *
+ * The previous implementation rendered the entire reply as inline
+ * `<span>` text with no markdown parsing, which is why agent
+ * responses with `## Headings`, `**bold**`, and bullet lists
+ * collapsed into a single wall of text.
  */
 function CitationText({ text }: { text: string }) {
   const CITATION_RE = /\[\[([^\]#]+)(?:#(blk_[A-Za-z0-9]+))?\]\]/g;
+  // Sentinel pair fences each citation's index in the masked
+  //  markdown. Plain ASCII so the markdown processor + sanitiser
+  //  pass it through untouched; the verbose CAPS prefix + suffix
+  //  rule out any realistic agent-text collision. Verbatim match
+  //  on render-output is what `SPLIT_RE` below relies on.
+  const CITE_OPEN = "IRONLORE__CITE__OPEN__";
+  const CITE_CLOSE = "__IRONLORE__CITE__CLOSE";
+  const SPLIT_RE = /IRONLORE__CITE__OPEN__(\d+)__IRONLORE__CITE__CLOSE/g;
 
-  const parts: Array<
-    { kind: "text"; value: string } | { kind: "citation"; page: string; blockId: string }
+  // Pre-extract every citation; replace each with a unique sentinel
+  //  the markdown processor + sanitiser leave intact.
+  const citations: Array<{ page: string; blockId: string }> = [];
+  const masked = text.replace(CITATION_RE, (_full, page: string, blockId?: string) => {
+    const i = citations.push({ page: page ?? "", blockId: blockId ?? "" }) - 1;
+    return `${CITE_OPEN}${i}${CITE_CLOSE}`;
+  });
+
+  // No markdown features to render and no citations? Cheap path.
+  if (citations.length === 0 && !/[#*`>\[\]\-]|\n\n/.test(masked)) {
+    return <span style={{ whiteSpace: "pre-wrap" }}>{text}</span>;
+  }
+
+  const html = renderMarkdownSafe(masked);
+
+  // No citations: render the full markdown HTML in one shot.
+  if (citations.length === 0) {
+    return (
+      <div
+        className="il-assistant-md"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: output passes through renderMarkdownSafe
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+
+  // Split the rendered HTML on the placeholders and interleave
+  //  Blockref components at each cut. Each text chunk is its own
+  //  div so the markdown rendering (block-level headings, lists)
+  //  flows correctly between chips.
+  const segments: Array<
+    { kind: "html"; html: string } | { kind: "cite"; page: string; blockId: string }
   > = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null = CITATION_RE.exec(text);
-
-  while (match !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ kind: "text", value: text.slice(lastIndex, match.index) });
+  let cursor = 0;
+  let m: RegExpExecArray | null = SPLIT_RE.exec(html);
+  while (m !== null) {
+    if (m.index > cursor) {
+      segments.push({ kind: "html", html: html.slice(cursor, m.index) });
     }
-    parts.push({ kind: "citation", page: match[1] ?? "", blockId: match[2] ?? "" });
-    lastIndex = match.index + match[0].length;
-    match = CITATION_RE.exec(text);
+    const idx = Number.parseInt(m[1] ?? "0", 10);
+    const cite = citations[idx];
+    if (cite) segments.push({ kind: "cite", page: cite.page, blockId: cite.blockId });
+    cursor = m.index + m[0].length;
+    m = SPLIT_RE.exec(html);
   }
-  if (lastIndex < text.length) {
-    parts.push({ kind: "text", value: text.slice(lastIndex) });
+  if (cursor < html.length) {
+    segments.push({ kind: "html", html: html.slice(cursor) });
   }
-
-  if (parts.length === 0) return <>{text}</>;
 
   return (
-    <>
-      {parts.map((p, i) =>
-        p.kind === "text" ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
-          <span key={i}>{p.value}</span>
+    <div className="il-assistant-md">
+      {segments.map((seg, i) =>
+        seg.kind === "html" ? (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
+            key={i}
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: output passes through renderMarkdownSafe
+            dangerouslySetInnerHTML={{ __html: seg.html }}
+          />
         ) : (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
@@ -2033,15 +2090,15 @@ function CitationText({ text }: { text: string }) {
             className="mx-0.5 inline-flex"
           >
             <Blockref
-              page={p.page}
-              block={p.blockId || undefined}
-              onClick={() => useAppStore.getState().openProvenance(p.page, p.blockId)}
-              title={`Open ${p.page}${p.blockId ? `#${p.blockId}` : ""}`}
+              page={seg.page}
+              block={seg.blockId || undefined}
+              onClick={() => useAppStore.getState().openProvenance(seg.page, seg.blockId)}
+              title={`Open ${seg.page}${seg.blockId ? `#${seg.blockId}` : ""}`}
             />
           </span>
         ),
       )}
-    </>
+    </div>
   );
 }
 
