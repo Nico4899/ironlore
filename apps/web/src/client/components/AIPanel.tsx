@@ -1530,6 +1530,16 @@ function deriveResultSummary(tool: string, result: unknown): string | null {
       return null;
     }
   }
+  // The agent tool returns hits as a bare array (e.g.
+  // `[{path, title, snippet, ...}, ...]`), not the wrapped
+  // `{results: [...]}` envelope the HTTP search endpoint uses.
+  // Accept both so this works regardless of which side the result
+  // came from — and so future shape changes don't silently regress
+  // the count chip.
+  if (Array.isArray(parsed)) {
+    const n = parsed.length;
+    return n === 0 ? "no results" : `${n} result${n === 1 ? "" : "s"}`;
+  }
   if (parsed && typeof parsed === "object") {
     const bag = parsed as { results?: unknown };
     if (Array.isArray(bag.results)) {
