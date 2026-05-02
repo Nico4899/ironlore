@@ -64,6 +64,17 @@ const rawBase = (): string => `${base()}/raw`;
  * Fetch wrapper that intercepts 401 responses and clears the auth session.
  * All data API functions use this instead of raw fetch.
  */
+/**
+ * Tracks whether we've already surfaced an "invalid project ID"
+ * warning in this tab. Without this, every API call that carries
+ * the bad `?project=` query in `window.location.search` would
+ * re-trigger the alert. We strip the query param the first time
+ * (so the next request doesn't even include it) AND latch the
+ * warning so later requests don't double-fire if anything still
+ * forwards the param manually.
+ */
+let invalidProjectWarned = false;
+
 async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(url, init);
   if (res.status === 401) {
@@ -71,6 +82,36 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
     useAuthStore.getState().clearSession();
     throw new ApiError(401, "Session expired");
   }
+
+  // Bug 8 follow-up: the server middleware sets this header when the
+  // session URL carries `?project=<unknown>`. The session falls back
+  // to the previous project gracefully, but the user typed a bad ID
+  // and deserves to know — silent fallback was the original audit
+  // finding.
+  const invalidProject = res.headers.get("X-Ironlore-Invalid-Project");
+  if (invalidProject && !invalidProjectWarned) {
+    invalidProjectWarned = true;
+    // Strip `?project=` from the address bar so the next request
+    // doesn't re-trigger the warning and the user's URL no longer
+    // claims a project that doesn't exist.
+    try {
+      const browserUrl = new URL(window.location.href);
+      if (browserUrl.searchParams.has("project")) {
+        browserUrl.searchParams.delete("project");
+        window.history.replaceState(null, "", browserUrl.toString());
+      }
+    } catch {
+      /* SSR / non-browser context — skip */
+    }
+    // window.alert is the codebase convention for one-shot user
+    // errors (see SidebarNew.tsx for a dozen prior art examples).
+    window.alert(
+      `Project '${invalidProject}' is not registered on this install. ` +
+        `Staying on the previous project. Check the URL — common typo: ` +
+        `'research' instead of 'my-research'.`,
+    );
+  }
+
   return res;
 }
 
