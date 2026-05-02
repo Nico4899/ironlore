@@ -1730,6 +1730,13 @@ function RunFinalizedCard({
         timestamp="just now"
         sources={sourceChips}
         trust={reverted ? "stale" : "fresh"}
+        // The default `FRESH` / `STALE` labels read as content
+        // provenance ("data is fresh / has gone stale"). In the
+        // run-finalized card the underlying state is the run's
+        // lifecycle — applied (still in the working tree) vs.
+        // reverted. Override so the badge says what's actually
+        // true here.
+        trustLabelOverride={{ fresh: "APPLIED", stale: "REVERTED" }}
       />
       <div className="px-3 py-2">
         <div className="flex items-center justify-between">
