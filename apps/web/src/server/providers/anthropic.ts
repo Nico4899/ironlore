@@ -434,12 +434,33 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncIterable<
 
         if (eventType === "content_block_stop") {
           if (currentToolId) {
+            // No-arg tools (e.g. `kb.lint_orphans`) emit zero
+            //  `input_json_delta` events, leaving currentToolInput as
+            //  the empty string. Anthropic's wire schema requires
+            //  `tool_use.input` to be an object on replay, so fall
+            //  back to `{}` rather than to the raw string. The
+            //  earlier code passed `""` through, which the *next*
+            //  turn rejected with `Input should be an object` (400)
+            //  the moment any subsequent tool call replayed history.
+            const trimmed = currentToolInput.trim();
             let input: unknown = {};
-            try {
-              input = JSON.parse(currentToolInput);
-            } catch {
-              // Malformed tool input — pass as string.
-              input = currentToolInput;
+            if (trimmed.length > 0) {
+              try {
+                input = JSON.parse(trimmed);
+              } catch {
+                // Malformed JSON for a tool that genuinely sent
+                //  partial input — surface as a string envelope
+                //  rather than `{}` so the error is debuggable, but
+                //  wrap so it stays a valid object on replay.
+                input = { _malformedToolInput: currentToolInput };
+              }
+            }
+            // Anthropic also requires `tool_use.input` to be a JSON
+            //  object specifically (not an array, not a primitive).
+            //  If the model parsed a non-object (rare, but a
+            //  partial-input edge case can produce it), wrap it.
+            if (input === null || typeof input !== "object" || Array.isArray(input)) {
+              input = { _value: input };
             }
             yield { type: "tool_use", id: currentToolId, name: currentToolName, input };
             currentToolId = "";
