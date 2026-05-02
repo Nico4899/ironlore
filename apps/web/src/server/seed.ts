@@ -634,6 +634,30 @@ The current map of this vault's \`kind: wiki\` pages. Maintained by the
 Wiki Gardener on its weekly heartbeat; safe to edit by hand — the
 gardener merges rather than overwrites.
 
+## Onboarding
+
+The seeded \`getting-started/\` folder walks through every shipped
+surface. Each page sits under \`getting-started/\` so they're easy to
+prune once you don't need them.
+
+- [[getting-started/index]] — entry point + reading order
+- [[getting-started/pages-and-markdown]] — frontmatter, kinds, block IDs
+- [[getting-started/agents]] — AI panel + default agents + the library
+- [[getting-started/inbox]] — staging-branch review for autonomous runs
+- [[getting-started/search-and-navigation]] — Cmd+K, wiki-links, backlinks
+- [[getting-started/connectors]] — wiring agents to external HTTP APIs
+- [[getting-started/multi-user]] — opt-in per-page ACLs + per-user sessions
+- [[getting-started/keyboard-shortcuts]] — full reference
+
+## Conventions
+
+Convention folders the Wiki Gardener and other agents look for. Each
+has its own README explaining the directory's contract.
+
+- [[_maintenance/index]] — where lint reports land
+- [[.agents/.library/index]] — inactive persona templates + activation flow
+- [[.agents/.shared/skills/index]] — opt-in prompt fragments + connector recipes
+
 ## Maintenance
 
 _Populated once the Wiki Gardener lint skill runs._

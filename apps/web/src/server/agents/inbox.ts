@@ -27,7 +27,14 @@ export interface InboxEntry {
   filesChanged: string[];
   startedAt: number;
   finalizedAt: number;
-  status: "pending" | "approved" | "rejected" | "partial";
+  /**
+   * `stale` is set when the staging branch has been deleted out of
+   * band (manual cleanup, prior reject, history rewrite). Without
+   * this state the entry would sit forever as `pending`; approve /
+   * reject would fail with raw git errors. `entryExists()` reads
+   * the branch on demand and demotes to `stale` when it's gone.
+   */
+  status: "pending" | "approved" | "rejected" | "partial" | "stale";
 }
 
 /** Per-file user decision captured during inbox review. */
@@ -477,13 +484,70 @@ export class AgentInbox {
   }
 
   /**
-   * Cheap existence check the API layer uses to return 404 instead of
-   * an empty array when a caller passes a bogus entryId. Distinct
-   * from `getEntry` (private) so we don't leak the row shape outside.
+   * Existence check the API layer uses to return 404 for bogus IDs.
+   *
+   * When `projectDir` is supplied we additionally verify the entry's
+   * staging branch still exists in the project repo. If the row is
+   * still `pending` but the branch is gone (manual cleanup, prior
+   * reject, history rewrite), we demote the row to `'stale'` and
+   * return false — so the API surfaces a 404 instead of letting the
+   * approve/reject handler fail with a raw git error like
+   * `branch '...' not found`. Without `projectDir` (e.g. the file
+   * decision endpoint that doesn't need branch state), we do the
+   * row-only check the audit's Bug D fix introduced.
    */
-  entryExists(id: string): boolean {
-    const row = this.db.prepare("SELECT 1 FROM inbox_entries WHERE id = ?").get(id);
-    return row !== undefined;
+  entryExists(id: string, projectDir?: string): boolean {
+    const row = this.db
+      .prepare("SELECT branch, status FROM inbox_entries WHERE id = ?")
+      .get(id) as { branch: string; status: InboxEntry["status"] } | undefined;
+    if (!row) return false;
+    if (!projectDir) return true;
+    if (row.status !== "pending") return true; // already resolved — branch may legitimately be gone
+    if (this.branchExists(projectDir, row.branch)) return true;
+    // Pending row + missing branch → demote to stale so the next
+    // listing skips it and approve/reject return 404.
+    this.setStatus(id, "stale");
+    return false;
+  }
+
+  /**
+   * Sweep all `pending` entries and demote any whose staging branch
+   * has been deleted to `'stale'`. Run on startup (and optionally on
+   * a tick) so listings stay clean without waiting for a request to
+   * trip the per-entry check.
+   *
+   * Returns the count of entries promoted to stale.
+   */
+  pruneStaleEntries(projectId: string, projectDir: string): number {
+    const rows = this.db
+      .prepare(
+        "SELECT id, branch FROM inbox_entries WHERE project_id = ? AND status = 'pending'",
+      )
+      .all(projectId) as Array<{ id: string; branch: string }>;
+    let demoted = 0;
+    for (const row of rows) {
+      if (!this.branchExists(projectDir, row.branch)) {
+        this.setStatus(row.id, "stale");
+        demoted++;
+      }
+    }
+    return demoted;
+  }
+
+  private branchExists(projectDir: string, branch: string): boolean {
+    const gitDir = join(projectDir, ".git");
+    try {
+      // `--verify` exits non-zero when the ref doesn't exist; we
+      // discard stderr so a missing branch is silent (it's the
+      // expected path here).
+      execSync(
+        `git --git-dir="${gitDir}" --work-tree="${projectDir}" rev-parse --verify --quiet refs/heads/${branch}`,
+        { encoding: "utf-8", stdio: "pipe" },
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private getEntry(id: string): InboxEntry | null {
