@@ -37,24 +37,38 @@ export function revertAgentRun(job: JobRow, projectDir: string): RevertResult {
     };
   }
 
-  // CRITICAL guard: a job with start === end produced zero commits.
-  // The git log query below uses `${start}^..${end}` which when
-  // start === end resolves to the *single commit at that SHA* —
-  // i.e. the project's prior HEAD that the run started from. Without
-  // this guard, reverting a chat-only / 0-file run silently rolls
-  // back an unrelated commit (the one HEAD was at when the run
-  // started), which is exactly what the audit caught: a wiki-gardener
-  // analysis run with `filesChanged: []` reverted commit 668da795,
-  // which was the project's *initial state* commit, not anything
-  // the run touched.
-  if (job.commit_sha_start === job.commit_sha_end) {
-    return {
-      success: false,
-      revertedCommits: [],
-      conflicts: [],
-      error:
-        "Nothing to revert: this run produced no commits (commitShaStart === commitShaEnd).",
-    };
+  // CRITICAL guard: refuse jobs that wrote nothing.
+  //
+  // The executor records `commit_sha_start = HEAD before run` and
+  // `commit_sha_end = HEAD after run`. When the run made 0 commits
+  // both SHAs are the project's prior HEAD — and the git log query
+  // below (`${start}^..${end}`) happily returns that prior commit,
+  // so without this guard we'd revert an unrelated commit the run
+  // never touched. The audit caught exactly this: a chat-only
+  // wiki-gardener analysis run with `filesChanged: []` reported
+  // `success: true` and "reverted" commit 668da795 — which was
+  // the project's *initial state* commit.
+  //
+  // SHA equality alone isn't a reliable no-op signal (a 1-commit
+  // run could in principle have start === end too in some test
+  // shapes), so we trust the executor's authoritative
+  // `filesChanged` array stamped in the job result blob. Empty
+  // array → nothing to revert.
+  if (job.result) {
+    try {
+      const parsed = JSON.parse(job.result) as { filesChanged?: unknown };
+      if (Array.isArray(parsed.filesChanged) && parsed.filesChanged.length === 0) {
+        return {
+          success: false,
+          revertedCommits: [],
+          conflicts: [],
+          error: "Nothing to revert: this run produced no file changes.",
+        };
+      }
+    } catch {
+      // Result blob isn't valid JSON — fall through to the git
+      // path (existing semantics for legacy / unstructured rows).
+    }
   }
 
   const gitDir = join(projectDir, ".git");

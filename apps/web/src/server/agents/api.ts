@@ -438,16 +438,26 @@ export function createJobApi(
     if (!job.commit_sha_start || !job.commit_sha_end) {
       return c.json({ error: "Job has no commit range to revert" }, 400);
     }
-    // 0-commit jobs (chat-only runs / runs that produced no writes)
-    // have start === end and would otherwise revert the project's
-    // prior HEAD by accident. Refuse with HTTP 400 so the SPA
-    // surfaces a clear error instead of "successfully reverting"
-    // something the run didn't touch.
-    if (job.commit_sha_start === job.commit_sha_end) {
-      return c.json(
-        { error: "Nothing to revert: this run produced no commits." },
-        400,
-      );
+    // 0-file jobs (chat-only runs / runs that produced no writes)
+    // would otherwise have their prior HEAD reverted by accident.
+    // Refuse with HTTP 400 so the SPA surfaces a clear error
+    // instead of "successfully reverting" something the run didn't
+    // touch. The executor stamps `filesChanged` in the job result
+    // blob and the function-level guard reads the same field —
+    // double-checking here means the API caller gets the right
+    // status code (the function path returns success:false with 200).
+    if (job.result) {
+      try {
+        const parsed = JSON.parse(job.result) as { filesChanged?: unknown };
+        if (Array.isArray(parsed.filesChanged) && parsed.filesChanged.length === 0) {
+          return c.json(
+            { error: "Nothing to revert: this run produced no file changes." },
+            400,
+          );
+        }
+      } catch {
+        /* unstructured result — fall through to revertAgentRun */
+      }
     }
 
     const result = revertAgentRun(job, projectDir);
