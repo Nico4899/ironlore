@@ -133,7 +133,19 @@ export function useBlockPreview(
       void ensurePageLoaded(pagePath).then(() => {
         if (cancelled) return;
         const hit = BLOCK_CACHE.get(key);
-        if (hit) setText(hit);
+        if (hit) {
+          setText(hit);
+          return;
+        }
+        // The block ID couldn't be resolved on the page — usually
+        //  because the page was edited and the agent's cited ID is
+        //  stale, OR because the page predates the seeder's
+        //  block-ID retrofit and has no `<!-- #blk_… -->` markers.
+        //  Either way, the page-head text is the best we can show
+        //  and is strictly better than leaving the preview stuck on
+        //  "Loading…" forever.
+        const headFallback = PAGE_HEAD_CACHE.get(pagePath);
+        if (headFallback) setText(headFallback);
       });
       return () => {
         cancelled = true;
