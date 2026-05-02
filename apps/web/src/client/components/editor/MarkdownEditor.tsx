@@ -16,6 +16,12 @@ import { columnResizing, goToNextCell, tableEditing } from "prosemirror-tables";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { submitDryRunVerdict } from "../../lib/api.js";
+import {
+  ensurePageLoadedExternal,
+  lookupBlockPreview,
+  PREVIEW_HOVER_DELAY_MS,
+  PREVIEW_MAX_CHARS,
+} from "../../hooks/useBlockPreview.js";
 import { useAIPanelStore } from "../../stores/ai-panel.js";
 import { useAppStore } from "../../stores/app.js";
 import { type PendingEdit, useEditorStore } from "../../stores/editor.js";
@@ -542,6 +548,7 @@ export function MarkdownEditor({
           const pagePart = hashIdx === -1 ? target : target.slice(0, hashIdx);
           const blockRaw = hashIdx === -1 ? null : target.slice(hashIdx + 1);
           const shortBlock = blockRaw == null ? null : blockRaw.replace(/^blk_/, "").slice(-4);
+          const withExt = pagePart && !pagePart.endsWith(".md") ? `${pagePart}.md` : pagePart;
 
           // Match the Blockref primitive's visual contract. The legacy
           //  `ir-wikilink` class is retained as a data hook for tests.
@@ -561,14 +568,132 @@ export function MarkdownEditor({
             e.preventDefault();
             e.stopPropagation();
             if (!pagePart) return;
-            const withExt = pagePart.endsWith(".md") ? pagePart : `${pagePart}.md`;
             useAppStore.getState().setActivePath(withExt);
             // Cmd/Ctrl-click opens the provenance pane instead of navigating.
             if ((e.metaKey || e.ctrlKey) && blockRaw) {
               useAppStore.getState().openProvenance(withExt, blockRaw);
             }
           });
-          return { dom };
+
+          // ─── Hover preview ───────────────────────────────────────
+          //  Mirror the AI-panel `Blockref` chip's behaviour: a
+          //  200 ms hover delay, then render a tooltip showing the
+          //  cited block's text (or the page head when no block ID).
+          //  Cache + fetch is shared with the React `Blockref` via
+          //  `useBlockPreview`'s exported helpers, so a page hovered
+          //  in one surface is instant on the next surface.
+          //
+          //  Built as plain DOM rather than a React mount because
+          //  the editor's nodeView surface is a single span with a
+          //  short lifecycle — adding `createRoot` per chip would
+          //  be a memory + lifecycle complexity that's hard to
+          //  justify when ~40 lines of vanilla DOM mirror the
+          //  primitive's visuals exactly.
+          let hoverTimer: number | null = null;
+          let tooltipEl: HTMLDivElement | null = null;
+
+          const buildTooltip = (text: string | null): HTMLDivElement => {
+            const tip = document.createElement("div");
+            tip.setAttribute("role", "tooltip");
+            tip.className = "il-blockref-preview";
+            tip.setAttribute("aria-label", `Preview of ${pagePart}`);
+
+            const head = document.createElement("div");
+            head.className = "il-blockref-preview__head";
+            const fileName = pagePart.split("/").pop() || pagePart;
+            const dot = document.createElement("span");
+            dot.setAttribute("aria-hidden", "true");
+            dot.style.color = "var(--il-text4)";
+            dot.textContent = "·";
+            head.appendChild(dot);
+            const fileSpan = document.createElement("span");
+            fileSpan.className = "truncate";
+            fileSpan.title = pagePart;
+            fileSpan.textContent = fileName;
+            head.appendChild(fileSpan);
+            if (blockRaw) {
+              const sep = document.createElement("span");
+              sep.style.color = "var(--il-text4)";
+              sep.textContent = "/";
+              head.appendChild(sep);
+              const blockSpan = document.createElement("span");
+              blockSpan.style.color = "var(--il-text3)";
+              blockSpan.textContent = blockRaw;
+              head.appendChild(blockSpan);
+            }
+            const spacer = document.createElement("span");
+            spacer.className = "flex-1";
+            head.appendChild(spacer);
+            const hint = document.createElement("span");
+            hint.style.color = "var(--il-text3)";
+            hint.textContent = "click to open";
+            head.appendChild(hint);
+
+            const body = document.createElement("div");
+            body.className = "il-blockref-preview__body";
+            if (text === null) {
+              const loading = document.createElement("span");
+              loading.style.color = "var(--il-text4)";
+              loading.textContent = "Loading…";
+              body.appendChild(loading);
+            } else {
+              const truncated =
+                text.length > PREVIEW_MAX_CHARS ? `${text.slice(0, PREVIEW_MAX_CHARS)}…` : text;
+              body.textContent = truncated;
+            }
+
+            tip.appendChild(head);
+            tip.appendChild(body);
+            return tip;
+          };
+
+          const renderTooltip = (): void => {
+            // The chip already uses `position: relative` from
+            //  `.il-blockref`; appending the tooltip as a child lets
+            //  CSS `.il-blockref-preview` (absolute, top: 100%)
+            //  position it below the chip without bbox math.
+            tooltipEl?.remove();
+            const cached = lookupBlockPreview(withExt, blockRaw ?? undefined);
+            tooltipEl = buildTooltip(cached);
+            dom.appendChild(tooltipEl);
+            if (cached === null) {
+              // Cache miss → fetch + repaint when the page lands.
+              void ensurePageLoadedExternal(withExt).then(() => {
+                if (!tooltipEl) return; // hover ended
+                const refreshed = lookupBlockPreview(withExt, blockRaw ?? undefined);
+                if (refreshed !== null) {
+                  tooltipEl.remove();
+                  tooltipEl = buildTooltip(refreshed);
+                  dom.appendChild(tooltipEl);
+                }
+              });
+            }
+          };
+
+          dom.addEventListener("mouseenter", () => {
+            if (hoverTimer !== null) return;
+            hoverTimer = window.setTimeout(() => {
+              hoverTimer = null;
+              renderTooltip();
+            }, PREVIEW_HOVER_DELAY_MS);
+          });
+          dom.addEventListener("mouseleave", () => {
+            if (hoverTimer !== null) {
+              window.clearTimeout(hoverTimer);
+              hoverTimer = null;
+            }
+            tooltipEl?.remove();
+            tooltipEl = null;
+          });
+
+          return {
+            dom,
+            destroy() {
+              if (hoverTimer !== null) window.clearTimeout(hoverTimer);
+              tooltipEl?.remove();
+              tooltipEl = null;
+            },
+          };
         },
         code_block: (node, nvView, getPos) => new CodeBlockView(node, nvView, getPos),
       },
