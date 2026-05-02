@@ -1237,7 +1237,16 @@ export class SearchIndex {
 
   /**
    * Full reindex from filesystem. Nukes all existing data and rebuilds.
-   * Called by `ironlore reindex`.
+   *
+   * Called from two places:
+   *   - `ironlore reindex` CLI — explicit user-driven rebuild.
+   *   - `ProjectServices.start()` on boot, but **only when the index
+   *     is empty (`countPagesTotal === 0`) or WAL recovery wrote
+   *     content back to disk**. A clean restart with a populated
+   *     index skips the rebuild — the file watcher kept the index
+   *     in sync during every prior run, so wiping + rebuilding
+   *     produces no new state and only opens a write-lock contention
+   *     window against any leftover process holding the DB.
    *
    * Markdown files are indexed inline. Extractable binaries (.docx /
    * .xlsx / .eml) are queued and processed asynchronously after the walk
