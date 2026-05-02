@@ -1506,6 +1506,41 @@ function truncate(s: string, max: number): string {
 }
 
 /**
+ * Compact suffix for tool-call rows. Today only the search family
+ * surfaces a useful summary (`N results` / `no results`); everything
+ * else returns null so the row stays uncluttered. Defensive against
+ * the wire shape changing — bad parses fall through to null and the
+ * header just omits the suffix.
+ */
+function deriveResultSummary(tool: string, result: unknown): string | null {
+  if (
+    tool !== "kb.search" &&
+    tool !== "kb.semantic_search" &&
+    tool !== "kb.global_search"
+  ) {
+    return null;
+  }
+  // Tool results are JSON strings (per dispatcher contract) or
+  // already-parsed objects. Try both.
+  let parsed: unknown = result;
+  if (typeof result === "string") {
+    try {
+      parsed = JSON.parse(result);
+    } catch {
+      return null;
+    }
+  }
+  if (parsed && typeof parsed === "object") {
+    const bag = parsed as { results?: unknown };
+    if (Array.isArray(bag.results)) {
+      const n = bag.results.length;
+      return n === 0 ? "no results" : `${n} result${n === 1 ? "" : "s"}`;
+    }
+  }
+  return null;
+}
+
+/**
  * Heuristic for the error state of a tool-call result. Executor
  * payloads aren't a typed union, so we check a few conventional
  * shapes: `{ error: … }`, `{ ok: false }`, or the string prefix
@@ -1551,6 +1586,12 @@ function ToolCallCard({
   // Duration — rendered alongside the right-edge pip per
   //  screen-editor.jsx. Omitted while in-flight (no finishedAt yet).
   const durationLabel = msg.durationMs != null ? formatDuration(msg.durationMs) : undefined;
+  // Suffix the row header with `→ N results` for tools that return a
+  // result-count-shaped payload (kb.search, kb.semantic_search,
+  // kb.global_search). Without this every kb.search row reads
+  // identically — the user couldn't tell whether a search produced
+  // hits or came back empty without expanding the drawer.
+  const resultSummary = hasResult ? deriveResultSummary(msg.tool, msg.result) : null;
 
   return (
     <div
@@ -1587,6 +1628,14 @@ function ToolCallCard({
         {target && (
           <span className="font-mono truncate" style={{ fontSize: 10.5, color: "var(--il-text3)" }}>
             ({target})
+          </span>
+        )}
+        {resultSummary && (
+          <span
+            className="font-mono truncate"
+            style={{ fontSize: 10.5, color: "var(--il-text4)" }}
+          >
+            → {resultSummary}
           </span>
         )}
         <span className="ml-auto">
