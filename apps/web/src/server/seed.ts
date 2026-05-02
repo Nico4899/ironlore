@@ -469,6 +469,52 @@ to scope each run to recent changes.
 `,
   );
 
+  // _maintenance/ — convention folder where the Wiki Gardener writes
+  //  its weekly lint reports. The folder doesn't exist on a fresh
+  //  install (no run has happened yet), so a seeded README documents
+  //  the convention up-front instead of leaving the user to discover
+  //  it after the first `lint-<YYYY-MM-DD>.md` lands.
+  seedFile(
+    join(dataDir, "_maintenance", "index.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Maintenance
+kind: wiki
+created: ${now}
+modified: ${now}
+tags: [meta]
+icon: lucide:wrench
+---
+
+# Maintenance
+
+This folder is where Ironlore's maintenance agents leave their reports.
+Each entry is a normal markdown page (\`kind: wiki\`) you can read,
+diff, revert, or hand back to an agent.
+
+## What lives here
+
+- **Lint reports** — \`lint-<YYYY-MM-DD>.md\`, written weekly by the
+  Wiki Gardener when activated. Each report covers the five lint
+  checks (orphans, stale sources, contradiction flags, coverage gaps,
+  provenance gaps) and links to the affected pages.
+- **Future maintenance reports** — any other vault-wide audit a
+  custom agent files. The convention is one report per run, stable
+  date-named filename, \`kind: wiki\` so search + backlinks pick it
+  up.
+
+## Why a real folder
+
+Lint reports are markdown like everything else. They're not buried
+in a database — you can grep them, revert a bad sweep with
+\`git revert\`, or pin a particularly sharp finding into a wiki page
+via \`kb.replace_block\`. A new install seeds this README so the
+folder is discoverable before the first run; subsequent reports land
+alongside it without ceremony.
+`,
+  );
+
   // -------------------------------------------------------------------------
   // Carousel — showcase of supported file types
   // -------------------------------------------------------------------------
