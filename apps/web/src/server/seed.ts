@@ -55,7 +55,10 @@ trail you can diff, revert, or hand to another agent.
 
 - [Pages and markdown](pages-and-markdown) — how pages, frontmatter, and block IDs work
 - [AI agents](agents) — the AI panel, default agents, and activating specialists
+- [The Inbox](inbox) — staging-branch review for autonomous agent runs
 - [Search and navigation](search-and-navigation) — \`Cmd+K\`, wiki-links, backlinks
+- [Connectors](connectors) — wiring agents up to external HTTP APIs
+- [Multi-user mode](multi-user) — opt-in per-page ACLs + per-user sessions
 - [Keyboard shortcuts](keyboard-shortcuts) — the full reference
 
 Then open the [Carousel](/carousel) folder to see every supported file type
