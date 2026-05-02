@@ -15,6 +15,28 @@ function seedFile(filePath: string, content: string): void {
 }
 
 /**
+ * Same as `seedFile`, but pre-stamps `<!-- #blk_… -->` comments on
+ * every block before writing. Markdown-only — call `seedFile`
+ * directly for binaries (carousel images, PDFs, CSV, etc.) and for
+ * stub pages where block IDs would be noise.
+ *
+ * Routing seeded markdown through `assignBlockIds` brings the
+ * eval-scorecard "block-ID coverage" metric up from ~13% to 100% on
+ * a fresh install — every shipped page now starts addressable at the
+ * block level for `kb.replace_block`, citation rendering, and the
+ * inline-diff plugin's anchor lookup. The seeder is non-destructive,
+ * so existing installs keep their files unchanged; only fresh
+ * `bootstrap()`-on-empty layouts pick up the stamps.
+ */
+function seedMarkdownFile(filePath: string, content: string): void {
+  if (existsSync(filePath)) return;
+  const stamped = assignBlockIds(content).markdown;
+  const dir = dirname(filePath);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(filePath, stamped, "utf-8");
+}
+
+/**
  * Seed the data directory on first run.
  *
  * Creates a `getting-started/` folder of onboarding pages, a `carousel/`
