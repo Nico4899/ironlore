@@ -146,6 +146,15 @@ export class SearchIndex {
 
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
+    // Defensive: better-sqlite3 sets `busy_timeout = 5000` by default,
+    //  but the value is only meaningful at run time when SQLite
+    //  encounters a busy lock — being explicit means a future opener
+    //  that overrides the default doesn't accidentally turn this DB
+    //  into a fail-fast surface for SQLITE_BUSY_SNAPSHOT during the
+    //  startup reindex, embedding-worker tick, or contextualization
+    //  tick races. 5 s is the longest the user is willing to wait
+    //  for a write lock; longer than that surfaces as a real error.
+    this.db.pragma("busy_timeout = 5000");
     this.init();
   }
 

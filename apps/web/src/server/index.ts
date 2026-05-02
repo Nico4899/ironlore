@@ -644,12 +644,15 @@ async function start() {
   }
   console.log(`Heartbeat scheduler started for ${schedulers.length} project(s)`);
 
-  // Start one embedding worker per project when a provider is
-  //  registered. Each tick (default 30 s) drains up to 50 chunks from
-  //  `pages_chunks_fts` that lack entries in `chunk_vectors` — covers
-  //  both bulk backfill after first activation and auto-embed on new
-  //  writes from indexPage. Absent an embedding provider this block
-  //  is a no-op; hybrid retrieval stays off (see docs/04 §Graceful
+  // Construct one embedding worker per project when a provider is
+  //  registered. Workers are *built* here (so the per-project route
+  //  mount further down can reference them via the maps) but their
+  //  ticks don't *start* until after every `services.start()` has
+  //  finished its `reindexAll` — see the `worker.start()` block
+  //  below the per-project loop. Each tick (default 30 s) drains up
+  //  to 50 chunks from `pages_chunks_fts` that lack entries in
+  //  `chunk_vectors`; absent an embedding provider the block is a
+  //  no-op and hybrid retrieval stays off (docs/04 §Graceful
   //  degradation).
   const embeddingWorkers = new Map<string, EmbeddingWorker>();
   const startupEmbeddingProvider = embeddingRegistry.resolve();
@@ -662,18 +665,18 @@ async function start() {
         services.projectDir,
       );
       worker.onError = (err) => console.warn(`[embed-worker] ${projectId}: ${err.message}`);
-      worker.start();
       embeddingWorkers.set(projectId, worker);
     }
-    console.log(`Embedding worker started for ${embeddingWorkers.size} project(s)`);
   }
 
   // Phase-11 Contextual Retrieval — drains chunks missing a CR summary
   //  on a 30 s tick. Runs only when a chat provider is registered;
-  //  absent that, BM25 keeps working unaugmented (NULL-fallback contract
-  //  in `bm25PrefilterPaths`). Per-project worker so each project's
-  //  backlog drains independently and a slow Anthropic round-trip on
-  //  one project doesn't stall another.
+  //  absent that, BM25 keeps working unaugmented (NULL-fallback
+  //  contract in `bm25PrefilterPaths`). Per-project worker so each
+  //  project's backlog drains independently and a slow Anthropic
+  //  round-trip on one project doesn't stall another. Same
+  //  construct-now / start-later pattern as `embeddingWorkers` above
+  //  — see the `worker.start()` block after the per-project loop.
   const contextualizationWorkers = new Map<string, ContextualizationWorker>();
   const startupChatProvider = providerRegistry.resolve();
   if (startupChatProvider) {
@@ -685,10 +688,8 @@ async function start() {
         services.projectDir,
       );
       worker.onError = (err) => console.warn(`[ctx-worker] ${projectId}: ${err.message}`);
-      worker.start();
       contextualizationWorkers.set(projectId, worker);
     }
-    console.log(`Contextualization worker started for ${contextualizationWorkers.size} project(s)`);
   }
 
   // Create broadcast callback that forwards to the WebSocket manager
@@ -804,6 +805,31 @@ async function start() {
     );
   }
   console.log(`Search index: ${totalIndexed} pages indexed across ${servicesById.size} projects`);
+
+  // Now that every project's `reindexAll` has finished its bulk
+  //  DELETE+INSERT transaction, it's safe to schedule the background
+  //  workers' tick timers. Starting them earlier raced the rebuild:
+  //  even though the first tick is 30 s away, the open SearchIndex
+  //  references can sit on a snapshot that blocks the reindex's
+  //  write transaction with `SQLITE_BUSY_SNAPSHOT`. Order matters —
+  //  workers always run AGAINST a built index, never alongside one
+  //  that's being torn down.
+  for (const [projectId, worker] of embeddingWorkers) {
+    worker.start();
+    void projectId;
+  }
+  if (embeddingWorkers.size > 0) {
+    console.log(`Embedding worker started for ${embeddingWorkers.size} project(s)`);
+  }
+  for (const [projectId, worker] of contextualizationWorkers) {
+    worker.start();
+    void projectId;
+  }
+  if (contextualizationWorkers.size > 0) {
+    console.log(
+      `Contextualization worker started for ${contextualizationWorkers.size} project(s)`,
+    );
+  }
 
   // Middleware for per-project routes (same authMiddleware covers
   //  every per-project sub-router — mounted before the sub-routers
