@@ -1667,24 +1667,42 @@ function RunFinalizedCard({
       <div className="px-3 py-2">
         <div className="flex items-center justify-between">
           <div className="font-semibold text-primary">Run finalized</div>
-          {!reverted && msg.commitShaStart && msg.commitShaEnd && (
-            <button
-              type="button"
-              disabled={reverting}
-              onClick={handleRevert}
-              className="rounded border border-border px-2 py-0.5 text-[10px] text-secondary hover:bg-ironlore-slate hover:text-primary disabled:opacity-50"
-            >
-              {reverting ? "Reverting\u2026" : "Revert this run"}
-            </button>
-          )}
+          {/* Only show the revert button when there's actually
+            * something to revert: a real commit range (start \u2260 end)
+            * AND at least one changed file. A chat-only turn that
+            * produced zero commits used to render "Revert this run"
+            * even though clicking it would have nothing to undo. */}
+          {!reverted &&
+            msg.commitShaStart &&
+            msg.commitShaEnd &&
+            msg.commitShaStart !== msg.commitShaEnd &&
+            msg.filesChanged.length > 0 && (
+              <button
+                type="button"
+                disabled={reverting}
+                onClick={handleRevert}
+                className="rounded border border-border px-2 py-0.5 text-[10px] text-secondary hover:bg-ironlore-slate hover:text-primary disabled:opacity-50"
+              >
+                {reverting ? "Reverting\u2026" : "Revert this run"}
+              </button>
+            )}
         </div>
         <div className="mt-0.5 text-secondary">
-          {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
-          {" \u00B7 version "}
-          <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
-          {"\u2026"}
-          <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
-          {reverted && " \u00B7 reverted"}
+          {msg.commitShaStart === msg.commitShaEnd || msg.filesChanged.length === 0 ? (
+            // No commits produced \u2014 saying "0 files \u00B7 version abc\u2026abc"
+            // was misleading (suggested a frozen empty version). Just
+            // say what actually happened.
+            "no files changed"
+          ) : (
+            <>
+              {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
+              {" \u00B7 version "}
+              <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
+              {"\u2026"}
+              <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
+              {reverted && " \u00B7 reverted"}
+            </>
+          )}
         </div>
         {revertError && <div className="mt-1 text-signal-red">{revertError}</div>}
       </div>
