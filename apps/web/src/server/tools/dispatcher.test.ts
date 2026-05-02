@@ -283,6 +283,102 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     expect(content).not.toContain("schema:");
   });
 
+  // Bug regression — kb.create_page used to unconditionally prepend
+  // `# {title}` to the body, producing two stacked H1s when the model
+  // already included its own (the audit caught `cats.md` and
+  // `notes/test-cleanup.md` with duplicate `# Cats` / `# test-cleanup`
+  // headings). Detect a leading ATX heading and skip the prepend.
+
+  it("kb.create_page does not duplicate the H1 when the body already opens with one", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Cats",
+        markdown: "# Cats\n\nCats are fascinating animals.",
+        kind: "wiki",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+
+    // Exactly one `# Cats` heading — not two stacked.
+    const h1Matches = content.match(/^#\s+Cats\b/gm) ?? [];
+    expect(h1Matches).toHaveLength(1);
+  });
+
+  it("kb.create_page detects leading whitespace before the H1", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Spaced",
+        markdown: "\n\n  \n# Spaced\n\nBody.",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    const h1Matches = content.match(/^#\s+Spaced\b/gm) ?? [];
+    expect(h1Matches).toHaveLength(1);
+  });
+
+  it("kb.create_page still prepends the H1 when the body has no heading", async () => {
+    // Original behaviour preserved for the common case where the
+    // model passes raw prose. The page must always end up with a
+    // top-level heading so the file isn't headless.
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Bare",
+        markdown: "Just a paragraph, no heading.",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    expect(content).toMatch(/^# Bare$/m);
+  });
+
+  it("kb.create_page treats sub-headings (## / ###) the same — skip the prepend", async () => {
+    // A model that opens with `## Cats` clearly thinks they're
+    // writing a section, not a page top-level. Don't second-guess
+    // by stacking a `# Cats` above it — that looked weird in the
+    // audit too. The page-creator's job is to wrap, not to
+    // override the model's heading hierarchy.
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Cats",
+        markdown: "## Cats overview\n\nBody.",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    expect(content).not.toMatch(/^# Cats$/m);
+    expect(content).toMatch(/^## Cats overview$/m);
+  });
+
   it("kb.create_page leaves non-skill paths on the page convention", async () => {
     const { writer, dispatcher, ctx, budget } = setup();
 

@@ -56,6 +56,22 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
   const ftsCount = (db.prepare("SELECT COUNT(*) AS cnt FROM pages_fts").get() as { cnt: number })
     .cnt;
   const pagesCount = (db.prepare("SELECT COUNT(*) AS cnt FROM pages").get() as { cnt: number }).cnt;
+  // FTS5 only indexes markdown — binary file types (pdf, png, csv,
+  //  notebook, eml, etc.) are tracked in `pages` but skipped from
+  //  `pages_fts`. Surface the breakdown so a Pages/FTS gap reads as
+  //  "27 binaries" rather than as a bug. Directories are also `pages`
+  //  rows (file_type='directory') but excluded from FTS.
+  const markdownCount = (
+    db
+      .prepare("SELECT COUNT(*) AS cnt FROM pages WHERE file_type = 'markdown'")
+      .get() as { cnt: number }
+  ).cnt;
+  const directoriesCount = (
+    db
+      .prepare("SELECT COUNT(*) AS cnt FROM pages WHERE file_type = 'directory'")
+      .get() as { cnt: number }
+  ).cnt;
+  const binariesCount = pagesCount - markdownCount - directoriesCount;
   const backlinksCount = (
     db.prepare("SELECT COUNT(*) AS cnt FROM backlinks").get() as { cnt: number }
   ).cnt;
@@ -73,6 +89,9 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
   report.dataset = {
     ftsEntries: ftsCount,
     pages: pagesCount,
+    markdownPages: markdownCount,
+    directories: directoriesCount,
+    binaryPages: binariesCount,
     backlinks: backlinksCount,
     tags: tagsCount,
     chunks: chunksCount,
@@ -178,8 +197,15 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
     console.log(`  Path:    ${projectDir}`);
 
     const ds = report.dataset as Record<string, number>;
+    // Annotate the FTS count so the markdown-vs-binary gap is
+    //  legible at a glance — e.g. "FTS entries: 20 (markdown · 27
+    //  binaries skipped)" instead of "20" and a mystery delta.
+    const skippedNote =
+      ds.binaryPages + ds.directories > 0
+        ? ` (markdown · ${ds.binaryPages} binar${ds.binaryPages === 1 ? "y" : "ies"} + ${ds.directories} dir${ds.directories === 1 ? "" : "s"} skipped)`
+        : "";
     console.log(
-      `  Pages:   ${ds.pages}  |  FTS entries: ${ds.ftsEntries}  |  Chunks: ${ds.chunks}  |  Backlinks: ${ds.backlinks}`,
+      `  Pages:   ${ds.pages}  |  FTS entries: ${ds.ftsEntries}${skippedNote}  |  Chunks: ${ds.chunks}  |  Backlinks: ${ds.backlinks}`,
     );
 
     if (report.performance) {

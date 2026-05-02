@@ -117,7 +117,19 @@ export function createKbCreatePage(
             .filter(Boolean)
             .join("\n");
 
-      let rawContent = `${frontmatter}\n\n# ${title}\n\n${markdown}\n`;
+      // Models commonly include `# Title` at the top of their
+      // `markdown` body. Prepending unconditionally produced
+      // duplicate H1s — the `cats.md` and `notes/test-cleanup.md`
+      // files surfaced in the audit had two `# Cats` / two
+      // `# test-cleanup` headings stacked on top of each other.
+      // Skip the prepend when the body already opens with any
+      // ATX heading (`#`, `##`, …) so the page has exactly one
+      // top-level heading either way.
+      const trimmedMarkdown = markdown.replace(/^\s+/, "");
+      const bodyOpensWithHeading = /^#{1,6}\s+\S/.test(trimmedMarkdown);
+      let rawContent = bodyOpensWithHeading
+        ? `${frontmatter}\n\n${markdown.replace(/^\s+/, "")}\n`
+        : `${frontmatter}\n\n# ${title}\n\n${markdown}\n`;
       // Phase-9 multi-user: stamp the originating user as the page's
       //  owner, mirroring `pages-api.ts`'s first-PUT behaviour.
       //  Single-user runs (no `ctx.acl`) skip the stamp — there's
