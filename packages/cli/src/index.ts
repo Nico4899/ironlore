@@ -28,7 +28,14 @@ program
     "--check <category>",
     "Run a single check category (index-consistency, schema-migration, data-integrity)",
   )
-  .option("--all", "Lint all projects (for index-consistency)")
+  .option(
+    "--all-projects",
+    "Run index-consistency across every installed project (overrides --project)",
+  )
+  // Deprecated alias retained so existing scripts + muscle memory
+  //  keep working. The lint action surfaces a one-line warning when
+  //  the legacy form is used so users migrate at their own pace.
+  .option("--all", "[deprecated] alias for --all-projects")
   .action(lint);
 
 program
