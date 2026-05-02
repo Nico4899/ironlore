@@ -1234,8 +1234,20 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
       return;
     }
     const path = `.agents/${clean}/persona.md`;
+    // Title-case the slug for the display `name:` — `web-scraper` →
+    //  `Web Scraper`. The persona parser falls back to slug when
+    //  `name` is missing, but every UI surface that lists agents
+    //  reads `name` first; without it, the new agent renders as its
+    //  raw slug everywhere (Settings → Agents, AI panel picker,
+    //  Inbox attribution column).
+    const displayName = clean
+      .split("-")
+      .filter(Boolean)
+      .map((part) => part[0]?.toUpperCase() + part.slice(1))
+      .join(" ");
     const template =
       "---\n" +
+      `name: ${displayName}\n` +
       `slug: ${clean}\n` +
       "description: \n" +
       "heartbeat: \n" +
@@ -1245,7 +1257,7 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
       "  pages: []\n" +
       "  writable_kinds: []\n" +
       "---\n\n" +
-      `# ${clean}\n\nDescribe what this agent does.\n`;
+      `# ${displayName}\n\nDescribe what this agent does.\n`;
     try {
       await createPage(path, template);
       useAppStore.getState().setActivePath(path);
