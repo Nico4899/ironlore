@@ -9,7 +9,7 @@ import { AGENTS_DIR, AGENTS_SHARED_DIR, SKILLS_SUBDIR } from "@ironlore/core";
  *
  * Resolution order (per docs/04-ai-and-agents.md §Agent filesystem
  * layout): **agent-local first, then `.shared/`**. A skill named
- * `brand-voice.md` in an agent's own `skills/` shadows the project-wide
+ * `ingest.md` in an agent's own `skills/` shadows the project-wide
  * one.
  *
  * Declaration is **opt-in**: a persona must explicitly list skill

@@ -1307,25 +1307,13 @@ Score → confidence: high (3-5), medium (1-2), low (0), reject (<0).
   );
 
   // Shared skill: brand voice
-  seedFile(
-    join(sharedSkillsDir, "brand-voice.md"),
-    `---
-name: Brand Voice
-description: Project-wide tone and style guidelines
----
-
-# Brand Voice Skill
-
-When writing or editing content, follow the brand voice guidelines defined
-in the knowledge base. Look for a brand-voice or style-guide page in the
-project and adopt its tone, vocabulary, and formatting rules.
-
-If no brand voice page exists, use a professional, concise tone:
-- Active voice over passive
-- Short paragraphs (2-3 sentences)
-- Technical accuracy without jargon overload
-`,
-  );
+  // brand-voice skill removed — it was a relic of the retired
+  //  "marketing personas" library (Technical Writer, Content
+  //  Marketer, etc.). No shipped agent loaded it, and the
+  //  description fit exactly the persona-theatre pattern that was
+  //  pruned. Custom personas that need a tone-of-voice helper can
+  //  build one through the Visual Agent Builder + a project-local
+  //  skill at `.agents/<slug>/skills/brand-voice.md`.
 
   // Shared skill: lint — wiki health check loaded by the Wiki Gardener.
   // Implements the four-class lint contract from docs/04-ai-and-agents.md
@@ -1714,10 +1702,10 @@ loud-and-clear in the agent's loaded prompt.
 ### 2. \`optimize_description\` — the description misframes the skill
 
 Use when: agents are loading a skill in the wrong context (or
-failing to load it when they should). E.g. "the
-\`brand-voice\` skill says 'for marketing copy' but it's getting
-loaded by the researcher because the agent reads 'voice' as
-'tone'."
+failing to load it when they should). E.g. "the \`ingest\` skill
+says 'for raw kind: source material' but it's getting loaded by an
+editor agent on a wiki page because the description doesn't make
+the source-only constraint loud enough."
 
 Action: \`kb.replace_block\` against the skill's frontmatter
 description block, tightening or rewriting the trigger phrasing.
