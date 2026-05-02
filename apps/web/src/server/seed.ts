@@ -846,6 +846,70 @@ FTS5 search index.
   mkdirSync(agentLibDir, { recursive: true });
   mkdirSync(sharedSkillsDir, { recursive: true });
 
+  // Library README — orients a user who drills into `.agents/.library/`
+  //  via the file tree. Without it, the directory is three .md files
+  //  with no signal that they're inactive templates rather than active
+  //  personas. The `kind: page` keeps it out of FTS5 wiki scope.
+  seedFile(
+    join(agentLibDir, "index.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Agent Library
+kind: page
+created: ${now}
+modified: ${now}
+tags: [meta, agents]
+icon: lucide:library
+---
+
+# Agent Library
+
+These are **inactive persona templates** — agent definitions that
+ship with Ironlore but don't run until you activate them. The
+defaults (Librarian, Editor) live one level up at
+\`.agents/<slug>/persona.md\`; everything in this folder is
+opt-in.
+
+## Activating a template
+
+The fastest path is **Settings → Agents → Library**. Click
+*Activate* on a row and Ironlore copies the template to
+\`.agents/<slug>/persona.md\`, registers an \`agent_state\` row, and
+the heartbeat scheduler picks it up on the next tick — no restart.
+You can also copy the file by hand if you prefer; the activation
+flow just spares you the file-juggling.
+
+## What ships here
+
+- **\`wiki-gardener.md\`** — vault maintenance. Runs five lint
+  checks (orphans, stale sources, contradictions, coverage gaps,
+  provenance gaps) on a weekly heartbeat and writes a single report
+  page under \`_maintenance/\`. Loads the \`lint\` and \`ingest\`
+  shared skills.
+- **\`evolver.md\`** — Phase-11 self-improvement loop. Reads
+  aggregated failed-run patterns via \`kb.query_failed_runs\` and
+  proposes targeted edits to shared skill files; every edit lands on
+  a staging branch the user reviews via the **Inbox** before merge.
+  Always runs \`review_mode: inbox\`.
+- **\`researcher/persona.md\`** — thesis-driven investigation.
+  Decomposes a claim into key variables, searches for evidence on
+  both sides, and produces a verdict (\`supported\` /
+  \`contradicted\` / \`mixed\` / \`insufficient\`). Loads the
+  \`thesis\` skill (agent-local under \`researcher/skills/\`).
+
+## Why three and not thirty
+
+Each template earns its place by carrying *dedicated tooling* the
+defaults can't replicate. Personas that are just "tone of voice
+for role X" go through the **Visual Agent Builder** (Settings →
+Agents → Custom) — the form compiles your inputs into the same
+persona-yaml shape these templates use. No reason to ship a closet
+full of pre-built specialists when the builder produces one in 30
+seconds.
+`,
+  );
+
   // Librarian agent (seeded, not deletable). Slug stays "general"
   //  for routing/back-compat; display name is "Librarian" — fits the
   //  KB metaphor and reads as a concrete role rather than the
