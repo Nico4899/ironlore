@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { AGENTS_DIR, AGENTS_LIBRARY_DIR, AGENTS_SHARED_DIR, ulid } from "@ironlore/core";
+import { assignBlockIds } from "./block-ids.js";
 
 /**
  * Write a file only if it doesn't already exist. Non-destructive seeding.

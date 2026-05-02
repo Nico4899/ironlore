@@ -351,7 +351,9 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     expect(result.isError).toBe(false);
     const data = JSON.parse(result.result);
     const { content } = writer.read(data.path);
-    expect(content).toMatch(/^# Bare$/m);
+    // `assignBlockIds` may append ` <!-- #blk_... -->` to the
+    // heading line, so anchor on the prefix only.
+    expect(content).toMatch(/^# Bare\b/m);
   });
 
   it("kb.create_page treats sub-headings (## / ###) the same — skip the prepend", async () => {
@@ -375,8 +377,8 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     expect(result.isError).toBe(false);
     const data = JSON.parse(result.result);
     const { content } = writer.read(data.path);
-    expect(content).not.toMatch(/^# Cats$/m);
-    expect(content).toMatch(/^## Cats overview$/m);
+    expect(content).not.toMatch(/^# Cats\b/m);
+    expect(content).toMatch(/^## Cats overview\b/m);
   });
 
   it("kb.create_page leaves non-skill paths on the page convention", async () => {

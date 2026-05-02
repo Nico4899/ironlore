@@ -200,9 +200,14 @@ export async function evalCommand(opts: EvalOptions): Promise<void> {
     // Annotate the FTS count so the markdown-vs-binary gap is
     //  legible at a glance — e.g. "FTS entries: 20 (markdown · 27
     //  binaries skipped)" instead of "20" and a mystery delta.
+    // `noUncheckedIndexedAccess` types the lookups as `number |
+    // undefined`; coerce to 0 here since the report shape is built
+    // upstream by `buildEvalReport` and these fields are always set.
+    const binaryPages = ds.binaryPages ?? 0;
+    const directories = ds.directories ?? 0;
     const skippedNote =
-      ds.binaryPages + ds.directories > 0
-        ? ` (markdown · ${ds.binaryPages} binar${ds.binaryPages === 1 ? "y" : "ies"} + ${ds.directories} dir${ds.directories === 1 ? "" : "s"} skipped)`
+      binaryPages + directories > 0
+        ? ` (markdown · ${binaryPages} binar${binaryPages === 1 ? "y" : "ies"} + ${directories} dir${directories === 1 ? "" : "s"} skipped)`
         : "";
     console.log(
       `  Pages:   ${ds.pages}  |  FTS entries: ${ds.ftsEntries}${skippedNote}  |  Chunks: ${ds.chunks}  |  Backlinks: ${ds.backlinks}`,
