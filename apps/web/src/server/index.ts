@@ -89,6 +89,11 @@ let wal: Wal | null = null;
 let workerPool: WorkerPool | null = null;
 let wsManager: WebSocketManager | null = null;
 let terminalManager: TerminalManager | null = null;
+// Updated after `servicesById` is populated in `start()`. The
+//  `/health` handler reads this each request so a project added at
+//  runtime via `POST /api/projects` (or via `ironlore new-project`
+//  followed by a restart) reflects in subsequent health checks.
+let projectCount = 0;
 
 // ---------------------------------------------------------------------------
 // Middleware
@@ -114,7 +119,9 @@ app.get("/health", (c) => {
     activeJobs: workerPool?.activeCount ?? 0,
     walDepth: wal?.getDepth() ?? 0,
     wsSubscribers: wsManager?.getSubscriberCount() ?? 0,
-    projects: 1, // single-project until Phase 5
+    // Multi-project shipped in Phase 9 — reflect the live bundle
+    //  count rather than the historical single-project default.
+    projects: projectCount,
   };
   return c.json(body);
 });
