@@ -1,3 +1,4 @@
+import { lintWalIntegrity } from "./lint-wal.js";
 import { migrate } from "./migrate.js";
 import { reindex } from "./reindex.js";
 import { repair } from "./repair.js";
@@ -10,16 +11,24 @@ import { repair } from "./repair.js";
  * report-only mode. `--fix` auto-repairs what it can. `--check <cat>`
  * scopes to a single category.
  *
- * Categories:
- *   index-consistency — rebuild FTS5 index (delegates to `reindex`)
+ * Categories (per docs/02-storage-and-sync.md §Lint-as-migration):
+ *   wal-integrity     — uncommitted WAL entries from a crash; --fix
+ *                       replays writes / marks committed for the
+ *                       recoverable cases. The "neither hash matches"
+ *                       case is surfaced for manual review per the
+ *                       doc's no-clobber rule.
+ *   index-consistency — rebuild FTS5 + chunk + context indexes
+ *                       (delegates to `reindex`)
  *   schema-migration  — run pending DB migrations (delegates to `migrate`)
  *   data-integrity    — check and repair data (delegates to `repair`)
- *   wal-integrity     — check WAL consistency (future)
- *
- * See docs/02-storage-and-sync.md §Lint-as-migration.
  */
 
-const CATEGORIES = ["index-consistency", "schema-migration", "data-integrity"] as const;
+const CATEGORIES = [
+  "wal-integrity",
+  "index-consistency",
+  "schema-migration",
+  "data-integrity",
+] as const;
 type Category = (typeof CATEGORIES)[number];
 
 function isCategory(s: string): s is Category {

@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { computeEtag } from "@ironlore/core/server";
 import Database from "better-sqlite3";
 
@@ -39,7 +39,6 @@ interface WalRow {
   preHash: string | null;
   postHash: string | null;
   content: string | null;
-  committedAt: string | null;
 }
 
 type EntryState = "post-match" | "pre-match" | "neither" | "delete-pending" | "delete-done";
@@ -71,10 +70,9 @@ export function lintWalIntegrity(opts: LintWalOptions): void {
   try {
     uncommitted = db
       .prepare(
-        `SELECT id, path, op, pre_hash AS preHash, post_hash AS postHash,
-                content, committed_at AS committedAt
+        `SELECT id, path, op, pre_hash AS preHash, post_hash AS postHash, content
            FROM wal_entries
-          WHERE committed_at IS NULL
+          WHERE committed = 0
           ORDER BY id ASC`,
       )
       .all() as WalRow[];
@@ -213,26 +211,22 @@ function describeState(state: ClassifiedState): string {
 }
 
 function markCommitted(db: Database.Database, id: number): void {
-  db.prepare("UPDATE wal_entries SET committed_at = datetime('now') WHERE id = ?").run(id);
+  db.prepare("UPDATE wal_entries SET committed = 1 WHERE id = ?").run(id);
 }
 
 function replayWrite(dataRoot: string, relPath: string, content: string): void {
   // Reuse the same write semantics StorageWriter uses but without
-  // re-entering the WAL (we're recovering from one). Mirror the
-  // storage-writer atomic-rename pattern at a smaller scale.
-  const fs = require("node:fs") as typeof import("node:fs");
-  const path = require("node:path") as typeof import("node:path");
-  const absPath = path.join(dataRoot, relPath);
-  fs.mkdirSync(path.dirname(absPath), { recursive: true });
-  fs.writeFileSync(absPath, content, "utf-8");
+  // re-entering the WAL (we're recovering from one). Smaller scale:
+  // no atomic-rename — the recovery path is a one-shot.
+  const absPath = join(dataRoot, relPath);
+  mkdirSync(dirname(absPath), { recursive: true });
+  writeFileSync(absPath, content, "utf-8");
 }
 
 function replayDelete(dataRoot: string, relPath: string): void {
-  const fs = require("node:fs") as typeof import("node:fs");
-  const path = require("node:path") as typeof import("node:path");
-  const absPath = path.join(dataRoot, relPath);
+  const absPath = join(dataRoot, relPath);
   try {
-    fs.unlinkSync(absPath);
+    unlinkSync(absPath);
   } catch {
     /* already gone */
   }
