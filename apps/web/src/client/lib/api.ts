@@ -1075,9 +1075,27 @@ export async function fetchFirstRunHint(): Promise<"terminal" | "dialog" | null>
   }
 }
 
-/** Probe session state. Returns null if not authenticated. */
+/** Probe session state. Returns null if not authenticated.
+ *
+ * Forwards `?project=<id>` from the address bar so the server-side
+ * /me handler can apply the drive-by project switch the project
+ * switcher requested via `window.location.href = "?project=<id>"`.
+ * Without this forward, the bare `/api/auth/me` call would return
+ * the *previous* session project and the SPA would pin to it,
+ * silently ignoring the user's chosen project on hard reload.
+ */
 export async function fetchMe(): Promise<AuthSession | null> {
-  const res = await fetch("/api/auth/me");
+  let url = "/api/auth/me";
+  try {
+    const browserUrl = new URL(window.location.href);
+    const requested = browserUrl.searchParams.get("project");
+    if (requested) {
+      url = `/api/auth/me?project=${encodeURIComponent(requested)}`;
+    }
+  } catch {
+    /* SSR / non-browser context — keep the bare URL */
+  }
+  const res = await fetch(url);
   if (res.status === 401) return null;
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json() as Promise<AuthSession>;

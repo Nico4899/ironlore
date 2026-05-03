@@ -34,6 +34,21 @@ export const useAuthStore = create<AuthStore>((set) => ({
         username: session.username,
         currentProjectId: session.currentProjectId,
       });
+
+      // The switcher reloads with `?project=<id>` to drive the switch.
+      //  Now that the session has applied it, strip the param from the
+      //  address bar so a casual Cmd+R doesn't keep replaying the
+      //  switch (and so users sharing screenshots don't see a stale
+      //  drive-by query in the URL).
+      try {
+        const browserUrl = new URL(window.location.href);
+        if (browserUrl.searchParams.has("project")) {
+          browserUrl.searchParams.delete("project");
+          window.history.replaceState(null, "", browserUrl.toString());
+        }
+      } catch {
+        /* SSR / non-browser context — skip */
+      }
     } catch (err) {
       // Transient failures (rate-limit, network blip) must NOT boot
       //  the user to the login screen — a 429 on `/me` after a few

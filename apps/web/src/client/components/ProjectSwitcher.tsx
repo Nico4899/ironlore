@@ -1,4 +1,4 @@
-import { ChevronLeft, CircleCheck, Plus, X } from "lucide-react";
+import { Briefcase, ChevronLeft, CircleCheck, Plus, ShieldCheck, Telescope, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
 import { ApiError, createProject, fetchProjects, type ProjectListEntry } from "../lib/api.js";
@@ -133,12 +133,20 @@ export function ProjectSwitcher() {
   const commit = useCallback(
     (projectId: string) => {
       pushRecentId(projectId);
+      // No-op when the picked row is already the active project. We
+      //  used to reload anyway, which made the switcher feel broken
+      //  ("I clicked it and nothing happened") since the recent-first
+      //  ordering puts the current project at the top of the list.
+      if (projectId === currentProjectId) {
+        close();
+        return;
+      }
       close();
       const url = new URL(window.location.href);
       url.searchParams.set("project", projectId);
       window.location.href = url.toString();
     },
-    [close],
+    [close, currentProjectId],
   );
 
   const openCreate = useCallback(() => {
@@ -554,7 +562,7 @@ function CreateStage({
 
         <LabelledField
           label="Preset"
-          hint="Sets the egress policy written into project.yaml. Can't be changed later from this dialog."
+          hint="Egress policy is written into project.yaml and can be changed there later."
         >
           <div
             style={{
@@ -567,6 +575,7 @@ function CreateStage({
           >
             {(["main", "research", "sandbox"] as const).map((p) => {
               const active = p === preset;
+              const Icon = PRESET_ICONS[p];
               return (
                 <button
                   key={p}
@@ -574,6 +583,9 @@ function CreateStage({
                   onClick={() => setPreset(p)}
                   aria-pressed={active}
                   style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
                     padding: "5px 12px",
                     fontSize: 12,
                     fontFamily: "var(--font-sans)",
@@ -586,6 +598,7 @@ function CreateStage({
                     textTransform: "capitalize",
                   }}
                 >
+                  <Icon className="h-3.5 w-3.5" aria-hidden="true" />
                   {p}
                 </button>
               );
@@ -707,23 +720,30 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 3,
 };
 
+const PRESET_ICONS = {
+  main: Briefcase,
+  research: Telescope,
+  sandbox: ShieldCheck,
+} as const;
+
 function PresetBlurb({ preset }: { preset: Preset }) {
-  // Canonical copy per docs/08-projects-and-isolation.md §The
-  //  project primitive.
+  // Plain-language copy aimed at non-technical users; the technical
+  //  egress detail lives in the field-level hint footnote so the
+  //  preset row reads as intent ("for everyday work") rather than
+  //  policy ("egress: allowlist").
   const blurb =
     preset === "main"
-      ? "Egress: allowlist — reaches Anthropic + OpenAI by default. Strongest guardrails."
+      ? "For your everyday work. Agents can use trusted AI services (Anthropic, OpenAI). Recommended for most projects."
       : preset === "research"
-        ? "Egress: open — the project can reach any host. Never auto-promotes to a main project."
-        : "Egress: blocked — no outbound network. Ideal for scratch + untrusted content.";
+        ? "For gathering sources. Agents can fetch from any website — use when an agent needs to read the open web."
+        : "For private notes or untrusted content. No internet access — agents stay fully local.";
   return (
     <span
       style={{
         fontSize: 11.5,
         color: "var(--il-text3)",
-        fontStyle: "italic",
         marginTop: 2,
-        lineHeight: 1.4,
+        lineHeight: 1.45,
       }}
     >
       {blurb}

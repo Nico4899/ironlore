@@ -556,10 +556,32 @@ export function createAuthApi(
 
     store.touchSession(sessionId);
 
+    // The project switcher reloads the page with `?project=<id>` and
+    //  the SPA's first call after boot is `/api/auth/me`. Apply the
+    //  switch here too (mirroring the protected-routes middleware) so
+    //  the SPA's bootstrapped `currentProjectId` already reflects the
+    //  user's intent — without this, the SPA would pin to the old
+    //  session project and only switch on a much later API call after
+    //  rendering the wrong project's tree.
+    let currentProjectId = session.current_project_id;
+    let invalidProject: string | null = null;
+    const requestedProject = new URL(c.req.url).searchParams.get("project");
+    if (requestedProject && requestedProject !== currentProjectId) {
+      const valid = !options.isProjectValid || options.isProjectValid(requestedProject);
+      if (valid) {
+        store.updateSessionProject(sessionId, requestedProject);
+        currentProjectId = requestedProject;
+      } else {
+        invalidProject = requestedProject;
+      }
+    }
+
+    if (invalidProject) c.header("X-Ironlore-Invalid-Project", invalidProject);
+
     return c.json({
       authenticated: true,
       username: session.username,
-      currentProjectId: session.current_project_id,
+      currentProjectId,
       mustChangePassword: session.must_change_password === 1,
     });
   });
