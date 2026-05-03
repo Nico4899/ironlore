@@ -257,7 +257,7 @@ function deriveTrailingCrumb({
 }: {
   activePath: string | null;
   activeAgentSlug: string | null;
-  sidebarTab: "files" | "inbox";
+  sidebarTab: "files" | "agents" | "inbox";
   settingsOpen: boolean;
 }): string {
   if (settingsOpen) return "settings";

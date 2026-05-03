@@ -324,15 +324,15 @@ interface AppStore {
   provenance: { pagePath: string; blockId: string } | null;
   /** Current folder path in the sidebar drill-down navigation. "" = root. */
   sidebarFolder: string;
-  /** Active sidebar tab: home, search, explore. */
   /**
    * Sidebar primary surface: `files` is the drill-down file/folder
-   * navigator (the default), `inbox` renders pending agent runs. The
-   * old `home | search | explore` triad collapsed into just these two
-   * per the post-header sidebar revision — search became its own
-   * bottom-rail chip that opens the ⌘K dialog; explore is deferred.
+   * navigator (the default), `agents` is the installed-agent list,
+   * `inbox` renders pending agent runs. The `agents` tab promotes
+   * what used to be an inline section below the file tree to a
+   * first-class surface (post sidebar-audit, May 2026); old
+   * localStorage values for `files | inbox` remain valid.
    */
-  sidebarTab: "files" | "inbox";
+  sidebarTab: "files" | "agents" | "inbox";
 
   toggleSidebar: () => void;
   toggleAIPanel: () => void;
@@ -377,9 +377,9 @@ interface AppStore {
    * expanded. Used by call sites that mean "show me the inbox" — they
    * don't want to discover the sidebar was collapsed first.
    */
-  openSidebarTab: (tab: "files" | "inbox") => void;
+  openSidebarTab: (tab: "files" | "agents" | "inbox") => void;
   setSidebarFolder: (folder: string) => void;
-  setSidebarTab: (tab: "files" | "inbox") => void;
+  setSidebarTab: (tab: "files" | "agents" | "inbox") => void;
 }
 
 function persistSidebarWidth(width: number): void {

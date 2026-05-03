@@ -1,6 +1,7 @@
 import type { PageType } from "@ironlore/core";
 import {
   BookOpen,
+  Bot,
   Captions,
   ChevronLeft,
   ChevronRight,
@@ -22,6 +23,7 @@ import {
   Video,
   Workflow,
 } from "lucide-react";
+import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
@@ -647,11 +649,11 @@ export function SidebarNew() {
         onSelect={(tab) => useAppStore.getState().setSidebarTab(tab)}
       />
 
-      {/* ─── Folder breadcrumb (when drilled in). Rendered regardless
-       *  of `sidebarTab` — the tree stays visible even when Inbox is
-       *  the active main-view surface, matching screen-more.jsx
-       *  ScreenInbox (sidebar tree + content-area inbox). */}
-      {!collapsed && sidebarFolder && (
+      {/* ─── Folder breadcrumb (when drilled in). Hidden on the
+       *  Agents tab (which fully owns the sidebar body); kept on the
+       *  Inbox tab so the tree stays visible behind the content-area
+       *  inbox surface. */}
+      {!collapsed && sidebarTab !== "agents" && sidebarFolder && (
         <div className="flex items-center gap-1 border-b border-border px-2 py-1.5 text-xs text-secondary">
           <button
             type="button"
@@ -699,9 +701,11 @@ export function SidebarNew() {
        * current list left (new content enters from the right); going
        * back up reverses it. `ease-in-out` pairs with
        * `--motion-transit` (180 ms) so the direction reads before the
-       * motion settles.
+       * motion settles. Hidden on the Agents tab (which owns the
+       * sidebar body); rendered for Files + Inbox (Inbox still shows
+       * the tree behind the content-area inbox surface).
        */}
-      {!collapsed && (
+      {!collapsed && sidebarTab !== "agents" && (
         <div
           className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ease-in-out ${
             slideDir === "left"
@@ -868,20 +872,20 @@ export function SidebarNew() {
         </div>
       )}
 
-      {/* Collapsed: no list shown — the ActiveAgentsStrip + bottom
-       *  rail still render below. */}
+      {/* Collapsed: no list shown — the bottom rail still renders. */}
       {collapsed && <div className="flex-1" />}
 
-      {/* Inbox is now a full-screen surface routed via the content
+      {/* Inbox is a full-screen surface routed via the content
        *  area (ContentArea reads `sidebarTab === "inbox"` and renders
        *  <InboxPanel /> in place of the editor). The sidebar's INBOX
        *  tab is the trigger + state indicator; the tree stays
        *  visible behind it. */}
 
-      {/* ─── Agents panel — all installed agents, always visible. Was
-       *  `ActiveAgentsStrip` (running-only); promoted to a first-class
-       *  sidebar surface with a `+ add agent` affordance. ─── */}
-      <AgentsPanel collapsed={collapsed} />
+      {/* ─── Agents tab body ─── promoted from a footer section to a
+       *  full-body sidebar surface. Renders only when the AGENTS tab
+       *  is active; the file tree above is hidden in that mode so
+       *  the agent list owns the scroll. */}
+      {!collapsed && sidebarTab === "agents" && <AgentsPanel collapsed={false} expanded />}
 
       {/* ─── Divider ─── */}
       <div className="border-t border-border" />
@@ -989,14 +993,15 @@ function SidebarTabs({
   onSelect,
 }: {
   collapsed: boolean;
-  active: "files" | "inbox";
+  active: "files" | "agents" | "inbox";
   inboxCount: number;
-  onSelect: (tab: "files" | "inbox") => void;
+  onSelect: (tab: "files" | "agents" | "inbox") => void;
 }) {
   if (collapsed) {
     return (
       <div className="flex flex-col items-center gap-0.5 border-b border-border px-1 py-1.5">
         <SidebarBottomTab icon={Home} label="Files" collapsed onClick={() => onSelect("files")} />
+        <SidebarBottomTab icon={Bot} label="Agents" collapsed onClick={() => onSelect("agents")} />
         <SidebarBottomTab
           icon={InboxIcon}
           label="Inbox"
@@ -1010,8 +1015,20 @@ function SidebarTabs({
 
   return (
     <div className="flex items-end gap-2 border-b border-border px-3" style={{ height: 30 }}>
-      <SidebarTabPill label="files" active={active === "files"} onClick={() => onSelect("files")} />
       <SidebarTabPill
+        icon={Home}
+        label="files"
+        active={active === "files"}
+        onClick={() => onSelect("files")}
+      />
+      <SidebarTabPill
+        icon={Bot}
+        label="agents"
+        active={active === "agents"}
+        onClick={() => onSelect("agents")}
+      />
+      <SidebarTabPill
+        icon={InboxIcon}
         label="inbox"
         active={active === "inbox"}
         badge={inboxCount > 0 ? inboxCount : undefined}
@@ -1022,11 +1039,13 @@ function SidebarTabs({
 }
 
 function SidebarTabPill({
+  icon: Icon,
   label,
   active,
   badge,
   onClick,
 }: {
+  icon?: React.ComponentType<{ className?: string }>;
   label: string;
   active: boolean;
   badge?: number;
@@ -1047,6 +1066,7 @@ function SidebarTabPill({
         borderBottom: `1.5px solid ${active ? "var(--il-blue)" : "transparent"}`,
       }}
     >
+      {Icon && <Icon className="h-3 w-3 shrink-0" />}
       {label}
       {badge !== undefined && (
         <span
@@ -1245,7 +1265,7 @@ function ProjectTile({ collapsed }: { collapsed: boolean }) {
  * + prose template — no new endpoint needed; the server picks the
  * persona up via the file watcher.
  */
-function AgentsPanel({ collapsed }: { collapsed: boolean }) {
+function AgentsPanel({ collapsed, expanded }: { collapsed: boolean; expanded?: boolean }) {
   const activity = useWorkspaceActivity();
   const agents = activity.agents;
   const runningCount = activity.runningCount;
@@ -1324,23 +1344,31 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <div className="border-t border-border px-3 py-2.5">
+    <div
+      className={
+        expanded ? "flex-1 overflow-y-auto px-3 py-2.5" : "border-t border-border px-3 py-2.5"
+      }
+    >
       {/* Mono `AGENTS` overline — the separator the user asked for.
        *  Trailing meta echoes the Home §01 grammar (`N RUNNING · N
-       *  QUEUED`) so the vocabulary is consistent across surfaces. */}
-      <div
-        className="mb-2 flex items-center gap-2 font-mono uppercase"
-        style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.08em" }}
-      >
-        <span>Agents</span>
-        <span className="flex-1" />
-        {/* Counter is status text — uses text3 (AA-clearing) rather
-         *  than text4 so screen-readers + low-vision users can read
-         *  the running / total count. */}
-        <span style={{ color: "var(--il-text3)" }}>
-          {runningCount > 0 ? `${runningCount} running` : `${agents.length}`}
-        </span>
-      </div>
+       *  QUEUED`) so the vocabulary is consistent across surfaces.
+       *  When `expanded` (Agents tab body), the overline is hidden
+       *  because the SidebarTabs row already labels the surface. */}
+      {!expanded && (
+        <div
+          className="mb-2 flex items-center gap-2 font-mono uppercase"
+          style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.08em" }}
+        >
+          <span>Agents</span>
+          <span className="flex-1" />
+          {/* Counter is status text — uses text3 (AA-clearing) rather
+           *  than text4 so screen-readers + low-vision users can read
+           *  the running / total count. */}
+          <span style={{ color: "var(--il-text3)" }}>
+            {runningCount > 0 ? `${runningCount} running` : `${agents.length}`}
+          </span>
+        </div>
+      )}
 
       {agents.length === 0 ? (
         <div

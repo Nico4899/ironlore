@@ -222,9 +222,11 @@ export function ContentArea() {
   //  time ContentArea renders the user has already completed or
   //  skipped the wizard.
 
-  // No active file — show Home or the agent-detail page. Explore was
-  //  removed in the sidebar revision (deferred; `sidebarTab` is now
-  //  only `files | inbox`, both of which leave the canvas on Home).
+  // No active file — show Home or the agent-detail page. The
+  //  three-tab sidebar (`files | agents | inbox`) does not change
+  //  this dispatch: `agents` and `files` both leave the canvas on
+  //  Home (or the agent-detail page when an agent is selected),
+  //  `inbox` is handled by the early return above.
   // Inbox takes precedence over every other surface. Selecting the
   //  sidebar INBOX tab routes the whole content area to the Inbox
   //  canvas — matching screen-more.jsx ScreenInbox, where the sidebar
