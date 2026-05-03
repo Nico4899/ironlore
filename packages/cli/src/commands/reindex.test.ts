@@ -86,12 +86,43 @@ describe("reindex — schema parity with server SearchIndex", () => {
       expect(tableNames.has("tags")).toBe(true);
       expect(tableNames.has("recent_edits")).toBe(true);
 
+      // Phase-11 chunk-level tables — were silently missing from the
+      // CLI rebuild path before. Without these, semantic search +
+      // contextual retrieval lose their indices on a `lint --fix
+      // --check index-consistency` run.
+      expect(tableNames.has("chunk_vectors")).toBe(true);
+      expect(tableNames.has("chunk_contexts")).toBe(true);
+      expect(tableNames.has("chunk_contexts_fts")).toBe(true);
+
       // Backlinks must include the `rel` column (typed relations).
       const backlinksCols = db.prepare("PRAGMA table_info(backlinks)").all() as Array<{
         name: string;
       }>;
       const colNames = new Set(backlinksCols.map((c) => c.name));
       expect(colNames.has("rel")).toBe(true);
+
+      // chunk_vectors columns: matches search-index.ts ensureChunkVectorsTable.
+      const vecCols = db.prepare("PRAGMA table_info(chunk_vectors)").all() as Array<{
+        name: string;
+      }>;
+      const vecColNames = new Set(vecCols.map((c) => c.name));
+      expect(vecColNames.has("path")).toBe(true);
+      expect(vecColNames.has("chunk_idx")).toBe(true);
+      expect(vecColNames.has("model")).toBe(true);
+      expect(vecColNames.has("dims")).toBe(true);
+      expect(vecColNames.has("vector")).toBe(true);
+
+      // chunk_contexts columns: shadow keyed (path, chunk_idx) +
+      // context text + producing model + timestamp.
+      const ctxCols = db.prepare("PRAGMA table_info(chunk_contexts)").all() as Array<{
+        name: string;
+      }>;
+      const ctxColNames = new Set(ctxCols.map((c) => c.name));
+      expect(ctxColNames.has("path")).toBe(true);
+      expect(ctxColNames.has("chunk_idx")).toBe(true);
+      expect(ctxColNames.has("context")).toBe(true);
+      expect(ctxColNames.has("model")).toBe(true);
+      expect(ctxColNames.has("generated_at")).toBe(true);
 
       // Indices the server relies on.
       const idx = db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all() as Array<{
@@ -101,6 +132,67 @@ describe("reindex — schema parity with server SearchIndex", () => {
       expect(idxNames.has("idx_backlinks_target")).toBe(true);
       expect(idxNames.has("idx_tags_tag")).toBe(true);
       expect(idxNames.has("idx_pages_parent")).toBe(true);
+      expect(idxNames.has("idx_chunk_vectors_path")).toBe(true);
+      expect(idxNames.has("idx_chunk_contexts_path")).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("clears chunk-level rows on rebuild so stale (path, chunk_idx) tuples can't survive a re-chunk", () => {
+    // Bug regression — pre-fix, a `lint --fix --check
+    // index-consistency` run left chunk_vectors / chunk_contexts /
+    // chunk_contexts_fts populated with the OLD (path, chunk_idx)
+    // tuples. After a mid-page edit re-chunked the file, the stale
+    // rows misaligned semantic + contextual retrieval. Verify the
+    // clear() transaction now nukes them.
+    makeProjectWithContent(cwd, "main", {
+      "a.md": "# A\n\nContent.",
+    });
+    reindex({ project: "main" });
+
+    // Inject stale rows into all three chunk tables to simulate
+    // leftover state from a prior run. If reindex() doesn't clear
+    // them they'll survive the next rebuild.
+    const dbPath = join(cwd, "projects", "main", ".ironlore", "index.sqlite");
+    let db = new Database(dbPath);
+    try {
+      db.prepare(
+        "INSERT INTO chunk_vectors (path, chunk_idx, model, dims, vector) VALUES (?, ?, ?, ?, ?)",
+      ).run("stale.md", 0, "test", 4, Buffer.from([0, 0, 0, 0]));
+      db.prepare(
+        "INSERT INTO chunk_contexts (path, chunk_idx, context, model) VALUES (?, ?, ?, ?)",
+      ).run("stale.md", 0, "stale ctx", "test");
+      db.prepare(
+        "INSERT INTO chunk_contexts_fts (path, chunk_idx, context) VALUES (?, ?, ?)",
+      ).run("stale.md", 0, "stale ctx");
+    } finally {
+      db.close();
+    }
+
+    // Now re-run reindex. Stale rows must be gone.
+    reindex({ project: "main" });
+
+    db = new Database(dbPath, { readonly: true });
+    try {
+      const vecCount = (
+        db
+          .prepare("SELECT COUNT(*) AS cnt FROM chunk_vectors WHERE path = ?")
+          .get("stale.md") as { cnt: number }
+      ).cnt;
+      const ctxCount = (
+        db
+          .prepare("SELECT COUNT(*) AS cnt FROM chunk_contexts WHERE path = ?")
+          .get("stale.md") as { cnt: number }
+      ).cnt;
+      const ftsCount = (
+        db
+          .prepare("SELECT COUNT(*) AS cnt FROM chunk_contexts_fts WHERE path = ?")
+          .get("stale.md") as { cnt: number }
+      ).cnt;
+      expect(vecCount).toBe(0);
+      expect(ctxCount).toBe(0);
+      expect(ftsCount).toBe(0);
     } finally {
       db.close();
     }
