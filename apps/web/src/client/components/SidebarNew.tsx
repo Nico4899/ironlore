@@ -12,6 +12,7 @@ import {
   FileText,
   FileType,
   FolderClosed,
+  FolderOpen,
   Home,
   Image,
   Inbox as InboxIcon,
@@ -38,6 +39,7 @@ import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app
 import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
 import { MOTION } from "../styles/motion.js";
+import { FolderPeekButton } from "./FolderPeek.js";
 import { Logo } from "./Logo.js";
 import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 
@@ -45,11 +47,15 @@ import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 // File icon — each type gets its own color
 // ---------------------------------------------------------------------------
 
-function FileIcon({ type }: { type: PageType | "directory" }) {
+function FileIcon({ type, open }: { type: PageType | "directory"; open?: boolean }) {
   const base = "h-4 w-4 shrink-0";
   switch (type) {
     case "directory":
-      return <FolderClosed className={`${base} icon-folder`} />;
+      return open ? (
+        <FolderOpen className={`${base} icon-folder`} />
+      ) : (
+        <FolderClosed className={`${base} icon-folder`} />
+      );
     case "markdown":
       return <FileText className={`${base} icon-markdown`} />;
     case "pdf":
@@ -176,8 +182,13 @@ export function SidebarNew() {
   const [editingValue, setEditingValue] = useState("");
   const [slideDir, setSlideDir] = useState<"left" | "right" | null>(null);
   // DnD state — the string is either a folder path (drop-into), or one of
-  // the sentinels "__root__" / "__up__" for breadcrumb targets.
+  // the sentinels "__root__" / "__up__" for breadcrumb targets, or a file
+  // path when the cursor is over a file row (in which case `dropEdge`
+  // describes whether the drop will land before/after that row — both
+  // resolve to "into the parent folder" because the tree is alphabetically
+  // sorted with no per-folder ordering primitive).
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dropEdge, setDropEdge] = useState<"before" | "after" | null>(null);
 
   const collapsed = !sidebarOpen;
 
@@ -313,14 +324,44 @@ export function SidebarNew() {
     if (valid) {
       e.dataTransfer.dropEffect = "move";
       setDropTarget(target);
+      setDropEdge(null);
     } else {
       e.dataTransfer.dropEffect = "none";
       setDropTarget(null);
+      setDropEdge(null);
     }
   }, []);
 
+  /**
+   * Row-level dragOver that picks "into folder" vs "before / after sibling"
+   * based on cursor Y. For folders, the middle band is "drop into" (existing
+   * behaviour, ring + open-folder icon); the top/bottom bands resolve to
+   * "drop into the parent folder" for both files and folders. The line is
+   * cosmetic — there is no per-folder ordering primitive, so before/after
+   * land in the same parent regardless of which edge was picked.
+   */
+  const handleRowDragOver = useCallback(
+    (e: React.DragEvent, item: { path: string; type: PageType | "directory" }) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const third = rect.height / 3;
+      const isDir = item.type === "directory";
+      if (isDir && y > third && y < rect.height - third) {
+        setDropTarget(item.path);
+        setDropEdge(null);
+        return;
+      }
+      setDropTarget(item.path);
+      setDropEdge(y < rect.height / 2 ? "before" : "after");
+    },
+    [],
+  );
+
   const handleDragLeave = useCallback(() => {
     setDropTarget(null);
+    setDropEdge(null);
   }, []);
 
   const performMove = useCallback(async (sourcePath: string, targetDir: string) => {
@@ -340,11 +381,40 @@ export function SidebarNew() {
     async (e: React.DragEvent, targetDir: string) => {
       e.preventDefault();
       setDropTarget(null);
+      setDropEdge(null);
       const sourcePath = e.dataTransfer.getData("text/plain");
       if (!sourcePath) return;
       await performMove(sourcePath, targetDir);
     },
     [performMove],
+  );
+
+  /**
+   * Row-level drop. When `dropEdge` is set (cursor was on a row's
+   * top/bottom band), the move resolves to the parent folder of the
+   * row — not into the row itself. Folder rows with a centred drop
+   * fall through to `handleDrop(item.path)` to land inside.
+   */
+  const handleRowDrop = useCallback(
+    async (e: React.DragEvent, item: { path: string; type: PageType | "directory" }) => {
+      e.preventDefault();
+      const edge = dropEdge;
+      setDropTarget(null);
+      setDropEdge(null);
+      const sourcePath = e.dataTransfer.getData("text/plain");
+      if (!sourcePath) return;
+      if (item.type === "directory" && !edge) {
+        await performMove(sourcePath, item.path);
+        return;
+      }
+      // Edge or file row → resolve to the parent folder. The current
+      //  drill level (`sidebarFolder`) is the parent for everything in
+      //  the visible list — items at the root level have parent "".
+      const lastSlash = item.path.lastIndexOf("/");
+      const parent = lastSlash === -1 ? "" : item.path.slice(0, lastSlash);
+      await performMove(sourcePath, parent);
+    },
+    [dropEdge, performMove],
   );
 
   /**
@@ -783,8 +853,10 @@ export function SidebarNew() {
               const isActive = activePath === item.path;
               const isEditing = editingPath === item.path;
 
-              const isDropTarget = isDir && dropTarget === item.path;
+              const isDropTarget = isDir && dropTarget === item.path && dropEdge === null;
               const isFocusedRow = itemIdx === focusedTreeIdx;
+              const showLineBefore = dropTarget === item.path && dropEdge === "before";
+              const showLineAfter = dropTarget === item.path && dropEdge === "after";
               return (
                 // The row is `role="treeitem"` (semantic). Keyboard
                 // activation is handled by the parent tree's
@@ -797,7 +869,7 @@ export function SidebarNew() {
                   ref={(el) => {
                     treeItemRefs.current[itemIdx] = el;
                   }}
-                  className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-(--motion-snap) ${
+                  className={`group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-(--motion-snap) ${
                     isActive
                       ? "sidebar-item-active text-primary"
                       : isDropTarget
@@ -806,11 +878,9 @@ export function SidebarNew() {
                   }`}
                   draggable={!isDir && !isEditing}
                   onDragStart={(e) => !isDir && handleDragStart(e, item.path)}
-                  onDragOver={(e) => handleDragOver(e, item.path, isDir)}
+                  onDragOver={(e) => handleRowDragOver(e, item)}
                   onDragLeave={handleDragLeave}
-                  onDrop={(e) => {
-                    if (isDir) void handleDrop(e, item.path);
-                  }}
+                  onDrop={(e) => void handleRowDrop(e, item)}
                   onClick={() => {
                     if (isEditing) return;
                     setFocusedTreeIdx(itemIdx);
@@ -839,7 +909,25 @@ export function SidebarNew() {
                   //  handler that switches `sidebarFolder`.
                   tabIndex={isFocusedRow ? 0 : -1}
                 >
-                  <FileIcon type={item.type} />
+                  {/* Drop-line indicator: 2 px line above (before) or
+                   *  below (after) the row. Both edges resolve to
+                   *  "drop into the parent folder" — the line is a
+                   *  placement *cue*, not an ordering primitive. */}
+                  {showLineBefore && (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-1 -top-px h-0.5 rounded-full"
+                      style={{ background: "var(--il-blue)" }}
+                    />
+                  )}
+                  {showLineAfter && (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-1 -bottom-px h-0.5 rounded-full"
+                      style={{ background: "var(--il-blue)" }}
+                    />
+                  )}
+                  <FileIcon type={item.type} open={isDropTarget} />
                   {isEditing ? (
                     <input
                       className="flex-1 rounded border border-ironlore-blue bg-transparent px-1 text-sm text-primary focus:outline-none"
@@ -858,7 +946,10 @@ export function SidebarNew() {
                     <span className="flex-1 truncate">{item.name}</span>
                   )}
                   {isDir && !isEditing && (
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-secondary opacity-0 group-hover:opacity-100" />
+                    <>
+                      <FolderPeekButton folder={item} />
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-secondary opacity-0 group-hover:opacity-100" />
+                    </>
                   )}
                 </div>
               );
