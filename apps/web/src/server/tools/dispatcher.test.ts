@@ -214,6 +214,131 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     expect(result.result).toContain("Budget exhausted");
   });
 
+  // Tier-1 §6 per docs/04-ai-and-agents.md §Tool protocol testing:
+  // "A 20-call plan hits a 409 on call 7; assert the agent re-plans
+  //  from the conflict point, not from call 1."
+  //
+  // The agent's correct recovery is `kb.read_page` (to refresh the
+  // ETag + re-enumerate block IDs that may have changed on disk),
+  // followed by a fresh `kb.replace_block` with the new ETag and a
+  // re-resolved block. The earlier successful writes must NOT be
+  // re-applied — the page on disk already reflects them. This test
+  // pins that subset of behaviour: that the *server side* gives the
+  // agent enough state to re-plan locally rather than restart the
+  // whole sequence.
+  it("mid-sequence conflict: a fresh kb.read_page after a 409 surfaces the new ETag", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    // Seed a page with three replaceable blocks.
+    const seeded = assignBlockIds("# Plan\n\nFirst block.\n\nSecond block.\n\nThird block.\n");
+    await writer.write("plan.md", seeded.markdown, null);
+
+    // Calls 1–6: the agent reads, then replaces blocks 1 and 2 in
+    //  sequence. Each replace returns a fresh ETag the agent threads
+    //  into the next call.
+    const read1 = await dispatcher.call("kb.read_page", { path: "plan.md" }, ctx, budget);
+    expect(read1.isError).toBe(false);
+    const read1Data = JSON.parse(read1.result) as {
+      etag: string;
+      blocks: Array<{ id: string; type: string }>;
+    };
+    const blockIds = read1Data.blocks.filter((b) => b.type === "paragraph").map((b) => b.id);
+    expect(blockIds.length).toBeGreaterThanOrEqual(3);
+
+    const replace1 = await dispatcher.call(
+      "kb.replace_block",
+      { path: "plan.md", blockId: blockIds[0], markdown: "Edited first.", etag: read1Data.etag },
+      ctx,
+      budget,
+    );
+    expect(replace1.isError).toBe(false);
+    const replace1Data = JSON.parse(replace1.result) as { etag: string };
+
+    const replace2 = await dispatcher.call(
+      "kb.replace_block",
+      {
+        path: "plan.md",
+        blockId: blockIds[1],
+        markdown: "Edited second.",
+        etag: replace1Data.etag,
+      },
+      ctx,
+      budget,
+    );
+    expect(replace2.isError).toBe(false);
+    const replace2Data = JSON.parse(replace2.result) as { etag: string };
+
+    // Call 7: an *external* writer (simulating the user) edits the
+    //  page out from under the agent. This invalidates the ETag the
+    //  agent is holding for its planned call-7 replace.
+    await writer.write(
+      "plan.md",
+      assignBlockIds("# Plan\n\nUser-edited first.\n\nUser-edited second.\n\nUser-edited third.\n")
+        .markdown,
+      replace2Data.etag,
+    );
+
+    // Call 7 (the agent's): replace block-3 with the now-stale ETag
+    //  → 409. The error envelope must hand back the current ETag so
+    //  the agent's recovery loop has the input it needs to re-plan
+    //  locally.
+    const conflict = await dispatcher.call(
+      "kb.replace_block",
+      {
+        path: "plan.md",
+        blockId: blockIds[2],
+        markdown: "Edited third.",
+        etag: replace2Data.etag,
+      },
+      ctx,
+      budget,
+    );
+    expect(conflict.isError).toBe(true);
+    const conflictData = JSON.parse(conflict.result) as { error: string; currentEtag: string };
+    expect(conflictData.error).toContain("ETag mismatch");
+    expect(conflictData.currentEtag).toBeDefined();
+    expect(conflictData.currentEtag).not.toBe(replace2Data.etag);
+
+    // Recovery: the agent re-reads (NOT re-runs calls 1–2) and uses
+    //  the fresh ETag + fresh block IDs to retry the in-flight call.
+    //  The user's prior two edits stay intact — call-7's recovery
+    //  doesn't clobber them, which is the whole point of the
+    //  scoped-re-plan vs. start-over distinction.
+    const read2 = await dispatcher.call("kb.read_page", { path: "plan.md" }, ctx, budget);
+    expect(read2.isError).toBe(false);
+    const read2Data = JSON.parse(read2.result) as {
+      etag: string;
+      blocks: Array<{ id: string; type: string }>;
+      content: string;
+    };
+    expect(read2Data.etag).toBe(conflictData.currentEtag);
+    expect(read2Data.content).toContain("User-edited first.");
+    expect(read2Data.content).toContain("User-edited second.");
+    // The fresh block-IDs may differ from the originals (the user's
+    //  full-page rewrite re-stamped them). The agent must read off
+    //  the fresh list, not retry against the stale `blockIds[2]`.
+    const freshBlocks = read2Data.blocks.filter((b) => b.type === "paragraph");
+    expect(freshBlocks.length).toBeGreaterThanOrEqual(3);
+
+    const replace3 = await dispatcher.call(
+      "kb.replace_block",
+      {
+        path: "plan.md",
+        blockId: freshBlocks[2]?.id ?? "",
+        markdown: "Recovered third.",
+        etag: read2Data.etag,
+      },
+      ctx,
+      budget,
+    );
+    expect(replace3.isError).toBe(false);
+    // Final state has the user's edits + the agent's recovered call-7.
+    const final = writer.read("plan.md");
+    expect(final.content).toContain("User-edited first.");
+    expect(final.content).toContain("User-edited second.");
+    expect(final.content).toContain("Recovered third.");
+  });
+
   // Bug 4 regression — kb.search used to return the prose string
   // `"No results found."` for the empty case and a JSON array for
   // the populated case. Two shapes for the same logical answer

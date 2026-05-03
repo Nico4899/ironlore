@@ -452,4 +452,103 @@ describe("SearchIndex — chunk-level FTS + RRF", () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.path).toBe("plain.md");
   });
+
+  /**
+   * Phase-11 Contextual Retrieval — `bm25PrefilterPaths` interleaves
+   * two FTS5 streams: the chunk-text index (`pages_chunks_fts`) and
+   * the LLM-generated context shadow (`chunk_contexts_fts`). The
+   * promised behaviour (per docs/02-storage-and-sync.md §Hybrid
+   * retrieval) is:
+   *   1. A page whose CHUNK TEXT contains the query surfaces.
+   *   2. A page whose CONTEXT SUMMARY contains the query (but whose
+   *      raw chunk text does not) ALSO surfaces — that's the recall
+   *      lift.
+   *   3. The chunk-text channel keeps priority on ties — direct
+   *      matches outrank indirect ones.
+   *   4. With no context rows written, the function degrades to the
+   *      pre-Phase-11 chunk-only behaviour.
+   */
+  it("bm25PrefilterPaths merges chunk-text and chunk-context channels", () => {
+    const { index } = createIndex();
+
+    // Page A — has a chunk whose text mentions "neutrino".
+    index.indexPage(
+      "direct.md",
+      buildBlockMarkdown([
+        {
+          id: "blk_01HDIRECTAAAAAAAAAAAAAAAAA",
+          text: "Stellar fusion produces neutrino streams that pierce the Earth nightly.",
+        },
+      ]),
+      "test",
+    );
+
+    // Page B — chunk text avoids the term entirely. We later inject
+    //  a "context" summary that DOES mention it, so the only way for
+    //  this page to surface in the prefilter is via the context channel.
+    index.indexPage(
+      "indirect.md",
+      buildBlockMarkdown([
+        {
+          id: "blk_01HINDIRECTAAAAAAAAAAAAAAA",
+          text: "The detector array sits two kilometres below the surface.",
+        },
+      ]),
+      "test",
+    );
+
+    // Sanity: before context is written, only the direct page surfaces.
+    const before = index.bm25PrefilterPaths("neutrino", 10);
+    expect([...before.keys()]).toEqual(["direct.md"]);
+
+    // Inject a context summary on indirect.md mentioning the term.
+    //  The chunk_idx must match a real row in pages_chunks_fts; the
+    //  buildBlockMarkdown helper produces exactly one chunk per page
+    //  at chunk_idx 0.
+    index.storeChunkContext(
+      "indirect.md",
+      0,
+      "Discusses an underground neutrino observatory at 2 km depth.",
+      "test-model",
+    );
+
+    const after = index.bm25PrefilterPaths("neutrino", 10);
+    const paths = [...after.keys()];
+
+    // Both pages now surface.
+    expect(paths).toContain("direct.md");
+    expect(paths).toContain("indirect.md");
+
+    // Chunk-text channel keeps priority on the interleave: direct.md
+    //  (matched in chunk text) sits before indirect.md (matched only
+    //  in context). The rank values reflect interleave order, not the
+    //  raw FTS rank — lower is better.
+    const directRank = after.get("direct.md") ?? Number.POSITIVE_INFINITY;
+    const indirectRank = after.get("indirect.md") ?? Number.POSITIVE_INFINITY;
+    expect(directRank).toBeLessThan(indirectRank);
+
+    // No duplicates — each path appears at most once even when both
+    //  channels match.
+    expect(new Set(paths).size).toBe(paths.length);
+  });
+
+  it("bm25PrefilterPaths gracefully no-ops when chunk_contexts is empty", () => {
+    const { index } = createIndex();
+    index.indexPage(
+      "only.md",
+      buildBlockMarkdown([
+        {
+          id: "blk_01HONLYAAAAAAAAAAAAAAAAAAA",
+          text: "An isolated mention of cardamom in the spice rack.",
+        },
+      ]),
+      "test",
+    );
+
+    // Never call storeChunkContext — the contexts table stays empty.
+    //  The prefilter must still return the chunk-text match unchanged
+    //  (NULL-fallback contract from the contextualization worker).
+    const result = index.bm25PrefilterPaths("cardamom", 10);
+    expect([...result.keys()]).toEqual(["only.md"]);
+  });
 });
