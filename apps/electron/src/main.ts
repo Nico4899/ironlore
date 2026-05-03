@@ -271,10 +271,49 @@ async function createWindow(paths: AppPaths): Promise<void> {
   }
 }
 
+/**
+ * Auto-update is opt-in per docs/07-tech-stack.md §Electron shell
+ * §Auto-update — "default off — users should know when their
+ * knowledge base app is upgrading itself." The opt-in lives in a
+ * small text file under userData/ rather than the SPA Settings to
+ * keep the wiring minimal for 1.0; a Settings → Updates toggle is a
+ * straightforward follow-up that just writes the same file.
+ *
+ * To enable: create `<userData>/auto-update.enabled` (any contents,
+ * even empty). To disable: delete the file. Polled at app start +
+ * every 4 h thereafter; only runs in packaged builds (the dev shell
+ * has no real release stream to compare against).
+ */
+function maybeStartAutoUpdater(paths: AppPaths): void {
+  if (!app.isPackaged) return;
+  const flag = join(paths.userData, "auto-update.enabled");
+  if (!existsSync(flag)) return;
+  // Dynamic import so the dev path (where the dep might not be
+  //  installed in every workspace permutation) doesn't crash on the
+  //  unrelated import. In packaged builds the dep ships in the asar.
+  import("electron-updater")
+    .then(({ autoUpdater }) => {
+      autoUpdater.logger = console;
+      const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
+      const poll = (): void => {
+        autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+          console.warn("[auto-update] check failed:", err);
+        });
+      };
+      poll();
+      const t = setInterval(poll, FOUR_HOURS_MS);
+      app.on("before-quit", () => clearInterval(t));
+    })
+    .catch((err) => {
+      console.warn("[auto-update] electron-updater unavailable:", err);
+    });
+}
+
 app.whenReady().then(async () => {
   try {
     const paths = resolvePaths();
     await createWindow(paths);
+    maybeStartAutoUpdater(paths);
   } catch (err) {
     dialog.showErrorBox(
       "Ironlore failed to start",

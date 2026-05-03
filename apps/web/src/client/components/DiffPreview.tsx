@@ -14,6 +14,18 @@ interface DiffPreviewProps {
    * resting / pending state.
    */
   commitSha?: string;
+  /**
+   * Phase-11 inline-diff plugin (docs/03-editor.md §Pending-edit
+   * decorations) — when the proposed edit's target page is NOT the
+   * one the user has open, surface an "Open page" affordance that
+   * routes them to the in-editor inline-diff surface instead of
+   * forcing the full approve/reject decision from the panel.
+   * `onOpenPage` is invoked with no args; the caller decides whether
+   * to navigate, push the pending edit into the editor store, or
+   * both. When `false`, the button isn't rendered.
+   */
+  showOpenPageButton?: boolean;
+  onOpenPage?: () => void;
 }
 
 /**
@@ -40,6 +52,8 @@ export function DiffPreview({
   onApprove,
   onReject,
   commitSha,
+  showOpenPageButton = false,
+  onOpenPage,
 }: DiffPreviewProps) {
   const lines = diff.split("\n");
   const { added, removed } = countHunkLines(lines);
@@ -170,6 +184,32 @@ export function DiffPreview({
             borderTop: "1px solid var(--il-border-soft)",
           }}
         >
+          {showOpenPageButton && onOpenPage && (
+            // Phase-11 inline-diff bridge: when the target page isn't
+            //  open, the user can choose to review the change in the
+            //  editor surface (where the inline plugin shows ghost
+            //  decorations + Tab-to-accept) instead of approving from
+            //  the panel. Sits before Reject so it doesn't displace
+            //  the primary approve/reject grammar.
+            <button
+              type="button"
+              onClick={onOpenPage}
+              style={{
+                flex: 1,
+                padding: "5px 8px",
+                fontSize: 12,
+                fontFamily: "var(--font-sans)",
+                fontWeight: 500,
+                background: "transparent",
+                color: "var(--il-text2)",
+                border: "1px solid var(--il-border-soft)",
+                borderRadius: 3,
+                cursor: "pointer",
+              }}
+            >
+              Open page
+            </button>
+          )}
           <button
             type="button"
             onClick={onReject}
@@ -266,7 +306,11 @@ function DiffPreviewSummary({
         −{removed} +{added}
       </span>
       <span className="flex-1" />
-      {shortSha && <span style={{ color: "var(--il-text3)" }}>{shortSha}</span>}
+      {/* Phase-12 git-terminology cleanup (B.6): present the resolved
+       *   commit hash with a `version` label so the chrome reads as
+       *   product noun, not git-internal noun — consistent with the
+       *   AI panel + Agent Detail page renames. */}
+      {shortSha && <span style={{ color: "var(--il-text3)" }}>version {shortSha}</span>}
     </div>
   );
 }

@@ -2,6 +2,14 @@ import { ulid } from "./ulid.js";
 
 const BLOCK_ID_RE = /<!-- #blk_([A-Z0-9]{26}) -->/;
 
+/**
+ * YAML frontmatter fence detector. A bare `---` line opens/closes
+ * frontmatter; we also tolerate `--- <!-- #blk_... -->` so files an
+ * older parser corrupted (by stamping a block-ID onto the fence) are
+ * still recognised and the fence isn't mistaken for body content.
+ */
+const FRONTMATTER_FENCE_RE = /^---(?:\s|<!--|$)/;
+
 export type BlockKind =
   | "heading"
   | "paragraph"
@@ -86,6 +94,27 @@ export function parseBlocks(markdown: string): Block[] {
 
   let offset = 0;
   let i = 0;
+
+  // Skip a leading YAML frontmatter region. We emit no block for it
+  // so `assignBlockIds` won't stamp an ID onto the `---` fences —
+  // doing so makes line 1 no longer parse as YAML (the opener must be
+  // exactly `---`), which then cascades into editor save round-trips
+  // that collapse the YAML body into a setext-2 heading.
+  //
+  // The fence detector tolerates a trailing block-ID comment so files
+  // an older parser already corrupted (line 1 = `--- <!-- #blk... -->`)
+  // are still recognised as having frontmatter and skipped correctly.
+  if (lines[0] !== undefined && FRONTMATTER_FENCE_RE.test(lines[0])) {
+    for (let j = 1; j < lines.length; j++) {
+      if (FRONTMATTER_FENCE_RE.test(lines[j] ?? "")) {
+        let advance = 0;
+        for (let k = 0; k <= j; k++) advance += (lines[k] ?? "").length + 1;
+        offset = advance;
+        i = j + 1;
+        break;
+      }
+    }
+  }
 
   while (i < lines.length) {
     const line = lines[i] ?? "";
@@ -280,4 +309,76 @@ export function parseBlocks(markdown: string): Block[] {
 export function extractBlockId(text: string): string | null {
   const match = BLOCK_ID_RE.exec(text);
   return match ? `blk_${match[1]}` : null;
+}
+
+/**
+ * Inject block IDs into markdown. Only adds IDs to blocks that don't
+ * already have one; existing IDs are preserved verbatim. Idempotent.
+ *
+ * Lives in `@ironlore/core` (not `apps/web/src/server/`) so it's
+ * usable from the CLI without cross-importing server code — the
+ * `ironlore repair --add-block-ids` retrofit, the seeder's
+ * write-time stamp pass, and the StorageWriter's PUT handler all
+ * call this same helper.
+ *
+ * Returns the annotated markdown and the block index. The block
+ * objects in the returned `blocks` array are the same shape as
+ * `parseBlocks(markdown)` returns, so callers can pipe straight into
+ * `.blocks.json` sidecar writes.
+ */
+export function assignBlockIds(markdown: string): {
+  markdown: string;
+  blocks: Block[];
+} {
+  const blocks = parseBlocks(markdown);
+  const lines = markdown.split("\n");
+  const result: string[] = [];
+
+  let lineIdx = 0;
+  let blockIdx = 0;
+
+  while (lineIdx < lines.length) {
+    const line = lines[lineIdx] ?? "";
+
+    const block = blocks[blockIdx];
+    if (block && lineOffsetMatches(lines, lineIdx, block.startOffset)) {
+      const blockEndLine = findLineAtOffset(lines, block.endOffset);
+
+      for (let j = lineIdx; j <= blockEndLine; j++) {
+        result.push(lines[j] ?? "");
+      }
+
+      const lastLineIdx = result.length - 1;
+      const lastLine = result[lastLineIdx] ?? "";
+      if (!BLOCK_ID_RE.test(lastLine)) {
+        result[lastLineIdx] = `${lastLine} <!-- #${block.id} -->`;
+      }
+
+      lineIdx = blockEndLine + 1;
+      blockIdx++;
+    } else {
+      result.push(line);
+      lineIdx++;
+    }
+  }
+
+  return { markdown: result.join("\n"), blocks };
+}
+
+function lineOffsetMatches(lines: string[], lineIdx: number, targetOffset: number): boolean {
+  let offset = 0;
+  for (let i = 0; i < lineIdx; i++) {
+    offset += (lines[i] ?? "").length + 1;
+  }
+  return offset === targetOffset;
+}
+
+function findLineAtOffset(lines: string[], targetOffset: number): number {
+  let offset = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const lineEnd = offset + (lines[i] ?? "").length;
+    if (lineEnd >= targetOffset) return i;
+    offset += (lines[i] ?? "").length + 1;
+  }
+  return lines.length - 1;
 }

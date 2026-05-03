@@ -52,10 +52,18 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
    * generating a 768-float vector just to ask "is Ollama up?".
    */
   static async detectEmbeddingModel(
-    fetchFn: (url: string) => Promise<Response> = globalThis.fetch,
+    fetchFn: (url: string, init?: RequestInit) => Promise<Response> = globalThis.fetch,
   ): Promise<string | null> {
+    // 300 ms timeout per docs/07-tech-stack.md §First-launch — same
+    //  contract as `OllamaProvider.detect()`. A hung Ollama mustn't
+    //  block server startup. Both abort and error degrade to `null`.
+    const timeoutMs = Number(process.env.IRONLORE_OLLAMA_DETECT_TIMEOUT_MS ?? 300);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetchFn("http://127.0.0.1:11434/api/tags");
+      const res = await fetchFn("http://127.0.0.1:11434/api/tags", {
+        signal: controller.signal,
+      });
       if (!res.ok) return null;
       const body = (await res.json()) as { models?: Array<{ name: string }> };
       const models = (body.models ?? []).map((m) => m.name);
@@ -70,6 +78,8 @@ export class OllamaEmbeddingProvider implements EmbeddingProvider {
       return null;
     } catch {
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

@@ -3,6 +3,7 @@ import { parseBlocks } from "@ironlore/core";
 import { assignBlockIds, type BlockProvenance, writeBlocksSidecar } from "../block-ids.js";
 import type { SearchIndex } from "../search-index.js";
 import type { StorageWriter } from "../storage-writer.js";
+import { checkToolAcl } from "./acl-gate.js";
 import { extractPageKind } from "./page-kind.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 import { assertWritableKind, WritableKindsViolation } from "./writable-kinds-gate.js";
@@ -73,6 +74,10 @@ export function createKbReplaceBlock(
       return {
         pageId: path,
         diff: renderReplaceDiff(target.text, markdown, blockId),
+        op: "replace",
+        blockId,
+        currentMd: target.text,
+        proposedMd: markdown,
       };
     },
     async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
@@ -83,6 +88,11 @@ export function createKbReplaceBlock(
         etag: string;
         derived_from?: string[];
       };
+
+      // Phase-9 multi-user: gate on write access before doing anything
+      //  destructive. Single-user runs + cron heartbeats permit.
+      const aclCheck = checkToolAcl(ctx, writer, path, "write");
+      if (!aclCheck.ok) return JSON.stringify(aclCheck.envelope);
 
       // Read current content.
       let currentContent: string;

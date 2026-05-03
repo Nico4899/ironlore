@@ -258,4 +258,33 @@ describe("OllamaProvider.detect", () => {
     const result = await OllamaProvider.detect(fetchFn);
     expect(result).toEqual({ models: [] });
   });
+
+  it("times out at 300ms when the probe hangs (per docs/07-tech-stack.md §First-launch)", async () => {
+    // Fetch never resolves on its own — only the AbortSignal propagated
+    //  through `init.signal` should reject the call. Doc spec: 300 ms
+    //  cap so a hung Ollama process doesn't block server startup.
+    const fetchFn = ((url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        if (init?.signal) {
+          if (init.signal.aborted) {
+            reject(new DOMException("aborted", "AbortError"));
+            return;
+          }
+          init.signal.addEventListener("abort", () => {
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        }
+        // Intentionally never resolves.
+      })) as unknown as typeof globalThis.fetch;
+
+    const start = Date.now();
+    const result = await OllamaProvider.detect(fetchFn);
+    const elapsed = Date.now() - start;
+
+    expect(result).toBeNull();
+    // Cap is 300 ms; allow ~150 ms slack for timer scheduler jitter +
+    //  CI noise. The point is "well under a multi-second hang", not
+    //  millisecond precision.
+    expect(elapsed).toBeLessThan(450);
+  });
 });

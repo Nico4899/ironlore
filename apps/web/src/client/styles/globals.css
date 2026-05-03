@@ -865,6 +865,44 @@ kbd {
 }
 
 /*
+ * AI panel resize handle — mirror of `.il-sidebar-resize` but
+ * anchored to the LEFT edge of the AI panel (which sits on the
+ * right side of the viewport, so the user-facing edge is its left).
+ * Same hit-target geometry, same hover/focus blue-glow.
+ */
+.il-ai-panel-resize {
+  position: absolute;
+  top: 0;
+  left: -3px;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  outline: none;
+  z-index: 1;
+  transition: background var(--motion-snap) ease-out;
+}
+.il-ai-panel-resize::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 3px;
+  width: 1px;
+  background: var(--il-border);
+  transition: width var(--motion-snap) ease-out,
+              right var(--motion-snap) ease-out,
+              background var(--motion-snap) ease-out;
+}
+.il-ai-panel-resize:hover::before,
+.il-ai-panel-resize:focus-visible::before,
+.il-ai-panel-resize:active::before {
+  width: 3px;
+  right: 2px;
+  background: var(--il-blue);
+  box-shadow: 0 0 8px var(--il-blue-glow);
+}
+
+/*
  * Collapsed-sidebar top tile. The logo sits in the cell at rest; on
  * hover (or keyboard focus on the button itself) an expand-chevron
  * fades up and overlays it. Both children stack via absolute
@@ -1046,4 +1084,96 @@ select:focus {
 .docx-body a {
   color: var(--il-blue);
   text-decoration: underline;
+}
+
+/*
+ * AI-panel assistant reply — markdown rendering inside CitationText.
+ *
+ * `renderMarkdownSafe` hands us GFM HTML; the AI panel's text-13/lh-1.55
+ * baseline propagates from `AssistantReply`'s wrapper, but block elements
+ * (headings, lists, code fences) need their own rhythm so the agent's
+ * structured replies don't read as a wall of text the way the legacy
+ * inline-span renderer made them.
+ */
+.il-assistant-md > :first-child { margin-top: 0; }
+.il-assistant-md > :last-child  { margin-bottom: 0; }
+
+.il-assistant-md p {
+  margin: 0 0 0.55rem;
+}
+.il-assistant-md p:last-child { margin-bottom: 0; }
+
+.il-assistant-md h1,
+.il-assistant-md h2,
+.il-assistant-md h3,
+.il-assistant-md h4 {
+  font-family: var(--font-sans);
+  color: var(--il-text);
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0.85rem 0 0.4rem;
+  letter-spacing: -0.005em;
+}
+.il-assistant-md h1 { font-size: 1.15rem; }
+.il-assistant-md h2 { font-size: 1.05rem; }
+.il-assistant-md h3 { font-size: 1rem; }
+.il-assistant-md h4 { font-size: 0.95rem; }
+
+.il-assistant-md ul,
+.il-assistant-md ol {
+  margin: 0 0 0.55rem;
+  padding-left: 1.4rem;
+}
+.il-assistant-md ul { list-style: disc; }
+.il-assistant-md ol { list-style: decimal; }
+.il-assistant-md li { margin: 0.15rem 0; }
+.il-assistant-md li > p { margin: 0; }
+
+.il-assistant-md code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 0.05em 0.35em;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--il-slate-elev) 60%, transparent);
+  border: 1px solid var(--il-border-soft);
+  color: var(--il-text);
+}
+
+.il-assistant-md pre {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.45;
+  padding: 0.55rem 0.7rem;
+  margin: 0 0 0.55rem;
+  border-radius: 4px;
+  background: var(--il-slate-elev);
+  border: 1px solid var(--il-border-soft);
+  overflow-x: auto;
+}
+.il-assistant-md pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.il-assistant-md blockquote {
+  margin: 0 0 0.55rem;
+  padding: 0.2rem 0 0.2rem 0.75rem;
+  border-left: 2px solid var(--il-border);
+  color: var(--il-text2);
+}
+
+.il-assistant-md a {
+  color: var(--il-blue);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.il-assistant-md strong { font-weight: 600; }
+.il-assistant-md em     { font-style: italic; }
+
+.il-assistant-md hr {
+  border: 0;
+  border-top: 1px solid var(--il-border-soft);
+  margin: 0.85rem 0;
 }

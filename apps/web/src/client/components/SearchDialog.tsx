@@ -2,10 +2,12 @@ import { messages } from "@ironlore/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
 import {
+  type AgentSearchHit,
   fetchRecentEdits,
   getApiProject,
   type RecentEdit,
   type SearchResult,
+  searchAgents,
   searchPages,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
@@ -142,11 +144,10 @@ export function SearchDialog() {
    * Phase-11 user-facing semantic toggle. When on AND the server's
    * embedding provider is reachable, the response merges semantic
    * hits (chunk-vector cosine) with the FTS5 result set via RRF —
-   * surfaces concept matches the keyword path misses (e.g. query
-   * "how does the caching work" → "Redis implementation details"
-   * page). Persisted in localStorage so power users don't have to
-   * retoggle each session. The button is disabled when the server
-   * reports `semanticAvailable: false`.
+   * surfaces concept matches the keyword path misses. Persisted in
+   * localStorage so power users don't have to retoggle each session.
+   * The button is disabled when the server reports
+   * `semanticAvailable: false`.
    */
   const [semantic, setSemantic] = useState<boolean>(() => {
     try {
@@ -156,6 +157,12 @@ export function SearchDialog() {
     }
   });
   const [semanticAvailable, setSemanticAvailable] = useState<boolean>(true);
+  /**
+   * Installed-agent search hits — populates the AGENTS tab. Empty
+   * query returns every agent ordered by slug; non-empty filters by
+   * substring against slug/name/role/description (server-side).
+   */
+  const [agentResults, setAgentResults] = useState<AgentSearchHit[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -174,6 +181,7 @@ export function SearchDialog() {
 
     if (!query.trim()) {
       setResults([]);
+      setAgentResults([]);
       setSelectedIdx(0);
       setFtsMs(null);
       return;
@@ -182,7 +190,7 @@ export function SearchDialog() {
     setLoading(true);
     debounceRef.current = setTimeout(() => {
       const t0 = performance.now();
-      searchPages(query, 20, allProjects ? "all" : "current", semantic)
+      void searchPages(query, 20, allProjects ? "all" : "current", semantic)
         .then((r) => {
           setResults(r.results);
           setSemanticAvailable(r.semanticAvailable);
@@ -194,6 +202,11 @@ export function SearchDialog() {
           setFtsMs(null);
         })
         .finally(() => setLoading(false));
+      // Agents tab data — fired in parallel so switching to the tab
+      //  doesn't show a stale list.
+      void searchAgents(query)
+        .then(setAgentResults)
+        .catch(() => setAgentResults([]));
     }, 150);
 
     return () => {
@@ -224,9 +237,10 @@ export function SearchDialog() {
   }, []);
 
   // Tab filtering: BLOCKS = results with a `#` fragment in the path
-  // (chunk-level hits when the server surfaces them); AGENTS has no
-  // data source yet, so the tab stays visible but empty. PAGES =
-  // everything with a plain path.
+  // (chunk-level hits when the server surfaces them); AGENTS reads
+  // from the dedicated agent-search endpoint and is rendered with a
+  // separate row template below. PAGES = everything with a plain
+  // path.
   const counts = useMemo(() => {
     const blocks = results.filter((r) => r.path.includes("#"));
     const pages = results.filter((r) => !r.path.includes("#"));
@@ -234,9 +248,9 @@ export function SearchDialog() {
       ALL: results.length,
       PAGES: pages.length,
       BLOCKS: blocks.length,
-      AGENTS: 0,
+      AGENTS: agentResults.length,
     } satisfies Record<Tab, number>;
-  }, [results]);
+  }, [results, agentResults]);
 
   const filtered = useMemo(() => {
     if (tab === "PAGES") return results.filter((r) => !r.path.includes("#"));
@@ -532,7 +546,7 @@ export function SearchDialog() {
             </div>
           )}
 
-          {!showRecent && displayItems.length === 0 && !loading && (
+          {!showRecent && tab !== "AGENTS" && displayItems.length === 0 && !loading && (
             <div
               className="px-5 py-8 text-center"
               style={{ color: "var(--il-text2)", fontSize: 13 }}
@@ -541,8 +555,87 @@ export function SearchDialog() {
             </div>
           )}
 
+          {tab === "AGENTS" && agentResults.length === 0 && !loading && (
+            <div
+              className="px-5 py-8 text-center"
+              style={{ color: "var(--il-text2)", fontSize: 13 }}
+            >
+              {showRecent ? "No agents installed" : "No agents matched"}
+            </div>
+          )}
+
+          {tab === "AGENTS" &&
+            agentResults.map((a) => (
+              <button
+                key={a.slug}
+                type="button"
+                onClick={() => {
+                  useAppStore.getState().setActiveAgentSlug(a.slug);
+                  close();
+                }}
+                className="grid w-full text-left outline-none"
+                style={{
+                  padding: "11px 20px",
+                  borderTop: "1px solid var(--il-border-soft)",
+                  gridTemplateColumns: "auto 1fr auto",
+                  gap: 12,
+                  alignItems: "baseline",
+                  background: "transparent",
+                  cursor: "pointer",
+                  opacity: a.paused ? 0.6 : 1,
+                }}
+              >
+                <Reuleaux size={7} color={a.paused ? "var(--il-amber)" : "var(--il-blue)"} />
+                <div style={{ minWidth: 0 }}>
+                  <div className="flex items-baseline gap-2">
+                    {a.emoji && <span style={{ fontSize: 13 }}>{a.emoji}</span>}
+                    <span
+                      style={{
+                        fontSize: 13,
+                        color: "var(--il-text)",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {a.name ?? a.slug}
+                    </span>
+                    <span
+                      className="font-mono"
+                      style={{ fontSize: 10.5, color: "var(--il-text3)" }}
+                    >
+                      {a.slug}
+                    </span>
+                    {a.paused && (
+                      <span
+                        className="font-mono uppercase"
+                        style={{
+                          fontSize: 10,
+                          letterSpacing: "0.06em",
+                          color: "var(--il-amber)",
+                        }}
+                      >
+                        paused
+                      </span>
+                    )}
+                  </div>
+                  {(a.description ?? a.role) && (
+                    <div
+                      className="truncate"
+                      style={{
+                        fontSize: 12,
+                        color: "var(--il-text2)",
+                        marginTop: 3,
+                      }}
+                    >
+                      {a.description ?? a.role}
+                    </div>
+                  )}
+                </div>
+                <Key>↵</Key>
+              </button>
+            ))}
+
           {/* Top hit — only when actively searching */}
-          {topHit && (
+          {tab !== "AGENTS" && topHit && (
             <button
               type="button"
               key={topHit.path}
@@ -598,74 +691,76 @@ export function SearchDialog() {
             </button>
           )}
 
-          {/* Subsequent hits — or the whole recent list */}
-          {restHits.map((item, i) => {
-            const idx = topHit ? i + 1 : i;
-            const focused = idx === selectedIdx;
-            // Two rows can share the same `path` if they originated
-            // from different projects (scope=all fan-out merges by
-            // `projectId:path`). Prefix the React key with projectId
-            // so React doesn't reuse a row across projects.
-            const rowKey = item.projectId ? `${item.projectId}:${item.path}` : item.path;
-            return (
-              <button
-                key={rowKey}
-                type="button"
-                onClick={() => openPath(item.path, item.projectId)}
-                onMouseEnter={() => setSelectedIdx(idx)}
-                className="grid w-full text-left outline-none"
-                style={{
-                  padding: "11px 20px",
-                  borderTop: "1px solid var(--il-border-soft)",
-                  gridTemplateColumns: "auto 1fr auto",
-                  gap: 12,
-                  alignItems: "baseline",
-                  background: focused ? "var(--il-slate-hover)" : "transparent",
-                  cursor: "pointer",
-                }}
-              >
-                <Reuleaux size={7} color="var(--il-text3)" />
-                <div style={{ minWidth: 0 }}>
-                  <div className="flex items-baseline gap-2">
-                    {item.projectId && item.projectId !== currentProjectId && (
-                      <ProjectBadge projectId={item.projectId} />
-                    )}
-                    <span
-                      className="font-mono truncate"
-                      style={{ fontSize: 10.5, color: "var(--il-text3)" }}
-                    >
-                      {item.path}
-                    </span>
-                    {item.title && item.title !== item.path && (
+          {/* Subsequent hits — or the whole recent list. AGENTS tab
+              renders its own row template above and skips this map. */}
+          {tab !== "AGENTS" &&
+            restHits.map((item, i) => {
+              const idx = topHit ? i + 1 : i;
+              const focused = idx === selectedIdx;
+              // Two rows can share the same `path` if they originated
+              // from different projects (scope=all fan-out merges by
+              // `projectId:path`). Prefix the React key with projectId
+              // so React doesn't reuse a row across projects.
+              const rowKey = item.projectId ? `${item.projectId}:${item.path}` : item.path;
+              return (
+                <button
+                  key={rowKey}
+                  type="button"
+                  onClick={() => openPath(item.path, item.projectId)}
+                  onMouseEnter={() => setSelectedIdx(idx)}
+                  className="grid w-full text-left outline-none"
+                  style={{
+                    padding: "11px 20px",
+                    borderTop: "1px solid var(--il-border-soft)",
+                    gridTemplateColumns: "auto 1fr auto",
+                    gap: 12,
+                    alignItems: "baseline",
+                    background: focused ? "var(--il-slate-hover)" : "transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <Reuleaux size={7} color="var(--il-text3)" />
+                  <div style={{ minWidth: 0 }}>
+                    <div className="flex items-baseline gap-2">
+                      {item.projectId && item.projectId !== currentProjectId && (
+                        <ProjectBadge projectId={item.projectId} />
+                      )}
                       <span
+                        className="font-mono truncate"
+                        style={{ fontSize: 10.5, color: "var(--il-text3)" }}
+                      >
+                        {item.path}
+                      </span>
+                      {item.title && item.title !== item.path && (
+                        <span
+                          className="truncate"
+                          style={{
+                            fontSize: 13,
+                            color: "var(--il-text)",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {item.title}
+                        </span>
+                      )}
+                    </div>
+                    {item.snippet && (
+                      <div
                         className="truncate"
                         style={{
-                          fontSize: 13,
-                          color: "var(--il-text)",
-                          fontWeight: 500,
+                          fontSize: 12,
+                          color: "var(--il-text2)",
+                          marginTop: 3,
                         }}
                       >
-                        {item.title}
-                      </span>
+                        {renderSnippet(item.snippet)}
+                      </div>
                     )}
                   </div>
-                  {item.snippet && (
-                    <div
-                      className="truncate"
-                      style={{
-                        fontSize: 12,
-                        color: "var(--il-text2)",
-                        marginTop: 3,
-                      }}
-                    >
-                      {renderSnippet(item.snippet)}
-                    </div>
-                  )}
-                </div>
-                <Key>↵</Key>
-              </button>
-            );
-          })}
+                  <Key>↵</Key>
+                </button>
+              );
+            })}
         </div>
 
         {/* Footer — mono uppercase keyboard hints */}

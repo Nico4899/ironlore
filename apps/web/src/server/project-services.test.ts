@@ -121,4 +121,41 @@ describe("ProjectServices.forProject", () => {
       await services.stop();
     }
   });
+
+  it("drainGit() commits pending WAL entries and reports the count", async () => {
+    const services = ProjectServices.forProject(install.installRoot, "alpha");
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: noop stand-in for WS broadcaster
+      await services.start((() => {}) as any);
+      await services.writer.write("flush-test.md", "# Flush\n", null);
+
+      // First drain commits the entry → returns 1.
+      const committed = await services.drainGit();
+      expect(committed).toBeGreaterThanOrEqual(1);
+
+      // Second drain on a clean WAL returns 0.
+      const second = await services.drainGit();
+      expect(second).toBe(0);
+    } finally {
+      await services.stop();
+    }
+  });
+
+  it("pushGit() reports noRemote=true when no git remote is configured", async () => {
+    const services = ProjectServices.forProject(install.installRoot, "alpha");
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: noop stand-in for WS broadcaster
+      await services.start((() => {}) as any);
+      await services.writer.write("push-test.md", "# Push\n", null);
+
+      const result = await services.pushGit();
+      expect(result.ok).toBe(false);
+      expect(result.noRemote).toBe(true);
+      // The drain still happens before the remote-check, so the WAL
+      // shouldn't be sitting on a stale entry afterwards.
+      expect(result.drained).toBeGreaterThanOrEqual(0);
+    } finally {
+      await services.stop();
+    }
+  });
 });

@@ -146,6 +146,15 @@ export class SearchIndex {
 
     this.db = new Database(dbPath);
     this.db.pragma("journal_mode = WAL");
+    // Defensive: better-sqlite3 sets `busy_timeout = 5000` by default,
+    //  but the value is only meaningful at run time when SQLite
+    //  encounters a busy lock — being explicit means a future opener
+    //  that overrides the default doesn't accidentally turn this DB
+    //  into a fail-fast surface for SQLITE_BUSY_SNAPSHOT during the
+    //  startup reindex, embedding-worker tick, or contextualization
+    //  tick races. 5 s is the longest the user is willing to wait
+    //  for a write lock; longer than that surfaces as a real error.
+    this.db.pragma("busy_timeout = 5000");
     this.init();
   }
 
@@ -269,6 +278,40 @@ export class SearchIndex {
       )
     `);
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_chunk_vectors_path ON chunk_vectors(path)");
+
+    // Phase-11: Anthropic Contextual Retrieval — per-chunk LLM-generated
+    // context summary that lifts BM25 recall on indirect-term queries
+    // (the chunk doesn't contain the literal term but the page does).
+    // Two tables:
+    //   - `chunk_contexts` — durable shadow keyed (path, chunk_idx). Holds
+    //     the context text + which model produced it + when. The
+    //     `ContextualizationWorker` walks rows missing from this table
+    //     and fills them on a 30 s tick.
+    //   - `chunk_contexts_fts` — parallel FTS5 over the context text only.
+    //     `pages_chunks_fts` cannot be ALTER'd (FTS5 virtual tables don't
+    //     support column addition), so we keep contexts in a sibling
+    //     index and RRF-merge match results at search time.
+    // NULL fallback: when no chat provider is registered, neither table
+    // gets populated; FTS over `pages_chunks_fts` continues to work
+    // unchanged. See docs/04-ai-and-agents.md §Retrieval pipeline.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS chunk_contexts (
+        path         TEXT NOT NULL,
+        chunk_idx    INTEGER NOT NULL,
+        context      TEXT NOT NULL,
+        model        TEXT NOT NULL,
+        generated_at INTEGER NOT NULL,
+        PRIMARY KEY (path, chunk_idx)
+      )
+    `);
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_chunk_contexts_path ON chunk_contexts(path)");
+    this.db.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS chunk_contexts_fts USING fts5(
+        path,
+        chunk_idx UNINDEXED,
+        context
+      )
+    `);
   }
 
   /**
@@ -292,6 +335,10 @@ export class SearchIndex {
       // so old embeddings no longer align with the new chunk_idx
       // numbering. Drop them — the backfill pass re-embeds.
       this.db.prepare("DELETE FROM chunk_vectors WHERE path = ?").run(pagePath);
+      // Same shift invalidates contextual-retrieval summaries — the
+      // ContextualizationWorker re-fills on its next tick.
+      this.db.prepare("DELETE FROM chunk_contexts WHERE path = ?").run(pagePath);
+      this.db.prepare("DELETE FROM chunk_contexts_fts WHERE path = ?").run(pagePath);
       const blocks = parseBlocks(content);
       if (blocks.length > 0) {
         const insertChunk = this.db.prepare(
@@ -369,6 +416,9 @@ export class SearchIndex {
       // Cascade hybrid-retrieval embeddings alongside the FTS rows —
       // a deleted page must not linger as ghost vectors.
       this.db.prepare("DELETE FROM chunk_vectors WHERE path = ?").run(pagePath);
+      // Cascade contextual-retrieval summaries for the same reason.
+      this.db.prepare("DELETE FROM chunk_contexts WHERE path = ?").run(pagePath);
+      this.db.prepare("DELETE FROM chunk_contexts_fts WHERE path = ?").run(pagePath);
     });
     txn();
 
@@ -419,6 +469,29 @@ export class SearchIndex {
       SearchResult & { blockIdStart?: string; blockIdEnd?: string }
     >;
 
+    // Stage 2b: contextual-retrieval FTS — chunks whose LLM-generated
+    // summary matches the query surface here. Joined back to
+    // `pages_chunks_fts` to recover the block-ID pin so a context hit
+    // still produces a `[[page#blk_…]]` citation. Empty when no
+    // provider has populated `chunk_contexts_fts` (graceful no-op).
+    const contextResults = this.db
+      .prepare(
+        `SELECT c.path AS path,
+                snippet(chunk_contexts_fts, 2, '<mark>', '</mark>', '…', 32) AS snippet,
+                p.block_id_start AS blockIdStart,
+                p.block_id_end AS blockIdEnd,
+                c.rank AS rank
+         FROM chunk_contexts_fts c
+         JOIN pages_chunks_fts p
+           ON p.path = c.path AND p.chunk_idx = c.chunk_idx
+         WHERE chunk_contexts_fts MATCH ?
+         ORDER BY c.rank
+         LIMIT ?`,
+      )
+      .all(ftsQuery, limit * 2) as Array<
+      SearchResult & { blockIdStart?: string; blockIdEnd?: string }
+    >;
+
     // RRF merge: combine page-level and chunk-level results.
     // Chunk results carry block-ID citations; page results have titles.
     const K = 60; // RRF constant
@@ -456,6 +529,37 @@ export class SearchIndex {
           score: rrfScore,
           result: { path: r.path, title: r.title ?? r.path, snippet: r.snippet, rank: r.rank },
         });
+      }
+    }
+
+    // Fold context hits in with a slightly attenuated RRF weight —
+    //  context matches are real signal but should rank below a
+    //  literal-text match on the same path. Halving the contribution
+    //  preserves the recall lift without flipping the ordering for
+    //  the easy direct-match case.
+    const CONTEXT_WEIGHT = 0.5;
+    for (let i = 0; i < contextResults.length; i++) {
+      const r = contextResults[i];
+      if (!r) continue;
+      const key = r.path;
+      const existing = scoreMap.get(key);
+      const rrfScore = CONTEXT_WEIGHT / (K + i + 1);
+      if (existing) {
+        existing.score += rrfScore;
+      } else {
+        const newResult: SearchResult = {
+          path: r.path,
+          title: r.title ?? r.path,
+          snippet: r.snippet,
+          rank: r.rank,
+        };
+        // Pin block IDs from the joined chunk row so context-only hits
+        //  still cite the right block.
+        if (r.blockIdStart)
+          (newResult as unknown as Record<string, unknown>).blockIdStart = r.blockIdStart;
+        if (r.blockIdEnd)
+          (newResult as unknown as Record<string, unknown>).blockIdEnd = r.blockIdEnd;
+        scoreMap.set(key, { score: rrfScore, result: newResult });
       }
     }
 
@@ -582,6 +686,9 @@ export class SearchIndex {
     for (const s of sources) {
       for (const key of linkTargetCandidates(s.path)) sourceByKey.set(key, s);
     }
+    // `linkTargetCandidates` already emits lowercase variants; lookups
+    //  must lowercase the link target so case-insensitive resolution
+    //  matches Obsidian-compat (docs/01-content-model.md §Obsidian).
 
     const getOutlinks = this.db.prepare(
       "SELECT DISTINCT target_path AS target FROM backlinks WHERE source_path = ?",
@@ -597,7 +704,7 @@ export class SearchIndex {
       const links = getOutlinks.all(wiki.path) as Array<{ target: string }>;
       const seen = new Set<string>();
       for (const { target } of links) {
-        const source = sourceByKey.get(target);
+        const source = sourceByKey.get(linkLookupKey(target));
         if (!source) continue;
         if (seen.has(source.path)) continue;
         seen.add(source.path);
@@ -656,11 +763,15 @@ export class SearchIndex {
       .all() as Array<{ target: string }>;
     const targets = new Set(targetRows.map((r) => r.target));
 
+    // Lowercase the cited-target set once so the orphan check is
+    //  case-insensitive (docs/01-content-model.md §Obsidian).
+    const targetsLc = new Set<string>();
+    for (const t of targets) targetsLc.add(linkLookupKey(t));
     const out: Array<{ path: string; updatedAt: string }> = [];
     for (const page of pages) {
       if (excludePrefixes.some((pre) => page.path.startsWith(pre))) continue;
       const candidates = linkTargetCandidates(page.path);
-      const linked = candidates.some((c) => targets.has(c));
+      const linked = candidates.some((c) => targetsLc.has(linkLookupKey(c)));
       if (!linked) out.push(page);
     }
     out.sort((a, b) => a.path.localeCompare(b.path));
@@ -717,7 +828,10 @@ export class SearchIndex {
     const grouped = new Map<string, Set<string>>();
     for (const r of rows) {
       if (excludePrefixes.some((pre) => r.source.startsWith(pre))) continue;
-      if (resolvedTargets.has(r.target)) continue;
+      // Case-insensitive resolution per docs/01-content-model.md
+      //  §Obsidian — `[[research]]` and `[[Research]]` both resolve
+      //  to a page at `Research.md`.
+      if (resolvedTargets.has(linkLookupKey(r.target))) continue;
       let bucket = grouped.get(r.target);
       if (!bucket) {
         bucket = new Set();
@@ -765,7 +879,7 @@ export class SearchIndex {
     if (tokens.length === 0) return new Map();
     const ftsQuery = tokens.map((t) => `"${t}"*`).join(" ");
 
-    const rows = this.db
+    const chunkRows = this.db
       .prepare(
         `SELECT path, rank
          FROM pages_chunks_fts
@@ -775,14 +889,37 @@ export class SearchIndex {
       )
       .all(ftsQuery, limit * 3) as Array<{ path: string; rank: number }>;
 
-    // Keep each path at its best chunk-level rank — pages with many
-    // chunk matches shouldn't surface multiple times in the prefilter.
+    // Phase-11 Contextual Retrieval: also MATCH against the parallel
+    // `chunk_contexts_fts` index. Chunks whose LLM-generated context
+    // mentions the query term surface here even when the chunk text
+    // itself doesn't — the +35–67% recall lift on indirect-term queries
+    // documented in Anthropic's CR pattern. NULL-fallback friendly:
+    // when no provider has been registered yet the contexts table is
+    // empty, this query returns zero rows, and the prefilter behaves
+    // exactly as before.
+    const contextRows = this.db
+      .prepare(
+        `SELECT path, rank
+         FROM chunk_contexts_fts
+         WHERE chunk_contexts_fts MATCH ?
+         ORDER BY rank
+         LIMIT ?`,
+      )
+      .all(ftsQuery, limit * 3) as Array<{ path: string; rank: number }>;
+
+    // Interleave the two ordered streams so neither completely
+    //  dominates: a path matched only via context still gets a
+    //  prefilter slot, but the chunk-text channel keeps priority for
+    //  ties (preserves existing direct-match behaviour).
     const pathRank = new Map<string, number>();
     let idx = 0;
-    for (const row of rows) {
-      if (pathRank.has(row.path)) continue;
-      pathRank.set(row.path, idx++);
+    const max = Math.max(chunkRows.length, contextRows.length);
+    for (let i = 0; i < max && pathRank.size < limit; i++) {
+      const a = chunkRows[i];
+      if (a && !pathRank.has(a.path)) pathRank.set(a.path, idx++);
       if (pathRank.size >= limit) break;
+      const b = contextRows[i];
+      if (b && !pathRank.has(b.path)) pathRank.set(b.path, idx++);
     }
     return pathRank;
   }
@@ -848,6 +985,105 @@ export class SearchIndex {
       n: number;
     };
     return row.n;
+  }
+
+  /**
+   * Total number of pages tracked in the index. Used by
+   * `ProjectServices.start()` to decide whether to skip the
+   * boot-time `reindexAll`: a populated index means the previous
+   * run committed and the file watcher kept it in sync, so wiping
+   * + rebuilding on every restart is wasted work AND a needless
+   * write-lock contention surface against any leftover process
+   * holding the DB. Zero rows = fresh install or wiped index =
+   * full reindex needed.
+   */
+  countPagesTotal(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM pages").get() as { n: number };
+    return row.n;
+  }
+
+  /**
+   * Persist an Anthropic Contextual Retrieval summary for a single
+   * chunk. Writes to both the durable shadow table (`chunk_contexts`)
+   * and the parallel FTS5 index (`chunk_contexts_fts`) in one atomic
+   * pair so a query against the FTS index always finds a corresponding
+   * shadow row.
+   *
+   * Upserts on conflict: the worker may legitimately re-contextualise
+   * a chunk after a model swap, and an old context shouldn't survive.
+   */
+  storeChunkContext(pagePath: string, chunkIdx: number, context: string, model: string): void {
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO chunk_contexts (path, chunk_idx, context, model, generated_at)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(path, chunk_idx) DO UPDATE SET
+             context = excluded.context,
+             model = excluded.model,
+             generated_at = excluded.generated_at`,
+        )
+        .run(pagePath, chunkIdx, context, model, Date.now());
+      // FTS5 has no UPSERT — delete + insert keeps the row keyed.
+      this.db
+        .prepare("DELETE FROM chunk_contexts_fts WHERE path = ? AND chunk_idx = ?")
+        .run(pagePath, chunkIdx);
+      this.db
+        .prepare("INSERT INTO chunk_contexts_fts (path, chunk_idx, context) VALUES (?, ?, ?)")
+        .run(pagePath, chunkIdx, context);
+    });
+    txn();
+  }
+
+  /**
+   * Enumerate chunks with FTS content but no contextual summary yet.
+   * Pulls the source page in the same row so the contextualization
+   * worker can prompt-cache against the full page text without an
+   * extra read.
+   */
+  getChunksMissingContexts(limit = 10): Array<{ path: string; chunkIdx: number; content: string }> {
+    return this.db
+      .prepare(
+        `SELECT c.path AS path, c.chunk_idx AS chunkIdx, c.content AS content
+         FROM pages_chunks_fts c
+         LEFT JOIN chunk_contexts ctx
+           ON ctx.path = c.path AND ctx.chunk_idx = c.chunk_idx
+         WHERE ctx.path IS NULL
+         LIMIT ?`,
+      )
+      .all(limit) as Array<{ path: string; chunkIdx: number; content: string }>;
+  }
+
+  /** How many chunks are still missing a context summary. */
+  countChunksMissingContexts(): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM pages_chunks_fts c
+         LEFT JOIN chunk_contexts ctx
+           ON ctx.path = c.path AND ctx.chunk_idx = c.chunk_idx
+         WHERE ctx.path IS NULL`,
+      )
+      .get() as { n: number };
+    return row.n;
+  }
+
+  /** How many chunks have a contextual summary attached. */
+  countChunksWithContexts(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM chunk_contexts").get() as { n: number };
+    return row.n;
+  }
+
+  /**
+   * Read the full source-page markdown out of pages_fts. The
+   * Contextual-Retrieval prompt prepends the source page as the
+   * cache-key prefix; we re-read it here rather than asking callers
+   * to plumb the StorageWriter into the worker.
+   */
+  getPageContent(pagePath: string): string | null {
+    const row = this.db.prepare("SELECT content FROM pages_fts WHERE path = ?").get(pagePath) as
+      | { content: string }
+      | undefined;
+    return row?.content ?? null;
   }
 
   /**
@@ -1011,7 +1247,16 @@ export class SearchIndex {
 
   /**
    * Full reindex from filesystem. Nukes all existing data and rebuilds.
-   * Called by `ironlore reindex`.
+   *
+   * Called from two places:
+   *   - `ironlore reindex` CLI — explicit user-driven rebuild.
+   *   - `ProjectServices.start()` on boot, but **only when the index
+   *     is empty (`countPagesTotal === 0`) or WAL recovery wrote
+   *     content back to disk**. A clean restart with a populated
+   *     index skips the rebuild — the file watcher kept the index
+   *     in sync during every prior run, so wiping + rebuilding
+   *     produces no new state and only opens a write-lock contention
+   *     window against any leftover process holding the DB.
    *
    * Markdown files are indexed inline. Extractable binaries (.docx /
    * .xlsx / .eml) are queued and processed asynchronously after the walk
@@ -1027,6 +1272,8 @@ export class SearchIndex {
       this.db.prepare("DELETE FROM recent_edits").run();
       this.db.prepare("DELETE FROM pages").run();
       this.db.prepare("DELETE FROM chunk_vectors").run();
+      this.db.prepare("DELETE FROM chunk_contexts").run();
+      this.db.prepare("DELETE FROM chunk_contexts_fts").run();
     });
     clear();
 
@@ -1215,11 +1462,35 @@ function cosineSimilarity(
  * `.md` (`notes/spoke`), and just the basename stem (`spoke`). Used by
  * `findOrphans` to decide whether a page has any inbound link under
  * any of those spellings.
+ *
+ * **Case handling.** Each spelling is also emitted in its lowercased
+ * form so resolution stays Obsidian-compatible per
+ * docs/01-content-model.md §Obsidian compatibility ("`[[wiki-links]]`
+ * resolve the same way (page title, case-insensitive)"). Callers that
+ * lookup against the returned set should `linkLookupKey()` the link
+ * target so the lower-case key matches.
  */
 function linkTargetCandidates(pagePath: string): string[] {
   const noExt = pagePath.replace(/\.md$/, "");
   const slashIdx = noExt.lastIndexOf("/");
   const basename = slashIdx === -1 ? noExt : noExt.slice(slashIdx + 1);
-  const candidates = new Set<string>([pagePath, noExt, basename]);
+  const candidates = new Set<string>([
+    pagePath,
+    noExt,
+    basename,
+    pagePath.toLowerCase(),
+    noExt.toLowerCase(),
+    basename.toLowerCase(),
+  ]);
   return [...candidates];
+}
+
+/**
+ * Normalize a wiki-link target string for case-insensitive resolution
+ * against the candidate set produced by `linkTargetCandidates`. Always
+ * lowercases — leaves the target shape (path / no-ext / basename)
+ * intact because the candidate set carries every spelling.
+ */
+function linkLookupKey(target: string): string {
+  return target.toLowerCase();
 }

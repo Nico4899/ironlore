@@ -575,3 +575,64 @@ html[data-type-display="serif"] .ProseMirror h1 {
 html[data-motion="none"] .ProseMirror > *:hover::before {
   display: none;
 }
+
+/* ============================================================
+ * Phase-11 inline-diff plugin (docs/03-editor.md §Pending-edit
+ * decorations). Strikethrough + 14% red tint marks the existing
+ * block on a replace or delete; the ghost widget below carries
+ * the proposed text on a 14% green tint with a 2px green left
+ * bar — same palette as the AI-panel DiffPreview card so the
+ * two surfaces read as the same affordance.
+ * ============================================================ */
+
+.ProseMirror .il-diff-strike {
+  background-color: color-mix(in oklch, var(--il-red) 14%, transparent);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: color-mix(in oklch, var(--il-red) 60%, transparent);
+}
+
+.il-diff-ghost {
+  /* The widget is a non-editable child node — make it span the
+   *  full editor column so the ghost text feels like part of the
+   *  document flow, not a popover. */
+  display: block;
+  margin: 0.4rem 0 0.6rem;
+  padding: 0.5rem 0.75rem 0.55rem 0.95rem;
+  border-radius: 4px;
+  border-left: 2px solid var(--il-green);
+  background-color: color-mix(in oklch, var(--il-green) 14%, transparent);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: 1.5;
+  user-select: none;
+}
+
+.il-diff-ghost--delete {
+  /* Pure-delete edits don't get a ghost (proposedMd is undefined),
+   *  so this rule covers the unlikely case where a tool emits an
+   *  empty proposedMd anyway — keep it visually distinct. */
+  border-left-color: var(--il-red);
+  background-color: color-mix(in oklch, var(--il-red) 8%, transparent);
+}
+
+.il-diff-ghost__label {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--il-text2);
+  margin-bottom: 0.35rem;
+  letter-spacing: 0.02em;
+}
+
+.il-diff-ghost__body {
+  white-space: pre-wrap;
+  color: var(--il-text);
+}
+
+.il-diff-ghost__hint {
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
+  font-size: 10.5px;
+  color: var(--il-text3);
+  margin-top: 0.45rem;
+}

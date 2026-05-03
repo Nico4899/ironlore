@@ -56,7 +56,47 @@ services:
       timeout: 3s
       retries: 6
       start_period: 30s
+    # Resource limits per docs/07-tech-stack.md §Docker compose
+    # §Resource limits. Web is interactive request-handling +
+    # in-process job worker; 1 CPU + 512 MB is a conservative
+    # small-VPS baseline. Override via the `IRONLORE_*_LIMIT`
+    # env or by editing this block. NOTE: `deploy.resources` is
+    # honoured by `docker compose up` only when `--compatibility`
+    # is passed (or under Swarm). For non-Swarm Compose the
+    # legacy `mem_limit` / `cpus` keys at the service level apply
+    # — both are listed for portability.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    mem_limit: 512m
+    cpus: 1.0
+
+  # Optional Caddy sidecar — auto-provisions HTTPS via Let's Encrypt
+  # for `IRONLORE_DOMAIN`. Disabled by default because not every
+  # operator wants the cert dance; uncomment the block + set the
+  # domain env, then `docker compose up -d caddy web`. The proxy
+  # forwards 80/443 → ironlore-web:3000.
+  #
+  # caddy:
+  #   image: caddy:2
+  #   container_name: ironlore-caddy
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   environment:
+  #     IRONLORE_DOMAIN: "kb.example.com"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy-data:/data
+  #     - caddy-config:/config
+  #   depends_on:
+  #     - web
 
 volumes:
   ironlore-data:
     name: ironlore-data
+  # caddy-data:
+  # caddy-config:

@@ -29,6 +29,16 @@ export interface ProvenanceStripProps {
   sources?: ReactNode[];
   /** Trust level — affects the right-hand badge. */
   trust?: TrustState;
+  /**
+   * Optional label override for the trust badge. The default labels
+   * (`FRESH` / `STALE` / `UNVERIFIED`) read as content-provenance
+   * vocabulary, which is the right vocabulary for block-level
+   * authorship but ambiguous in the run-finalized card (where the
+   * underlying state is really "applied vs. reverted"). Callers
+   * outside the provenance domain pass a label pair that matches
+   * their own vocabulary.
+   */
+  trustLabelOverride?: { fresh?: string; stale?: string; unverified?: string };
   /** Optional click handler (whole strip is clickable). */
   onClick?: () => void;
   className?: string;
@@ -46,11 +56,13 @@ export function ProvenanceStrip({
   timestamp,
   sources = [],
   trust = "fresh",
+  trustLabelOverride,
   onClick,
   className,
   style,
 }: ProvenanceStripProps) {
-  const { color: trustColor, label: trustLabel } = TRUST_META[trust];
+  const { color: trustColor, label: defaultLabel } = TRUST_META[trust];
+  const trustLabel = trustLabelOverride?.[trust] ?? defaultLabel;
 
   return (
     <div

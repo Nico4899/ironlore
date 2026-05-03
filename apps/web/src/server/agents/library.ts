@@ -53,6 +53,12 @@ export function listLibraryTemplates(dataDir: string): LibraryTemplate[] {
 
   const templates: LibraryTemplate[] = [];
   for (const entry of readdirSync(libDir)) {
+    // Skip reserved non-template files. The library dir holds an
+    // `index.md` README (page frontmatter, no template fields) and
+    // may also carry `_`-prefixed notes; both produced all-null
+    // ghost rows in the listing the audit caught.
+    if (entry === "index.md" || entry.startsWith("_")) continue;
+
     // Resolve both layouts to a single (slug, file path) pair.
     const full = join(libDir, entry);
     let slug: string;

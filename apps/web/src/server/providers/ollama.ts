@@ -27,18 +27,32 @@ export class OllamaProvider implements Provider {
   /**
    * Probe the Ollama API to check if it's running and what models are
    * installed. Returns null if Ollama isn't reachable.
+   *
+   * Per docs/07-tech-stack.md §First-launch provider selection, the
+   * probe must time out at 300 ms — a hung Ollama process (e.g. one
+   * stuck loading a model) shouldn't block server startup. Override
+   * via `IRONLORE_OLLAMA_DETECT_TIMEOUT_MS` for slow-loopback envs
+   * (rare; mostly Docker-on-Docker setups). Both abort and any other
+   * fetch error degrade to `null` (the existing fail-soft contract).
    */
   static async detect(
-    fetchFn: (url: string) => Promise<Response> = globalThis.fetch,
+    fetchFn: (url: string, init?: RequestInit) => Promise<Response> = globalThis.fetch,
   ): Promise<{ models: string[] } | null> {
+    const timeoutMs = Number(process.env.IRONLORE_OLLAMA_DETECT_TIMEOUT_MS ?? 300);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetchFn("http://127.0.0.1:11434/api/tags");
+      const res = await fetchFn("http://127.0.0.1:11434/api/tags", {
+        signal: controller.signal,
+      });
       if (!res.ok) return null;
       const body = (await res.json()) as { models?: Array<{ name: string }> };
       const models = (body.models ?? []).map((m) => m.name);
       return { models };
     } catch {
       return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

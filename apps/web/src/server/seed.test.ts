@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -61,6 +61,37 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).toContain("lintReport");
   });
 
+  // The on-disk `_maintenance/lint-2026-05-02.md` report carried
+  // "Detector not yet available — tracked in Phase 11 roadmap" for
+  // Contradiction flags + Provenance gaps even though both detectors
+  // shipped as real tools. The model fabricated the disclaimer from
+  // training-data priors. The seeded skill body must NEVER carry
+  // language that would prime a future agent run to repeat the
+  // fabrication; pin the absence so a future seed rewrite breaks the
+  // test instead of leaking back into a report.
+  it("seeded lint.md never claims any detector is a stub or unavailable", async () => {
+    await seed(dataDir);
+    const content = readFileSync(join(dataDir, ".agents", ".shared", "skills", "lint.md"), "utf-8");
+
+    expect(content).not.toContain("not yet available");
+    expect(content).not.toContain("Phase 11 roadmap");
+    expect(content).not.toMatch(/\bstub\b/i);
+    expect(content).not.toContain("not shipped");
+    expect(content).not.toContain("coming soon");
+  });
+
+  it("seeded lint.md carries the explicit `## Do not fabricate` guidance", async () => {
+    await seed(dataDir);
+    const content = readFileSync(join(dataDir, ".agents", ".shared", "skills", "lint.md"), "utf-8");
+
+    expect(content).toContain("## Do not fabricate");
+    // The guidance must explicitly tell the model to render `None.`
+    // for empty results rather than reaching for a "not available"
+    // disclaimer. Pin both halves of the constraint.
+    expect(content).toContain("None.");
+    expect(content).toMatch(/shipped today/i);
+  });
+
   it("writes _index.md and _log.md at the vault root with kind: wiki", async () => {
     await seed(dataDir);
 
@@ -104,23 +135,30 @@ describe("seed() — Phase 11 Wiki Gardener assets", () => {
     expect(content).toContain("`lint.md`");
     expect(content).toContain("`_log.md`");
     expect(content).toContain("`_index.md`");
-    // Must NOT carry the generic {{company_name}} templating the other
-    // specialists use — the gardener's role is vault-local.
+    // Regression guard: the role is vault-local, never substituted
+    //  through the {{company_name}} onboarding template.
     expect(content).not.toContain("{{company_name}}");
   });
 
-  it("leaves other library personas on the generic {{company_name}} body", async () => {
+  it("does not seed retired library personas (Technical Writer / Product Manager / SEO Specialist / etc.)", async () => {
     await seed(dataDir);
 
-    const ceoPath = join(dataDir, ".agents", ".library", "ceo.md");
-    const content = readFileSync(ceoPath, "utf-8");
-
-    expect(content).toContain("{{company_name}}");
-    expect(content).toContain("{{company_description}}");
-    // Regression guard: generic personas must not pick up the gardener
-    // body or its `skills: [lint]` declaration by accident.
-    expect(content).not.toContain("lint.md");
-    expect(content).not.toMatch(/skills: \[/);
+    // The library is now wiki-gardener + evolver (seeded here) plus
+    //  the researcher template (seeded by seed-agents.ts under a
+    //  directory shape). Anything else is persona theatre that the
+    //  Visual Agent Builder can produce on demand. Concrete files
+    //  named below were retired in earlier rounds; this test stops
+    //  them from sneaking back in via copy-paste.
+    for (const slug of [
+      "technical-writer",
+      "product-manager",
+      "seo-specialist",
+      "content-marketer",
+      "ceo",
+      "ux-researcher",
+    ]) {
+      expect(existsSync(join(dataDir, ".agents", ".library", `${slug}.md`))).toBe(false);
+    }
   });
 
   it("is idempotent — running seed() twice does not modify existing files", async () => {

@@ -15,11 +15,21 @@ import { EditorState, type Transaction } from "prosemirror-state";
 import { columnResizing, goToNextCell, tableEditing } from "prosemirror-tables";
 import { EditorView } from "prosemirror-view";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ensurePageLoadedExternal,
+  lookupBlockPreview,
+  PREVIEW_HOVER_DELAY_MS,
+  PREVIEW_MAX_CHARS,
+} from "../../hooks/useBlockPreview.js";
+import { submitDryRunVerdict } from "../../lib/api.js";
+import { useAIPanelStore } from "../../stores/ai-panel.js";
 import { useAppStore } from "../../stores/app.js";
+import { type PendingEdit, useEditorStore } from "../../stores/editor.js";
 import { useTreeStore } from "../../stores/tree.js";
 import { CodeBlockView, codeHighlightPlugin } from "./code-block-view.js";
 import { csvPastePlugin } from "./csv-paste-plugin.js";
 import { type EditorCommands, registerEditorCommands } from "./editor-commands.js";
+import { inlineDiffPlugin, setPendingEdits } from "./inline-diff-plugin.js";
 import {
   buildSlashItems,
   filterSlashItems,
@@ -36,6 +46,29 @@ import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
 import "./editor.css";
 
 // ---------------------------------------------------------------------------
+// Wiki-link target resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a typed wiki-link target (the text inside `[[…]]` plus
+ * `.md`) to an actual page path in the tree. Tries literal-match
+ * first, then falls back to case-insensitive lookup so an Obsidian
+ * user typing `[[research notes]]` opens `Research Notes.md` per
+ * docs/01-content-model.md §Obsidian compatibility.
+ *
+ * Returns the original target unchanged if no match exists — the
+ * caller's `setActivePath` will then surface a "page not found"
+ * state, which is preferable to silently rewriting the link to the
+ * lowercased form (and creating a phantom file on the next write).
+ */
+function resolveWikiLinkPath(target: string, nodes: ReadonlyArray<{ path: string }>): string {
+  if (nodes.some((n) => n.path === target)) return target;
+  const targetLc = target.toLowerCase();
+  const hit = nodes.find((n) => n.path.toLowerCase() === targetLc);
+  return hit ? hit.path : target;
+}
+
+// ---------------------------------------------------------------------------
 // Block-ID preservation
 // ---------------------------------------------------------------------------
 
@@ -47,16 +80,39 @@ import "./editor.css";
 const BLOCK_ID_RE = /<!-- #blk_[A-Z0-9]{26} -->/g;
 
 /**
- * YAML frontmatter at the top of a markdown file. ProseMirror has no schema
- * for it, so leaving it in would render as prose. We peel it off before
- * parsing and restore it verbatim on serialize.
+ * YAML frontmatter at the top of a markdown file. ProseMirror has no
+ * schema for it, so leaving it in would render as prose. We peel it
+ * off before parsing and restore it on serialize.
+ *
+ * The fence pattern tolerates a trailing block-ID HTML comment
+ * (e.g. `--- <!-- #blk_... -->`) on either fence — older versions of
+ * the server's block-ID stamper corrupted seed files this way, and a
+ * strict regex would miss the frontmatter entirely, dump the YAML
+ * body into ProseMirror as content, and let the next save round-trip
+ * collapse it into a setext-2 heading. The reattach path normalises
+ * back to clean fences so the file self-heals on save.
  */
-const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+const FRONTMATTER_RE =
+  /^---(?:[ \t]*<!--[^>]*-->)?\r?\n[\s\S]*?\r?\n---(?:[ \t]*<!--[^>]*-->)?\r?\n?/;
 
-function splitFrontmatter(markdown: string): { frontmatter: string; body: string } {
+export function splitFrontmatter(markdown: string): { frontmatter: string; body: string } {
   const match = markdown.match(FRONTMATTER_RE);
   if (!match) return { frontmatter: "", body: markdown };
-  return { frontmatter: match[0], body: markdown.slice(match[0].length) };
+  return {
+    frontmatter: normalizeFrontmatterFences(match[0]),
+    body: markdown.slice(match[0].length),
+  };
+}
+
+/**
+ * Strip block-ID HTML comments from the YAML fences so the saved
+ * file is parseable as YAML again. The opening fence must be exactly
+ * `---` for any YAML loader to recognise it.
+ */
+function normalizeFrontmatterFences(raw: string): string {
+  return raw
+    .replace(/^---[ \t]*<!--[^>]*-->/, "---")
+    .replace(/\n---[ \t]*<!--[^>]*-->(\r?\n?)$/, "\n---$1");
 }
 
 /**
@@ -180,6 +236,50 @@ interface MarkdownEditorProps {
   markdown: string;
   onChange: (markdown: string) => void;
   onSelectionChange?: (selection: { from: number; to: number } | null) => void;
+  /**
+   * Fired whenever the selection's covered block IDs change. Empty
+   * array clears the selection. Drives the AI panel composer's
+   * "N blocks selected" pill so the user can scope an agent prompt
+   * to specific paragraphs without copy-pasting them.
+   */
+  onSelectedBlockIdsChange?: (blockIds: string[]) => void;
+}
+
+/**
+ * Harvest the block IDs covered by a ProseMirror selection.
+ *
+ * Strategy: serialize just the selected slice through the same
+ * `wikiMarkdownSerializer` the rest of the editor uses, then match
+ * each line against the page's block-ID ledger by exact stripped
+ * text. The ledger entry's `text` field was captured from the source
+ * markdown by `stripBlockIds`, so unchanged blocks round-trip with
+ * identical text and find their ID. Edited blocks won't match —
+ * which is the right call: the agent shouldn't claim a stale
+ * block-ID for content the user has rewritten this session.
+ */
+function harvestSelectedBlockIds(
+  view: EditorView,
+  entries: Array<{ id: string; text: string }>,
+): string[] {
+  const { from, to } = view.state.selection;
+  if (from === to || entries.length === 0) return [];
+  const fragment = view.state.doc.slice(from, to).content;
+  // Wrap the fragment in a doc so the serializer has a top-node to
+  //  walk. `topNodeType.create(null, content)` is the canonical
+  //  ProseMirror lift for slice-to-doc.
+  const wrapper = view.state.schema.topNodeType.create(null, fragment);
+  const serialized = wikiMarkdownSerializer.serialize(wrapper);
+  const sliceLines = new Set(
+    serialized
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l !== ""),
+  );
+  const ids: string[] = [];
+  for (const e of entries) {
+    if (sliceLines.has(e.text.trim())) ids.push(e.id);
+  }
+  return ids;
 }
 
 /** UI state for the slash-command popup. */
@@ -210,13 +310,19 @@ interface WikiLinkMenuState {
   to: number;
 }
 
-export function MarkdownEditor({ markdown, onChange, onSelectionChange }: MarkdownEditorProps) {
+export function MarkdownEditor({
+  markdown,
+  onChange,
+  onSelectionChange,
+  onSelectedBlockIdsChange,
+}: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const blockIdsRef = useRef<Array<{ id: string; text: string }>>([]);
   const frontmatterRef = useRef<string>("");
   const onChangeRef = useRef(onChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
+  const onSelectedBlockIdsChangeRef = useRef(onSelectedBlockIdsChange);
   // Track whether we're programmatically updating (external markdown change)
   const suppressRef = useRef(false);
 
@@ -239,6 +345,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
   // Keep callback refs current without recreating the editor
   onChangeRef.current = onChange;
   onSelectionChangeRef.current = onSelectionChange;
+  onSelectedBlockIdsChangeRef.current = onSelectedBlockIdsChange;
 
   /**
    * Run a slash-menu item: delete the `/query` trigger text, then execute
@@ -314,6 +421,34 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     const state = EditorState.create({
       doc,
       plugins: [
+        // Phase-11 inline-diff plugin — registered FIRST so its
+        //  Tab / ⌘⇧Backspace handlers get first dibs on the
+        //  keystroke when an Editor-agent run has parked a
+        //  PendingEdit. With no pending edits the plugin is inert
+        //  (handleKeyDown short-circuits on empty list) so list
+        //  Tab-to-sink + table cell navigation behave unchanged.
+        inlineDiffPlugin({
+          getBlockEntries: () => blockIdsRef.current,
+          onAccept: (edit: PendingEdit) => {
+            const jobId = useAIPanelStore.getState().jobId;
+            // Drop locally first so the decoration disappears the
+            //  instant the user hits Tab — the server round-trip is
+            //  best-effort, exactly like the AI-panel card path.
+            useEditorStore.getState().removePendingEdit(edit.toolCallId);
+            if (jobId) {
+              void submitDryRunVerdict(jobId, edit.toolCallId, "approve").catch(() => {
+                // Swallow — verdict is a best-effort unblock.
+              });
+            }
+          },
+          onReject: (edit: PendingEdit) => {
+            const jobId = useAIPanelStore.getState().jobId;
+            useEditorStore.getState().removePendingEdit(edit.toolCallId);
+            if (jobId) {
+              void submitDryRunVerdict(jobId, edit.toolCallId, "reject").catch(() => {});
+            }
+          },
+        }),
         buildInputRules(schema),
         keymap({
           "Mod-z": undo,
@@ -420,7 +555,8 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
             window.open(href, "_blank", "noopener,noreferrer");
           } else {
             const withExt = href.endsWith(".md") ? href : `${href}.md`;
-            useAppStore.getState().setActivePath(withExt);
+            const resolved = resolveWikiLinkPath(withExt, useTreeStore.getState().nodes);
+            useAppStore.getState().setActivePath(resolved);
           }
           return true;
         },
@@ -436,6 +572,7 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           const pagePart = hashIdx === -1 ? target : target.slice(0, hashIdx);
           const blockRaw = hashIdx === -1 ? null : target.slice(hashIdx + 1);
           const shortBlock = blockRaw == null ? null : blockRaw.replace(/^blk_/, "").slice(-4);
+          const withExt = pagePart && !pagePart.endsWith(".md") ? `${pagePart}.md` : pagePart;
 
           // Match the Blockref primitive's visual contract. The legacy
           //  `ir-wikilink` class is retained as a data hook for tests.
@@ -455,14 +592,137 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
             e.preventDefault();
             e.stopPropagation();
             if (!pagePart) return;
-            const withExt = pagePart.endsWith(".md") ? pagePart : `${pagePart}.md`;
-            useAppStore.getState().setActivePath(withExt);
+            // Case-insensitive resolution per docs/01-content-model.md
+            //  §Obsidian. `[[research notes]]` opens `Research Notes.md`
+            //  when that's what's on disk; literal-match wins when both
+            //  spellings exist.
+            const resolved = resolveWikiLinkPath(withExt, useTreeStore.getState().nodes);
+            useAppStore.getState().setActivePath(resolved);
             // Cmd/Ctrl-click opens the provenance pane instead of navigating.
             if ((e.metaKey || e.ctrlKey) && blockRaw) {
-              useAppStore.getState().openProvenance(withExt, blockRaw);
+              useAppStore.getState().openProvenance(resolved, blockRaw);
             }
           });
-          return { dom };
+
+          // ─── Hover preview ───────────────────────────────────────
+          //  Mirror the AI-panel `Blockref` chip's behaviour: a
+          //  200 ms hover delay, then render a tooltip showing the
+          //  cited block's text (or the page head when no block ID).
+          //  Cache + fetch is shared with the React `Blockref` via
+          //  `useBlockPreview`'s exported helpers, so a page hovered
+          //  in one surface is instant on the next surface.
+          //
+          //  Built as plain DOM rather than a React mount because
+          //  the editor's nodeView surface is a single span with a
+          //  short lifecycle — adding `createRoot` per chip would
+          //  be a memory + lifecycle complexity that's hard to
+          //  justify when ~40 lines of vanilla DOM mirror the
+          //  primitive's visuals exactly.
+          let hoverTimer: number | null = null;
+          let tooltipEl: HTMLDivElement | null = null;
+
+          const buildTooltip = (text: string | null): HTMLDivElement => {
+            const tip = document.createElement("div");
+            tip.setAttribute("role", "tooltip");
+            tip.className = "il-blockref-preview";
+            tip.setAttribute("aria-label", `Preview of ${pagePart}`);
+
+            const head = document.createElement("div");
+            head.className = "il-blockref-preview__head";
+            const fileName = pagePart.split("/").pop() || pagePart;
+            const dot = document.createElement("span");
+            dot.setAttribute("aria-hidden", "true");
+            dot.style.color = "var(--il-text4)";
+            dot.textContent = "·";
+            head.appendChild(dot);
+            const fileSpan = document.createElement("span");
+            fileSpan.className = "truncate";
+            fileSpan.title = pagePart;
+            fileSpan.textContent = fileName;
+            head.appendChild(fileSpan);
+            if (blockRaw) {
+              const sep = document.createElement("span");
+              sep.style.color = "var(--il-text4)";
+              sep.textContent = "/";
+              head.appendChild(sep);
+              const blockSpan = document.createElement("span");
+              blockSpan.style.color = "var(--il-text3)";
+              blockSpan.textContent = blockRaw;
+              head.appendChild(blockSpan);
+            }
+            const spacer = document.createElement("span");
+            spacer.className = "flex-1";
+            head.appendChild(spacer);
+            const hint = document.createElement("span");
+            hint.style.color = "var(--il-text3)";
+            hint.textContent = "click to open";
+            head.appendChild(hint);
+
+            const body = document.createElement("div");
+            body.className = "il-blockref-preview__body";
+            if (text === null) {
+              const loading = document.createElement("span");
+              loading.style.color = "var(--il-text4)";
+              loading.textContent = "Loading…";
+              body.appendChild(loading);
+            } else {
+              const truncated =
+                text.length > PREVIEW_MAX_CHARS ? `${text.slice(0, PREVIEW_MAX_CHARS)}…` : text;
+              body.textContent = truncated;
+            }
+
+            tip.appendChild(head);
+            tip.appendChild(body);
+            return tip;
+          };
+
+          const renderTooltip = (): void => {
+            // The chip already uses `position: relative` from
+            //  `.il-blockref`; appending the tooltip as a child lets
+            //  CSS `.il-blockref-preview` (absolute, top: 100%)
+            //  position it below the chip without bbox math.
+            tooltipEl?.remove();
+            const cached = lookupBlockPreview(withExt, blockRaw ?? undefined);
+            tooltipEl = buildTooltip(cached);
+            dom.appendChild(tooltipEl);
+            if (cached === null) {
+              // Cache miss → fetch + repaint when the page lands.
+              void ensurePageLoadedExternal(withExt).then(() => {
+                if (!tooltipEl) return; // hover ended
+                const refreshed = lookupBlockPreview(withExt, blockRaw ?? undefined);
+                if (refreshed !== null) {
+                  tooltipEl.remove();
+                  tooltipEl = buildTooltip(refreshed);
+                  dom.appendChild(tooltipEl);
+                }
+              });
+            }
+          };
+
+          dom.addEventListener("mouseenter", () => {
+            if (hoverTimer !== null) return;
+            hoverTimer = window.setTimeout(() => {
+              hoverTimer = null;
+              renderTooltip();
+            }, PREVIEW_HOVER_DELAY_MS);
+          });
+          dom.addEventListener("mouseleave", () => {
+            if (hoverTimer !== null) {
+              window.clearTimeout(hoverTimer);
+              hoverTimer = null;
+            }
+            tooltipEl?.remove();
+            tooltipEl = null;
+          });
+
+          return {
+            dom,
+            destroy() {
+              if (hoverTimer !== null) window.clearTimeout(hoverTimer);
+              tooltipEl?.remove();
+              tooltipEl = null;
+            },
+          };
         },
         code_block: (node, nvView, getPos) => new CodeBlockView(node, nvView, getPos),
       },
@@ -476,9 +736,16 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           onChangeRef.current(frontmatterRef.current + withIds);
         }
 
-        if (tr.selectionSet && onSelectionChangeRef.current) {
+        if (tr.selectionSet) {
           const { from, to } = newState.selection;
-          onSelectionChangeRef.current(from === to ? null : { from, to });
+          onSelectionChangeRef.current?.(from === to ? null : { from, to });
+          // Block-ID harvest for AI-panel context (docs/03-editor.md
+          //  §Selection as AI context). Empty selection clears.
+          const cb = onSelectedBlockIdsChangeRef.current;
+          if (cb) {
+            const ids = from === to ? [] : harvestSelectedBlockIds(view, blockIdsRef.current);
+            cb(ids);
+          }
         }
 
         // Table-toolbar anchor — surfaces only when the selection
@@ -625,19 +892,27 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
           setBlockType(cb)(view.state, view.dispatch);
           view.focus();
         },
-        insertLink: () => {
+        insertLink: async () => {
           const linkMark = schema.marks.link;
           if (!linkMark) return;
-          const url = window.prompt("Link URL", "https://");
-          if (!url) return;
           const { from, to, empty } = view.state.selection;
+          const initialText = empty ? "" : view.state.doc.textBetween(from, to, " ");
+          const { openLinkDialog } = await import("../LinkDialog.js");
+          const result = await openLinkDialog({ text: initialText });
+          if (!result) return;
           const tr = view.state.tr;
+          const label = result.text || result.url;
           if (empty) {
-            // No selection — insert the URL itself as link text.
-            const text = view.state.schema.text(url, [linkMark.create({ href: url })]);
-            tr.insert(from, text);
+            // No selection — insert the chosen label as link text.
+            const node = view.state.schema.text(label, [linkMark.create({ href: result.url })]);
+            tr.insert(from, node);
+          } else if (result.text && result.text !== initialText) {
+            // User edited the label — replace selection with the new label.
+            const node = view.state.schema.text(label, [linkMark.create({ href: result.url })]);
+            tr.replaceWith(from, to, node);
           } else {
-            tr.addMark(from, to, linkMark.create({ href: url }));
+            // Keep selection text; just stamp the link mark on it.
+            tr.addMark(from, to, linkMark.create({ href: result.url }));
           }
           view.dispatch(tr);
           view.focus();
@@ -675,6 +950,27 @@ export function MarkdownEditor({ markdown, onChange, onSelectionChange }: Markdo
     view.dispatch(tr);
     suppressRef.current = false;
   }, [markdown]);
+
+  // Phase-11 inline-diff plugin: bridge the Zustand `pendingEdits`
+  //  slice into the ProseMirror plugin's state via meta transactions.
+  //  ProseMirror state can't subscribe to React stores directly, so
+  //  every change in `pendingEdits` triggers a `setPendingEdits()`
+  //  dispatch which the plugin reads off of `tr.getMeta(inlineDiffKey)`.
+  //  Initial mount runs a no-op dispatch (empty list) so the plugin's
+  //  decoration set is initialised cleanly even on a brand-new view.
+  useEffect(() => {
+    const unsub = useEditorStore.subscribe((s, prev) => {
+      if (s.pendingEdits === prev.pendingEdits) return;
+      const view = viewRef.current;
+      if (!view) return;
+      setPendingEdits(view, s.pendingEdits);
+    });
+    // Sync the current state once on mount so a view created after
+    //  a pending edit was already pushed picks it up.
+    const view = viewRef.current;
+    if (view) setPendingEdits(view, useEditorStore.getState().pendingEdits);
+    return unsub;
+  }, []);
 
   const bodyText = markdown.replace(/^---[\s\S]*?^---[\r\n]*/m, "").trim();
   const headingOnly = /^#{1,6}\s+\S+\s*$/.test(bodyText);

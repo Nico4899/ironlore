@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { AGENTS_DIR } from "@ironlore/core";
+import { AGENTS_DIR, composeBoundariesSection } from "@ironlore/core";
 import type Database from "better-sqlite3";
 
 /**
@@ -134,6 +134,13 @@ export function buildPersona(
   ].join("\n");
 
   // ─── Compile body ──────────────────────────────────────────────
+  const boundariesSection = composeBoundariesSection({
+    scopePages: [scopePath],
+    canEditPages: input.canEditPages,
+    reviewBeforeMerge: input.reviewBeforeMerge,
+    heartbeat: input.heartbeat,
+  });
+
   const constraintLines = input.constraints.map((c) => c.trim()).filter((c) => c.length > 0);
   const constraintsSection =
     constraintLines.length > 0
@@ -149,12 +156,11 @@ You are the ${input.name}. ${input.role}
 
 ${input.role}.
 
+${boundariesSection}
 ## Guidelines
 
-- Work within your assigned scope: \`${scopePath}\`
-- Use structured kb.* tools for all edits
+- Use structured \`kb.*\` tools for all edits
 - File a journal entry at the end of each run
-- Respect page kinds: never modify \`kind: source\` pages
 ${constraintsSection}`;
 
   // ─── Write the file + create working tree + agent_state ───────

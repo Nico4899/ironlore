@@ -556,10 +556,32 @@ export function createAuthApi(
 
     store.touchSession(sessionId);
 
+    // The project switcher reloads the page with `?project=<id>` and
+    //  the SPA's first call after boot is `/api/auth/me`. Apply the
+    //  switch here too (mirroring the protected-routes middleware) so
+    //  the SPA's bootstrapped `currentProjectId` already reflects the
+    //  user's intent — without this, the SPA would pin to the old
+    //  session project and only switch on a much later API call after
+    //  rendering the wrong project's tree.
+    let currentProjectId = session.current_project_id;
+    let invalidProject: string | null = null;
+    const requestedProject = new URL(c.req.url).searchParams.get("project");
+    if (requestedProject && requestedProject !== currentProjectId) {
+      const valid = !options.isProjectValid || options.isProjectValid(requestedProject);
+      if (valid) {
+        store.updateSessionProject(sessionId, requestedProject);
+        currentProjectId = requestedProject;
+      } else {
+        invalidProject = requestedProject;
+      }
+    }
+
+    if (invalidProject) c.header("X-Ironlore-Invalid-Project", invalidProject);
+
     return c.json({
       authenticated: true,
       username: session.username,
-      currentProjectId: session.current_project_id,
+      currentProjectId,
       mustChangePassword: session.must_change_password === 1,
     });
   });
@@ -629,15 +651,28 @@ export function createAuthApi(
     //  docs/08-projects-and-isolation.md §Project switcher UX). We
     //  validate the id before persisting so a malformed query can't
     //  poison the session.
+    //
+    //  When the requested ID is invalid, we used to silently keep
+    //  the existing session project — the user typing
+    //  `?project=research` (typo for `my-research`) would land on
+    //  `main` with no warning. Now we surface the misbehavior via
+    //  an `X-Ironlore-Invalid-Project` response header + a server
+    //  warning, so the SPA (or a curl debugger) can react.
     let currentProjectId = session.current_project_id;
     const requestedProject = new URL(c.req.url).searchParams.get("project");
-    if (
-      requestedProject &&
-      requestedProject !== currentProjectId &&
-      (!options.isProjectValid || options.isProjectValid(requestedProject))
-    ) {
-      store.updateSessionProject(sessionId, requestedProject);
-      currentProjectId = requestedProject;
+    if (requestedProject && requestedProject !== currentProjectId) {
+      const valid = !options.isProjectValid || options.isProjectValid(requestedProject);
+      if (valid) {
+        store.updateSessionProject(sessionId, requestedProject);
+        currentProjectId = requestedProject;
+      } else {
+        c.header("X-Ironlore-Invalid-Project", requestedProject);
+        console.warn(
+          `Auth middleware: ?project='${requestedProject}' is not a registered project; ` +
+            `keeping session on '${currentProjectId}'. Check the URL — typos like ` +
+            `?project=research for an actual id of my-research silently used to fall through.`,
+        );
+      }
     }
 
     store.touchSession(sessionId);

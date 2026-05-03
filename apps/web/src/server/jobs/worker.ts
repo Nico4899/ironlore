@@ -77,6 +77,48 @@ export class WorkerPool {
     this.activeJobs.clear();
   }
 
+  /**
+   * Graceful shutdown — per docs/07-tech-stack.md §Process supervision:
+   * "mark running jobs as `queued` (so the next start retries them)."
+   *
+   * Stops polling, aborts every in-flight controller, then resets the
+   * jobs' DB rows so the next process pickup picks them up again. Without
+   * this, a SIGTERM in production leaves rows in `status='running'`
+   * with a stale `worker_id`/`lease_until` until either (a) the lease
+   * expires and `reclaimExpiredLeases()` sweeps them, or (b) a human
+   * runs a CLI tool. The doc's contract is that SIGTERM is a clean
+   * point: every aborted job is immediately re-eligible.
+   *
+   * Returns the number of rows requeued so the caller can log it.
+   */
+  gracefulStop(): number {
+    this.stopped = true;
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+
+    const activeIds = [...this.activeJobs.keys()];
+
+    for (const [, { controller, renewTimer }] of this.activeJobs) {
+      controller.abort();
+      clearInterval(renewTimer);
+    }
+    this.activeJobs.clear();
+
+    if (activeIds.length === 0) return 0;
+
+    const placeholders = activeIds.map(() => "?").join(",");
+    const result = this.db
+      .prepare(
+        `UPDATE jobs
+         SET status = 'queued', lease_until = NULL, worker_id = NULL
+         WHERE status = 'running' AND id IN (${placeholders})`,
+      )
+      .run(...activeIds);
+    return result.changes ?? 0;
+  }
+
   /** Number of currently-running jobs. */
   get activeCount(): number {
     return this.activeJobs.size;

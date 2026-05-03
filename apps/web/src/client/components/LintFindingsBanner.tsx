@@ -1,9 +1,9 @@
 import { ClipboardList, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { wsClient } from "../lib/ws.js";
 import { useAppStore } from "../stores/app.js";
 
-interface LintFinding {
+interface LintToast {
   reportPath: string;
   counts: {
     orphans: number;
@@ -14,101 +14,142 @@ interface LintFinding {
   };
   agent: string;
   runId: string;
+  timestamp: number;
 }
 
+const AUTO_DISMISS_MS = 20_000;
+
 /**
- * Banner shown when the wiki-gardener (or any other lint workflow)
- * finalizes a run with a `lint:findings` WebSocket event.
+ * Lint-findings toast stack.
  *
- * Mirrors the `RecoveryBanner` pattern — same dismissible chrome,
- * same per-event re-show, same WS subscription model. The message
- * here is informational, not an error: the report is already
- * written to disk; this banner just tells the user it's there and
- * gives them one click to open it.
+ * Each `lint:findings` WebSocket event becomes its own toast. Multiple
+ * concurrent agent runs no longer clobber each other the way the prior
+ * single-slot banner did — every finding gets its own row, dismissible
+ * independently. Auto-dismiss after 20s; the user can always re-open
+ * the report by re-running the lint workflow or by opening the path
+ * directly.
  *
- * Per-session dedup: keyed on `runId` so a second `lint:findings`
- * for the same job (e.g. retry replay after a reconnect) doesn't
- * un-dismiss a banner the user already closed.
+ * Per-runId dedup — reconnect replays of the same `lint:findings`
+ * event don't push a duplicate toast onto the stack. Once a runId is
+ * dismissed (or auto-expired) it stays dismissed for the session, so
+ * the same toast can't reappear if the WS gap-detector triggers a
+ * replay.
  */
 export function LintFindingsBanner() {
-  const [finding, setFinding] = useState<LintFinding | null>(null);
-  const [dismissedRunIds, setDismissedRunIds] = useState<Set<string>>(new Set());
+  const [toasts, setToasts] = useState<LintToast[]>([]);
+  const [seenRunIds, setSeenRunIds] = useState<Set<string>>(new Set());
+
+  const dismiss = useCallback((runId: string) => {
+    setToasts((prev) => prev.filter((t) => t.runId !== runId));
+  }, []);
 
   useEffect(() => {
     const unsubscribe = wsClient.onEvent((event) => {
       if (event.type !== "lint:findings") return;
-      // Skip if the user already dismissed this exact run — prevents
-      // a reconnect replay from re-showing the same banner.
-      if (dismissedRunIds.has(event.runId)) return;
-      setFinding({
-        reportPath: event.reportPath,
-        counts: event.counts,
-        agent: event.agent,
-        runId: event.runId,
+      if (seenRunIds.has(event.runId)) return;
+      setSeenRunIds((prev) => {
+        const next = new Set(prev);
+        next.add(event.runId);
+        return next;
       });
+      setToasts((prev) => [
+        ...prev,
+        {
+          reportPath: event.reportPath,
+          counts: event.counts,
+          agent: event.agent,
+          runId: event.runId,
+          timestamp: Date.now(),
+        },
+      ]);
     });
     return unsubscribe;
-  }, [dismissedRunIds]);
+  }, [seenRunIds]);
 
-  if (!finding) return null;
+  // Auto-dismiss each toast on its own timer so a freshly-arrived
+  //  toast doesn't reset the countdown for older ones.
+  useEffect(() => {
+    if (toasts.length === 0) return;
+    const timers = toasts.map((t) =>
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((x) => x.runId !== t.runId));
+      }, AUTO_DISMISS_MS),
+    );
+    return () => {
+      for (const timer of timers) clearTimeout(timer);
+    };
+  }, [toasts]);
 
-  const headline = formatHeadline(finding.counts);
-  const dismiss = () => {
-    setDismissedRunIds((prev) => {
-      const next = new Set(prev);
-      next.add(finding.runId);
-      return next;
-    });
-    setFinding(null);
-  };
-  const openReport = () => {
-    useAppStore.getState().setActivePath(finding.reportPath);
-    dismiss();
-  };
+  if (toasts.length === 0) return null;
 
   return (
     <div
-      role="status"
       aria-live="polite"
-      className="flex items-start gap-2 border-b border-ironlore-blue/40 bg-ironlore-blue/10 px-4 py-2 text-xs text-primary"
+      className="pointer-events-none fixed bottom-16 right-4 z-50 flex max-w-sm flex-col gap-2"
     >
-      <ClipboardList className="mt-0.5 h-4 w-4 shrink-0" style={{ color: "var(--il-blue)" }} />
-      <div className="flex-1">
-        <p className="font-semibold">
-          <span style={{ color: "var(--il-blue)" }}>{finding.agent}</span> · {headline}
-        </p>
-        <p
-          className="mt-0.5 font-mono text-[11px] text-secondary truncate"
-          title={finding.reportPath}
-        >
-          {finding.reportPath}
-        </p>
-      </div>
-      <button
-        type="button"
-        onClick={openReport}
-        className="rounded border border-ironlore-blue/50 px-2 py-0.5 font-medium text-ironlore-blue hover:bg-ironlore-blue/20"
-      >
-        View report
-      </button>
-      <button
-        type="button"
-        aria-label="Dismiss lint findings banner"
-        onClick={dismiss}
-        className="flex h-5 w-5 items-center justify-center rounded hover:bg-ironlore-blue/20"
-      >
-        <X className="h-3.5 w-3.5" style={{ color: "var(--il-text3)" }} />
-      </button>
+      {toasts.map((t) => {
+        const headline = formatHeadline(t.counts);
+        const empty = headline === "no findings";
+        return (
+          <div
+            key={t.runId}
+            role="status"
+            className="surface-glass pointer-events-auto flex items-start gap-2 rounded-xl px-4 py-3 text-xs"
+            style={{
+              boxShadow: empty
+                ? "var(--shadow-lg), 0 0 12px oklch(0.72 0.17 148 / 0.18)"
+                : "var(--shadow-lg), 0 0 12px oklch(0.78 0.16 80 / 0.2)",
+              borderLeft: `2px solid ${empty ? "var(--il-green)" : "var(--il-amber)"}`,
+            }}
+          >
+            <ClipboardList
+              className="mt-0.5 h-4 w-4 shrink-0"
+              style={{ color: empty ? "var(--il-green)" : "var(--il-amber)" }}
+            />
+            <div className="min-w-0 flex-1">
+              <div
+                className="flex items-baseline gap-1.5 font-mono uppercase"
+                style={{ fontSize: 10.5, letterSpacing: "0.04em", color: "var(--il-text3)" }}
+              >
+                <span style={{ color: "var(--il-blue)" }}>{t.agent}</span>
+                <span>lint</span>
+              </div>
+              <p className="mt-0.5 font-medium text-primary">{headline}</p>
+              {!empty && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    useAppStore.getState().setActivePath(t.reportPath);
+                    dismiss(t.runId);
+                  }}
+                  className="mt-1 underline-offset-2 hover:underline"
+                  style={{ color: "var(--il-blue)" }}
+                >
+                  View report
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => dismiss(t.runId)}
+              aria-label="Dismiss lint finding"
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-tertiary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 /**
  * Build the "3 stale pages, 1 contradiction" headline. Drops zero
- * counts so a clean run shows "no issues" instead of "0 stale, 0
+ * counts so a clean run shows "no findings" instead of "0 stale, 0
  * contradictions, 0 …" noise.
  */
-function formatHeadline(c: LintFinding["counts"]): string {
+function formatHeadline(c: LintToast["counts"]): string {
   const parts: string[] = [];
   if (c.orphans > 0) parts.push(`${c.orphans} orphan${c.orphans === 1 ? "" : "s"}`);
   if (c.stale > 0) parts.push(`${c.stale} stale page${c.stale === 1 ? "" : "s"}`);
@@ -118,6 +159,6 @@ function formatHeadline(c: LintFinding["counts"]): string {
     parts.push(`${c.coverageGaps} coverage gap${c.coverageGaps === 1 ? "" : "s"}`);
   if (c.provenanceGaps > 0)
     parts.push(`${c.provenanceGaps} provenance gap${c.provenanceGaps === 1 ? "" : "s"}`);
-  if (parts.length === 0) return "lint complete · no findings";
-  return `${parts.join(", ")} · view report`;
+  if (parts.length === 0) return "no findings";
+  return parts.join(" · ");
 }

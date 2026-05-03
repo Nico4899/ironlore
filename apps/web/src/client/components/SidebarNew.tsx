@@ -1,6 +1,7 @@
 import type { PageType } from "@ironlore/core";
 import {
   BookOpen,
+  Bot,
   Captions,
   ChevronLeft,
   ChevronRight,
@@ -11,6 +12,7 @@ import {
   FileText,
   FileType,
   FolderClosed,
+  FolderOpen,
   Home,
   Image,
   Inbox as InboxIcon,
@@ -22,6 +24,7 @@ import {
   Video,
   Workflow,
 } from "lucide-react";
+import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
@@ -36,6 +39,7 @@ import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app
 import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
 import { MOTION } from "../styles/motion.js";
+import { FolderPeekButton } from "./FolderPeek.js";
 import { Logo } from "./Logo.js";
 import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 
@@ -43,11 +47,15 @@ import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 // File icon — each type gets its own color
 // ---------------------------------------------------------------------------
 
-function FileIcon({ type }: { type: PageType | "directory" }) {
+function FileIcon({ type, open }: { type: PageType | "directory"; open?: boolean }) {
   const base = "h-4 w-4 shrink-0";
   switch (type) {
     case "directory":
-      return <FolderClosed className={`${base} icon-folder`} />;
+      return open ? (
+        <FolderOpen className={`${base} icon-folder`} />
+      ) : (
+        <FolderClosed className={`${base} icon-folder`} />
+      );
     case "markdown":
       return <FileText className={`${base} icon-markdown`} />;
     case "pdf":
@@ -174,8 +182,13 @@ export function SidebarNew() {
   const [editingValue, setEditingValue] = useState("");
   const [slideDir, setSlideDir] = useState<"left" | "right" | null>(null);
   // DnD state — the string is either a folder path (drop-into), or one of
-  // the sentinels "__root__" / "__up__" for breadcrumb targets.
+  // the sentinels "__root__" / "__up__" for breadcrumb targets, or a file
+  // path when the cursor is over a file row (in which case `dropEdge`
+  // describes whether the drop will land before/after that row — both
+  // resolve to "into the parent folder" because the tree is alphabetically
+  // sorted with no per-folder ordering primitive).
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dropEdge, setDropEdge] = useState<"before" | "after" | null>(null);
 
   const collapsed = !sidebarOpen;
 
@@ -311,14 +324,44 @@ export function SidebarNew() {
     if (valid) {
       e.dataTransfer.dropEffect = "move";
       setDropTarget(target);
+      setDropEdge(null);
     } else {
       e.dataTransfer.dropEffect = "none";
       setDropTarget(null);
+      setDropEdge(null);
     }
   }, []);
 
+  /**
+   * Row-level dragOver that picks "into folder" vs "before / after sibling"
+   * based on cursor Y. For folders, the middle band is "drop into" (existing
+   * behaviour, ring + open-folder icon); the top/bottom bands resolve to
+   * "drop into the parent folder" for both files and folders. The line is
+   * cosmetic — there is no per-folder ordering primitive, so before/after
+   * land in the same parent regardless of which edge was picked.
+   */
+  const handleRowDragOver = useCallback(
+    (e: React.DragEvent, item: { path: string; type: PageType | "directory" }) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const third = rect.height / 3;
+      const isDir = item.type === "directory";
+      if (isDir && y > third && y < rect.height - third) {
+        setDropTarget(item.path);
+        setDropEdge(null);
+        return;
+      }
+      setDropTarget(item.path);
+      setDropEdge(y < rect.height / 2 ? "before" : "after");
+    },
+    [],
+  );
+
   const handleDragLeave = useCallback(() => {
     setDropTarget(null);
+    setDropEdge(null);
   }, []);
 
   const performMove = useCallback(async (sourcePath: string, targetDir: string) => {
@@ -338,11 +381,40 @@ export function SidebarNew() {
     async (e: React.DragEvent, targetDir: string) => {
       e.preventDefault();
       setDropTarget(null);
+      setDropEdge(null);
       const sourcePath = e.dataTransfer.getData("text/plain");
       if (!sourcePath) return;
       await performMove(sourcePath, targetDir);
     },
     [performMove],
+  );
+
+  /**
+   * Row-level drop. When `dropEdge` is set (cursor was on a row's
+   * top/bottom band), the move resolves to the parent folder of the
+   * row — not into the row itself. Folder rows with a centred drop
+   * fall through to `handleDrop(item.path)` to land inside.
+   */
+  const handleRowDrop = useCallback(
+    async (e: React.DragEvent, item: { path: string; type: PageType | "directory" }) => {
+      e.preventDefault();
+      const edge = dropEdge;
+      setDropTarget(null);
+      setDropEdge(null);
+      const sourcePath = e.dataTransfer.getData("text/plain");
+      if (!sourcePath) return;
+      if (item.type === "directory" && !edge) {
+        await performMove(sourcePath, item.path);
+        return;
+      }
+      // Edge or file row → resolve to the parent folder. The current
+      //  drill level (`sidebarFolder`) is the parent for everything in
+      //  the visible list — items at the root level have parent "".
+      const lastSlash = item.path.lastIndexOf("/");
+      const parent = lastSlash === -1 ? "" : item.path.slice(0, lastSlash);
+      await performMove(sourcePath, parent);
+    },
+    [dropEdge, performMove],
   );
 
   /**
@@ -372,10 +444,32 @@ export function SidebarNew() {
     }
   }, [sidebarFolder]);
 
+  // Global ⌘N / Ctrl+N — invoke the same flow the bottom rail's
+  //  click triggers. Suppressed when the user is typing in an input,
+  //  textarea, or contentEditable surface (the editor) so the chord
+  //  doesn't steal a literal "N" keystroke. The browser may still
+  //  intercept ⌘N on its own to open a new window — preventDefault
+  //  is best-effort; the rail's click is the guaranteed path.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "n") {
+        const ae = document.activeElement as HTMLElement | null;
+        const tag = ae?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || ae?.isContentEditable) return;
+        e.preventDefault();
+        void handleNewPageFromSidebar();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleNewPageFromSidebar]);
+
   // Rename (optimistic). The tree store moves the node right away
   //  so the label flips in place; server failure rolls it back.
   //  Captures the original node's `type` before the move so the
-  //  rollback preserves the file kind.
+  //  rollback preserves the file kind. On success, surfaces a
+  //  rename-rewrite toast when other pages link to the old path —
+  //  see docs/03-editor.md §Rename-rewrite.
   const commitRename = useCallback(async (oldPath: string, newName: string) => {
     if (!newName.trim()) {
       setEditingPath(null);
@@ -387,12 +481,20 @@ export function SidebarNew() {
     setEditingPath(null);
     if (newPath === oldPath) return;
 
+    const surfaceRewriteToast = (count: number | undefined) => {
+      if (typeof count !== "number" || count <= 0) return;
+      void import("./RewriteLinksToast.js").then(({ showRewriteLinksToast }) => {
+        showRewriteLinksToast({ oldPath, newPath, count });
+      });
+    };
+
     const snapshot = useTreeStore.getState().nodes.find((n) => n.path === oldPath);
     if (!snapshot) {
       // Unknown node — don't try an optimistic move. Just issue
       //  the server call and let the watcher reconcile.
       try {
-        await movePage(oldPath, newPath);
+        const res = await movePage(oldPath, newPath);
+        surfaceRewriteToast(res.inboundLinkCount);
       } catch {
         /* */
       }
@@ -400,7 +502,8 @@ export function SidebarNew() {
     }
     useTreeStore.getState().moveNode(oldPath, newPath, newName, snapshot.type);
     try {
-      await movePage(oldPath, newPath);
+      const res = await movePage(oldPath, newPath);
+      surfaceRewriteToast(res.inboundLinkCount);
     } catch {
       useTreeStore.getState().moveNode(newPath, oldPath, snapshot.name, snapshot.type);
       window.alert("Rename failed — the old path was restored.");
@@ -616,11 +719,11 @@ export function SidebarNew() {
         onSelect={(tab) => useAppStore.getState().setSidebarTab(tab)}
       />
 
-      {/* ─── Folder breadcrumb (when drilled in). Rendered regardless
-       *  of `sidebarTab` — the tree stays visible even when Inbox is
-       *  the active main-view surface, matching screen-more.jsx
-       *  ScreenInbox (sidebar tree + content-area inbox). */}
-      {!collapsed && sidebarFolder && (
+      {/* ─── Folder breadcrumb (when drilled in). Hidden on the
+       *  Agents tab (which fully owns the sidebar body); kept on the
+       *  Inbox tab so the tree stays visible behind the content-area
+       *  inbox surface. */}
+      {!collapsed && sidebarTab !== "agents" && sidebarFolder && (
         <div className="flex items-center gap-1 border-b border-border px-2 py-1.5 text-xs text-secondary">
           <button
             type="button"
@@ -668,12 +771,12 @@ export function SidebarNew() {
        * current list left (new content enters from the right); going
        * back up reverses it. `ease-in-out` pairs with
        * `--motion-transit` (180 ms) so the direction reads before the
-       * motion settles.
+       * motion settles. Hidden on the Agents tab (which owns the
+       * sidebar body); rendered for Files + Inbox (Inbox still shows
+       * the tree behind the content-area inbox surface).
        */}
-      {!collapsed && (
+      {!collapsed && sidebarTab !== "agents" && (
         <div
-          role="tree"
-          aria-label="Files and folders"
           className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ease-in-out ${
             slideDir === "left"
               ? "-translate-x-full opacity-0"
@@ -681,169 +784,199 @@ export function SidebarNew() {
                 ? "translate-x-full opacity-0"
                 : "translate-x-0 opacity-100"
           }`}
-          onContextMenu={(e) => handleContextMenu(e)}
-          onKeyDown={(e) => {
-            // WAI-ARIA Authoring Practices §Tree View pattern.
-            // Drilling, not expansion, models the existing UX:
-            // ArrowRight enters a directory; ArrowLeft pops up.
-            // Renames and inputs claim their own keys via
-            // stopPropagation, so the rename input above stays
-            // usable while focus is technically inside the tree.
-            if (visibleItems.length === 0) return;
-            const focused = visibleItems[focusedTreeIdx];
-            switch (e.key) {
-              case "ArrowDown": {
-                e.preventDefault();
-                focusTreeItem(Math.min(focusedTreeIdx + 1, visibleItems.length - 1));
-                return;
-              }
-              case "ArrowUp": {
-                e.preventDefault();
-                focusTreeItem(Math.max(focusedTreeIdx - 1, 0));
-                return;
-              }
-              case "Home": {
-                e.preventDefault();
-                focusTreeItem(0);
-                return;
-              }
-              case "End": {
-                e.preventDefault();
-                focusTreeItem(visibleItems.length - 1);
-                return;
-              }
-              case "ArrowRight": {
-                if (focused?.type === "directory") {
-                  e.preventDefault();
-                  drillInto(focused.path);
-                }
-                return;
-              }
-              case "ArrowLeft": {
-                if (sidebarFolder) {
-                  e.preventDefault();
-                  drillUp();
-                }
-                return;
-              }
-              case " ":
-              case "Enter": {
-                if (!focused) return;
-                if (editingPath === focused.path) return;
-                e.preventDefault();
-                if (focused.type === "directory") drillInto(focused.path);
-                else openFile(focused.path);
-                return;
-              }
-            }
-          }}
         >
-          {visibleItems.length === 0 && (
-            <div className="py-8 text-center text-xs text-secondary">No pages yet</div>
-          )}
-          {visibleItems.map((item, itemIdx) => {
-            const isDir = item.type === "directory";
-            const isActive = activePath === item.path;
-            const isEditing = editingPath === item.path;
-
-            const isDropTarget = isDir && dropTarget === item.path;
-            const isFocusedRow = itemIdx === focusedTreeIdx;
-            return (
-              // The row is `role="treeitem"` (semantic). Keyboard
-              // activation is handled by the parent tree's
-              // `onKeyDown`, not this row, so biome's
-              // useKeyWithClickEvents rule is satisfied at the
-              // tree level rather than per-row.
-              // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard activation handled at tree-container level
-              <div
-                key={item.path}
-                ref={(el) => {
-                  treeItemRefs.current[itemIdx] = el;
-                }}
-                className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-(--motion-snap) ${
-                  isActive
-                    ? "sidebar-item-active text-primary"
-                    : isDropTarget
-                      ? "border border-ironlore-blue bg-ironlore-slate-hover text-primary"
-                      : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
-                }`}
-                draggable={!isDir && !isEditing}
-                onDragStart={(e) => !isDir && handleDragStart(e, item.path)}
-                onDragOver={(e) => handleDragOver(e, item.path, isDir)}
-                onDragLeave={handleDragLeave}
-                onDrop={(e) => {
-                  if (isDir) void handleDrop(e, item.path);
-                }}
-                onClick={() => {
-                  if (isEditing) return;
-                  setFocusedTreeIdx(itemIdx);
-                  if (isDir) drillInto(item.path);
-                  else openFile(item.path);
-                }}
-                onContextMenu={(e) => {
-                  e.stopPropagation();
-                  handleContextMenu(e, item.path, item.type, item.name);
-                }}
-                role="treeitem"
-                aria-level={1}
-                aria-selected={isActive}
-                {...(isDir ? { "aria-expanded": false } : {})}
-                tabIndex={isFocusedRow ? 0 : -1}
-              >
-                <FileIcon type={item.type} />
-                {isEditing ? (
-                  <input
-                    className="flex-1 rounded border border-ironlore-blue bg-transparent px-1 text-sm text-primary focus:outline-none"
-                    value={editingValue}
-                    onChange={(e) => setEditingValue(e.target.value)}
-                    onBlur={() => commitRename(item.path, editingValue)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") commitRename(item.path, editingValue);
-                      if (e.key === "Escape") setEditingPath(null);
-                    }}
-                    // biome-ignore lint/a11y/noAutofocus: inline rename needs immediate focus
-                    autoFocus
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                ) : (
-                  <span className="flex-1 truncate">{item.name}</span>
-                )}
-                {isDir && !isEditing && (
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-secondary opacity-0 group-hover:opacity-100" />
-                )}
-              </div>
-            );
-          })}
-
-          {/* "+ New page" sits as the last row of the file list, directly
-           *  under the lowermost file. Scrolls with the tree so users
-           *  always know where to add a page from. */}
-          <button
-            type="button"
-            onClick={handleNewPageFromSidebar}
-            className="mt-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-tertiary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-            title="Create a new page in this folder"
+          <div
+            role="tree"
+            aria-label="Files and folders"
+            onContextMenu={(e) => handleContextMenu(e)}
+            onKeyDown={(e) => {
+              // WAI-ARIA Authoring Practices §Tree View pattern.
+              // Drilling, not expansion, models the existing UX:
+              // ArrowRight enters a directory; ArrowLeft pops up.
+              // Renames and inputs claim their own keys via
+              // stopPropagation, so the rename input above stays
+              // usable while focus is technically inside the tree.
+              if (visibleItems.length === 0) return;
+              const focused = visibleItems[focusedTreeIdx];
+              switch (e.key) {
+                case "ArrowDown": {
+                  e.preventDefault();
+                  focusTreeItem(Math.min(focusedTreeIdx + 1, visibleItems.length - 1));
+                  return;
+                }
+                case "ArrowUp": {
+                  e.preventDefault();
+                  focusTreeItem(Math.max(focusedTreeIdx - 1, 0));
+                  return;
+                }
+                case "Home": {
+                  e.preventDefault();
+                  focusTreeItem(0);
+                  return;
+                }
+                case "End": {
+                  e.preventDefault();
+                  focusTreeItem(visibleItems.length - 1);
+                  return;
+                }
+                case "ArrowRight": {
+                  if (focused?.type === "directory") {
+                    e.preventDefault();
+                    drillInto(focused.path);
+                  }
+                  return;
+                }
+                case "ArrowLeft": {
+                  if (sidebarFolder) {
+                    e.preventDefault();
+                    drillUp();
+                  }
+                  return;
+                }
+                case " ":
+                case "Enter": {
+                  if (!focused) return;
+                  if (editingPath === focused.path) return;
+                  e.preventDefault();
+                  if (focused.type === "directory") drillInto(focused.path);
+                  else openFile(focused.path);
+                  return;
+                }
+              }
+            }}
           >
-            <FilePlus className="h-3.5 w-3.5 shrink-0" />
-            <span className="flex-1 truncate">New page</span>
-          </button>
+            {visibleItems.length === 0 && (
+              <div className="py-8 text-center text-xs text-secondary">No pages yet</div>
+            )}
+            {visibleItems.map((item, itemIdx) => {
+              const isDir = item.type === "directory";
+              const isActive = activePath === item.path;
+              const isEditing = editingPath === item.path;
+
+              const isDropTarget = isDir && dropTarget === item.path && dropEdge === null;
+              const isFocusedRow = itemIdx === focusedTreeIdx;
+              const showLineBefore = dropTarget === item.path && dropEdge === "before";
+              const showLineAfter = dropTarget === item.path && dropEdge === "after";
+              return (
+                // The row is `role="treeitem"` (semantic). Keyboard
+                // activation is handled by the parent tree's
+                // `onKeyDown`, not this row, so biome's
+                // useKeyWithClickEvents rule is satisfied at the
+                // tree level rather than per-row.
+                // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard activation handled at tree-container level
+                <div
+                  key={item.path}
+                  ref={(el) => {
+                    treeItemRefs.current[itemIdx] = el;
+                  }}
+                  className={`group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-all duration-(--motion-snap) ${
+                    isActive
+                      ? "sidebar-item-active text-primary"
+                      : isDropTarget
+                        ? "border border-ironlore-blue bg-ironlore-slate-hover text-primary"
+                        : "text-secondary hover:bg-ironlore-slate-hover hover:text-primary"
+                  }`}
+                  draggable={!isDir && !isEditing}
+                  onDragStart={(e) => !isDir && handleDragStart(e, item.path)}
+                  onDragOver={(e) => handleRowDragOver(e, item)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => void handleRowDrop(e, item)}
+                  onClick={() => {
+                    if (isEditing) return;
+                    setFocusedTreeIdx(itemIdx);
+                    if (isDir) drillInto(item.path);
+                    else openFile(item.path);
+                  }}
+                  onContextMenu={(e) => {
+                    e.stopPropagation();
+                    handleContextMenu(e, item.path, item.type, item.name);
+                  }}
+                  role="treeitem"
+                  // `aria-level` reflects the current drill depth so
+                  //  screen readers announce nested folders correctly.
+                  //  Root listing = level 1; one-deep folder = level 2;
+                  //  etc. Computed from `sidebarFolder`'s slash count.
+                  aria-level={
+                    sidebarFolder === "" ? 1 : sidebarFolder.split("/").filter(Boolean).length + 1
+                  }
+                  aria-selected={isActive}
+                  // `aria-expanded` deliberately omitted: the sidebar
+                  //  uses drill-into navigation rather than tree
+                  //  expand/collapse, so claiming `aria-expanded={false}`
+                  //  every time was a false signal to assistive tech.
+                  //  Drop the attribute and let directories carry their
+                  //  semantics through `role="treeitem"` + the click
+                  //  handler that switches `sidebarFolder`.
+                  tabIndex={isFocusedRow ? 0 : -1}
+                >
+                  {/* Drop-line indicator: 2 px line above (before) or
+                   *  below (after) the row. Both edges resolve to
+                   *  "drop into the parent folder" — the line is a
+                   *  placement *cue*, not an ordering primitive. */}
+                  {showLineBefore && (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-1 -top-px h-0.5 rounded-full"
+                      style={{ background: "var(--il-blue)" }}
+                    />
+                  )}
+                  {showLineAfter && (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-1 -bottom-px h-0.5 rounded-full"
+                      style={{ background: "var(--il-blue)" }}
+                    />
+                  )}
+                  <FileIcon type={item.type} open={isDropTarget} />
+                  {isEditing ? (
+                    <input
+                      className="flex-1 rounded border border-ironlore-blue bg-transparent px-1 text-sm text-primary focus:outline-none"
+                      value={editingValue}
+                      onChange={(e) => setEditingValue(e.target.value)}
+                      onBlur={() => commitRename(item.path, editingValue)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitRename(item.path, editingValue);
+                        if (e.key === "Escape") setEditingPath(null);
+                      }}
+                      // biome-ignore lint/a11y/noAutofocus: inline rename needs immediate focus
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="flex-1 truncate">{item.name}</span>
+                  )}
+                  {isDir && !isEditing && (
+                    <>
+                      <FolderPeekButton folder={item} />
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-secondary opacity-0 group-hover:opacity-100" />
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* "+ New page" used to live as the last row of the file list,
+           *  but it gets buried below the fold in long trees. The trigger
+           *  has moved to the sticky bottom rail (see NewPageRail below);
+           *  this comment is retained for orientation. */}
         </div>
       )}
 
-      {/* Collapsed: no list shown — the ActiveAgentsStrip + bottom
-       *  rail still render below. */}
+      {/* Collapsed: no list shown — the bottom rail still renders. */}
       {collapsed && <div className="flex-1" />}
 
-      {/* Inbox is now a full-screen surface routed via the content
+      {/* Inbox is a full-screen surface routed via the content
        *  area (ContentArea reads `sidebarTab === "inbox"` and renders
        *  <InboxPanel /> in place of the editor). The sidebar's INBOX
        *  tab is the trigger + state indicator; the tree stays
        *  visible behind it. */}
 
-      {/* ─── Agents panel — all installed agents, always visible. Was
-       *  `ActiveAgentsStrip` (running-only); promoted to a first-class
-       *  sidebar surface with a `+ add agent` affordance. ─── */}
-      <AgentsPanel collapsed={collapsed} />
+      {/* ─── Agents tab body ─── promoted from a footer section to a
+       *  full-body sidebar surface. Renders only when the AGENTS tab
+       *  is active; the file tree above is hidden in that mode so
+       *  the agent list owns the scroll. */}
+      {!collapsed && sidebarTab === "agents" && <AgentsPanel collapsed={false} expanded />}
 
       {/* ─── Divider ─── */}
       <div className="border-t border-border" />
@@ -866,6 +999,12 @@ export function SidebarNew() {
           />
         </div>
       )}
+
+      {/* ─── Sticky "New page" rail ─── full-width primary action that
+       *  always sits at the bottom of the sidebar regardless of how
+       *  long the tree gets. The chord chip mirrors the global ⌘N
+       *  binding wired below in a useEffect. */}
+      {!collapsed && <NewPageRail onClick={handleNewPageFromSidebar} />}
 
       {/* ─── Context menu ─── */}
       {contextMenu && (
@@ -945,14 +1084,15 @@ function SidebarTabs({
   onSelect,
 }: {
   collapsed: boolean;
-  active: "files" | "inbox";
+  active: "files" | "agents" | "inbox";
   inboxCount: number;
-  onSelect: (tab: "files" | "inbox") => void;
+  onSelect: (tab: "files" | "agents" | "inbox") => void;
 }) {
   if (collapsed) {
     return (
       <div className="flex flex-col items-center gap-0.5 border-b border-border px-1 py-1.5">
         <SidebarBottomTab icon={Home} label="Files" collapsed onClick={() => onSelect("files")} />
+        <SidebarBottomTab icon={Bot} label="Agents" collapsed onClick={() => onSelect("agents")} />
         <SidebarBottomTab
           icon={InboxIcon}
           label="Inbox"
@@ -966,8 +1106,20 @@ function SidebarTabs({
 
   return (
     <div className="flex items-end gap-2 border-b border-border px-3" style={{ height: 30 }}>
-      <SidebarTabPill label="files" active={active === "files"} onClick={() => onSelect("files")} />
       <SidebarTabPill
+        icon={Home}
+        label="files"
+        active={active === "files"}
+        onClick={() => onSelect("files")}
+      />
+      <SidebarTabPill
+        icon={Bot}
+        label="agents"
+        active={active === "agents"}
+        onClick={() => onSelect("agents")}
+      />
+      <SidebarTabPill
+        icon={InboxIcon}
         label="inbox"
         active={active === "inbox"}
         badge={inboxCount > 0 ? inboxCount : undefined}
@@ -978,11 +1130,13 @@ function SidebarTabs({
 }
 
 function SidebarTabPill({
+  icon: Icon,
   label,
   active,
   badge,
   onClick,
 }: {
+  icon?: React.ComponentType<{ className?: string }>;
   label: string;
   active: boolean;
   badge?: number;
@@ -1003,6 +1157,7 @@ function SidebarTabPill({
         borderBottom: `1.5px solid ${active ? "var(--il-blue)" : "transparent"}`,
       }}
     >
+      {Icon && <Icon className="h-3 w-3 shrink-0" />}
       {label}
       {badge !== undefined && (
         <span
@@ -1201,7 +1356,7 @@ function ProjectTile({ collapsed }: { collapsed: boolean }) {
  * + prose template — no new endpoint needed; the server picks the
  * persona up via the file watcher.
  */
-function AgentsPanel({ collapsed }: { collapsed: boolean }) {
+function AgentsPanel({ collapsed, expanded }: { collapsed: boolean; expanded?: boolean }) {
   const activity = useWorkspaceActivity();
   const agents = activity.agents;
   const runningCount = activity.runningCount;
@@ -1219,8 +1374,20 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
       return;
     }
     const path = `.agents/${clean}/persona.md`;
+    // Title-case the slug for the display `name:` — `web-scraper` →
+    //  `Web Scraper`. The persona parser falls back to slug when
+    //  `name` is missing, but every UI surface that lists agents
+    //  reads `name` first; without it, the new agent renders as its
+    //  raw slug everywhere (Settings → Agents, AI panel picker,
+    //  Inbox attribution column).
+    const displayName = clean
+      .split("-")
+      .filter(Boolean)
+      .map((part) => part[0]?.toUpperCase() + part.slice(1))
+      .join(" ");
     const template =
       "---\n" +
+      `name: ${displayName}\n` +
       `slug: ${clean}\n` +
       "description: \n" +
       "heartbeat: \n" +
@@ -1230,7 +1397,7 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
       "  pages: []\n" +
       "  writable_kinds: []\n" +
       "---\n\n" +
-      `# ${clean}\n\nDescribe what this agent does.\n`;
+      `# ${displayName}\n\nDescribe what this agent does.\n`;
     try {
       await createPage(path, template);
       useAppStore.getState().setActivePath(path);
@@ -1268,23 +1435,31 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
   }
 
   return (
-    <div className="border-t border-border px-3 py-2.5">
+    <div
+      className={
+        expanded ? "flex-1 overflow-y-auto px-3 py-2.5" : "border-t border-border px-3 py-2.5"
+      }
+    >
       {/* Mono `AGENTS` overline — the separator the user asked for.
        *  Trailing meta echoes the Home §01 grammar (`N RUNNING · N
-       *  QUEUED`) so the vocabulary is consistent across surfaces. */}
-      <div
-        className="mb-2 flex items-center gap-2 font-mono uppercase"
-        style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.08em" }}
-      >
-        <span>Agents</span>
-        <span className="flex-1" />
-        {/* Counter is status text — uses text3 (AA-clearing) rather
-         *  than text4 so screen-readers + low-vision users can read
-         *  the running / total count. */}
-        <span style={{ color: "var(--il-text3)" }}>
-          {runningCount > 0 ? `${runningCount} running` : `${agents.length}`}
-        </span>
-      </div>
+       *  QUEUED`) so the vocabulary is consistent across surfaces.
+       *  When `expanded` (Agents tab body), the overline is hidden
+       *  because the SidebarTabs row already labels the surface. */}
+      {!expanded && (
+        <div
+          className="mb-2 flex items-center gap-2 font-mono uppercase"
+          style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.08em" }}
+        >
+          <span>Agents</span>
+          <span className="flex-1" />
+          {/* Counter is status text — uses text3 (AA-clearing) rather
+           *  than text4 so screen-readers + low-vision users can read
+           *  the running / total count. */}
+          <span style={{ color: "var(--il-text3)" }}>
+            {runningCount > 0 ? `${runningCount} running` : `${agents.length}`}
+          </span>
+        </div>
+      )}
 
       {agents.length === 0 ? (
         <div
@@ -1369,5 +1544,48 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
         <span className="font-mono uppercase">add agent</span>
       </button>
     </div>
+  );
+}
+
+/**
+ * NewPageRail — full-width sticky bottom action that creates a new
+ * page in the current `sidebarFolder` (or at the vault root when
+ * none is drilled into). Mirrors the click target wired into the
+ * global ⌘N keymap. Larger than tree rows on purpose: this is the
+ * primary creation affordance for the whole sidebar.
+ */
+function NewPageRail({ onClick }: { onClick: () => void }) {
+  const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  const chord = isMac ? "⌘N" : "Ctrl+N";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full shrink-0 items-center gap-2 px-3 outline-none transition-colors hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      style={{
+        height: 36,
+        borderTop: "1px solid var(--il-border-soft)",
+        background: "var(--il-slate)",
+        color: "var(--il-text)",
+        fontSize: 13.5,
+        fontWeight: 500,
+        textAlign: "left",
+      }}
+      title={`Create a new page (${chord})`}
+    >
+      <FilePlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className="flex-1 truncate">New page</span>
+      <span
+        aria-hidden="true"
+        className="font-mono"
+        style={{
+          fontSize: 11,
+          color: "var(--il-text3)",
+          letterSpacing: "0.04em",
+        }}
+      >
+        {chord}
+      </span>
+    </button>
   );
 }

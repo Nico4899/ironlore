@@ -166,6 +166,11 @@ export class StorageWriter {
       // Mark WAL entry committed
       this.wal.markCommitted(walId);
 
+      // Steps 7-8 of the docs/02-storage-and-sync.md write path
+      // (sidecar write + git enqueue) live in `pages-api.ts`, NOT
+      // here — the writer stays decoupled from SearchIndex and
+      // GitWorker so both can be swapped or stubbed independently
+      // in tests. Don't smuggle them in.
       return { etag: postHash };
     });
   }
@@ -497,7 +502,7 @@ export class StorageWriter {
           // Neither matches — external edit happened during crash window
           warn(
             entry.path,
-            `hash matches neither pre nor post — run 'ironlore repair' to resolve (entry ${entry.id})`,
+            `hash matches neither pre nor post — run 'ironlore lint --fix --check wal-integrity' to resolve (entry ${entry.id})`,
           );
         }
       } catch (err) {

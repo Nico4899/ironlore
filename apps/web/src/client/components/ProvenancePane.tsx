@@ -1,8 +1,9 @@
 import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchPage } from "../lib/api.js";
+import { type BlockProvenanceRow, fetchPage, fetchPageProvenance } from "../lib/api.js";
 import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
 import { MOTION } from "../styles/motion.js";
+import { BlockProvenanceStrip } from "./BlockProvenanceStrip.js";
 import { Key } from "./primitives/index.js";
 
 /**
@@ -30,11 +31,13 @@ interface ProvenancePaneProps {
 export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePaneProps) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [provenanceRow, setProvenanceRow] = useState<BlockProvenanceRow | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setContent(null);
     setError(null);
+    setProvenanceRow(null);
 
     fetchPage(pagePath)
       .then((page) => {
@@ -44,10 +47,29 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
       });
 
+    // Per-block provenance metadata strip (agent / trust / sources)
+    //  per docs/03-editor.md §Block-ref click and hover provenance.
+    //  Same endpoint the toolbar Provenance panel reads, filtered to
+    //  the cited block. Failure is silent — the block content still
+    //  renders, the user just doesn't get the metadata strip (which
+    //  matches the BlockProvenancePanel "no agent stamp → no badge"
+    //  contract for human-written blocks).
+    if (blockId) {
+      fetchPageProvenance(pagePath)
+        .then((rows) => {
+          if (cancelled) return;
+          const match = rows.find((r) => r.id === blockId);
+          if (match) setProvenanceRow(match);
+        })
+        .catch(() => {
+          /* silent — strip simply doesn't render */
+        });
+    }
+
     return () => {
       cancelled = true;
     };
-  }, [pagePath]);
+  }, [pagePath, blockId]);
 
   // Scroll to block + flash on load. `.il-flash` runs the `ilFlash`
   //  keyframe (Signal-Amber → transparent) for `--motion-flash`
@@ -132,6 +154,23 @@ export function ProvenancePane({ pagePath, blockId, onClose }: ProvenancePanePro
         >
           {pagePath}
         </div>
+        {/* Provenance metadata strip — only renders when the cited
+         *  block carries an `agent` stamp in `.blocks.json`. Human-
+         *  written blocks have no receipts to show, matching the
+         *  BlockProvenancePanel "no badge for human" contract. */}
+        {provenanceRow && (
+          <div
+            className="rounded border"
+            style={{
+              padding: "8px 10px",
+              marginBottom: 10,
+              borderColor: "var(--il-border-soft)",
+              background: "color-mix(in oklch, var(--il-slate-hover) 30%, transparent)",
+            }}
+          >
+            <BlockProvenanceStrip row={provenanceRow} />
+          </div>
+        )}
         {content === null ? (
           <p className="text-sm text-secondary">Loading…</p>
         ) : (

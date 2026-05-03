@@ -64,7 +64,7 @@ export const messages = {
   aiPanelFailureStreak: "Agent paused after {count} consecutive failures.",
 
   // Agents
-  agentGeneral: "General",
+  agentGeneral: "Librarian",
   agentEditor: "Editor",
   agentStatusActive: "Active",
   agentStatusPaused: "Paused",

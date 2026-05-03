@@ -132,4 +132,33 @@ describe("SearchIndex.findOrphans + kb.lint_orphans", () => {
     };
     expect(out.orphans.map((o) => o.path)).toEqual(["notes/y.md"]);
   });
+
+  // Obsidian-compat regression — wiki-link resolution is
+  // case-insensitive per docs/01-content-model.md §Obsidian
+  // compatibility ("`[[wiki-links]]` resolve the same way (page
+  // title, case-insensitive)"). Without this, an Obsidian user who
+  // types `[[research notes]]` against a `Research Notes.md` file on
+  // disk would see the target stay flagged as an orphan and the
+  // editor click navigate to a non-existent path.
+  it("treats a case-mismatched inbound link as a real link (orphan check)", () => {
+    const index = createIndex();
+    // hub cites the page in lowercase; the page itself is title-case.
+    index.indexPage("hub.md", "# Hub\n\nSee [[research notes]].", "user");
+    index.indexPage("Research Notes.md", "# Research Notes", "user");
+
+    const orphans = index.findOrphans();
+    // hub is the only true orphan — Research Notes is linked
+    //  case-insensitively from hub.
+    expect(orphans.map((o) => o.path)).toEqual(["hub.md"]);
+  });
+
+  it("treats a case-mismatched inbound link the other way too", () => {
+    const index = createIndex();
+    // hub cites the page in title-case; the page itself is lowercase.
+    index.indexPage("hub.md", "# Hub\n\nSee [[Lonely]].", "user");
+    index.indexPage("lonely.md", "# Lonely", "user");
+
+    const orphans = index.findOrphans();
+    expect(orphans.map((o) => o.path)).toEqual(["hub.md"]);
+  });
 });

@@ -23,6 +23,7 @@ import { AgentRails } from "./agents/rails.js";
 import { seedAgents } from "./agents/seed-agents.js";
 import { createAuthApi, SessionStore } from "./auth.js";
 import { bootstrap } from "./bootstrap.js";
+import { ContextualizationWorker } from "./contextualization-worker.js";
 import { createCorsConfig } from "./cors.js";
 import { createCrossProjectCopyApi } from "./cross-project-copy.js";
 import { EmbeddingWorker } from "./embedding-worker.js";
@@ -42,6 +43,7 @@ import { EmbeddingProviderRegistry } from "./providers/embedding-registry.js";
 import { getProviderKey } from "./providers/key-store.js";
 import { OllamaEmbeddingProvider } from "./providers/ollama-embedding.js";
 import { ProviderRegistry } from "./providers/registry.js";
+import { resolveProviderForRun } from "./providers/resolve.js";
 import { createProvidersApi } from "./providers-api.js";
 import { authRateLimiter } from "./rate-limit.js";
 import { createSearchApi } from "./search-api.js";
@@ -50,6 +52,7 @@ import { TerminalManager } from "./terminal.js";
 import { createAgentJournal } from "./tools/agent-journal.js";
 import { ToolDispatcher } from "./tools/dispatcher.js";
 import { createKbAppendMemory } from "./tools/kb-append-memory.js";
+import { createKbCheckContradictions } from "./tools/kb-check-contradictions.js";
 import { createKbCreatePage } from "./tools/kb-create-page.js";
 import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
 import { createKbGlobalSearch } from "./tools/kb-global-search.js";
@@ -70,7 +73,13 @@ import { createUploadsApi } from "./uploads-api.js";
 import type { Wal } from "./wal.js";
 import { WebSocketManager } from "./ws.js";
 
-const app = new Hono();
+// `strict: false` treats `/foo` and `/foo/` as the same route. Hono's
+// default is strict, which made `/api/projects/main/agents/` 404
+// while the bare form returned 200 — most clients normalise the
+// slash so the discrepancy was a footgun. With strict mode off, both
+// shapes hit the same handler and per-router slash mirroring becomes
+// unnecessary.
+const app = new Hono({ strict: false });
 
 // ---------------------------------------------------------------------------
 // State
@@ -81,6 +90,11 @@ let wal: Wal | null = null;
 let workerPool: WorkerPool | null = null;
 let wsManager: WebSocketManager | null = null;
 let terminalManager: TerminalManager | null = null;
+// Updated after `servicesById` is populated in `start()`. The
+//  `/health` handler reads this each request so a project added at
+//  runtime via `POST /api/projects` (or via `ironlore new-project`
+//  followed by a restart) reflects in subsequent health checks.
+let projectCount = 0;
 
 // ---------------------------------------------------------------------------
 // Middleware
@@ -106,7 +120,9 @@ app.get("/health", (c) => {
     activeJobs: workerPool?.activeCount ?? 0,
     walDepth: wal?.getDepth() ?? 0,
     wsSubscribers: wsManager?.getSubscriberCount() ?? 0,
-    projects: 1, // single-project until Phase 5
+    // Multi-project shipped in Phase 9 — reflect the live bundle
+    //  count rather than the historical single-project default.
+    projects: projectCount,
   };
   return c.json(body);
 });
@@ -165,6 +181,11 @@ async function start() {
   for (const p of projectList) {
     servicesById.set(p.id, ProjectServices.forProject(installRoot, p.id));
   }
+  // Surface the bundle count to the `/health` handler. The handler
+  //  reads `projectCount` at request time, so a project added at
+  //  runtime via `POST /api/projects` updates this field below where
+  //  the new bundle is added to the map.
+  projectCount = servicesById.size;
 
   const {
     api: authApi,
@@ -195,6 +216,29 @@ async function start() {
   // reference. The controller's recovery timer is kick-started below.
   const backpressure = new BackpressureController();
   const inbox = new AgentInbox(jobsDb);
+
+  // Sweep stale inbox entries on boot. A `pending` row whose staging
+  // branch has been deleted out of band (manual cleanup, prior
+  // reject from a different surface, history rewrite) used to sit
+  // in the listing forever and fail with raw git stderr the moment
+  // someone tried to approve/reject. Demote those rows to `'stale'`
+  // up front so the listing stays clean and approve/reject return
+  // a structured 404 instead.
+  for (const [projectId, services] of servicesById) {
+    try {
+      const demoted = inbox.pruneStaleEntries(projectId, services.projectDir);
+      if (demoted > 0) {
+        console.log(
+          `Inbox: pruned ${demoted} stale entr${demoted === 1 ? "y" : "ies"} in ${projectId}`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `Inbox prune failed for ${projectId}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
 
   // Provider registry — auto-detect Ollama, register Anthropic from env.
   const providerRegistry = new ProviderRegistry();
@@ -260,7 +304,7 @@ async function start() {
   const mcpBridgesById = new Map<string, McpBridge>();
   for (const [projectId, services] of servicesById) {
     const dispatcher = new ToolDispatcher();
-    dispatcher.register(createKbSearch(services.searchIndex));
+    dispatcher.register(createKbSearch(services.searchIndex, services.writer));
     dispatcher.register(createKbReadPage(services.writer));
     dispatcher.register(createKbReadBlock(services.writer));
     dispatcher.register(createKbReplaceBlock(services.writer, services.searchIndex));
@@ -270,6 +314,12 @@ async function start() {
     dispatcher.register(createKbLintOrphans(services.searchIndex));
     dispatcher.register(createKbLintStaleSources(services.searchIndex));
     dispatcher.register(createKbLintContradictions(services.searchIndex));
+    // Phase-4 no-op stub for the LLM-classifier contradiction tool.
+    //  Doc promises agents can call it and handle absence gracefully;
+    //  registering a structured-empty-array stub honors that. The
+    //  Phase-11 follow-up will swap in the real classifier (embed →
+    //  retrieve → classify → cache to .ironlore/contradictions.sqlite).
+    dispatcher.register(createKbCheckContradictions());
     dispatcher.register(createKbLintCoverageGaps(services.searchIndex));
     dispatcher.register(createKbLintProvenanceGaps(services.getDataRoot()));
     // Phase-11 evolver-agent helper. Reads from the install-level
@@ -313,6 +363,11 @@ async function start() {
               return undefined;
             }
           },
+          // Phase-9 multi-user — per-project writer resolver so the
+          //  global-search tool can filter caller-project hits by the
+          //  calling user's ACL. Foreign hits aren't ACL-checked
+          //  (user identity is project-local).
+          getProjectWriter: (pid) => servicesById.get(pid)?.writer,
         }),
       );
     }
@@ -376,10 +431,25 @@ async function start() {
   //  (dispatcher, services) from the job's project_id — one handler
   //  fans out across every project.
   pool.register("agent.run", async (job, jobCtx) => {
-    const payload = JSON.parse(job.payload) as { prompt?: string };
+    const payload = JSON.parse(job.payload) as {
+      prompt?: string;
+      effort?: "low" | "medium" | "high";
+      /** Per-message action override from the composer's `/model …` slash command. */
+      modelOverride?: string;
+      /** Per-message action override from the composer's `/provider …` slash command. */
+      providerOverride?: "anthropic" | "ollama" | "openai" | "claude-cli";
+      /**
+       * Phase-9 multi-user: forwarded from the originating
+       * `POST /agents/:slug/run` HTTP request. Used to populate
+       * `ToolCallContext.acl` so the tool ACL gate can enforce
+       * per-page read/write permissions on `kb.*` calls. Absent for
+       * cron / heartbeat runs that don't enter through the route.
+       */
+      userId?: string;
+      username?: string;
+    };
     const agentSlug = job.owner_id ?? "general";
-    const provider = providerRegistry.resolve();
-    if (!provider) {
+    if (!providerRegistry.hasAny()) {
       jobCtx.emitEvent("message.error", { text: "No AI provider configured" });
       return { status: "failed", result: "No AI provider configured" };
     }
@@ -389,21 +459,83 @@ async function start() {
       jobCtx.emitEvent("message.error", { text: `Unknown project ${jobCtx.projectId}` });
       return { status: "failed", result: `Unknown project ${jobCtx.projectId}` };
     }
+    // Resolve provider/model/effort through the four-level chain
+    //  (action → runtime → persona → global). Action overrides come
+    //  from the job payload; persona reads frontmatter; global is the
+    //  installed default per provider.
+    let resolved: Awaited<ReturnType<typeof resolveProviderForRun>>;
+    try {
+      resolved = resolveProviderForRun({
+        registry: providerRegistry,
+        globalDefaults: {
+          // Pick a reasonable default per the first registered provider.
+          //  When the action override changes that, the resolver swaps
+          //  the model field to the correct default for the new family.
+          provider: (providerRegistry.list()[0] ?? "anthropic") as
+            | "anthropic"
+            | "ollama"
+            | "openai"
+            | "claude-cli",
+          model:
+            providerRegistry.list()[0] === "ollama"
+              ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
+              : "claude-sonnet-4-20250514",
+          effort: "medium",
+        },
+        dataRoot: services.getDataRoot(),
+        agentSlug,
+        actionOverride: {
+          provider: payload.providerOverride,
+          model: payload.modelOverride,
+          effort: payload.effort,
+        },
+      });
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      jobCtx.emitEvent("message.error", { text });
+      return { status: "failed", result: text };
+    }
+    // Stamp the resolution onto the agent_runs row (autonomous runs
+    //  only — interactive runs don't have a row, the call no-ops).
+    rails.recordResolution(job.id, resolved.resolution);
+    // Emit a structured event so the AI panel can surface the
+    //  "resolved as: <model> (from <level>)" chip + any
+    //  normalization notes (e.g. "effort dropped on Haiku").
+    jobCtx.emitEvent("provider.resolved", resolved.resolution);
     const projectContext = ProviderRegistry.buildContext(jobCtx.projectId, fetch);
+
+    // Phase-9 multi-user: surface the project's mode + the originating
+    //  user's identity so `executeAgentRun` can pin them onto
+    //  `ToolCallContext.acl`. Single-user projects pass `acl: undefined`
+    //  unconditionally; multi-user projects with no user identity in
+    //  the payload (a heartbeat run) also pass `undefined` because the
+    //  ACL gate's "no user → permit" branch is the right semantic for
+    //  scheduled work that operates on the persona's scope rather than
+    //  a session.
+    let runProjectMode: "single-user" | "multi-user" = "single-user";
+    try {
+      const cfg = loadProjectConfig(services.projectDir);
+      if (cfg.mode === "multi-user") runProjectMode = "multi-user";
+    } catch {
+      // Missing / malformed project.yaml → safe single-user default.
+    }
+    const runAcl =
+      runProjectMode === "multi-user" && payload.userId && payload.username
+        ? { userId: payload.userId, username: payload.username }
+        : undefined;
+
     const result = await executeAgentRun(job, jobCtx, {
-      provider,
+      provider: resolved.provider,
       projectContext,
       dispatcher,
       dataRoot: services.getDataRoot(),
       projectDir: services.projectDir,
-      model:
-        provider.name === "ollama"
-          ? (providerRegistry.getOllamaModels()[0] ?? "llama3")
-          : "claude-sonnet-4-20250514",
+      model: resolved.model,
       agentSlug,
       prompt: payload.prompt,
       dryRunBridge,
       backpressure,
+      ...(runAcl ? { acl: runAcl } : {}),
       // Phase-11 lint banner — when the wiki-gardener (or any
       // future lint workflow) finalizes via
       // `agent.journal({ lintReport: ... })`, fire one
@@ -554,12 +686,15 @@ async function start() {
   }
   console.log(`Heartbeat scheduler started for ${schedulers.length} project(s)`);
 
-  // Start one embedding worker per project when a provider is
-  //  registered. Each tick (default 30 s) drains up to 50 chunks from
-  //  `pages_chunks_fts` that lack entries in `chunk_vectors` — covers
-  //  both bulk backfill after first activation and auto-embed on new
-  //  writes from indexPage. Absent an embedding provider this block
-  //  is a no-op; hybrid retrieval stays off (see docs/04 §Graceful
+  // Construct one embedding worker per project when a provider is
+  //  registered. Workers are *built* here (so the per-project route
+  //  mount further down can reference them via the maps) but their
+  //  ticks don't *start* until after every `services.start()` has
+  //  finished its `reindexAll` — see the `worker.start()` block
+  //  below the per-project loop. Each tick (default 30 s) drains up
+  //  to 50 chunks from `pages_chunks_fts` that lack entries in
+  //  `chunk_vectors`; absent an embedding provider the block is a
+  //  no-op and hybrid retrieval stays off (docs/04 §Graceful
   //  degradation).
   const embeddingWorkers = new Map<string, EmbeddingWorker>();
   const startupEmbeddingProvider = embeddingRegistry.resolve();
@@ -572,10 +707,31 @@ async function start() {
         services.projectDir,
       );
       worker.onError = (err) => console.warn(`[embed-worker] ${projectId}: ${err.message}`);
-      worker.start();
       embeddingWorkers.set(projectId, worker);
     }
-    console.log(`Embedding worker started for ${embeddingWorkers.size} project(s)`);
+  }
+
+  // Phase-11 Contextual Retrieval — drains chunks missing a CR summary
+  //  on a 30 s tick. Runs only when a chat provider is registered;
+  //  absent that, BM25 keeps working unaugmented (NULL-fallback
+  //  contract in `bm25PrefilterPaths`). Per-project worker so each
+  //  project's backlog drains independently and a slow Anthropic
+  //  round-trip on one project doesn't stall another. Same
+  //  construct-now / start-later pattern as `embeddingWorkers` above
+  //  — see the `worker.start()` block after the per-project loop.
+  const contextualizationWorkers = new Map<string, ContextualizationWorker>();
+  const startupChatProvider = providerRegistry.resolve();
+  if (startupChatProvider) {
+    for (const [projectId, services] of servicesById) {
+      const worker = new ContextualizationWorker(
+        services.searchIndex,
+        startupChatProvider,
+        projectId,
+        services.projectDir,
+      );
+      worker.onError = (err) => console.warn(`[ctx-worker] ${projectId}: ${err.message}`);
+      contextualizationWorkers.set(projectId, worker);
+    }
   }
 
   // Create broadcast callback that forwards to the WebSocket manager
@@ -685,10 +841,76 @@ async function start() {
         searchIndex: services.searchIndex,
         provider: startupEmbeddingProvider,
         worker: embeddingWorkers.get(projectId) ?? null,
+        chatProvider: startupChatProvider,
+        contextualizationWorker: contextualizationWorkers.get(projectId) ?? null,
       }),
     );
+
+    // Git "Commit now" + "Push" surfaces — docs/02-storage-and-sync.md
+    //  §Surfaces (CLI ↔ SPA parity). Both bypass the 30 s grouping
+    //  window: `flush` calls `gitWorker.drain()`, `push` drains then
+    //  shells `git push`. Same auth gate as every other per-project
+    //  route via the `/api/projects/*` middleware mounted above.
+    app.post(`/api/projects/${projectId}/git/flush`, async (c) => {
+      try {
+        const committed = await services.drainGit();
+        return c.json({ ok: true, committed });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ ok: false, error: message }, 500);
+      }
+    });
+    app.post(`/api/projects/${projectId}/git/push`, async (c) => {
+      try {
+        const result = await services.pushGit();
+        if (result.noRemote) {
+          return c.json(
+            { ok: false, error: result.output, noRemote: true, drained: result.drained },
+            400,
+          );
+        }
+        if (!result.ok) {
+          return c.json(
+            {
+              ok: false,
+              error: result.output,
+              conflict: result.conflict ?? false,
+              drained: result.drained,
+            },
+            409,
+          );
+        }
+        return c.json({ ok: true, drained: result.drained, output: result.output });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ ok: false, error: message }, 500);
+      }
+    });
   }
   console.log(`Search index: ${totalIndexed} pages indexed across ${servicesById.size} projects`);
+
+  // Now that every project's `reindexAll` has finished its bulk
+  //  DELETE+INSERT transaction, it's safe to schedule the background
+  //  workers' tick timers. Starting them earlier raced the rebuild:
+  //  even though the first tick is 30 s away, the open SearchIndex
+  //  references can sit on a snapshot that blocks the reindex's
+  //  write transaction with `SQLITE_BUSY_SNAPSHOT`. Order matters —
+  //  workers always run AGAINST a built index, never alongside one
+  //  that's being torn down.
+  for (const [projectId, worker] of embeddingWorkers) {
+    worker.start();
+    void projectId;
+  }
+  if (embeddingWorkers.size > 0) {
+    console.log(`Embedding worker started for ${embeddingWorkers.size} project(s)`);
+  }
+  for (const [projectId, worker] of contextualizationWorkers) {
+    worker.start();
+    void projectId;
+  }
+  if (contextualizationWorkers.size > 0) {
+    console.log(`Contextualization worker started for ${contextualizationWorkers.size} project(s)`);
+  }
 
   // Middleware for per-project routes (same authMiddleware covers
   //  every per-project sub-router — mounted before the sub-routers
@@ -763,6 +985,11 @@ async function start() {
     //  exist until the server restarts — that's explicit in the
     //  response.
     projectRegistry.ensureProject(id, name, preset);
+    // Bump the count so `/health` reflects the new total even
+    //  before the user restarts. The bundle isn't mounted yet but
+    //  the project IS known to the registry, so the count semantics
+    //  match `GET /api/projects`.
+    projectCount = projectRegistry.list().length;
 
     return c.json(
       {
@@ -797,7 +1024,10 @@ async function start() {
 
   // Mount /metrics endpoint (Prometheus text format, behind auth, opt-in)
   if (process.env.IRONLORE_METRICS === "true") {
-    const metricsApi = createMetricsEndpoint(() => wal);
+    const metricsApi = createMetricsEndpoint(
+      () => wal,
+      () => jobsDb,
+    );
     app.use("/metrics", authMiddleware);
     app.route("/metrics", metricsApi);
   }
@@ -894,6 +1124,117 @@ async function start() {
       socket.destroy();
     }
   });
+
+  // Graceful shutdown per docs/07-tech-stack.md §Process supervision:
+  //  stop accepting new connections, drain in-flight HTTP responses
+  //  (10 s cap), flush the WAL to git, mark running jobs as `queued`
+  //  (so the next start retries them), then exit 0.
+  //
+  //  Note for `tsx watch` and Ctrl-C: closing the server releases the
+  //  port so the next watch-restart doesn't bounce off EADDRINUSE.
+  //  Hard cap is 15 s (10 s drain + 5 s slack for git + DB close).
+  let shuttingDown = false;
+  const shutdown = (signal: NodeJS.Signals): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // Flip /ready to 503 so external supervisors stop routing traffic
+    // before the listener actually closes. Symmetric with startup.
+    ready = false;
+    readyReason = `Shutting down (${signal})`;
+    console.log(`Received ${signal}, draining…`);
+
+    const hardCap = setTimeout(() => {
+      console.warn("Graceful shutdown timed out after 15s, forcing exit.");
+      process.exit(1);
+    }, 15_000);
+    hardCap.unref();
+
+    const cleanup = async (): Promise<number> => {
+      // 1. Stop accepting new HTTP connections. Wraps the callback in
+      //    a promise so we can `await` it and proceed only after the
+      //    last in-flight request has finished (server.close fires the
+      //    callback with no error on clean drain).
+      await new Promise<void>((resolve) => {
+        server.close((err) => {
+          if (err) console.error("server.close error:", err);
+          resolve();
+        });
+      });
+
+      // 2. Stop background timers — heartbeat schedulers, embedding +
+      //    contextualization workers. Each `stop()` is sync + idempotent.
+      for (const scheduler of schedulers) scheduler.stop();
+      for (const worker of embeddingWorkers.values()) worker.stop();
+      for (const worker of contextualizationWorkers.values()) worker.stop();
+      backpressure.stop();
+
+      // 3. Pool: abort active jobs + reset their rows back to `queued`
+      //    so the next process pickup re-runs them. Returns the count
+      //    so we can log it.
+      const requeued = pool.gracefulStop();
+      if (requeued > 0) {
+        console.log(`Requeued ${requeued} in-flight job${requeued === 1 ? "" : "s"}`);
+      }
+
+      // 4. Drain each project's WAL to git so SIGTERM is a clean
+      //    commit point. Use Promise.allSettled so one project's git
+      //    failure (e.g. detached HEAD) doesn't block another's
+      //    cleanup. Sum the drained-counts for the log line.
+      const drainResults = await Promise.allSettled(
+        Array.from(servicesById.entries()).map(async ([projectId, services]) => {
+          try {
+            const committed = await services.drainGit();
+            return { projectId, committed, error: null as Error | null };
+          } catch (err) {
+            return {
+              projectId,
+              committed: 0,
+              error: err instanceof Error ? err : new Error(String(err)),
+            };
+          }
+        }),
+      );
+      let totalDrained = 0;
+      for (const r of drainResults) {
+        if (r.status === "fulfilled") {
+          totalDrained += r.value.committed;
+          if (r.value.error) {
+            console.warn(`drainGit(${r.value.projectId}) failed:`, r.value.error.message);
+          }
+        }
+      }
+      if (totalDrained > 0) {
+        console.log(`Flushed ${totalDrained} WAL entr${totalDrained === 1 ? "y" : "ies"} to git`);
+      }
+
+      // 5. Stop MCP bridges so stdio child processes get SIGTERM
+      //    instead of being orphaned to the OS reaper.
+      await Promise.all(
+        Array.from(mcpBridgesById.values()).map((b) => b.close().catch(() => undefined)),
+      );
+
+      // 6. Close every project's DB handles (writer, search-index,
+      //    links-registry). Idempotent — `services.stop()` checks the
+      //    started flag.
+      await Promise.allSettled(Array.from(servicesById.values()).map((s) => s.stop()));
+
+      return drainResults.length;
+    };
+
+    cleanup()
+      .then(() => {
+        clearTimeout(hardCap);
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error("Graceful shutdown error:", err);
+        clearTimeout(hardCap);
+        process.exit(1);
+      });
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+  process.on("SIGHUP", shutdown);
 }
 
 start().catch((err) => {

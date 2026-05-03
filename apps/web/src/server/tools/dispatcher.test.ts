@@ -71,7 +71,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     indexes.push(index);
 
     const dispatcher = new ToolDispatcher();
-    dispatcher.register(createKbSearch(index));
+    dispatcher.register(createKbSearch(index, writer));
     dispatcher.register(createKbReadPage(writer));
     dispatcher.register(createKbReadBlock(writer));
     dispatcher.register(createKbReplaceBlock(writer, index));
@@ -131,7 +131,11 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       ctx,
       budget,
     );
-    expect(result.isError).toBe(false); // Tool returns structured error, not throw
+    // The dispatcher detects the `{"error": ...}` envelope and flips
+    // `isError`. Previously this returned `false` and the model
+    // treated the failure as success — see the AI-panel evolver
+    // run that finalized after silently dropping two writes.
+    expect(result.isError).toBe(true);
     const data = JSON.parse(result.result);
     expect(data.error).toContain("ETag mismatch");
     expect(data.currentEtag).toBeDefined();
@@ -149,6 +153,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       ctx,
       budget,
     );
+    expect(result.isError).toBe(true);
     const data = JSON.parse(result.result);
     expect(data.error).toContain("not found");
     expect(data.availableBlocks).toBeDefined();
@@ -163,8 +168,36 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       ctx,
       budget,
     );
+    expect(result.isError).toBe(true);
     const data = JSON.parse(result.result);
     expect(data.error).toBe("Page not found");
+  });
+
+  // Bug 6 regression — kb.read_page used to surface raw `EISDIR:
+  // illegal operation on a directory, read` from the dispatcher's
+  // catch-all when the model passed a directory path. Now wrapped
+  // as a structured envelope so the model can recover (call
+  // kb.search instead) and the dispatcher's is_error gate fires
+  // via the top-level `error` field.
+  it("EISDIR (directory path) returns a structured envelope, not raw errno", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+    // Create a real directory the writer can stat.
+    await writer.write("wiki/page.md", "# Real page\n", null);
+
+    const result = await dispatcher.call(
+      "kb.read_page",
+      { path: "wiki" }, // points at the directory, not a .md file
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(true);
+    const data = JSON.parse(result.result);
+    expect(data.error).toMatch(/directory, not a page/);
+    expect(data.path).toBe("wiki");
+    expect(data.kind).toBe("directory");
+    // Raw Node errno suppressed.
+    expect(data.error).not.toContain("EISDIR");
+    expect(data.error).not.toContain("illegal operation");
   });
 
   it("budget exhaustion returns a budget-exhausted signal", async () => {
@@ -179,6 +212,167 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const result = await dispatcher.call("kb.search", { query: "test" }, ctx, budget);
     expect(result.isError).toBe(true);
     expect(result.result).toContain("Budget exhausted");
+  });
+
+  // Tier-1 §6 per docs/04-ai-and-agents.md §Tool protocol testing:
+  // "A 20-call plan hits a 409 on call 7; assert the agent re-plans
+  //  from the conflict point, not from call 1."
+  //
+  // The agent's correct recovery is `kb.read_page` (to refresh the
+  // ETag + re-enumerate block IDs that may have changed on disk),
+  // followed by a fresh `kb.replace_block` with the new ETag and a
+  // re-resolved block. The earlier successful writes must NOT be
+  // re-applied — the page on disk already reflects them. This test
+  // pins that subset of behaviour: that the *server side* gives the
+  // agent enough state to re-plan locally rather than restart the
+  // whole sequence.
+  it("mid-sequence conflict: a fresh kb.read_page after a 409 surfaces the new ETag", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    // Seed a page with three replaceable blocks.
+    const seeded = assignBlockIds("# Plan\n\nFirst block.\n\nSecond block.\n\nThird block.\n");
+    await writer.write("plan.md", seeded.markdown, null);
+
+    // Calls 1–6: the agent reads, then replaces blocks 1 and 2 in
+    //  sequence. Each replace returns a fresh ETag the agent threads
+    //  into the next call.
+    const read1 = await dispatcher.call("kb.read_page", { path: "plan.md" }, ctx, budget);
+    expect(read1.isError).toBe(false);
+    const read1Data = JSON.parse(read1.result) as {
+      etag: string;
+      blocks: Array<{ id: string; type: string }>;
+    };
+    const blockIds = read1Data.blocks.filter((b) => b.type === "paragraph").map((b) => b.id);
+    expect(blockIds.length).toBeGreaterThanOrEqual(3);
+
+    const replace1 = await dispatcher.call(
+      "kb.replace_block",
+      { path: "plan.md", blockId: blockIds[0], markdown: "Edited first.", etag: read1Data.etag },
+      ctx,
+      budget,
+    );
+    expect(replace1.isError).toBe(false);
+    const replace1Data = JSON.parse(replace1.result) as { newEtag: string };
+
+    const replace2 = await dispatcher.call(
+      "kb.replace_block",
+      {
+        path: "plan.md",
+        blockId: blockIds[1],
+        markdown: "Edited second.",
+        etag: replace1Data.newEtag,
+      },
+      ctx,
+      budget,
+    );
+    expect(replace2.isError).toBe(false);
+    const replace2Data = JSON.parse(replace2.result) as { newEtag: string };
+
+    // Call 7: an *external* writer (simulating the user) edits the
+    //  page out from under the agent. This invalidates the ETag the
+    //  agent is holding for its planned call-7 replace.
+    await writer.write(
+      "plan.md",
+      assignBlockIds("# Plan\n\nUser-edited first.\n\nUser-edited second.\n\nUser-edited third.\n")
+        .markdown,
+      replace2Data.newEtag,
+    );
+
+    // Call 7 (the agent's): replace block-3 with the now-stale ETag
+    //  → 409. The error envelope must hand back the current ETag so
+    //  the agent's recovery loop has the input it needs to re-plan
+    //  locally.
+    const conflict = await dispatcher.call(
+      "kb.replace_block",
+      {
+        path: "plan.md",
+        blockId: blockIds[2],
+        markdown: "Edited third.",
+        etag: replace2Data.newEtag,
+      },
+      ctx,
+      budget,
+    );
+    expect(conflict.isError).toBe(true);
+    const conflictData = JSON.parse(conflict.result) as { error: string; currentEtag: string };
+    expect(conflictData.error).toContain("ETag mismatch");
+    expect(conflictData.currentEtag).toBeDefined();
+    expect(conflictData.currentEtag).not.toBe(replace2Data.newEtag);
+
+    // Recovery: the agent re-reads (NOT re-runs calls 1–2) and uses
+    //  the fresh ETag + fresh block IDs to retry the in-flight call.
+    //  The user's prior two edits stay intact — call-7's recovery
+    //  doesn't clobber them, which is the whole point of the
+    //  scoped-re-plan vs. start-over distinction.
+    const read2 = await dispatcher.call("kb.read_page", { path: "plan.md" }, ctx, budget);
+    expect(read2.isError).toBe(false);
+    const read2Data = JSON.parse(read2.result) as {
+      etag: string;
+      blocks: Array<{ id: string; type: string }>;
+      content: string;
+    };
+    expect(read2Data.etag).toBe(conflictData.currentEtag);
+    expect(read2Data.content).toContain("User-edited first.");
+    expect(read2Data.content).toContain("User-edited second.");
+    // The fresh block-IDs may differ from the originals (the user's
+    //  full-page rewrite re-stamped them). The agent must read off
+    //  the fresh list, not retry against the stale `blockIds[2]`.
+    const freshBlocks = read2Data.blocks.filter((b) => b.type === "paragraph");
+    expect(freshBlocks.length).toBeGreaterThanOrEqual(3);
+
+    const replace3 = await dispatcher.call(
+      "kb.replace_block",
+      {
+        path: "plan.md",
+        blockId: freshBlocks[2]?.id ?? "",
+        markdown: "Recovered third.",
+        etag: read2Data.etag,
+      },
+      ctx,
+      budget,
+    );
+    expect(replace3.isError).toBe(false);
+    // Final state has the user's edits + the agent's recovered call-7.
+    const final = writer.read("plan.md");
+    expect(final.content).toContain("User-edited first.");
+    expect(final.content).toContain("User-edited second.");
+    expect(final.content).toContain("Recovered third.");
+  });
+
+  // Bug 4 regression — kb.search used to return the prose string
+  // `"No results found."` for the empty case and a JSON array for
+  // the populated case. Two shapes for the same logical answer
+  // forced downstream consumers (the AI panel result-count chip,
+  // the model parsing the result) to handle both. Now always a
+  // JSON array.
+  it("kb.search returns [] for the empty case (not the prose string)", async () => {
+    const { dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.search",
+      { query: "definitely-no-such-content-xyzzy" },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    // Must be JSON-parseable as an array (not the legacy
+    // "No results found." string).
+    const parsed = JSON.parse(result.result) as unknown;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toEqual([]);
+  });
+
+  it("kb.search returns the same shape for populated queries", async () => {
+    const { writer, dispatcher, ctx, budget, index } = setup();
+    const { markdown } = assignBlockIds("# Title\n\nFindable content.\n");
+    await writer.write("findme.md", markdown, null);
+    index.indexPage("findme.md", markdown, "test");
+
+    const result = await dispatcher.call("kb.search", { query: "Findable" }, ctx, budget);
+    expect(result.isError).toBe(false);
+    const parsed = JSON.parse(result.result) as unknown;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect((parsed as unknown[]).length).toBeGreaterThan(0);
   });
 
   it("kb.create_page creates a page and returns the ID", async () => {
@@ -200,6 +394,204 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const { content } = writer.read(data.path);
     expect(content).toContain("# New Page");
     expect(content).toContain("kind: wiki");
+  });
+
+  // Bug 8 regression — files created under `.agents/**/skills/` must
+  // use the skill convention (`{name, description}`), not the page
+  // convention (`{schema, id, title, kind, ...}`). The hallucinated
+  // `conversation-initialization.md` from the AI-panel evolver run
+  // had page frontmatter, which the skill-loader's discovery surface
+  // doesn't recognise as a skill.
+  it("kb.create_page emits skill-shaped frontmatter for `.agents/.shared/skills/` paths", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: ".agents/.shared/skills",
+        title: "My Skill",
+        markdown: "# My Skill\n\nDoes a thing.",
+        description: "Does a thing concisely",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    expect(data.path).toMatch(/\.agents\/\.shared\/skills\/my-skill\.md$/);
+
+    const { content } = writer.read(data.path);
+    expect(content).toContain("name: My Skill");
+    expect(content).toContain("description: Does a thing concisely");
+    // No page-shaped fields should leak in.
+    expect(content).not.toContain("schema:");
+    expect(content).not.toContain("kind:");
+    expect(content).not.toMatch(/^id:/m);
+  });
+
+  it("kb.create_page falls back to title when description is omitted on a skill path", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: ".agents/.shared/skills",
+        title: "Bare Skill",
+        markdown: "Body.",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    // Description defaults to the title rather than being omitted —
+    // the skill loader's BM25 surface needs *something* searchable.
+    expect(content).toContain("description: Bare Skill");
+  });
+
+  it("kb.create_page detects per-agent skills dirs, not just .shared", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: ".agents/wiki-gardener/skills",
+        title: "Local Skill",
+        markdown: "Body.",
+        description: "Local-only skill",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    expect(content).toContain("name: Local Skill");
+    expect(content).not.toContain("schema:");
+  });
+
+  // Bug regression — kb.create_page used to unconditionally prepend
+  // `# {title}` to the body, producing two stacked H1s when the model
+  // already included its own (the audit caught `cats.md` and
+  // `notes/test-cleanup.md` with duplicate `# Cats` / `# test-cleanup`
+  // headings). Detect a leading ATX heading and skip the prepend.
+
+  it("kb.create_page does not duplicate the H1 when the body already opens with one", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Cats",
+        markdown: "# Cats\n\nCats are fascinating animals.",
+        kind: "wiki",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+
+    // Exactly one `# Cats` heading — not two stacked.
+    const h1Matches = content.match(/^#\s+Cats\b/gm) ?? [];
+    expect(h1Matches).toHaveLength(1);
+  });
+
+  it("kb.create_page detects leading whitespace before the H1", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Spaced",
+        markdown: "\n\n  \n# Spaced\n\nBody.",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    const h1Matches = content.match(/^#\s+Spaced\b/gm) ?? [];
+    expect(h1Matches).toHaveLength(1);
+  });
+
+  it("kb.create_page still prepends the H1 when the body has no heading", async () => {
+    // Original behaviour preserved for the common case where the
+    // model passes raw prose. The page must always end up with a
+    // top-level heading so the file isn't headless.
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Bare",
+        markdown: "Just a paragraph, no heading.",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    // `assignBlockIds` may append ` <!-- #blk_... -->` to the
+    // heading line, so anchor on the prefix only.
+    expect(content).toMatch(/^# Bare\b/m);
+  });
+
+  it("kb.create_page treats sub-headings (## / ###) the same — skip the prepend", async () => {
+    // A model that opens with `## Cats` clearly thinks they're
+    // writing a section, not a page top-level. Don't second-guess
+    // by stacking a `# Cats` above it — that looked weird in the
+    // audit too. The page-creator's job is to wrap, not to
+    // override the model's heading hierarchy.
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Cats",
+        markdown: "## Cats overview\n\nBody.",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    expect(content).not.toMatch(/^# Cats\b/m);
+    expect(content).toMatch(/^## Cats overview\b/m);
+  });
+
+  it("kb.create_page leaves non-skill paths on the page convention", async () => {
+    const { writer, dispatcher, ctx, budget } = setup();
+
+    const result = await dispatcher.call(
+      "kb.create_page",
+      {
+        parent: "wiki",
+        title: "Regular Page",
+        markdown: "Body.",
+        kind: "wiki",
+      },
+      ctx,
+      budget,
+    );
+    expect(result.isError).toBe(false);
+    const data = JSON.parse(result.result);
+    const { content } = writer.read(data.path);
+    expect(content).toContain("schema: 1");
+    expect(content).toContain("title: Regular Page");
+    expect(content).toContain("kind: wiki");
+    // `name`/`description` belong to the skill envelope, not pages.
+    expect(content).not.toMatch(/^name:/m);
+    expect(content).not.toMatch(/^description:/m);
   });
 
   it("agent.journal appends to memory/home.md", async () => {
@@ -723,5 +1115,69 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     expect(data.ok).toBe(true);
     const { content } = writer.read("no-bridge.md");
     expect(content).toContain("Straight write.");
+  });
+
+  // -------------------------------------------------------------------------
+  // tool.result / tool.error duration measurement
+  // -------------------------------------------------------------------------
+  //
+  // Regression for the "every tool reads 0ms in the AI panel" bug.
+  // Duration was measured client-side from `Date.now() - msg.timestamp`,
+  // but `tool.call` and `tool.result` events land in the same 500ms
+  // poll batch and were stamped in the same JS tick — so every
+  // duration rounded to ~0ms regardless of how long the tool actually
+  // ran. The fix moves measurement into the dispatcher (server-side)
+  // and emits the result on the event payload.
+
+  it("emits durationMs on tool.result events", async () => {
+    const { dispatcher, dataRoot, budget } = setup();
+    const events: Array<{ kind: string; data: Record<string, unknown> }> = [];
+    const ctx: ToolCallContext = {
+      projectId: "main",
+      agentSlug: "editor",
+      jobId: "test-job",
+      emitEvent: (kind, data) => events.push({ kind, data: data as Record<string, unknown> }),
+      dataRoot,
+      fetch: globalThis.fetch,
+    };
+
+    await dispatcher.call("kb.search", { query: "anything" }, ctx, budget);
+
+    const resultEvt = events.find((e) => e.kind === "tool.result");
+    expect(resultEvt).toBeDefined();
+    expect(typeof resultEvt?.data.durationMs).toBe("number");
+    expect(resultEvt?.data.durationMs as number).toBeGreaterThanOrEqual(0);
+  });
+
+  it("emits durationMs on tool.error events when the tool throws", async () => {
+    const dispatcher = new ToolDispatcher();
+    // Hand-rolled tool that throws — exercises the catch branch.
+    dispatcher.register({
+      definition: {
+        name: "test.boom",
+        description: "throws on call",
+        inputSchema: { type: "object" },
+      },
+      execute: async () => {
+        throw new Error("simulated failure");
+      },
+    });
+
+    const events: Array<{ kind: string; data: Record<string, unknown> }> = [];
+    const ctx: ToolCallContext = {
+      projectId: "main",
+      agentSlug: "editor",
+      jobId: "test-job",
+      emitEvent: (kind, data) => events.push({ kind, data: data as Record<string, unknown> }),
+      dataRoot: "/tmp",
+      fetch: globalThis.fetch,
+    };
+
+    const out = await dispatcher.call("test.boom", {}, ctx, makeBudget());
+    expect(out.isError).toBe(true);
+
+    const errEvt = events.find((e) => e.kind === "tool.error");
+    expect(errEvt).toBeDefined();
+    expect(typeof errEvt?.data.durationMs).toBe("number");
   });
 });

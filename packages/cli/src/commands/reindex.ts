@@ -170,7 +170,59 @@ function reindexProject(installRoot: string, projectId: string): void {
   `);
   db.exec("CREATE INDEX IF NOT EXISTS idx_pages_parent ON pages(parent)");
 
-  // Nuke existing data (both FTS tables + all derived rows).
+  // Phase-11 hybrid retrieval — chunk-level vectors for cosine
+  // semantic search. Same shape as `SearchIndex.ensureChunkVectorsTable`
+  // (apps/web/src/server/search-index.ts ~lines 271-280). Without the
+  // CREATE here, the reindex CLI would silently leave a previously-
+  // populated table behind on a fresh install — and without the
+  // matching DELETE below, the rows would survive a rebuild and
+  // misalign against the freshly re-chunked `(path, chunk_idx)`
+  // tuples after a mid-page edit. Server-side `reindexAll` clears
+  // all seven tables (lines 327-341 + 411-421 of search-index.ts);
+  // this CLI now matches.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chunk_vectors (
+      path TEXT NOT NULL,
+      chunk_idx INTEGER NOT NULL,
+      model TEXT NOT NULL,
+      dims INTEGER NOT NULL,
+      vector BLOB NOT NULL,
+      PRIMARY KEY (path, chunk_idx)
+    )
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_chunk_vectors_path ON chunk_vectors(path)");
+
+  // Phase-11 contextual retrieval (Anthropic CR pattern) — paired
+  // shadow + FTS5 tables. The shadow holds the LLM-generated
+  // context text + producing model + timestamp; the FTS5 mirror
+  // is the index `bm25PrefilterPaths` MATCHes alongside
+  // `pages_chunks_fts`. Same shape as search-index.ts ~lines
+  // 298-314. NULL-fallback contract: when no chat provider is
+  // configured these tables stay empty and BM25 keeps working
+  // unaugmented — but the schema has to exist for the worker to
+  // open the prepared statements without throwing.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chunk_contexts (
+      path TEXT NOT NULL,
+      chunk_idx INTEGER NOT NULL,
+      context TEXT NOT NULL,
+      model TEXT NOT NULL,
+      generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (path, chunk_idx)
+    )
+  `);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_chunk_contexts_path ON chunk_contexts(path)");
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS chunk_contexts_fts USING fts5(
+      path UNINDEXED, chunk_idx UNINDEXED, context
+    )
+  `);
+
+  // Nuke existing data (FTS tables + all derived rows + chunk-level
+  // tables). The chunk_* deletes are critical: without them, a
+  // re-chunk after a mid-page edit leaves stale `(path, chunk_idx)`
+  // rows pointing at the wrong content, breaking semantic + contextual
+  // retrieval. Spec: docs/02-storage-and-sync.md §Derived indexes.
   const clear = db.transaction(() => {
     db.prepare("DELETE FROM pages_fts").run();
     db.prepare("DELETE FROM pages_chunks_fts").run();
@@ -178,6 +230,9 @@ function reindexProject(installRoot: string, projectId: string): void {
     db.prepare("DELETE FROM tags").run();
     db.prepare("DELETE FROM recent_edits").run();
     db.prepare("DELETE FROM pages").run();
+    db.prepare("DELETE FROM chunk_vectors").run();
+    db.prepare("DELETE FROM chunk_contexts").run();
+    db.prepare("DELETE FROM chunk_contexts_fts").run();
   });
   clear();
 

@@ -109,6 +109,17 @@ export type ConversationMessage =
       blockId?: string;
       /** Commit SHA once the approved edit has landed. */
       commitSha?: string;
+      /**
+       * Phase-11 inline-diff plugin (docs/03-editor.md §Pending-edit
+       * decorations). When the target page is open in the editor,
+       * `useAgentSession` consumes these structured fields to push a
+       * `PendingEdit` into `useEditorStore` instead of rendering this
+       * card. When the page isn't open the card stays — these fields
+       * are unused and the user clicks "Open page" to navigate.
+       */
+      op?: "replace" | "insert" | "delete";
+      currentMd?: string;
+      proposedMd?: string;
       timestamp?: number;
     }
   | {
@@ -119,6 +130,14 @@ export type ConversationMessage =
       commitShaEnd: string;
       filesChanged: string[];
       revertedAt: number | null;
+      /**
+       * Staging branch the run committed to when the persona declared
+       * `review_mode: inbox`. Null/absent → direct commit on the
+       * project's default branch. The AI panel surfaces this so the
+       * user can tell at a glance whether the run is awaiting their
+       * approval in the Inbox or has already merged.
+       */
+      inboxBranch?: string | null;
       timestamp?: number;
     }
   | { type: "error"; text: string; timestamp?: number }
@@ -180,6 +199,30 @@ interface AIPanelStore {
    * icon + filename). Persisted.
    */
   includeActiveFileAsContext: boolean;
+  /**
+   * Per-conversation runtime override pinned by the user via the
+   * composer's `/model` / `/provider` slash commands. Lives next to
+   * the persona/global resolution chain — see
+   * [provider-resolution.ts](../../../packages/core/src/provider-resolution.ts)
+   * for the precedence rules. Cleared on agent switch.
+   */
+  runtimeOverride: {
+    provider?: "anthropic" | "ollama" | "openai" | "claude-cli";
+    model?: string;
+  };
+  /**
+   * Last `provider.resolved` event from the executor. Drives the
+   * "resolved as: <model> (from <level>)" chip in the AI panel
+   * header so the user can see exactly which override fired.
+   * Cleared on agent switch and on each new send.
+   */
+  lastResolution: {
+    provider: string;
+    model: string;
+    effort: string;
+    source: { provider: string; model: string; effort: string };
+    notes: string[];
+  } | null;
 
   setJobId: (jobId: string | null) => void;
   addMessage: (message: ConversationMessage) => void;
@@ -195,6 +238,8 @@ interface AIPanelStore {
   resetTokens: () => void;
   setEffort: (effort: EffortLevel) => void;
   setIncludeActiveFileAsContext: (value: boolean) => void;
+  setRuntimeOverride: (override: AIPanelStore["runtimeOverride"]) => void;
+  setLastResolution: (r: AIPanelStore["lastResolution"]) => void;
 }
 
 export const useAIPanelStore = create<AIPanelStore>((set) => ({
@@ -208,6 +253,8 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
   tokensUsed: 0,
   effort: loadEffort(),
   includeActiveFileAsContext: loadIncludeActiveFile(),
+  runtimeOverride: {},
+  lastResolution: null,
 
   setJobId: (jobId) => set({ jobId }),
   // Stamp every inbound message with the current wall clock unless
@@ -225,7 +272,7 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
     })),
   setInputDraft: (draft) => set({ inputDraft: draft }),
   setIsStreaming: (streaming) => set({ isStreaming: streaming }),
-  setActiveAgent: (agent) => set({ activeAgent: agent }),
+  setActiveAgent: (agent) => set({ activeAgent: agent, runtimeOverride: {}, lastResolution: null }),
   setLastSeq: (seq) => set({ lastSeq: seq }),
   clearMessages: () => set({ messages: [], lastSeq: 0 }),
   addContext: (ctx) => set((s) => ({ contexts: [...s.contexts, ctx] })),
@@ -241,4 +288,6 @@ export const useAIPanelStore = create<AIPanelStore>((set) => ({
     persistIncludeActiveFile(value);
     set({ includeActiveFileAsContext: value });
   },
+  setRuntimeOverride: (override) => set({ runtimeOverride: override }),
+  setLastResolution: (r) => set({ lastResolution: r }),
 }));

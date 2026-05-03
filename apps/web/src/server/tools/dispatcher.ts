@@ -77,6 +77,15 @@ export class ToolDispatcher {
             tool: name,
             pageId: diff.pageId,
             diff: diff.diff,
+            // Phase-11 inline-diff plugin: structured fields are
+            //  forwarded to the WS event so the client-side editor
+            //  can render block-anchored ghost decorations on the
+            //  in-editor surface when the user is on the target page.
+            //  Older clients keep using `diff` as before.
+            ...(diff.op !== undefined ? { op: diff.op } : {}),
+            ...(diff.blockId !== undefined ? { blockId: diff.blockId } : {}),
+            ...(diff.currentMd !== undefined ? { currentMd: diff.currentMd } : {}),
+            ...(diff.proposedMd !== undefined ? { proposedMd: diff.proposedMd } : {}),
           });
           const verdict = await ctx.dryRunBridge.awaitVerdict(diffId);
           if (verdict === "reject" || verdict === "timeout") {
@@ -101,14 +110,56 @@ export class ToolDispatcher {
       }
     }
 
+    // Wall-clock timer for the tool execution. Measured here (not
+    // client-side) because the client processes `tool.call` and
+    // `tool.result` events in the same poll batch, so its
+    // `Date.now() - Date.now()` always rounded to ~0ms — every tool
+    // appeared to take 0ms in the AI panel regardless of how long it
+    // actually ran. The number we emit is the time `tool.execute`
+    // spent including any I/O it did.
+    const startedAt = performance.now();
     try {
       const result = await tool.execute(args, ctx);
-      ctx.emitEvent("tool.result", { tool: name, result });
-      return { result, isError: false };
+      const durationMs = Math.round(performance.now() - startedAt);
+      ctx.emitEvent("tool.result", { tool: name, result, durationMs });
+      // Tools surface structured failures by returning a JSON
+      // envelope `{"error": "...", ...}` instead of throwing — the
+      // kb.* mutation family (insert_after, replace_block,
+      // create_page, delete_block) all use this for ETag mismatches,
+      // missing pages, writable_kinds violations, etc. Without
+      // flipping `isError`, the model receives those payloads with
+      // `is_error: false` and treats them as success, then writes a
+      // journal entry as if the edit landed (the AI-panel evolver
+      // run made this concrete: two `kb.insert_after` calls returned
+      // ETag-mismatch envelopes, the model rationalised them as a
+      // "timing issue" and finalized; only one of the three writes
+      // actually committed). Detect the envelope here so every kb
+      // tool gets the right `is_error` flag without per-tool changes.
+      const isError = hasTopLevelErrorField(result);
+      return { result, isError };
     } catch (err) {
+      const durationMs = Math.round(performance.now() - startedAt);
       const message = err instanceof Error ? err.message : String(err);
-      ctx.emitEvent("tool.error", { tool: name, error: message });
+      ctx.emitEvent("tool.error", { tool: name, error: message, durationMs });
       return { result: `Tool error: ${message}`, isError: true };
     }
+  }
+}
+
+function hasTopLevelErrorField(result: string): boolean {
+  // Peek at the result without forcing JSON parsing — most tool
+  // results are JSON-shaped strings, but a few return plain text. We
+  // only care about the `{"error": ...}` envelope; bail fast on
+  // anything that doesn't look like a JSON object.
+  if (typeof result !== "string" || result.length === 0 || result[0] !== "{") return false;
+  try {
+    const parsed = JSON.parse(result);
+    return (
+      parsed !== null &&
+      typeof parsed === "object" &&
+      typeof (parsed as { error?: unknown }).error === "string"
+    );
+  } catch {
+    return false;
   }
 }

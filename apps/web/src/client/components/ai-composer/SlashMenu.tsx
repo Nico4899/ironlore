@@ -1,4 +1,6 @@
 import { AtSign, CircleUserRound, Eraser, FileUp, Settings2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { fetchProviders, type ProviderSummary } from "../../lib/api.js";
 import { type EffortLevel, useAIPanelStore } from "../../stores/ai-panel.js";
 import { ComposerPopover, PopoverItem, PopoverSectionHeader } from "./ComposerPopover.js";
 
@@ -62,9 +64,10 @@ export function SlashMenu({ open, onClose, onAction }: SlashMenuProps) {
       />
 
       <PopoverSectionHeader label="Model" />
+      <ModelPicker />
       <PopoverItem
         icon={<Settings2 size={14} />}
-        label="Switch model"
+        label="Open Settings → Providers"
         onClick={fire("switch-model")}
       />
       <EffortSlider value={effort} onChange={setEffort} />
@@ -80,6 +83,145 @@ export function SlashMenu({ open, onClose, onAction }: SlashMenuProps) {
       <PopoverItem label="/retry" hint="retry last turn" onClick={fire("slash.retry")} />
       <PopoverItem label="/continue" hint="keep going" onClick={fire("slash.continue")} />
     </ComposerPopover>
+  );
+}
+
+/**
+ * Inline runtime-override picker. Lists every registered provider's
+ * available models so the user can pin a per-conversation override
+ * without leaving the composer. Selecting an entry writes to
+ * `useAIPanelStore.runtimeOverride`; the next send carries that
+ * override through the four-level resolver chain (action > runtime
+ * > persona > global). "No override" clears it back to persona/global.
+ *
+ * Loads `fetchProviders()` lazily on first open; cached in component
+ * state for the popover's lifetime. Empty provider list (none
+ * configured) renders a help hint pointing to Settings → Providers.
+ */
+function ModelPicker() {
+  const runtimeOverride = useAIPanelStore((s) => s.runtimeOverride);
+  const setRuntimeOverride = useAIPanelStore((s) => s.setRuntimeOverride);
+  const [providers, setProviders] = useState<ProviderSummary[] | null>(null);
+
+  useEffect(() => {
+    fetchProviders()
+      .then(setProviders)
+      .catch(() => setProviders([]));
+  }, []);
+
+  type ProviderId = "anthropic" | "ollama" | "openai" | "claude-cli";
+  const KNOWN: ProviderId[] = ["anthropic", "ollama", "openai", "claude-cli"];
+  const allModels: Array<{ provider: ProviderId; model: string }> = [];
+  for (const p of providers ?? []) {
+    if (p.status === "needs-key") continue;
+    if (!(KNOWN as string[]).includes(p.name)) continue;
+    for (const m of p.models) allModels.push({ provider: p.name as ProviderId, model: m });
+  }
+
+  if (providers === null) {
+    return (
+      <div style={{ padding: "6px 8px", fontSize: 11, color: "var(--il-text3)" }}>
+        Loading providers…
+      </div>
+    );
+  }
+  if (allModels.length === 0) {
+    return (
+      <div style={{ padding: "6px 8px", fontSize: 11, color: "var(--il-text3)" }}>
+        No provider configured. Open Settings → Providers to add a key.
+      </div>
+    );
+  }
+
+  const currentLabel = runtimeOverride.model ? runtimeOverride.model : "(persona / global)";
+
+  return (
+    <div
+      style={{
+        padding: "6px 8px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontSize: 12.5,
+          fontFamily: "var(--font-sans)",
+          color: "var(--il-text)",
+        }}
+      >
+        <span style={{ flex: 1 }}>Pin model</span>
+        <span
+          className="font-mono"
+          style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.04em" }}
+          title="Active runtime override"
+        >
+          {currentLabel}
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 1, marginTop: 2 }}>
+        <button
+          type="button"
+          onClick={() => setRuntimeOverride({})}
+          style={{
+            padding: "4px 6px",
+            fontSize: 11.5,
+            textAlign: "left",
+            background:
+              runtimeOverride.model === undefined
+                ? "color-mix(in oklch, var(--il-blue) 14%, transparent)"
+                : "transparent",
+            border: `1px solid ${
+              runtimeOverride.model === undefined
+                ? "color-mix(in oklch, var(--il-blue) 30%, transparent)"
+                : "transparent"
+            }`,
+            borderRadius: 3,
+            color: "var(--il-text2)",
+            cursor: "pointer",
+          }}
+        >
+          No override · use persona/global
+        </button>
+        {allModels.map(({ provider, model }) => {
+          const selected = runtimeOverride.model === model && runtimeOverride.provider === provider;
+          return (
+            <button
+              key={`${provider}:${model}`}
+              type="button"
+              onClick={() => setRuntimeOverride({ provider, model })}
+              style={{
+                padding: "4px 6px",
+                fontSize: 11.5,
+                textAlign: "left",
+                background: selected
+                  ? "color-mix(in oklch, var(--il-blue) 14%, transparent)"
+                  : "transparent",
+                border: `1px solid ${selected ? "color-mix(in oklch, var(--il-blue) 30%, transparent)" : "transparent"}`,
+                borderRadius: 3,
+                color: "var(--il-text)",
+                cursor: "pointer",
+                display: "flex",
+                gap: 6,
+                alignItems: "baseline",
+              }}
+            >
+              <span
+                className="font-mono uppercase"
+                style={{ fontSize: 9.5, letterSpacing: "0.06em", color: "var(--il-text3)" }}
+              >
+                {provider}
+              </span>
+              <span style={{ flex: 1 }}>{model}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

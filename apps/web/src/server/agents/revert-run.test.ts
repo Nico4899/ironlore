@@ -108,6 +108,51 @@ describe("revertAgentRun", () => {
     expect(log).toContain("Revert");
   });
 
+  it("refuses to revert a job whose result reports filesChanged: []", () => {
+    // The smoking-gun bug from the AI-panel audit: a wiki-gardener
+    // chat-only run finalized with `filesChanged: []` AND
+    // `commitShaStart === commitShaEnd === <prior HEAD>`. The git
+    // log query in the function (`start^..end`) returned that
+    // prior HEAD as a single commit, and the function dutifully
+    // reverted it — undoing an unrelated commit the agent never
+    // touched. The guard reads `filesChanged` from the job result
+    // blob (the executor's authoritative no-op signal) and
+    // refuses before any git op runs.
+    const seedHead = execSync("git rev-parse HEAD", {
+      cwd: projectDir,
+      encoding: "utf-8",
+    }).trim();
+
+    const result = revertAgentRun(
+      makeJob({
+        commit_sha_start: seedHead,
+        commit_sha_end: seedHead,
+        result: JSON.stringify({
+          outcome: "completed",
+          commitShaStart: seedHead,
+          commitShaEnd: seedHead,
+          filesChanged: [],
+          inboxBranch: null,
+        }),
+      }),
+      projectDir,
+    );
+    expect(result.success).toBe(false);
+    expect(result.revertedCommits).toEqual([]);
+    expect(result.error).toMatch(/no file changes/i);
+
+    // Project HEAD must be untouched — the seed commit is still HEAD.
+    const head = execSync("git rev-parse HEAD", {
+      cwd: projectDir,
+      encoding: "utf-8",
+    }).trim();
+    expect(head).toBe(seedHead);
+
+    // No revert commit was created.
+    const log = execSync("git log --format=%s", { cwd: projectDir, encoding: "utf-8" });
+    expect(log).not.toContain("Revert");
+  });
+
   it("reverts a multi-commit range in newest-first order", () => {
     const shaA = commit(projectDir, "a.md", "first\n", "agent: add a");
     const shaB = commit(projectDir, "b.md", "second\n", "agent: add b");

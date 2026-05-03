@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { WsEventInput } from "@ironlore/core";
+import { simpleGit } from "simple-git";
 import { FileWatcher } from "./file-watcher.js";
 import { GitWorker } from "./git-worker.js";
 import { LinksRegistry } from "./links-registry.js";
@@ -65,7 +66,27 @@ export class ProjectServices {
     this.started = true;
 
     const recovery = this.writer.recover();
-    const indexResult = await this.searchIndex.reindexAll(this.getDataRoot());
+
+    // Skip the boot-time `reindexAll` when the index is already
+    //  populated AND the WAL replay didn't touch any files. The file
+    //  watcher keeps the index in sync with on-disk changes during
+    //  every previous run, so a clean shutdown leaves a fully-current
+    //  index that doesn't need to be rebuilt. Triggers that DO need a
+    //  rebuild:
+    //    - first boot ever / wiped index → countPagesTotal === 0
+    //    - WAL replay wrote pages back to disk (the writer's recover
+    //      path mutates files but not the search index, so a rebuild
+    //      is the only way to catch up)
+    //    - explicit `ironlore reindex` CLI invocation (calls
+    //      `reindexAll` directly, bypassing this gate)
+    //  Avoiding the rebuild also eliminates the SQLITE_BUSY contention
+    //  surface that bites when a leftover dev process is still holding
+    //  the index-DB write lock from a prior crashed run.
+    const pagesAlreadyIndexed = this.searchIndex.countPagesTotal();
+    const needsReindex = pagesAlreadyIndexed === 0 || recovery.recovered > 0;
+    const indexResult = needsReindex
+      ? await this.searchIndex.reindexAll(this.getDataRoot())
+      : { indexed: pagesAlreadyIndexed };
 
     this.gitWorker = new GitWorker(this.projectDir, this.wal);
     await this.gitWorker.start();
@@ -79,6 +100,63 @@ export class ProjectServices {
       warningsStructured: recovery.warningsStructured,
       indexed: indexResult.indexed,
     };
+  }
+
+  /**
+   * Drain the git worker now, bypassing the 30 s grouping window.
+   * Powers `ironlore flush` (CLI) and the StatusBar "Commit now"
+   * button. Returns the number of WAL entries committed in this
+   * pass — `0` is a normal answer for a clean WAL.
+   *
+   * Throws if the worker hasn't been started yet (boot order bug).
+   */
+  async drainGit(): Promise<number> {
+    if (!this.gitWorker) {
+      throw new Error(`GitWorker for ${this.projectDir} not started`);
+    }
+    return this.gitWorker.drain();
+  }
+
+  /**
+   * Push every committed WAL entry to git, then run `git push` on
+   * the project repo. Drains first so the user can't accidentally
+   * push a stale snapshot — the doc's surface (02-storage-and-sync.md
+   * §Commit now / Push) treats the two operations as a pair.
+   *
+   * `output` carries combined stdout+stderr from `git push` so the
+   * caller can surface the underlying message verbatim. `conflict`
+   * is true when the push was rejected for a non-fast-forward / lock
+   * reason (callers can prompt for a pull). `noRemote` is true when
+   * the project has no `origin` configured — the front-end shows a
+   * "Configure a remote first" hint instead of treating it as an
+   * error.
+   */
+  async pushGit(): Promise<{
+    ok: boolean;
+    drained: number;
+    output: string;
+    conflict?: boolean;
+    noRemote?: boolean;
+  }> {
+    const drained = await this.drainGit();
+    const git = simpleGit(this.projectDir);
+    const remotes = await git.getRemotes(true);
+    if (remotes.length === 0) {
+      return { ok: false, drained, output: "No git remote configured.", noRemote: true };
+    }
+    try {
+      const result = await git.push();
+      const messages = (result.pushed ?? []).map((p) => `${p.local} → ${p.remote}`);
+      const summary =
+        messages.length > 0
+          ? messages.join("\n")
+          : (result.update?.head?.local ?? "Push completed.");
+      return { ok: true, drained, output: summary };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const conflict = /non-fast-forward|rejected|lock|fetch first/i.test(message);
+      return { ok: false, drained, output: message, conflict };
+    }
   }
 
   /** Stop background workers and close every db handle. Idempotent. */

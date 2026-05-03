@@ -249,6 +249,7 @@ function SegmentRow({ segment, resolution, onResolve }: SegmentRowProps) {
           <textarea
             value={customText}
             onChange={(e) => setCustomText(e.target.value)}
+            aria-label="Custom merged text for this block"
             className="h-24 w-full rounded border border-border bg-background p-2 font-mono text-xs text-primary outline-none focus:border-ironlore-blue"
           />
           <button

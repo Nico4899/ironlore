@@ -313,19 +313,19 @@ function insertCodeFence(view: EditorView): void {
 }
 
 /**
- * Prompt-driven link insertion. Wraps the current selection in
- * `[text](url)` or — when the selection is empty — inserts
- * `[label](url)` with the label pre-seeded to the URL. Uses
- * `window.prompt` so no additional UI surface is needed; follows
- * the same pattern as the WYSIWYG path for consistency.
+ * Inline-dialog-driven link insertion. Wraps the current selection
+ * in `[text](url)` using the URL + text the user supplies in the
+ * shared LinkDialog. Falls back to `[url](url)` when the user leaves
+ * Text blank and the editor selection was empty.
  */
-function insertLink(view: EditorView): void {
-  const url = window.prompt("Link URL", "https://");
-  if (!url) return;
+async function insertLink(view: EditorView): Promise<void> {
   const { from, to } = view.state.selection.main;
   const sliced = view.state.sliceDoc(from, to);
-  const label = sliced.length > 0 ? sliced : url;
-  const md = `[${label}](${url})`;
+  const { openLinkDialog } = await import("../LinkDialog.js");
+  const result = await openLinkDialog({ text: sliced });
+  if (!result) return;
+  const label = result.text || sliced || result.url;
+  const md = `[${label}](${result.url})`;
   view.dispatch({
     changes: { from, to, insert: md },
     selection: { anchor: from + md.length },

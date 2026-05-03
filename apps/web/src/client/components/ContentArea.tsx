@@ -140,6 +140,10 @@ export function ContentArea() {
     useEditorStore.getState().setSelection(selection);
   }, []);
 
+  const handleSelectedBlockIdsChange = useCallback((blockIds: string[]) => {
+    useEditorStore.getState().setSelectedBlockIds(blockIds);
+  }, []);
+
   const handleConflictResolved = useCallback(() => {
     setConflict(null);
   }, []);
@@ -218,9 +222,11 @@ export function ContentArea() {
   //  time ContentArea renders the user has already completed or
   //  skipped the wizard.
 
-  // No active file — show Home or the agent-detail page. Explore was
-  //  removed in the sidebar revision (deferred; `sidebarTab` is now
-  //  only `files | inbox`, both of which leave the canvas on Home).
+  // No active file — show Home or the agent-detail page. The
+  //  three-tab sidebar (`files | agents | inbox`) does not change
+  //  this dispatch: `agents` and `files` both leave the canvas on
+  //  Home (or the agent-detail page when an agent is selected),
+  //  `inbox` is handled by the early return above.
   // Inbox takes precedence over every other surface. Selecting the
   //  sidebar INBOX tab routes the whole content area to the Inbox
   //  canvas — matching screen-more.jsx ScreenInbox, where the sidebar
@@ -297,6 +303,7 @@ export function ContentArea() {
             status={status}
             onChange={handleChange}
             onSelectionChange={handleSelectionChange}
+            onSelectedBlockIdsChange={handleSelectedBlockIdsChange}
           />
         ) : fileType === "image" ? (
           <ImageViewer path={filePath} />
@@ -377,6 +384,7 @@ interface MarkdownContentProps {
   status: "clean" | "dirty" | "syncing" | "conflict";
   onChange: (markdown: string) => void;
   onSelectionChange: (selection: { from: number; to: number } | null) => void;
+  onSelectedBlockIdsChange: (blockIds: string[]) => void;
 }
 
 /**
@@ -414,6 +422,7 @@ function MarkdownContent({
   status,
   onChange,
   onSelectionChange,
+  onSelectedBlockIdsChange,
 }: MarkdownContentProps) {
   const etag = useEditorStore((s) => s.etag);
   const filePath = useEditorStore((s) => s.filePath);
@@ -557,6 +566,7 @@ function MarkdownContent({
           markdown={markdown}
           onChange={onChange}
           onSelectionChange={onSelectionChange}
+          onSelectedBlockIdsChange={onSelectedBlockIdsChange}
         />
       ) : (
         <SplitPane

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AnthropicProvider } from "./anthropic.js";
+import { AnthropicProvider, decodeToolNameFromWire, encodeToolNameForWire } from "./anthropic.js";
 import type { ChatEvent, ProjectContext } from "./types.js";
 
 /**
@@ -124,6 +124,45 @@ describe("AnthropicProvider — SSE parsing", () => {
     expect(toolUse?.id).toBe("tu_1");
     expect(toolUse?.name).toBe("kb.search");
     expect(toolUse?.input).toEqual({ query: "alpha" });
+  });
+
+  it("emits `input: {}` for a no-arg tool — never the empty string (regression)", async () => {
+    // No-arg tools (e.g. `kb.lint_orphans`) emit zero
+    //  `input_json_delta` events between content_block_start and
+    //  content_block_stop. The earlier code defaulted to the empty
+    //  string in that case, then replayed it back to Anthropic on
+    //  the next turn — Anthropic rejected with HTTP 400
+    //  "messages.N.content.0.tool_use.input: Input should be an
+    //  object" the moment any subsequent tool call replayed history.
+    const body = encodeSseStream([
+      frame({ type: "message_start", message: { usage: { input_tokens: 3 } } }),
+      frame({
+        type: "content_block_start",
+        content_block: { type: "tool_use", id: "tu_zero", name: "kb.lint_orphans" },
+      }),
+      // <-- no input_json_delta frames at all
+      frame({ type: "content_block_stop" }),
+      frame({ type: "message_stop" }),
+    ]);
+
+    const events = await collect(
+      provider.chat(
+        { model: "claude-haiku-4-20250514", systemPrompt: "", messages: [] },
+        ctx(mockFetch(body)),
+      ),
+    );
+
+    const toolUse = events.find(
+      (e): e is Extract<ChatEvent, { type: "tool_use" }> => e.type === "tool_use",
+    );
+    expect(toolUse).toBeDefined();
+    expect(toolUse?.input).toEqual({});
+    // Belt-and-braces against future regressions: input must be an
+    //  object literal (not array, not primitive, not null) for
+    //  Anthropic's wire schema.
+    expect(typeof toolUse?.input).toBe("object");
+    expect(Array.isArray(toolUse?.input)).toBe(false);
+    expect(toolUse?.input).not.toBeNull();
   });
 
   it("surfaces prompt-cache token usage on done", async () => {
@@ -288,7 +327,10 @@ describe("AnthropicProvider — SSE parsing", () => {
       tools?: Array<{ name: string; description: string; input_schema: unknown }>;
     };
     expect(payload.tools).toHaveLength(1);
-    expect(payload.tools?.[0]?.name).toBe("kb.search");
+    // Anthropic's tool-name validator (`^[a-zA-Z0-9_-]{1,128}$`) rejects
+    // dots, so the provider encodes `.` → `_dot_` on the wire. Internal
+    // dispatcher names stay dotted; the translation is a wire concern.
+    expect(payload.tools?.[0]?.name).toBe("kb_dot_search");
     // Provider converts `inputSchema` → `input_schema` for Anthropic.
     expect(payload.tools?.[0]?.input_schema).toEqual({
       type: "object",
@@ -394,5 +436,199 @@ describe("AnthropicProvider — SSE parsing", () => {
     const toolResultBlock = (toolResultMsg?.content as Array<Record<string, unknown>>)[0];
     expect(toolResultBlock?.type).toBe("tool_result");
     expect(toolResultBlock?.tool_use_id).toBe("tu_1");
+  });
+
+  it("wraps non-object tool_use.input on replay so the wire shape is always valid (regression)", async () => {
+    // Belt-and-braces against the empty-string + non-object input
+    //  bugs: the SSE parser already normalises fresh tool_uses, but
+    //  legacy in-memory history, hand-built fixtures, or a future
+    //  bug in another producer could still land a non-object on
+    //  the conversation array. `convertMessages` must wrap anything
+    //  that's not an object so Anthropic's "tool_use.input: Input
+    //  should be an object" 400 can never recur from the replay path.
+    let capturedBody: unknown = null;
+    const capturingFetch: typeof globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      const body = encodeSseStream([frame({ type: "message_stop" })]);
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+
+    await collect(
+      provider.chat(
+        {
+          model: "claude-haiku-4-20250514",
+          systemPrompt: "",
+          messages: [
+            { role: "user", content: "begin" },
+            // Empty string — what the pre-patch parser stored for
+            //  no-arg tools. Must end up as an object on the wire.
+            { role: "tool_use", id: "tu_empty", name: "kb.lint_orphans", input: "" },
+            // Array — also rejected by Anthropic's schema. Must wrap.
+            { role: "tool_use", id: "tu_array", name: "kb.search", input: [1, 2, 3] },
+            // Null — same.
+            { role: "tool_use", id: "tu_null", name: "kb.read_page", input: null },
+            // Object — should pass through unchanged.
+            { role: "tool_use", id: "tu_ok", name: "kb.search", input: { query: "ok" } },
+          ],
+        },
+        ctx(capturingFetch),
+      ),
+    );
+
+    const payload = capturedBody as {
+      messages: Array<{ role: string; content: Array<Record<string, unknown>> }>;
+    };
+
+    const inputs = payload.messages
+      .filter((m) => m.role === "assistant")
+      .map((m) => m.content[0]?.input);
+
+    // Every input must be a plain object (not array, not null, not primitive).
+    for (const input of inputs) {
+      expect(input).not.toBeNull();
+      expect(typeof input).toBe("object");
+      expect(Array.isArray(input)).toBe(false);
+    }
+
+    // Round-trip preservation: the legitimate object passed through unchanged.
+    expect(inputs[3]).toEqual({ query: "ok" });
+    // Wrapped values are recoverable via `_value` for debugging.
+    expect((inputs[0] as { _value?: unknown })._value).toBe("");
+    expect((inputs[1] as { _value?: unknown })._value).toEqual([1, 2, 3]);
+    expect((inputs[2] as { _value?: unknown })._value).toBeNull();
+  });
+});
+
+describe("AnthropicProvider — wire-name encoding for tool identifiers", () => {
+  // Anthropic's `tools[].name` field validates against
+  // `^[a-zA-Z0-9_-]{1,128}$`, which rejects dots. Internal tool names
+  // use dots as namespace separators; we translate at the provider
+  // boundary only. These tests pin the round-trip and the boundaries
+  // where translation is applied.
+
+  describe("encode/decode helpers", () => {
+    const cases: Array<[internal: string, wire: string]> = [
+      ["kb.search", "kb_dot_search"],
+      ["kb.read_page", "kb_dot_read_page"],
+      ["kb.replace_block", "kb_dot_replace_block"],
+      ["agent.journal", "agent_dot_journal"],
+      ["mcp.github.search_issues", "mcp_dot_github_dot_search_issues"],
+      // No-dot names are passthrough.
+      ["plain", "plain"],
+    ];
+
+    for (const [internal, wire] of cases) {
+      it(`encodes ${internal} → ${wire} and decodes back`, () => {
+        expect(encodeToolNameForWire(internal)).toBe(wire);
+        expect(decodeToolNameFromWire(wire)).toBe(internal);
+      });
+    }
+
+    it("only emits characters Anthropic's regex accepts", () => {
+      const allowed = /^[a-zA-Z0-9_-]{1,128}$/;
+      for (const [internal] of cases) {
+        expect(encodeToolNameForWire(internal)).toMatch(allowed);
+      }
+    });
+  });
+
+  it("encodes tool names in replayed `tool_use` messages too", async () => {
+    let capturedBody: unknown = null;
+    const capturingFetch: typeof globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      capturedBody = JSON.parse(init?.body as string);
+      const body = encodeSseStream([frame({ type: "message_stop" })]);
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof globalThis.fetch;
+
+    const provider = new AnthropicProvider({ apiKey: "sk-test" });
+    await collect(
+      provider.chat(
+        {
+          model: "claude-haiku-4-20250514",
+          systemPrompt: "sys",
+          messages: [
+            { role: "user", content: "find pages about X" },
+            { role: "tool_use", id: "tu_1", name: "kb.search", input: { query: "X" } },
+            { role: "tool_result", id: "tu_1", content: "ok" },
+          ],
+        },
+        ctx(capturingFetch),
+      ),
+    );
+
+    const payload = capturedBody as {
+      messages: Array<{ role: string; content: unknown }>;
+    };
+    const toolUseMsg = payload.messages[1];
+    const toolUseBlock = (toolUseMsg?.content as Array<Record<string, unknown>>)[0];
+    // Same wire encoding as `convertTools` so the model can match
+    // the replayed call back to the tool definition.
+    expect(toolUseBlock?.name).toBe("kb_dot_search");
+  });
+
+  it("decodes inbound `tool_use.name` from the wire form", async () => {
+    // The model echoes back whatever wire name we sent. The parser
+    // must decode it to the dotted internal form so the dispatcher
+    // (which only knows `kb.search`) can route the call.
+    const body = encodeSseStream([
+      frame({ type: "message_start", message: { usage: { input_tokens: 5 } } }),
+      frame({
+        type: "content_block_start",
+        content_block: { type: "tool_use", id: "tu_1", name: "kb_dot_search" },
+      }),
+      frame({
+        type: "content_block_delta",
+        delta: { type: "input_json_delta", partial_json: '{"query":"alpha"}' },
+      }),
+      frame({ type: "content_block_stop" }),
+      frame({ type: "message_stop" }),
+    ]);
+
+    const provider = new AnthropicProvider({ apiKey: "sk-test" });
+    const events = await collect(
+      provider.chat(
+        { model: "claude-haiku-4-20250514", systemPrompt: "", messages: [] },
+        ctx(mockFetch(body)),
+      ),
+    );
+
+    const toolUse = events.find(
+      (e): e is Extract<ChatEvent, { type: "tool_use" }> => e.type === "tool_use",
+    );
+    expect(toolUse?.name).toBe("kb.search");
+    expect(toolUse?.input).toEqual({ query: "alpha" });
+  });
+
+  it("decodes multi-segment MCP tool names round-trip", async () => {
+    const body = encodeSseStream([
+      frame({ type: "message_start", message: { usage: { input_tokens: 5 } } }),
+      frame({
+        type: "content_block_start",
+        content_block: {
+          type: "tool_use",
+          id: "tu_2",
+          name: "mcp_dot_github_dot_search_issues",
+        },
+      }),
+      frame({
+        type: "content_block_delta",
+        delta: { type: "input_json_delta", partial_json: "{}" },
+      }),
+      frame({ type: "content_block_stop" }),
+      frame({ type: "message_stop" }),
+    ]);
+
+    const provider = new AnthropicProvider({ apiKey: "sk-test" });
+    const events = await collect(
+      provider.chat(
+        { model: "claude-haiku-4-20250514", systemPrompt: "", messages: [] },
+        ctx(mockFetch(body)),
+      ),
+    );
+
+    const toolUse = events.find(
+      (e): e is Extract<ChatEvent, { type: "tool_use" }> => e.type === "tool_use",
+    );
+    expect(toolUse?.name).toBe("mcp.github.search_issues");
   });
 });

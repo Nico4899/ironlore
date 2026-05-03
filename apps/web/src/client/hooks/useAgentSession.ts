@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { pushAgentToast } from "../components/AgentToast.js";
 import { getApiProject } from "../lib/api.js";
 import { useAIPanelStore } from "../stores/ai-panel.js";
+import { useEditorStore } from "../stores/editor.js";
 
 const BASE = (): string => `/api/projects/${getApiProject()}`;
 
@@ -64,25 +65,56 @@ export function useAgentSession() {
   }, []);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    /**
+     * Send a user prompt to the agent.
+     *
+     * - `displayText` is what shows in the chat bubble (just what the
+     *   user typed).
+     * - `serverPrompt` is what's actually sent to the agent — usually
+     *   the typed draft prefixed with attached-file bodies and any
+     *   selection block-refs the AI panel composer included.
+     * - `attachments` are short labels (e.g. `persona.md`) that
+     *   render as chips above the bubble so the user can see what
+     *   file context rode along without the entire body being
+     *   inlined into the visible message.
+     *
+     * When `serverPrompt` is omitted it defaults to `displayText`
+     * (no attachments). Backwards-compatible with existing callers
+     * that just want to send a plain message.
+     */
+    async (displayText: string, serverPrompt?: string, attachments: string[] = []) => {
       const store = useAIPanelStore.getState();
       const slug = store.activeAgent;
+      const wirePrompt = serverPrompt ?? displayText;
 
-      store.addMessage({ type: "user", text, attachments: [] });
+      store.addMessage({ type: "user", text: displayText, attachments });
       // Reset the run-scoped token counter so the context-budget chip
       //  in the composer restarts from 0% used. Each `usage` event on
       //  the stream increments it via `incrementTokens` below.
       store.resetTokens();
       store.setIsStreaming(true);
 
+      // Reset the resolution chip — the next event from the new run
+      //  will set it. Keeps the header chip honest about *this* turn,
+      //  not the previous one.
+      store.setLastResolution(null);
+
       try {
         const res = await fetch(`${BASE()}/agents/${slug}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            prompt: text,
+            prompt: wirePrompt,
             mode: "interactive",
             effort: store.effort,
+            // Per-conversation runtime override (composer's `/model …`
+            //  / `/provider …` slash commands). Sent through the same
+            //  payload field the action override uses; the server
+            //  resolver picks per field, so the runtime override
+            //  always loses to a per-message action override if one
+            //  is set in the same request.
+            modelOverride: store.runtimeOverride.model,
+            providerOverride: store.runtimeOverride.provider,
           }),
         });
 
@@ -181,17 +213,19 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
 
     case "tool.result": {
       // Find the last tool_call message and attach the result.
+      // `durationMs` is now measured server-side by the dispatcher
+      // and rides on the event payload. The previous client-side
+      // computation (`Date.now() - msg.timestamp`) always read ~0ms
+      // because tool.call and tool.result land in the same 500ms
+      // poll batch and were stamped in the same JS tick.
       const msgs = store.messages;
       for (let i = msgs.length - 1; i >= 0; i--) {
         const msg = msgs[i];
         if (msg?.type === "tool_call" && msg.result === undefined) {
-          const mutable = msg as { result?: unknown; durationMs?: number; timestamp?: number };
+          const mutable = msg as { result?: unknown; durationMs?: number };
           mutable.result = data.result;
-          // Stamp duration so the ToolCallCard's StatusPip can show
-          //  `180ms` per screen-editor.jsx. Only when we have both a
-          //  start timestamp and we haven't already stamped.
-          if (mutable.timestamp != null && mutable.durationMs == null) {
-            mutable.durationMs = Date.now() - mutable.timestamp;
+          if (typeof data.durationMs === "number") {
+            mutable.durationMs = data.durationMs;
           }
           useAIPanelStore.setState({ messages: [...msgs] });
           break;
@@ -205,10 +239,10 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
       for (let i = msgs2.length - 1; i >= 0; i--) {
         const msg = msgs2[i];
         if (msg?.type === "tool_call" && msg.result === undefined) {
-          const mutable = msg as { result?: unknown; durationMs?: number; timestamp?: number };
+          const mutable = msg as { result?: unknown; durationMs?: number };
           mutable.result = `Error: ${data.error}`;
-          if (mutable.timestamp != null && mutable.durationMs == null) {
-            mutable.durationMs = Date.now() - mutable.timestamp;
+          if (typeof data.durationMs === "number") {
+            mutable.durationMs = data.durationMs;
           }
           useAIPanelStore.setState({ messages: [...msgs2] });
           break;
@@ -250,16 +284,91 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
       // Interactive session paused (client disconnected).
       break;
 
+    case "provider.resolved": {
+      // Server's resolver just produced the (provider, model, effort)
+      //  triple for this run. The header chip surfaces it so the
+      //  user can see which override level fired (e.g. "from
+      //  persona" / "from runtime" / "from action").
+      const provider = typeof data.provider === "string" ? data.provider : "";
+      const model = typeof data.model === "string" ? data.model : "";
+      const effort = typeof data.effort === "string" ? data.effort : "";
+      const source = (data.source ?? null) as {
+        provider?: string;
+        model?: string;
+        effort?: string;
+      } | null;
+      const notes = Array.isArray(data.notes) ? (data.notes as string[]) : [];
+      if (provider && model && effort && source) {
+        store.setLastResolution({
+          provider,
+          model,
+          effort,
+          source: {
+            provider: source.provider ?? "global",
+            model: source.model ?? "global",
+            effort: source.effort ?? "global",
+          },
+          notes,
+        });
+      }
+      break;
+    }
+
     case "diff_preview": {
       // Server is pausing on a destructive tool call pending the
-      // user's verdict. Render the diff with approve/reject controls.
+      // user's verdict. Two surfaces compete here:
+      //
+      //   1. **In-editor inline plugin** (preferred) — when the
+      //      target page is already open, push a `PendingEdit` into
+      //      the editor store. The ProseMirror inline-diff plugin
+      //      reads this list and renders ghost decorations keyed to
+      //      `blockId`; Tab accepts via the same DryRunBridge call
+      //      the AI-panel card uses.
+      //   2. **AI-panel `DiffPreview` card** (fallback) — when the
+      //      target isn't open, render the existing card. The card's
+      //      "Open page" button bridges into surface 1 by navigating.
+      //
+      // The structured fields (`op`, `blockId`, `currentMd`,
+      // `proposedMd`) ride alongside the legacy `diff` string so
+      // both surfaces have what they need without two events.
+      const pageId = (data.pageId as string) ?? "";
+      const toolCallId = (data.toolCallId as string) ?? "";
+      const op = data.op as "replace" | "insert" | "delete" | undefined;
+      const blockId = typeof data.blockId === "string" ? data.blockId : undefined;
+      const currentMd = typeof data.currentMd === "string" ? data.currentMd : undefined;
+      const proposedMd = typeof data.proposedMd === "string" ? data.proposedMd : undefined;
+
+      const editor = useEditorStore.getState();
+      const targetIsOpen =
+        pageId.length > 0 && editor.filePath === pageId && editor.fileType === "markdown";
+
+      // Route to the inline plugin only when we have the structured
+      //  trio AND the page is open. Older agent runs that don't emit
+      //  the structured fields fall back to the card path.
+      if (targetIsOpen && op !== undefined && blockId !== undefined && toolCallId.length > 0) {
+        editor.pushPendingEdit({
+          toolCallId,
+          op,
+          blockId,
+          pageId,
+          currentMd,
+          proposedMd,
+          agentSlug: store.activeAgent,
+        });
+        break;
+      }
+
       store.addMessage({
         type: "diff_preview",
-        toolCallId: (data.toolCallId as string) ?? "",
+        toolCallId,
         tool: (data.tool as string) ?? "unknown",
-        pageId: (data.pageId as string) ?? "",
+        pageId,
         diff: (data.diff as string) ?? "",
         approved: null,
+        ...(op !== undefined ? { op } : {}),
+        ...(blockId !== undefined ? { blockId } : {}),
+        ...(currentMd !== undefined ? { currentMd } : {}),
+        ...(proposedMd !== undefined ? { proposedMd } : {}),
       });
       break;
     }
@@ -293,6 +402,7 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
       const commitShaStart = (data.commitShaStart as string) ?? "";
       const commitShaEnd = (data.commitShaEnd as string) ?? "";
       const filesChanged = Array.isArray(data.filesChanged) ? (data.filesChanged as string[]) : [];
+      const inboxBranch = typeof data.inboxBranch === "string" ? data.inboxBranch : null;
       if (commitShaStart && commitShaEnd) {
         store.addMessage({
           type: "run_finalized",
@@ -302,6 +412,7 @@ export function processJobEvent(event: { seq: number; kind: string; data: string
           commitShaEnd,
           filesChanged,
           revertedAt: null,
+          inboxBranch,
         });
       }
       break;

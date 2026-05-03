@@ -14,7 +14,8 @@
     "test:e2e": "pnpm --filter @ironlore/web test:e2e",
     "check": "biome check .",
     "check:fix": "biome check --write .",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "ironlore": "node --import tsx packages/cli/src/index.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

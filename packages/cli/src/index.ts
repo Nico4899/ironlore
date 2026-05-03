@@ -11,13 +11,19 @@ import { reindex } from "./commands/reindex.js";
 import { repair } from "./commands/repair.js";
 import { restore } from "./commands/restore.js";
 import { userAdd } from "./commands/user.js";
+import { vaultLint } from "./commands/vault-lint.js";
 
 const program = new Command();
 
 program
   .name("ironlore")
   .description("Ironlore — self-hosted knowledge base with AI agents")
-  .version("0.0.1");
+  .version("0.0.1")
+  // Show command-specific help text on argument-parse errors so a
+  //  user who fat-fingers `--in` on `restore` (or `--out` on a
+  //  command that doesn't take it) sees the canonical flag list
+  //  instead of just the bare "unknown option" line. Cheap UX win.
+  .showHelpAfterError("(run with --help to see available options)");
 
 program
   .command("lint")
@@ -26,9 +32,16 @@ program
   .option("--fix", "Auto-repair issues (default: report only)")
   .option(
     "--check <category>",
-    "Run a single check category (index-consistency, schema-migration, data-integrity)",
+    "Run a single check category (wal-integrity, index-consistency, schema-compliance, structure, provenance, data-integrity)",
   )
-  .option("--all", "Lint all projects (for index-consistency)")
+  .option(
+    "--all-projects",
+    "Run index-consistency across every installed project (overrides --project)",
+  )
+  // Deprecated alias retained so existing scripts + muscle memory
+  //  keep working. The lint action surfaces a one-line warning when
+  //  the legacy form is used so users migrate at their own pace.
+  .option("--all", "[deprecated] alias for --all-projects")
   .action(lint);
 
 program
@@ -44,13 +57,27 @@ program
   .option("--project <id>", "Project ID to flush", "main")
   .action(flush);
 
-program.command("migrate").description("Run pending database migrations").action(migrate);
+program
+  .command("migrate")
+  .description(
+    "Run pending database migrations (install-global today; the --project flag is " +
+      "accepted for symmetry with sibling commands but doesn't change behaviour " +
+      "until Phase-1 per-project migrations ship).",
+  )
+  .option("--project <id>", "Project scope (currently no-op; reserved for Phase 1)")
+  .action(migrate);
 
 program
   .command("repair")
   .description("Check and repair data integrity")
   .option("--project <id>", "Project ID to repair", "main")
   .option("--dry-run", "Report issues without fixing")
+  .option(
+    "--add-block-ids",
+    "Walk every .md page in the project and stamp `<!-- #blk_… -->` IDs on " +
+      "any block that's missing one. Idempotent. Use to retrofit existing " +
+      "vaults to the seeder's day-zero block-ID coverage.",
+  )
   .action(repair);
 
 program
@@ -58,11 +85,19 @@ program
   .description("Create a backup archive of the knowledge base")
   .option("--project <id>", "Project ID to backup", "main")
   .option("-o, --output <path>", "Output path for the archive")
+  // `--out` is the spelling many users reach for first; aliased to
+  //  `--output` in the backup action so the canonical flag name
+  //  stays the documented one.
+  .option("--out <path>", "Alias for --output")
   .action(backup);
 
 program
   .command("restore")
-  .description("Restore from a backup archive")
+  .description(
+    "Restore from a backup archive. The archive path is a positional argument: " +
+      "`ironlore restore ./backup.tar`. (There is no --in / --input flag — pass the " +
+      "path directly.)",
+  )
   .argument("<archive>", "Path to the backup archive")
   .option("--project <id>", "Project ID to restore into", "main")
   .action(restore);
@@ -80,6 +115,24 @@ program
       json: opts.json ?? false,
       perfOnly: opts.perfOnly ?? false,
       qualityOnly: opts.qualityOnly ?? false,
+    }),
+  );
+
+program
+  .command("vault-lint")
+  .description(
+    "Vault-content health check (orphans / stale sources / contradictions / coverage gaps / " +
+      "provenance gaps). Mirrors the Wiki Gardener agent's five detectors. Exits 0 when clean, " +
+      "1 when any finding exists — slot into CI as `pnpm vault-lint && deploy`.",
+  )
+  .option("--project <id>", "Project ID to lint", "main")
+  .option("--verbose", "Print the first few offenders per detector")
+  .option("--json", "Machine-readable JSON output")
+  .action((opts) =>
+    vaultLint({
+      project: opts.project,
+      verbose: opts.verbose ?? false,
+      json: opts.json ?? false,
     }),
   );
 

@@ -39,26 +39,37 @@ export function authenticateUpgrade(
   verifySessionCookie: (cookie: string) => string | null,
   onAuthorized: () => void,
 ): void {
-  const reject = () => {
-    socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+  // Reasoned response body so a debugging client (websocat,
+  // a hand-rolled wscat, the browser DevTools network tab) sees
+  // *why* the upgrade was refused instead of the bare "WebSocket
+  // protocol error" the client surfaces by default.
+  const reject = (reason: string) => {
+    const body = `WebSocket upgrade refused: ${reason}\n`;
+    socket.write(
+      `HTTP/1.1 401 Unauthorized\r\n` +
+        `Content-Type: text/plain; charset=utf-8\r\n` +
+        `Content-Length: ${Buffer.byteLength(body)}\r\n` +
+        `Connection: close\r\n\r\n` +
+        body,
+    );
     socket.destroy();
   };
 
   const cookieValue = parseCookieValue(req.headers.cookie, SESSION_COOKIE);
   if (!cookieValue) {
-    reject();
+    reject(`missing '${SESSION_COOKIE}' cookie (forward it via the Cookie header)`);
     return;
   }
 
   const sessionId = verifySessionCookie(cookieValue);
   if (!sessionId) {
-    reject();
+    reject("session cookie failed signature verification");
     return;
   }
 
   const session = sessionStore.getSession(sessionId);
   if (!session) {
-    reject();
+    reject("session not found (expired or revoked — re-login)");
     return;
   }
 

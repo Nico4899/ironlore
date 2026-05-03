@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { Hono } from "hono";
 import type { WorkerPool } from "../jobs/worker.js";
 import { activateAgent } from "./activate.js";
+import { searchInstalledAgents } from "./agent-search.js";
 import { type BuildPersonaInput, buildPersona } from "./build-persona.js";
 import { estimateRunCost } from "./cost-estimate.js";
 import type { DryRunBridge } from "./dry-run-bridge.js";
@@ -73,18 +74,40 @@ export function createAgentApi(
       }
     }
 
+    // Phase-9 multi-user: forward the originating user's identity into
+    //  the job payload so the executor can populate `ToolCallContext.acl`
+    //  and the tool ACL gate (`checkToolAcl`) can deny `kb.read_page` /
+    //  `kb.replace_block` calls the user wouldn't be allowed to make
+    //  through the HTTP route. Single-user installs (auth still on, but
+    //  one user) ride the same field; the gate short-circuits because
+    //  the executor only sets `acl` when project mode is `multi-user`.
+    //  Heartbeat / cron runs don't pass through this route — they
+    //  enqueue with no user context, and the gate permits.
+    // Hono's untyped Variables map rejects literal keys at the type
+    // level; cast the key to `never` to bypass the strict overload.
+    // The runtime semantics are unchanged — `c.get` returns whatever
+    // an upstream middleware set, or `undefined`.
+    const userId = (c.get("userId" as never) as string | undefined) ?? "";
+    const username = (c.get("username" as never) as string | undefined) ?? "";
+
     const jobId = pool.enqueue({
       projectId,
       kind: "agent.run",
       mode,
       ownerId: slug,
-      payload: { prompt: body.prompt ?? "", effort },
+      payload: {
+        prompt: body.prompt ?? "",
+        effort,
+        ...(userId.length > 0 ? { userId } : {}),
+        ...(username.length > 0 ? { username } : {}),
+      },
     });
 
-    // Record the run start for rate-limit tracking (autonomous only).
-    if (mode === "autonomous") {
-      rails.recordStart(projectId, slug, jobId);
-    }
+    // Record the run start for both modes. Rate-limit + histogram
+    // queries scope to `mode = 'autonomous'`; the runs listing
+    // surfaces both so users can see their own interactive activity
+    // alongside heartbeats.
+    rails.recordStart(projectId, slug, jobId, mode);
 
     return c.json({ jobId });
   });
@@ -205,6 +228,21 @@ export function createAgentApi(
       .prepare("SELECT slug, status FROM agent_state WHERE project_id = ? ORDER BY slug")
       .all(projectId) as Array<{ slug: string; status: "active" | "paused" }>;
     return c.json({ agents: rows });
+  });
+
+  // -----------------------------------------------------------------------
+  // Free-text agent search — backs the Cmd+K dialog's `AGENTS` tab.
+  // Walks installed personas under `.agents/<slug>/persona.md`, scores
+  // by case-insensitive substring against slug/name/role/description.
+  // Empty query → all installed agents (alphabetical by slug). Falls
+  // back to an empty list when `projectDir` isn't configured rather
+  // than 500'ing — the dialog should degrade gracefully.
+  // -----------------------------------------------------------------------
+  api.get("/search", (c) => {
+    if (!projectDir) return c.json({ agents: [] });
+    const query = c.req.query("q") ?? "";
+    const agents = searchInstalledAgents(`${projectDir}/data`, query);
+    return c.json({ agents });
   });
 
   // -----------------------------------------------------------------------
@@ -400,6 +438,24 @@ export function createJobApi(
     if (!job.commit_sha_start || !job.commit_sha_end) {
       return c.json({ error: "Job has no commit range to revert" }, 400);
     }
+    // 0-file jobs (chat-only runs / runs that produced no writes)
+    // would otherwise have their prior HEAD reverted by accident.
+    // Refuse with HTTP 400 so the SPA surfaces a clear error
+    // instead of "successfully reverting" something the run didn't
+    // touch. The executor stamps `filesChanged` in the job result
+    // blob and the function-level guard reads the same field —
+    // double-checking here means the API caller gets the right
+    // status code (the function path returns success:false with 200).
+    if (job.result) {
+      try {
+        const parsed = JSON.parse(job.result) as { filesChanged?: unknown };
+        if (Array.isArray(parsed.filesChanged) && parsed.filesChanged.length === 0) {
+          return c.json({ error: "Nothing to revert: this run produced no file changes." }, 400);
+        }
+      } catch {
+        /* unstructured result — fall through to revertAgentRun */
+      }
+    }
 
     const result = revertAgentRun(job, projectDir);
     return c.json(result);
@@ -455,6 +511,13 @@ export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir:
   api.get("/:entryId/files", (c) => {
     const entryId = c.req.param("entryId") ?? "";
     if (!entryId) return c.json({ error: "Entry id required" }, 400);
+    // Distinguish "no such entry" (404) from "entry exists but has
+    // no files" (200, empty array). Passing projectDir also catches
+    // entries whose staging branch has been deleted out of band —
+    // entryExists demotes them to 'stale' and returns false.
+    if (!inbox.entryExists(entryId, projectDir)) {
+      return c.json({ error: "Entry not found" }, 404);
+    }
     const files = inbox.getFileDiffStats(entryId, projectDir);
     return c.json({ files });
   });
@@ -484,18 +547,25 @@ export function createInboxApi(inbox: AgentInbox, projectId: string, projectDir:
     }
     const decision =
       body.decision === "approved" || body.decision === "rejected" ? body.decision : null;
-    return c.json(inbox.setFileDecision(entryId, body.path, decision));
+    const result = inbox.setFileDecision(entryId, body.path, decision);
+    // Surface the existing `{success: false, error: "Entry not found"}`
+    // envelope as HTTP 404 so clients can use status-code dispatch.
+    // Body shape is unchanged to keep existing callers compatible.
+    if (!result.success && result.error === "Entry not found") return c.json(result, 404);
+    return c.json(result);
   });
 
   api.post("/:entryId/approve", (c) => {
     const entryId = c.req.param("entryId") ?? "";
     const result = inbox.approveAll(entryId, projectDir);
+    if (!result.success && result.error === "Entry not found") return c.json(result, 404);
     return c.json(result);
   });
 
   api.post("/:entryId/reject", (c) => {
     const entryId = c.req.param("entryId") ?? "";
     const result = inbox.rejectAll(entryId, projectDir);
+    if (!result.success && result.error === "Entry not found") return c.json(result, 404);
     return c.json(result);
   });
 

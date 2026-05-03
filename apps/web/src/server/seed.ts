@@ -2,15 +2,30 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { AGENTS_DIR, AGENTS_LIBRARY_DIR, AGENTS_SHARED_DIR, ulid } from "@ironlore/core";
+import { assignBlockIds } from "./block-ids.js";
 
 /**
  * Write a file only if it doesn't already exist. Non-destructive seeding.
+ *
+ * For markdown files (`.md`), the content is run through
+ * `assignBlockIds` first so every block ships with a stable
+ * `<!-- #blk_… -->` ID from day one. This brings the
+ * eval-scorecard "block-ID coverage" metric up from ~13% to 100%
+ * on a fresh install and lets `kb.replace_block`, the inline-diff
+ * plugin's anchor lookup, and citation rendering address the
+ * onboarding pages without waiting for the user's first save.
+ *
+ * Non-markdown files (carousel binaries, CSV, SVG, .eml, .ipynb,
+ * notes.txt, server.log, etc.) bypass the stamp — block IDs are a
+ * markdown-prose convention. The seeder is non-destructive in
+ * either branch: an existing file keeps its content unchanged.
  */
 function seedFile(filePath: string, content: string): void {
   if (existsSync(filePath)) return;
   const dir = dirname(filePath);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(filePath, content, "utf-8");
+  const final = filePath.endsWith(".md") ? assignBlockIds(content).markdown : content;
+  writeFileSync(filePath, final, "utf-8");
 }
 
 /**
@@ -55,7 +70,10 @@ trail you can diff, revert, or hand to another agent.
 
 - [Pages and markdown](pages-and-markdown) — how pages, frontmatter, and block IDs work
 - [AI agents](agents) — the AI panel, default agents, and activating specialists
+- [The Inbox](inbox) — staging-branch review for autonomous agent runs
 - [Search and navigation](search-and-navigation) — \`Cmd+K\`, wiki-links, backlinks
+- [Connectors](connectors) — wiring agents up to external HTTP APIs
+- [Multi-user mode](multi-user) — opt-in per-page ACLs + per-user sessions
 - [Keyboard shortcuts](keyboard-shortcuts) — the full reference
 
 Then open the [Carousel](/carousel) folder to see every supported file type
@@ -157,18 +175,23 @@ with a persona definition — you can read them, edit them, or commit them.
 
 ## Two default agents
 
-- **General** — read-only assistant. Searches your pages, cites
+- **Librarian** — read-only assistant. Searches your pages, cites
   block-level sources, and never mutates anything. Good for "what did we
-  decide about X?" questions.
+  decide about X?" questions. (The persona's URL slug is \`general\` for
+  routing back-compat — the user-facing name is Librarian.)
 - **Editor** — handles explicit edit requests. Shows a dry-run diff before
-  writing. Respects \`kind: source\` pages (never touches them).
+  writing, plus inline ghost-text decorations on the active page so you
+  can Tab-to-accept proposed edits without leaving the editor surface.
+  Respects \`kind: source\` pages (never touches them).
 
 ## The agent library
 
-Dozens of specialist personas live in \`.agents/.library/\` as inactive
-templates — Product Manager, Technical Writer, SEO Specialist, Wiki
-Gardener, and more. Activate one by flipping \`active: true\` in its
-frontmatter. Each specialist has a scheduled heartbeat (cron) and a scope
+Three specialist personas live in \`.agents/.library/\` as inactive
+templates: **Wiki Gardener** (orphan / stale-source / contradiction
+audits), **Researcher** (thesis-driven investigation with verdicts), and
+**Evolver** (self-improvement loop that proposes edits to shared skill
+files). Each has dedicated tooling that the Editor + Librarian defaults
+can't replicate, and each has a scheduled heartbeat (cron) plus a scope
 that limits which folders it can read or write.
 
 The fastest way to activate a template is from the UI: open
@@ -177,16 +200,24 @@ and click **Activate**. The button copies the persona to
 \`.agents/<slug>/persona.md\` and registers an \`agent_state\` row so the
 heartbeat scheduler picks it up on the next tick — no restart needed.
 
+Need a persona the library doesn't ship? Use **Settings → Agents →
+Custom** to compose one through the Visual Agent Builder — name, role,
+constraints, scope, and review mode all map to the same persona-yaml
+shape the seeded templates use.
+
 ## Wiki Gardener
 
 The Wiki Gardener is the default opt-in maintenance persona. Activate it
-once and a weekly heartbeat runs four lint checks across your vault:
+once and a weekly heartbeat runs five lint checks across your vault:
 
 - **Orphans** — markdown pages with zero inbound wiki-links.
 - **Stale sources** — wiki pages older than the \`kind: source\` pages
   they cite.
 - **Contradiction flags** — typed wiki-links the author wrote with
   \`[[other | contradicts]]\` (or \`disagrees\` / \`refutes\`).
+- **Coverage gaps** — concepts cited by ≥ 3 distinct pages via
+  \`[[term]]\` wiki-links that don't resolve to any existing page.
+  Highlights what the vault keeps referring to but never wrote up.
 - **Provenance gaps** — agent-authored blocks that shipped without a
   \`derived_from\` citation in the \`.blocks.json\` sidecar.
 
@@ -292,7 +323,7 @@ substitute \`Ctrl\` for \`Cmd\`.
 | Shortcut | Action |
 |---|---|
 | \`Cmd+K\` | Open command palette / search |
-| \`Cmd+P\` | Jump to recent page |
+| \`Cmd+P\` | Open project switcher |
 | \`Cmd+B\` | Toggle sidebar |
 | \`Cmd+Shift+A\` | Toggle AI panel |
 | \`Cmd+\`\` | Toggle terminal |
@@ -401,6 +432,184 @@ for the fuller skills-vs-tools framing.
 `,
   );
 
+  // Inbox onboarding — the sidebar's right-hand tab is the Inbox,
+  //  so a user who's never been told what it does will see a
+  //  badge-counted tab with no context. This doc explains the
+  //  staging-branch + per-file approval flow that the Wiki Gardener
+  //  and Evolver default to via `review_mode: inbox`.
+  seedFile(
+    join(dataDir, "getting-started", "inbox.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: The Inbox
+kind: page
+created: ${now}
+modified: ${now}
+tags: [onboarding, agents]
+icon: lucide:inbox
+---
+
+# The Inbox
+
+The Inbox is the second tab in your sidebar (next to Files). It's
+where autonomous agent runs land for review **before** they merge
+into your vault. Click the tab; you'll see one entry per pending
+run, each showing what changed, when, and which agent did it.
+
+## Why it exists
+
+Some agents commit straight to the project's default branch — the
+**Editor** for interactive prompts, the **Librarian** which only
+reads. Others queue their changes for you to review first. The
+Wiki Gardener and Evolver default to that *queued* mode (their
+personas declare \`review_mode: inbox\`); custom agents can opt in
+the same way. The contract is simple: an inbox-mode run lands on a
+staging branch named \`agents/<slug>/<run-id>\`, and the Inbox tab
+turns that branch into an approve/reject UI.
+
+## What you'll see in an entry
+
+Each Inbox entry shows:
+
+- **Agent + timestamp** — who proposed the change and when it
+  finished.
+- **Per-file diff** — every file the run touched, with the same
+  unified diff you'd get from \`git diff\`. Long diffs collapse;
+  click to expand.
+- **Per-file decision toggle** — *approved* / *rejected* / *unset*
+  on every path. The default is unset (treated as approve when you
+  hit Approve All).
+- **Approve All / Reject All** — the two terminal actions. Approve
+  All cherry-picks every non-rejected file into a single commit on
+  the default branch and deletes the staging branch; Reject All
+  drops the branch without committing anything.
+
+When you approve a partial set (some files rejected), the entry
+status becomes \`partial\` and the commit message records exactly
+which paths landed.
+
+## Reverting
+
+Every Inbox approval ends as a normal git commit. If you change
+your mind ten minutes later, the **Revert** button on the
+\`run_finalized\` card in the AI panel undoes the whole commit
+range — same plumbing as \`git revert\`, surfaced in the UI so you
+don't have to drop into a terminal.
+
+## Read next
+
+- [AI agents](agents) — for the agent-side picture (who emits
+  inbox entries, how to opt in).
+- [Pages and markdown](pages-and-markdown) — for the per-file
+  ETag / block-ID conventions the diffs are scoped to.
+`,
+  );
+
+  // Multi-user mode onboarding — Phase-9 ACLs are opt-in but
+  //  power-user-relevant. Without this doc, the only signal the
+  //  feature exists is the \`mode: multi-user\` line in
+  //  \`project.yaml\` schema.
+  seedFile(
+    join(dataDir, "getting-started", "multi-user.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Multi-user mode
+kind: page
+created: ${now}
+modified: ${now}
+tags: [onboarding, security]
+icon: lucide:users
+---
+
+# Multi-user mode
+
+By default, Ironlore runs **single-user**: one admin password set
+at first launch, every page readable + writable by that admin.
+Multi-user mode is opt-in per project — flip a flag in
+\`project.yaml\`, add users with the CLI, then per-page ACLs in
+markdown frontmatter decide who can read or write what.
+
+## Turning it on
+
+Edit your project's \`project.yaml\`:
+
+\`\`\`yaml
+mode: multi-user
+\`\`\`
+
+Then add a user. The CLI prints an initial password (shown once
+— save it):
+
+\`\`\`sh
+ironlore user add bob
+\`\`\`
+
+Bob is forced to change his password on first login (same flag the
+bootstrap admin uses).
+
+## Per-page ACLs
+
+Pages declare access in their YAML frontmatter:
+
+\`\`\`yaml
+---
+title: Q3 Salary Bands
+owner: alice
+acl:
+  read:  [alice, bob]
+  write: [alice]
+---
+\`\`\`
+
+Defaults: \`read = everyone\`, \`write = owner-only\`. Three
+special tokens are recognised: \`everyone\` (anyone authenticated),
+\`owner\` (resolves against the page's \`owner:\` field), and any
+literal username.
+
+Owner is **stamped automatically** on first PUT — whoever creates
+a page becomes its owner. Subsequent writes from anyone else hit
+the ACL gate; an unauthorised write returns 403 and the WAL never
+records the attempt.
+
+## Inheritance from \`index.md\`
+
+Pages without an explicit \`acl:\` block inherit from the closest
+ancestor folder's \`index.md\`. Drop a restrictive ACL on
+\`team/private/index.md\` and every page below it without its own
+ACL inherits the same rules. A page's own ACL always wins over an
+inherited one.
+
+## Agent runs honour ACLs too
+
+When an agent run originates from an HTTP request, the calling
+user's identity is threaded through to the tool layer.
+\`kb.read_page\` denies pages the user can't read, \`kb.search\`
+filters its result list, and \`kb.replace_block\` /
+\`kb.delete_block\` deny writes the user wouldn't be allowed to
+make through the editor. Heartbeat / cron runs (no user context)
+operate on the persona's project scope, constrained by
+\`writable_kinds\` + the inbox review path.
+
+## Single-user installs are unaffected
+
+The entire ACL path short-circuits when \`mode\` is
+\`single-user\` (the default). No parser cost, no gate cost.
+Multi-user is opt-in by design — most solo installs don't need
+it, and shipping it as the default would force every page to
+declare an owner just to be writable.
+
+## Read next
+
+- [Pages and markdown](pages-and-markdown) — frontmatter shape +
+  block-ID conventions.
+- [The Inbox](inbox) — multi-user installs benefit from the
+  staging-branch review flow even more, since two users can
+  triage each other's autonomous runs.
+`,
+  );
+
   // -------------------------------------------------------------------------
   // Convention pages — seeded empty so the Wiki Gardener has somewhere to
   // write. Described in docs/04-ai-and-agents.md §Convention pages. Both are
@@ -424,6 +633,30 @@ icon: lucide:list-tree
 The current map of this vault's \`kind: wiki\` pages. Maintained by the
 Wiki Gardener on its weekly heartbeat; safe to edit by hand — the
 gardener merges rather than overwrites.
+
+## Onboarding
+
+The seeded \`getting-started/\` folder walks through every shipped
+surface. Each page sits under \`getting-started/\` so they're easy to
+prune once you don't need them.
+
+- [[getting-started/index]] — entry point + reading order
+- [[getting-started/pages-and-markdown]] — frontmatter, kinds, block IDs
+- [[getting-started/agents]] — AI panel + default agents + the library
+- [[getting-started/inbox]] — staging-branch review for autonomous runs
+- [[getting-started/search-and-navigation]] — Cmd+K, wiki-links, backlinks
+- [[getting-started/connectors]] — wiring agents to external HTTP APIs
+- [[getting-started/multi-user]] — opt-in per-page ACLs + per-user sessions
+- [[getting-started/keyboard-shortcuts]] — full reference
+
+## Conventions
+
+Convention folders the Wiki Gardener and other agents look for. Each
+has its own README explaining the directory's contract.
+
+- [[_maintenance/index]] — where lint reports land
+- [[.agents/.library/index]] — inactive persona templates + activation flow
+- [[.agents/.shared/skills/index]] — opt-in prompt fragments + connector recipes
 
 ## Maintenance
 
@@ -453,6 +686,52 @@ vault. Newest entries go on top. Each entry is one line:
 
 Readable at a glance; grep-friendly for the Wiki Gardener's lint skill
 to scope each run to recent changes.
+`,
+  );
+
+  // _maintenance/ — convention folder where the Wiki Gardener writes
+  //  its weekly lint reports. The folder doesn't exist on a fresh
+  //  install (no run has happened yet), so a seeded README documents
+  //  the convention up-front instead of leaving the user to discover
+  //  it after the first `lint-<YYYY-MM-DD>.md` lands.
+  seedFile(
+    join(dataDir, "_maintenance", "index.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Maintenance
+kind: wiki
+created: ${now}
+modified: ${now}
+tags: [meta]
+icon: lucide:wrench
+---
+
+# Maintenance
+
+This folder is where Ironlore's maintenance agents leave their reports.
+Each entry is a normal markdown page (\`kind: wiki\`) you can read,
+diff, revert, or hand back to an agent.
+
+## What lives here
+
+- **Lint reports** — \`lint-<YYYY-MM-DD>.md\`, written weekly by the
+  Wiki Gardener when activated. Each report covers the five lint
+  checks (orphans, stale sources, contradiction flags, coverage gaps,
+  provenance gaps) and links to the affected pages.
+- **Future maintenance reports** — any other vault-wide audit a
+  custom agent files. The convention is one report per run, stable
+  date-named filename, \`kind: wiki\` so search + backlinks pick it
+  up.
+
+## Why a real folder
+
+Lint reports are markdown like everything else. They're not buried
+in a database — you can grep them, revert a bad sweep with
+\`git revert\`, or pin a particularly sharp finding into a wiki page
+via \`kb.replace_block\`. A new install seeds this README so the
+folder is discoverable before the first run; subsequent reports land
+alongside it without ceremony.
 `,
   );
 
@@ -787,13 +1066,82 @@ FTS5 search index.
   mkdirSync(agentLibDir, { recursive: true });
   mkdirSync(sharedSkillsDir, { recursive: true });
 
-  // General agent (seeded, not deletable)
+  // Library README — orients a user who drills into `.agents/.library/`
+  //  via the file tree. Without it, the directory is three .md files
+  //  with no signal that they're inactive templates rather than active
+  //  personas. The `kind: page` keeps it out of FTS5 wiki scope.
+  seedFile(
+    join(agentLibDir, "index.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Agent Library
+kind: page
+created: ${now}
+modified: ${now}
+tags: [meta, agents]
+icon: lucide:library
+---
+
+# Agent Library
+
+These are **inactive persona templates** — agent definitions that
+ship with Ironlore but don't run until you activate them. The
+defaults (Librarian, Editor) live one level up at
+\`.agents/<slug>/persona.md\`; everything in this folder is
+opt-in.
+
+## Activating a template
+
+The fastest path is **Settings → Agents → Library**. Click
+*Activate* on a row and Ironlore copies the template to
+\`.agents/<slug>/persona.md\`, registers an \`agent_state\` row, and
+the heartbeat scheduler picks it up on the next tick — no restart.
+You can also copy the file by hand if you prefer; the activation
+flow just spares you the file-juggling.
+
+## What ships here
+
+- **\`wiki-gardener.md\`** — vault maintenance. Runs five lint
+  checks (orphans, stale sources, contradictions, coverage gaps,
+  provenance gaps) on a weekly heartbeat and writes a single report
+  page under \`_maintenance/\`. Loads the \`lint\` and \`ingest\`
+  shared skills.
+- **\`evolver.md\`** — Phase-11 self-improvement loop. Reads
+  aggregated failed-run patterns via \`kb.query_failed_runs\` and
+  proposes targeted edits to shared skill files; every edit lands on
+  a staging branch the user reviews via the **Inbox** before merge.
+  Always runs \`review_mode: inbox\`.
+- **\`researcher/persona.md\`** — thesis-driven investigation.
+  Decomposes a claim into key variables, searches for evidence on
+  both sides, and produces a verdict (\`supported\` /
+  \`contradicted\` / \`mixed\` / \`insufficient\`). Loads the
+  \`thesis\` skill (agent-local under \`researcher/skills/\`).
+
+## Why three and not thirty
+
+Each template earns its place by carrying *dedicated tooling* the
+defaults can't replicate. Personas that are just "tone of voice
+for role X" go through the **Visual Agent Builder** (Settings →
+Agents → Custom) — the form compiles your inputs into the same
+persona-yaml shape these templates use. No reason to ship a closet
+full of pre-built specialists when the builder produces one in 30
+seconds.
+`,
+  );
+
+  // Librarian agent (seeded, not deletable). Slug stays "general"
+  //  for routing/back-compat; display name is "Librarian" — fits the
+  //  KB metaphor and reads as a concrete role rather than the
+  //  generic "General" placeholder. The slug is the reserved
+  //  routing key per build-persona.ts; the user-facing name is what
+  //  changes here.
   seedFile(
     join(dataDir, AGENTS_DIR, "general", "persona.md"),
     `---
-name: General
+name: Librarian
 slug: general
-emoji: "\u{1F4AC}"
+emoji: "\u{1F4DA}"
 type: default
 role: "Knowledge base assistant — read-mostly, citation-grounded answers"
 provider: anthropic
@@ -803,7 +1151,7 @@ scope:
   writable_kinds: []
 ---
 
-You are the General assistant for this Ironlore knowledge base. Your role is
+You are the Librarian for this Ironlore knowledge base. Your role is
 to help users find and understand information across their pages.
 
 ## Behavior
@@ -855,177 +1203,23 @@ explicit "edit this page" instructions from the user.
     heartbeat: string;
     scope: string;
   }> = [
-    {
-      slug: "ceo",
-      name: "CEO",
-      emoji: "\u{1F451}",
-      dept: "Executive",
-      role: "Strategic direction, weekly priorities, decision log",
-      heartbeat: "0 8 * * 1",
-      scope: "/strategy/**",
-    },
-    {
-      slug: "content-marketer",
-      name: "Content Marketer",
-      emoji: "\u{270D}\u{FE0F}",
-      dept: "Marketing",
-      role: "Blog posts, guides, thought leadership",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/marketing/**",
-    },
-    {
-      slug: "social-media-manager",
-      name: "Social Media Manager",
-      emoji: "\u{1F4F1}",
-      dept: "Marketing",
-      role: "Social posts, engagement tracking, trend analysis",
-      heartbeat: "0 10 * * 1-5",
-      scope: "/social/**",
-    },
-    {
-      slug: "seo-specialist",
-      name: "SEO Specialist",
-      emoji: "\u{1F50D}",
-      dept: "Marketing",
-      role: "Keyword research, content optimization, rank tracking",
-      heartbeat: "0 9 * * 1,4",
-      scope: "/seo/**",
-    },
-    {
-      slug: "product-manager",
-      name: "Product Manager",
-      emoji: "\u{1F4CB}",
-      dept: "Product",
-      role: "Feature specs, roadmap updates, user feedback synthesis",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/product/**",
-    },
-    {
-      slug: "ux-researcher",
-      name: "UX Researcher",
-      emoji: "\u{1F9EA}",
-      dept: "Product",
-      role: "User interviews, usability findings, persona updates",
-      heartbeat: "0 10 * * 2,4",
-      scope: "/research/**",
-    },
-    {
-      slug: "developer-advocate",
-      name: "Developer Advocate",
-      emoji: "\u{1F4E3}",
-      dept: "Engineering",
-      role: "Technical tutorials, API docs, community engagement",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/devrel/**",
-    },
-    {
-      slug: "technical-writer",
-      name: "Technical Writer",
-      emoji: "\u{1F4DD}",
-      dept: "Engineering",
-      role: "Documentation, API references, changelogs",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/docs/**",
-    },
-    {
-      slug: "data-analyst",
-      name: "Data Analyst",
-      emoji: "\u{1F4CA}",
-      dept: "Analytics",
-      role: "Metrics dashboards, trend reports, cohort analysis",
-      heartbeat: "0 8 * * 1",
-      scope: "/analytics/**",
-    },
-    {
-      slug: "sales-enablement",
-      name: "Sales Enablement",
-      emoji: "\u{1F4BC}",
-      dept: "Sales",
-      role: "Battle cards, objection handling, case studies",
-      heartbeat: "0 9 * * 1,3,5",
-      scope: "/sales/**",
-    },
-    {
-      slug: "customer-success",
-      name: "Customer Success",
-      emoji: "\u{1F91D}",
-      dept: "Support",
-      role: "FAQ maintenance, onboarding guides, health scores",
-      heartbeat: "0 9 * * 1-5",
-      scope: "/support/**",
-    },
-    {
-      slug: "recruiter",
-      name: "Recruiter",
-      emoji: "\u{1F465}",
-      dept: "People",
-      role: "Job descriptions, candidate pipelines, interview guides",
-      heartbeat: "0 9 * * 1,3",
-      scope: "/people/**",
-    },
-    {
-      slug: "legal-analyst",
-      name: "Legal Analyst",
-      emoji: "\u{2696}\u{FE0F}",
-      dept: "Legal",
-      role: "Policy summaries, compliance tracking, contract templates",
-      heartbeat: "0 9 * * 1",
-      scope: "/legal/**",
-    },
-    {
-      slug: "finance-analyst",
-      name: "Finance Analyst",
-      emoji: "\u{1F4B0}",
-      dept: "Finance",
-      role: "Budget tracking, forecast models, expense reports",
-      heartbeat: "0 8 * * 1",
-      scope: "/finance/**",
-    },
-    {
-      slug: "competitive-intel",
-      name: "Competitive Intelligence",
-      emoji: "\u{1F50E}",
-      dept: "Strategy",
-      role: "Competitor tracking, market landscape, SWOT analysis",
-      heartbeat: "0 9 * * 1,4",
-      scope: "/competitive/**",
-    },
-    {
-      slug: "brand-strategist",
-      name: "Brand Strategist",
-      emoji: "\u{1F3A8}",
-      dept: "Marketing",
-      role: "Brand guidelines, messaging frameworks, visual identity",
-      heartbeat: "0 10 * * 1",
-      scope: "/brand/**",
-    },
-    {
-      slug: "newsletter-editor",
-      name: "Newsletter Editor",
-      emoji: "\u{1F4E8}",
-      dept: "Marketing",
-      role: "Newsletter drafts, subscriber segmentation, A/B tests",
-      heartbeat: "0 9 * * 2,4",
-      scope: "/newsletter/**",
-    },
-    {
-      slug: "partnerships-manager",
-      name: "Partnerships Manager",
-      emoji: "\u{1F91D}",
-      dept: "Business Dev",
-      role: "Partner profiles, integration opportunities, co-marketing",
-      heartbeat: "0 9 * * 1,3",
-      scope: "/partnerships/**",
-    },
-    {
-      slug: "community-manager",
-      name: "Community Manager",
-      emoji: "\u{1F30D}",
-      dept: "Community",
-      role: "Community health, event planning, contributor recognition",
-      heartbeat: "0 10 * * 1-5",
-      scope: "/community/**",
-    },
+    // Curated library — only personas that earn their place in a
+    //  knowledge-base product. Each entry has dedicated tooling that
+    //  the Editor + Librarian defaults can't replicate:
+    //   - wiki-gardener: 5 lint detectors (orphans/stale-sources/
+    //     contradictions/coverage-gaps/provenance-gaps)
+    //   - evolver: kb.query_failed_runs + the inbox-merged skill-edit
+    //     loop
+    //   - researcher: thesis.md skill (decompose → evidence → verdict),
+    //     seeded by seed-agents.ts as a `.library/<slug>/` template
+    //     shape rather than the flat `<slug>.md` shape used here
+    //
+    //  Cut history: an earlier "fake corporate team" set
+    //  (CEO / Content Marketer / SEO Specialist / Product Manager /
+    //  Technical Writer / etc.) was retired because they were persona
+    //  theatre with no dedicated tooling — anyone wanting one can
+    //  build it through the Visual Agent Builder in Settings → Agents
+    //  in 30 seconds. See [docs/04-ai-and-agents.md §Default agents](../../docs/04-ai-and-agents.md).
     {
       slug: "wiki-gardener",
       name: "Wiki Gardener",
@@ -1065,6 +1259,14 @@ explicit "edit this page" instructions from the user.
     // loop trades on: the AI suggests a plain-text markdown edit,
     // the human approves it.
     const reviewLine = p.slug === "evolver" ? "\nreview_mode: inbox" : "";
+    // The evolver's whole job is grounding skill edits in failed-run
+    // data. Declare `kb.query_failed_runs` as required so the
+    // executor refuses to finalize via `agent.journal` until the
+    // model has actually called it — guards against the AI-panel
+    // failure mode where the model fabricated failure statistics
+    // and wrote a journal entry as if the analysis had run.
+    const requiredToolsLine =
+      p.slug === "evolver" ? "\nrequired_tools: [kb.query_failed_runs]" : "";
     // Per Principle 5a, synthesis personas declare
     // `readable_kinds: [source]` so the sources-not-compilations
     // constraint is visible in their config. The wiki-gardener
@@ -1087,7 +1289,7 @@ role: "${p.role}"
 provider: anthropic
 heartbeat: "${p.heartbeat}"
 budget: { period: monthly, runs: 40 }
-active: false${skillsLine}${reviewLine}
+active: false${skillsLine}${reviewLine}${requiredToolsLine}
 scope:
   pages: ["${p.scope}"]
   tags: []
@@ -1152,11 +1354,16 @@ ${p.role}.
    choice (improve_skill / optimize_description / create_skill /
    skip), the \`NOT for:\` exclusion-syntax convention, and the
    exact diff format the user sees in the Inbox.
-2. Call \`kb.query_failed_runs\` (default 168 hours = one week) to
-   pull aggregated failure patterns across every agent that ran in
-   this project. Look for: agents with >2 failed runs, tools that
-   error repeatedly across agents, the same error string surfacing
-   from multiple runs.
+2. **You MUST call \`kb.query_failed_runs\`** (default 168 hours =
+   one week) to pull aggregated failure patterns across every agent
+   that ran in this project. The executor enforces this: a
+   finalize attempt via \`agent.journal\` will be rejected until
+   you have actually called the tool with real arguments. Do not
+   infer failure data from search results, memory, or general
+   knowledge — the structured output of this tool is the only
+   ground truth your proposed edit may cite. Look for: agents with
+   >2 failed runs, tools that error repeatedly across agents, the
+   same error string surfacing from multiple runs.
 3. Read the relevant shared skill file via \`kb.read_page\` if a
    pattern points at one.
 4. Pick **exactly one** action per run — quality over volume:
@@ -1187,24 +1394,88 @@ ${p.role}.
   curious user can audit the evidence trail behind the proposed
   change.
 `
-          : `
-You are {{company_name}}'s ${p.name}. Company description: {{company_description}}.
-Current goals: {{goals}}.
-
-## Responsibilities
-
-${p.role}.
-
-## Guidelines
-
-- Work within your assigned scope: \`${p.scope}\`
-- Use structured kb.* tools for all edits
-- File a journal entry at the end of each run
-- Respect page kinds: never modify \`kind: source\` pages
-`;
+          : "";
+    if (!body) {
+      throw new Error(
+        `seed.ts: no persona body wired up for slug '${p.slug}'. Add a branch in the body composer.`,
+      );
+    }
 
     seedFile(join(agentLibDir, `${p.slug}.md`), `${frontmatter}\n${body}`);
   }
+
+  // Shared-skills README — orients a user who drills into
+  //  `.agents/.shared/skills/` via the file tree. Without it, the
+  //  directory is ~7 .md files with no signal that they're prompt
+  //  fragments rather than executable code, or that activation
+  //  happens via persona frontmatter rather than per-call import.
+  seedFile(
+    join(sharedSkillsDir, "index.md"),
+    `---
+schema: 1
+id: ${ulid()}
+title: Shared Skills
+kind: page
+created: ${now}
+modified: ${now}
+tags: [meta, agents]
+icon: lucide:notebook-pen
+---
+
+# Shared Skills
+
+A **skill** is a markdown file that any agent can opt into via
+\`skills: [name]\` in its persona frontmatter. The skill body is
+appended to the agent's system prompt at run-start. Think of it as
+*prompt-as-content* — versioned, diffable, and editable in the same
+editor as your wiki.
+
+Resolution order is **agent-local first, then \`.shared/\`**. A
+skill named \`thesis.md\` in \`.agents/researcher/skills/\` shadows
+a project-wide \`thesis.md\` here, so an agent can specialise
+without touching the shared file.
+
+## Frontmatter convention
+
+\`\`\`yaml
+---
+name: <Display Name>
+description: <One-line summary used in BM25 + the skill-discovery UI>
+---
+\`\`\`
+
+Both fields are required. The \`description\` is what the
+**Evolver** agent rewrites when it observes agents loading the
+skill in the wrong context.
+
+## What ships here
+
+- **\`lint.md\`** — five-class wiki health check. Loaded by the
+  Wiki Gardener.
+- **\`ingest.md\`** — five-step Make-like compilation pipeline
+  (Diff → Summarize → Extract → Write → Images) for raw
+  \`kind: source\` material into \`kind: wiki\` syntheses.
+- **\`evolve.md\`** — drives the Evolver's per-week
+  improve/optimize/create/skip choice over the shared skills.
+- **\`file-answer.md\`** — single + multi-extraction modes for
+  saving an AI answer or a session transcript as a wiki page with
+  proper \`derived_from\` provenance.
+- **Connector recipes** — \`github-issue-search.md\`,
+  \`webhook-trigger.md\`, \`http-get-with-auth.md\`. Each documents
+  the four-section connector contract (egress allowlist entry, auth
+  handoff, request shape, error shapes) and demonstrates the
+  pattern against a real provider so the model has working code to
+  imitate.
+
+## Editing a skill
+
+Skills are markdown — edit the file, save, the next agent run
+loads the new version. No rebuild, no restart. The Evolver will
+propose edits via the **Inbox** when it spots a recurring failure
+mode that points at one of these files; you approve or reject in
+the existing review flow.
+`,
+  );
 
   // Shared skill: file-answer (single + multi-extraction modes)
   seedFile(
@@ -1256,31 +1527,24 @@ Score → confidence: high (3-5), medium (1-2), low (0), reject (<0).
   );
 
   // Shared skill: brand voice
-  seedFile(
-    join(sharedSkillsDir, "brand-voice.md"),
-    `---
-name: Brand Voice
-description: Project-wide tone and style guidelines
----
-
-# Brand Voice Skill
-
-When writing or editing content, follow the brand voice guidelines defined
-in the knowledge base. Look for a brand-voice or style-guide page in the
-project and adopt its tone, vocabulary, and formatting rules.
-
-If no brand voice page exists, use a professional, concise tone:
-- Active voice over passive
-- Short paragraphs (2-3 sentences)
-- Technical accuracy without jargon overload
-`,
-  );
+  // brand-voice skill removed — it was a relic of the retired
+  //  "marketing personas" library (Technical Writer, Content
+  //  Marketer, etc.). No shipped agent loaded it, and the
+  //  description fit exactly the persona-theatre pattern that was
+  //  pruned. Custom personas that need a tone-of-voice helper can
+  //  build one through the Visual Agent Builder + a project-local
+  //  skill at `.agents/<slug>/skills/brand-voice.md`.
 
   // Shared skill: lint — wiki health check loaded by the Wiki Gardener.
-  // Implements the four-class lint contract from docs/04-ai-and-agents.md
-  // §Workflow skills — lint.md. Orphans use a real primitive today;
-  // stale sources, contradiction flags, and provenance gaps document
-  // honest stub status so the model does not fabricate findings.
+  // Implements the five-class lint contract from docs/04-ai-and-agents.md
+  // §Workflow skills — lint.md. Every detector is a real shipped tool
+  // (`kb.lint_orphans` / `_stale_sources` / `_contradictions` /
+  // `_coverage_gaps` / `_provenance_gaps`); the body must NOT describe
+  // any check as a stub or "not yet available" — the on-disk
+  // `_maintenance/lint-2026-05-02.md` report carried that stale
+  // disclaimer because the model fabricated it from priors, and the
+  // `## Do not fabricate` block + seed.test.ts assertions below pin
+  // the correct shape so future drift surfaces loudly.
   seedFile(
     join(sharedSkillsDir, "lint.md"),
     `---
@@ -1296,8 +1560,10 @@ the report and decides what to act on.
 
 ## When to run
 
-Loaded by the Wiki Gardener on its weekly heartbeat. Can also be invoked
-by the General agent on demand ("run the lint skill").
+Loaded by the Wiki Gardener on its weekly heartbeat. Any agent that
+declares \`skills: [lint]\` in its persona frontmatter (or that the user
+points at the skill on demand) gets the same recipe — the skill is
+agent-agnostic.
 
 ## Inputs you always read first
 
@@ -1366,8 +1632,9 @@ sorted by citation count descending. Threshold of 3 keeps stray
 typos and one-off references out of the report.
 
 Report each gap as a row: \`| target | citations | first 3 citing pages |\`.
-A coverage gap is a prompt for the user to write the page (or for
-a future ingest workflow to draft a stub); flag, do not auto-create.
+A coverage gap is a prompt for the user to write the missing page (or
+for a future ingest workflow to draft an initial draft); flag, do not
+auto-create.
 
 ### 5. Provenance gaps — agent-authored blocks missing \`derived_from\`
 
@@ -1438,6 +1705,17 @@ journal call without \`lintReport\` finalizes the run silently:
   }
 }
 \`\`\`
+
+## Do not fabricate
+
+Every detector above is **shipped today** as a real \`kb.lint_*\` tool.
+If a tool returns zero results, render \`None.\` in that section's body
+— do not insert any disclaimer about the detector's availability,
+implementation status, or roadmap position. Earlier lint reports
+carried such disclaimers because an older draft of this skill
+mis-described some detectors; that framing is stale and must not be
+repeated. Trust the tool output; the absence of findings is itself a
+useful signal.
 `,
   );
 
@@ -1661,10 +1939,10 @@ loud-and-clear in the agent's loaded prompt.
 ### 2. \`optimize_description\` — the description misframes the skill
 
 Use when: agents are loading a skill in the wrong context (or
-failing to load it when they should). E.g. "the
-\`brand-voice\` skill says 'for marketing copy' but it's getting
-loaded by the researcher because the agent reads 'voice' as
-'tone'."
+failing to load it when they should). E.g. "the \`ingest\` skill
+says 'for raw kind: source material' but it's getting loaded by an
+editor agent on a wiki page because the description doesn't make
+the source-only constraint loud enough."
 
 Action: \`kb.replace_block\` against the skill's frontmatter
 description block, tightening or rewriting the trigger phrasing.

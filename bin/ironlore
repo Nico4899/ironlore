@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Workspace-local launcher for the Ironlore CLI.
+#
+# The CLI ships as `@ironlore/cli` with `bin: { ironlore: ./dist/index.js }`,
+# so the canonical install path is `pnpm install` (links the bin into
+# `node_modules/.bin/`) followed by `pnpm ironlore <cmd>`. That works
+# perfectly once the CLI has been built (`pnpm --filter ironlore build`).
+#
+# This shim is for the dev loop: it runs the TypeScript source through
+# `tsx`, so you can iterate on `packages/cli/src/` without rebuilding.
+# Drop it on your $PATH or alias it from your shell rc:
+#
+#   alias ironlore='/path/to/ironlore/bin/ironlore'
+#
+# Then `ironlore lint --project main` works from any directory.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+exec node --import tsx "$REPO_ROOT/packages/cli/src/index.ts" "$@"

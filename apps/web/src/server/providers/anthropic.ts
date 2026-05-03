@@ -290,6 +290,34 @@ function mapBatchStatus(raw: string | undefined): BatchStatus {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Wire-name translation for tool identifiers.
+ *
+ * Anthropic enforces `^[a-zA-Z0-9_-]{1,128}$` on tool names, which
+ * rejects the dots we use as namespace separators (`kb.search`,
+ * `mcp.<server>.<tool>`, `agent.journal`). We translate only at the
+ * Anthropic wire boundary so the rest of the system — dispatcher,
+ * persona frontmatter, journals, tests, docs — keeps the dotted
+ * form. Substitution is deterministic, so we don't need a per-request
+ * lookup table: any encoded tool name decodes back unambiguously as
+ * long as no internal tool name contains the literal substring
+ * `_dot_`. Current tools satisfy that invariant.
+ *
+ * Applied at three boundaries:
+ *   - `convertTools` — outbound tool definitions in the request body
+ *   - `convertMessages` — replayed prior `tool_use` blocks in multi-turn runs
+ *   - `parseSSEStream` — inbound `tool_use.name` from the model
+ */
+const WIRE_DOT_SUBSTITUTE = "_dot_";
+
+export function encodeToolNameForWire(internal: string): string {
+  return internal.split(".").join(WIRE_DOT_SUBSTITUTE);
+}
+
+export function decodeToolNameFromWire(wire: string): string {
+  return wire.split(WIRE_DOT_SUBSTITUTE).join(".");
+}
+
 function buildSystemBlock(opts: ChatOptions): unknown[] {
   const block: Record<string, unknown> = {
     type: "text",
@@ -308,9 +336,29 @@ function buildSystemBlock(opts: ChatOptions): unknown[] {
 function convertMessages(messages: ChatMessage[]): Array<{ role: string; content: unknown }> {
   return messages.map((msg) => {
     if (msg.role === "tool_use") {
+      // Anthropic's wire schema requires `tool_use.input` to be a
+      //  JSON object — not a string, array, or primitive. The SSE
+      //  parser already normalises fresh tool_uses (see
+      //  `content_block_stop` handler), but legacy data, hand-built
+      //  test fixtures, or a future bug in another producer could
+      //  still land a non-object on the conversation history. Wrap
+      //  defensively so the request always succeeds; the original
+      //  shape is preserved under `_value` so a model can still see
+      //  what was originally there if it asks to re-read history.
+      const safeInput =
+        msg.input !== null && typeof msg.input === "object" && !Array.isArray(msg.input)
+          ? msg.input
+          : { _value: msg.input };
       return {
         role: "assistant",
-        content: [{ type: "tool_use", id: msg.id, name: msg.name, input: msg.input }],
+        content: [
+          {
+            type: "tool_use",
+            id: msg.id,
+            name: encodeToolNameForWire(msg.name),
+            input: safeInput,
+          },
+        ],
       };
     }
     if (msg.role === "tool_result") {
@@ -332,7 +380,7 @@ function convertMessages(messages: ChatMessage[]): Array<{ role: string; content
 
 function convertTools(tools: ToolDefinition[]): unknown[] {
   return tools.map((t) => ({
-    name: t.name,
+    name: encodeToolNameForWire(t.name),
     description: t.description,
     input_schema: t.inputSchema,
   }));
@@ -382,7 +430,7 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncIterable<
           const block = event.content_block as Record<string, unknown>;
           if (block?.type === "tool_use") {
             currentToolId = block.id as string;
-            currentToolName = block.name as string;
+            currentToolName = decodeToolNameFromWire(block.name as string);
             currentToolInput = "";
           }
         }
@@ -399,12 +447,33 @@ async function* parseSSEStream(body: ReadableStream<Uint8Array>): AsyncIterable<
 
         if (eventType === "content_block_stop") {
           if (currentToolId) {
+            // No-arg tools (e.g. `kb.lint_orphans`) emit zero
+            //  `input_json_delta` events, leaving currentToolInput as
+            //  the empty string. Anthropic's wire schema requires
+            //  `tool_use.input` to be an object on replay, so fall
+            //  back to `{}` rather than to the raw string. The
+            //  earlier code passed `""` through, which the *next*
+            //  turn rejected with `Input should be an object` (400)
+            //  the moment any subsequent tool call replayed history.
+            const trimmed = currentToolInput.trim();
             let input: unknown = {};
-            try {
-              input = JSON.parse(currentToolInput);
-            } catch {
-              // Malformed tool input — pass as string.
-              input = currentToolInput;
+            if (trimmed.length > 0) {
+              try {
+                input = JSON.parse(trimmed);
+              } catch {
+                // Malformed JSON for a tool that genuinely sent
+                //  partial input — surface as a string envelope
+                //  rather than `{}` so the error is debuggable, but
+                //  wrap so it stays a valid object on replay.
+                input = { _malformedToolInput: currentToolInput };
+              }
+            }
+            // Anthropic also requires `tool_use.input` to be a JSON
+            //  object specifically (not an array, not a primitive).
+            //  If the model parsed a non-object (rare, but a
+            //  partial-input edge case can produce it), wrap it.
+            if (input === null || typeof input !== "object" || Array.isArray(input)) {
+              input = { _value: input };
             }
             yield { type: "tool_use", id: currentToolId, name: currentToolName, input };
             currentToolId = "";

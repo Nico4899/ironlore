@@ -37,10 +37,8 @@ export interface BlockrefProps {
   children?: ReactNode;
   /** Mark the ref as stale — block has moved since last cache write. */
   stale?: boolean;
-  /** Click handler; opens the provenance pane in production. */
+  /** Click handler; opens the cited page in production. */
   onClick?: MouseEventHandler<HTMLButtonElement>;
-  /** Tooltip text on hover; usually the first line of the target block. */
-  title?: string;
   className?: string;
   style?: CSSProperties;
 }
@@ -61,7 +59,6 @@ export function Blockref({
   children,
   stale = false,
   onClick,
-  title,
   className,
   style,
 }: BlockrefProps) {
@@ -94,12 +91,12 @@ export function Blockref({
         onMouseLeave={endHover}
         onFocus={() => setHovered(true)}
         onBlur={endHover}
-        // Only use the native title as a fallback for screen readers
-        //  and for environments where the custom tooltip can't render
-        //  (e.g. copy-pasted HTML in another viewer). Suppressed when
-        //  we have a real preview so the browser chrome doesn't
-        //  double-up with our card.
-        title={preview ? undefined : title}
+        // No native `title` — the custom `BlockrefPreview` card is
+        //  the canonical hover affordance. Stacking a browser
+        //  tooltip on top of it produced the "Open <path>" ghost
+        //  hovering above our preview, doubling up the same info
+        //  in two surfaces. The `aria-label` below carries the
+        //  same content for assistive tech without the visual stack.
         aria-label={`Open ${page}${block ? ` block ${block}` : ""}`}
         className={["il-blockref", stale ? "il-blockref-stale" : "", className]
           .filter(Boolean)
@@ -159,7 +156,7 @@ function BlockrefPreview({
           </>
         )}
         <span className="flex-1" />
-        <span style={{ color: "var(--il-text4)" }}>click to open</span>
+        <span style={{ color: "var(--il-text3)" }}>click to open</span>
       </div>
       <div className="il-blockref-preview__body">
         {body === null ? <span style={{ color: "var(--il-text4)" }}>Loading…</span> : body}

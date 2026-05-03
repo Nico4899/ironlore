@@ -64,6 +64,17 @@ const rawBase = (): string => `${base()}/raw`;
  * Fetch wrapper that intercepts 401 responses and clears the auth session.
  * All data API functions use this instead of raw fetch.
  */
+/**
+ * Tracks whether we've already surfaced an "invalid project ID"
+ * warning in this tab. Without this, every API call that carries
+ * the bad `?project=` query in `window.location.search` would
+ * re-trigger the alert. We strip the query param the first time
+ * (so the next request doesn't even include it) AND latch the
+ * warning so later requests don't double-fire if anything still
+ * forwards the param manually.
+ */
+let invalidProjectWarned = false;
+
 async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const res = await fetch(url, init);
   if (res.status === 401) {
@@ -71,6 +82,36 @@ async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
     useAuthStore.getState().clearSession();
     throw new ApiError(401, "Session expired");
   }
+
+  // Bug 8 follow-up: the server middleware sets this header when the
+  // session URL carries `?project=<unknown>`. The session falls back
+  // to the previous project gracefully, but the user typed a bad ID
+  // and deserves to know — silent fallback was the original audit
+  // finding.
+  const invalidProject = res.headers.get("X-Ironlore-Invalid-Project");
+  if (invalidProject && !invalidProjectWarned) {
+    invalidProjectWarned = true;
+    // Strip `?project=` from the address bar so the next request
+    // doesn't re-trigger the warning and the user's URL no longer
+    // claims a project that doesn't exist.
+    try {
+      const browserUrl = new URL(window.location.href);
+      if (browserUrl.searchParams.has("project")) {
+        browserUrl.searchParams.delete("project");
+        window.history.replaceState(null, "", browserUrl.toString());
+      }
+    } catch {
+      /* SSR / non-browser context — skip */
+    }
+    // window.alert is the codebase convention for one-shot user
+    // errors (see SidebarNew.tsx for a dozen prior art examples).
+    window.alert(
+      `Project '${invalidProject}' is not registered on this install. ` +
+        `Staying on the previous project. Check the URL — common typo: ` +
+        `'research' instead of 'my-research'.`,
+    );
+  }
+
   return res;
 }
 
@@ -330,6 +371,29 @@ export async function searchPages(
   };
 }
 
+export interface AgentSearchHit {
+  slug: string;
+  name: string | null;
+  emoji: string | null;
+  role: string | null;
+  description: string | null;
+  paused: boolean;
+}
+
+/**
+ * Search installed agents by free-text query — backs the Cmd+K
+ * dialog's `AGENTS` tab. Empty query returns every agent ordered by
+ * slug. Server matches case-insensitive substrings against
+ * slug/name/role/description.
+ */
+export async function searchAgents(query: string): Promise<AgentSearchHit[]> {
+  const params = new URLSearchParams({ q: query });
+  const res = await apiFetch(`${base()}/agents/search?${params}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const data = (await res.json()) as { agents: AgentSearchHit[] };
+  return data.agents;
+}
+
 /** Get pages that link to the given path. */
 export async function fetchBacklinks(path: string): Promise<BacklinkEntry[]> {
   const params = new URLSearchParams({ path });
@@ -359,15 +423,47 @@ export async function createPage(pagePath: string, content: string): Promise<Sav
   return res.json() as Promise<SaveResponse>;
 }
 
+/**
+ * Move-page response — superset of `SaveResponse` carrying the count
+ * of inbound `[[OldName]]` links the rename invalidated. Drives the
+ * sidebar's "Update N inbound links?" toast (docs/03-editor.md
+ * §Rename-rewrite). `inboundLinkCount` is `undefined` for directory
+ * moves where the server doesn't (yet) compute aggregate counts.
+ */
+export interface MovePageResponse extends SaveResponse {
+  inboundLinkCount?: number;
+}
+
 /** Move a page to a new path. */
-export async function movePage(sourcePath: string, destination: string): Promise<SaveResponse> {
+export async function movePage(sourcePath: string, destination: string): Promise<MovePageResponse> {
   const res = await apiFetch(`${pagesBase()}/${sourcePath}/move`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ destination }),
   });
   if (!res.ok) throw new ApiError(res.status, await res.text());
-  return res.json() as Promise<SaveResponse>;
+  return res.json() as Promise<MovePageResponse>;
+}
+
+/**
+ * Rewrite every `[[OldName]]` reference into `[[NewName]]` across
+ * every page that linked to `oldPath`. The server walks all three
+ * common spellings (full path / no-ext / basename) so a user who
+ * wrote `[[notes/spoke]]` AND `[[spoke]]` AND `[[notes/spoke.md]]`
+ * gets every reference updated in one pass. Returns the count of
+ * source pages whose content actually changed.
+ */
+export async function rewriteBacklinks(
+  oldPath: string,
+  newPath: string,
+): Promise<{ updated: number }> {
+  const res = await apiFetch(`${pagesBase()}/rewrite-backlinks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ oldPath, newPath }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<{ updated: number }>;
 }
 
 /**
@@ -764,6 +860,70 @@ export async function kickEmbeddingsBackfill(): Promise<{
 }
 
 /**
+ * "Commit now" — drain the per-project git worker, bypassing the
+ * 30 s grouping window. Returns the count of WAL entries committed
+ * in this pass. Powers the StatusBar button (docs/02-storage-and-sync.md
+ * §Surfaces — CLI ↔ SPA parity).
+ */
+export async function flushCommits(): Promise<{ committed: number }> {
+  const res = await apiFetch(`${base()}/git/flush`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const body = (await res.json()) as { ok: boolean; committed: number; error?: string };
+  if (!body.ok) throw new ApiError(res.status, body.error ?? "flush failed");
+  return { committed: body.committed };
+}
+
+/**
+ * "Push" — drains first (so the snapshot is current), then runs
+ * `git push` on the project repo. The server returns 400 with
+ * `noRemote: true` when the project has no `origin` configured (the
+ * UI should hint "Configure a remote first" instead of treating it
+ * as an error). 409 with `conflict: true` when the push was rejected
+ * for a non-fast-forward / lock reason — the UI should prompt the
+ * user to pull / resolve.
+ */
+export interface PushResult {
+  drained: number;
+  output: string;
+}
+export class PushError extends Error {
+  readonly status: number;
+  readonly conflict: boolean;
+  readonly noRemote: boolean;
+  readonly drained: number;
+  constructor(
+    status: number,
+    message: string,
+    opts: { conflict?: boolean; noRemote?: boolean; drained?: number } = {},
+  ) {
+    super(message);
+    this.status = status;
+    this.conflict = opts.conflict ?? false;
+    this.noRemote = opts.noRemote ?? false;
+    this.drained = opts.drained ?? 0;
+  }
+}
+export async function pushCommits(): Promise<PushResult> {
+  const res = await apiFetch(`${base()}/git/push`, { method: "POST" });
+  const body = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    drained?: number;
+    output?: string;
+    error?: string;
+    conflict?: boolean;
+    noRemote?: boolean;
+  };
+  if (!res.ok || !body.ok) {
+    throw new PushError(res.status, body.error ?? body.output ?? res.statusText, {
+      conflict: body.conflict,
+      noRemote: body.noRemote,
+      drained: body.drained,
+    });
+  }
+  return { drained: body.drained ?? 0, output: body.output ?? "" };
+}
+
+/**
  * Activate a library persona template. On success the agent is live
  * under `data/.agents/<slug>/` with `active: true` in its frontmatter
  * and a corresponding `agent_state` row. 409 when already activated,
@@ -979,9 +1139,27 @@ export async function fetchFirstRunHint(): Promise<"terminal" | "dialog" | null>
   }
 }
 
-/** Probe session state. Returns null if not authenticated. */
+/** Probe session state. Returns null if not authenticated.
+ *
+ * Forwards `?project=<id>` from the address bar so the server-side
+ * /me handler can apply the drive-by project switch the project
+ * switcher requested via `window.location.href = "?project=<id>"`.
+ * Without this forward, the bare `/api/auth/me` call would return
+ * the *previous* session project and the SPA would pin to it,
+ * silently ignoring the user's chosen project on hard reload.
+ */
 export async function fetchMe(): Promise<AuthSession | null> {
-  const res = await fetch("/api/auth/me");
+  let url = "/api/auth/me";
+  try {
+    const browserUrl = new URL(window.location.href);
+    const requested = browserUrl.searchParams.get("project");
+    if (requested) {
+      url = `/api/auth/me?project=${encodeURIComponent(requested)}`;
+    }
+  } catch {
+    /* SSR / non-browser context — keep the bare URL */
+  }
+  const res = await fetch(url);
   if (res.status === 401) return null;
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json() as Promise<AuthSession>;

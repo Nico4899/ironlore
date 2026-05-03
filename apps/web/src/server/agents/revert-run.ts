@@ -37,6 +37,40 @@ export function revertAgentRun(job: JobRow, projectDir: string): RevertResult {
     };
   }
 
+  // CRITICAL guard: refuse jobs that wrote nothing.
+  //
+  // The executor records `commit_sha_start = HEAD before run` and
+  // `commit_sha_end = HEAD after run`. When the run made 0 commits
+  // both SHAs are the project's prior HEAD — and the git log query
+  // below (`${start}^..${end}`) happily returns that prior commit,
+  // so without this guard we'd revert an unrelated commit the run
+  // never touched. The audit caught exactly this: a chat-only
+  // wiki-gardener analysis run with `filesChanged: []` reported
+  // `success: true` and "reverted" commit 668da795 — which was
+  // the project's *initial state* commit.
+  //
+  // SHA equality alone isn't a reliable no-op signal (a 1-commit
+  // run could in principle have start === end too in some test
+  // shapes), so we trust the executor's authoritative
+  // `filesChanged` array stamped in the job result blob. Empty
+  // array → nothing to revert.
+  if (job.result) {
+    try {
+      const parsed = JSON.parse(job.result) as { filesChanged?: unknown };
+      if (Array.isArray(parsed.filesChanged) && parsed.filesChanged.length === 0) {
+        return {
+          success: false,
+          revertedCommits: [],
+          conflicts: [],
+          error: "Nothing to revert: this run produced no file changes.",
+        };
+      }
+    } catch {
+      // Result blob isn't valid JSON — fall through to the git
+      // path (existing semantics for legacy / unstructured rows).
+    }
+  }
+
   const gitDir = join(projectDir, ".git");
   const revertedCommits: string[] = [];
   const conflicts: string[] = [];

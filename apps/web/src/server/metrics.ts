@@ -1,3 +1,4 @@
+import type Database from "better-sqlite3";
 import type { Context, Next } from "hono";
 import { Hono } from "hono";
 import type { Wal } from "./wal.js";
@@ -69,7 +70,36 @@ export function metricsMiddleware() {
 // /metrics endpoint — Prometheus text exposition format
 // ---------------------------------------------------------------------------
 
-export function createMetricsEndpoint(getWal: () => Wal | null): Hono {
+/**
+ * Compute the job-queue lag at scrape time. Lag = (now - scheduled_at)
+ * for the oldest queued job, in seconds. Returns 0 when the queue is
+ * empty so Prometheus has a stable gauge to plot. SQL deliberately
+ * filters on `status='queued'` AND `scheduled_at <= now` so that
+ * future-scheduled jobs (deferred batch resumes) don't inflate the lag.
+ */
+function computeJobQueueLag(db: Database.Database | null): number {
+  if (!db) return 0;
+  try {
+    const now = Date.now();
+    const row = db
+      .prepare(
+        `SELECT MIN(scheduled_at) AS oldest
+         FROM jobs
+         WHERE status = 'queued' AND scheduled_at <= ?`,
+      )
+      .get(now) as { oldest: number | null } | undefined;
+    if (!row || row.oldest == null) return 0;
+    return Math.max(0, (now - row.oldest) / 1000);
+  } catch {
+    // Schema not initialised yet (boot race) → report 0 rather than 5xx.
+    return 0;
+  }
+}
+
+export function createMetricsEndpoint(
+  getWal: () => Wal | null,
+  getJobsDb: () => Database.Database | null = () => null,
+): Hono {
   const api = new Hono();
 
   api.get("/", (c) => {
@@ -99,6 +129,16 @@ export function createMetricsEndpoint(getWal: () => Wal | null): Hono {
     lines.push("# HELP ironlore_wal_depth Number of uncommitted WAL entries.");
     lines.push("# TYPE ironlore_wal_depth gauge");
     lines.push(`ironlore_wal_depth ${walDepth}`);
+
+    // -- Job queue lag gauge (per docs/07-tech-stack.md §Metrics) --
+    //  Seconds since the oldest eligible queued job became eligible.
+    //  Zero when the queue is empty.
+    const lagSeconds = computeJobQueueLag(getJobsDb());
+    lines.push(
+      "# HELP ironlore_job_queue_lag_seconds Seconds since the oldest eligible queued job became eligible (0 when empty).",
+    );
+    lines.push("# TYPE ironlore_job_queue_lag_seconds gauge");
+    lines.push(`ironlore_job_queue_lag_seconds ${lagSeconds}`);
 
     // -- WebSocket connections gauge --
     lines.push("# HELP ironlore_ws_connections Active WebSocket connections.");

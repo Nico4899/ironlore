@@ -689,7 +689,13 @@ export function createPagesApi(
         fileType: detectPageType(body.destination),
       });
 
-      return c.json({ etag });
+      // Count distinct pages that link to the old path under any of
+      //  the spellings users commonly use (`<path>`, `<path-no-ext>`,
+      //  `<basename>`). Drives the "Update N inbound links?" prompt
+      //  in the sidebar — docs/03-editor.md §Rename-rewrite.
+      const inboundLinkCount = countInboundLinks(searchIndex, sourcePath);
+
+      return c.json({ etag, inboundLinkCount });
     } catch (err) {
       if (err instanceof EtagMismatchError) {
         return c.json(
@@ -707,7 +713,130 @@ export function createPagesApi(
     }
   });
 
+  // -----------------------------------------------------------------------
+  // Rewrite inbound `[[OldName]]` references after a rename
+  //
+  // Body: `{ oldPath: string; newPath: string }` — both project-relative
+  // markdown paths. The endpoint walks every page that linked to any
+  // spelling of `oldPath` (full path / no-ext / basename), rewrites
+  // each occurrence to the corresponding `newPath` spelling, and
+  // commits one StorageWriter.write per affected source. Backlinks
+  // and FTS5 are reindexed inline so subsequent searches see the
+  // updated outgoing-link table.
+  //
+  // Returns `{ updated: number }` — count of source pages actually
+  // rewritten (a page that only used a spelling whose old/new value
+  // is identical produces no diff and isn't counted).
+  //
+  // Per docs/03-editor.md §Rename-rewrite: "the only automated
+  // cross-page write in Ironlore; always user-initiated, never
+  // silent."
+  // -----------------------------------------------------------------------
+  api.post("/rewrite-backlinks", async (c) => {
+    const body = await c.req.json<{ oldPath: string; newPath: string }>();
+    if (!body.oldPath || !body.newPath) {
+      return c.json({ error: "oldPath and newPath required" }, 400);
+    }
+
+    const pairs = linkRewritePairs(body.oldPath, body.newPath);
+    if (pairs.length === 0) {
+      return c.json({ updated: 0 });
+    }
+
+    // Collect distinct source pages by the union of every spelling's
+    //  inbound-link list. A page that links via multiple spellings
+    //  still gets one rewrite pass that handles all spellings at once.
+    const sources = new Set<string>();
+    for (const [oldT] of pairs) {
+      for (const bl of searchIndex.getBacklinks(oldT)) sources.add(bl.sourcePath);
+    }
+
+    let updated = 0;
+    for (const sourcePath of sources) {
+      let content: string;
+      let etag: string;
+      try {
+        ({ content, etag } = writer.read(sourcePath));
+      } catch {
+        continue;
+      }
+      let next = content;
+      for (const [oldT, newT] of pairs) {
+        // Replace `[[oldT]]`, `[[oldT|display]]`, `[[oldT#blk_X]]`,
+        //  `[[oldT#blk_X|display]]`. Anchored on `[[`/`]]` so we never
+        //  match user prose that happens to contain the spelling.
+        const escaped = oldT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const re = new RegExp(`\\[\\[${escaped}((?:#[^|\\]]*)?(?:\\|[^\\]]*)?)\\]\\]`, "g");
+        next = next.replace(re, (_, suffix) => `[[${newT}${suffix}]]`);
+      }
+      if (next === content) continue;
+
+      try {
+        const { etag: newEtag } = await writer.write(sourcePath, next, etag);
+        searchIndex.indexPage(sourcePath, next, "user");
+        broadcast?.({
+          type: "tree:update",
+          path: sourcePath,
+          etag: newEtag,
+        });
+        updated++;
+      } catch {
+        // Page raced with another writer — skip; the backlinks table
+        //  still has the stale spelling, and the user can re-trigger
+        //  the rewrite manually via a future "rewrite links" action.
+      }
+    }
+
+    return c.json({ updated });
+  });
+
   return api;
+}
+
+/**
+ * The three spellings a user commonly types for a wiki-link target —
+ * mirrors the `linkTargetCandidates` helper inside `search-index.ts`.
+ * Inlined here to avoid widening that file's exported surface for a
+ * single caller.
+ */
+function linkSpellings(p: string): { full: string; noExt: string; basename: string } {
+  const noExt = p.replace(/\.md$/, "");
+  const slash = noExt.lastIndexOf("/");
+  const base = slash === -1 ? noExt : noExt.slice(slash + 1);
+  return { full: p, noExt, basename: base };
+}
+
+/**
+ * Build the (old → new) spelling pairs the rewrite endpoint applies
+ * to every affected source page. Drops pairs whose old and new
+ * spellings are identical — those are no-ops and would otherwise
+ * pollute the regex pass without changing anything.
+ */
+function linkRewritePairs(oldPath: string, newPath: string): Array<[string, string]> {
+  const o = linkSpellings(oldPath);
+  const n = linkSpellings(newPath);
+  return (
+    [
+      [o.full, n.full],
+      [o.noExt, n.noExt],
+      [o.basename, n.basename],
+    ] as Array<[string, string]>
+  ).filter(([a, b]) => a !== b);
+}
+
+/**
+ * Count distinct source pages that link to `oldPath` under any of
+ * the three common spellings. Surfaced on rename responses so the
+ * client can decide whether to prompt the user with "Update N
+ * inbound links?".
+ */
+function countInboundLinks(searchIndex: SearchIndex, oldPath: string): number {
+  const { full, noExt, basename: base } = linkSpellings(oldPath);
+  const sources = new Set<string>();
+  for (const cand of [full, noExt, base]) {
+    for (const bl of searchIndex.getBacklinks(cand)) sources.add(bl.sourcePath);
+  }
+  return sources.size;
 }
 
 /**

@@ -26,14 +26,16 @@ import type { ToolCallContext, ToolImplementation } from "./types.js";
  * Read-only.
  */
 
-interface ProvenanceGap {
+// Exported so the CLI's `lint --check provenance` surface can call
+// the same scan without depending on the tool dispatcher.
+export interface ProvenanceGap {
   pagePath: string;
   blockId: string;
   agent: string;
   compiledAt: string | null;
 }
 
-function walkSidecars(dataRoot: string): string[] {
+export function walkSidecars(dataRoot: string): string[] {
   // Recursive walk that picks up every `*.blocks.json` under
   // `dataRoot`, skipping the `.ironlore/` derived-state directory
   // and any agent-internal subtree (`.agents/`) — those exist for
@@ -68,7 +70,7 @@ function walkSidecars(dataRoot: string): string[] {
   return out;
 }
 
-function gapsForSidecar(
+export function gapsForSidecar(
   pagePath: string,
   index: BlocksIndex,
   excludeAgents: Set<string>,

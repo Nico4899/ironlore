@@ -1,5 +1,6 @@
 import { parseBlocks } from "@ironlore/core";
 import type { StorageWriter } from "../storage-writer.js";
+import { checkToolAcl } from "./acl-gate.js";
 import type { ToolCallContext, ToolImplementation } from "./types.js";
 
 /**
@@ -9,6 +10,12 @@ import type { ToolCallContext, ToolImplementation } from "./types.js";
  * editing. The returned ETag must be passed back on any subsequent
  * `kb.replace_block` or `kb.delete_block` call for optimistic
  * concurrency.
+ *
+ * Phase-9 multi-user: gated by `checkToolAcl` for read access.
+ * Single-user installs and runs without a user identity (heartbeats /
+ * cron) skip the gate; multi-user runs that originated from a user
+ * session enforce the page's ACL (with ancestor `index.md`
+ * inheritance) before returning content.
  */
 export function createKbReadPage(writer: StorageWriter): ToolImplementation {
   return {
@@ -25,8 +32,10 @@ export function createKbReadPage(writer: StorageWriter): ToolImplementation {
         required: ["path"],
       },
     },
-    async execute(args: unknown, _ctx: ToolCallContext): Promise<string> {
+    async execute(args: unknown, ctx: ToolCallContext): Promise<string> {
       const { path } = args as { path: string };
+      const aclCheck = checkToolAcl(ctx, writer, path, "read");
+      if (!aclCheck.ok) return JSON.stringify(aclCheck.envelope);
       try {
         const { content, etag } = writer.read(path);
         const blocks = parseBlocks(content).map((b) => ({
@@ -36,8 +45,23 @@ export function createKbReadPage(writer: StorageWriter): ToolImplementation {
         }));
         return JSON.stringify({ content, etag, blocks });
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === "ENOENT") {
           return JSON.stringify({ error: "Page not found", path });
+        }
+        if (code === "EISDIR") {
+          // Wrap the raw Node errno so the model sees a structured
+          // envelope (and the dispatcher's `is_error` flag fires
+          // correctly via top-level `error` detection). The audit
+          // caught wiki-gardener's `kb.read_page("wiki")` returning
+          // a raw `EISDIR: illegal operation on a directory, read`
+          // string instead of telling the model what the path
+          // actually was — and how to recover.
+          return JSON.stringify({
+            error: `Path '${path}' is a directory, not a page. Use kb.search to list its contents or pick a specific .md file inside it.`,
+            path,
+            kind: "directory",
+          });
         }
         throw err;
       }

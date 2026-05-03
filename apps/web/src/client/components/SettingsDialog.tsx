@@ -1,3 +1,4 @@
+import { composeBoundariesSection } from "@ironlore/core";
 import { LogOut, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useFocusTrap } from "../hooks/useFocusTrap.js";
@@ -441,6 +442,20 @@ function AgentSecurityCard({
   const writableKinds = cfg?.persona?.scope?.writableKinds ?? null;
   const tools = cfg?.persona?.tools ?? null;
   const reviewMode = cfg?.persona?.reviewMode ?? null;
+  const heartbeat = cfg?.persona?.heartbeat ?? null;
+
+  // Boundaries paragraph — derived from the same structural fields
+  //  the runtime gates on, rendered through the shared
+  //  composeBoundariesSection helper. Stays coherent with the
+  //  persona.md body produced by buildPersona() and seeded agents.
+  const boundariesText = cfg
+    ? composeBoundariesSection({
+        scopePages: pages ?? [],
+        canEditPages: (writableKinds ?? []).length > 0,
+        reviewBeforeMerge: reviewMode === "inbox",
+        heartbeat: heartbeat ?? undefined,
+      })
+    : null;
 
   return (
     <div
@@ -499,6 +514,46 @@ function AgentSecurityCard({
 
           <FieldLabel>Failure streak</FieldLabel>
           <FieldValue>{cfg.failureStreak === 0 ? "—" : `${cfg.failureStreak}`}</FieldValue>
+        </div>
+      )}
+
+      {boundariesText && (
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 12,
+            borderTop: "1px solid var(--il-border-soft)",
+          }}
+        >
+          <div
+            className="font-mono uppercase"
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.06em",
+              color: "var(--il-text3)",
+              marginBottom: 6,
+            }}
+          >
+            Boundaries · what this agent will and won't do
+          </div>
+          <pre
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 11,
+              lineHeight: 1.5,
+              color: "var(--il-text2)",
+              background: "var(--il-bg)",
+              border: "1px solid var(--il-border-soft)",
+              borderRadius: 3,
+              padding: "8px 10px",
+              margin: 0,
+              whiteSpace: "pre-wrap",
+              maxHeight: 200,
+              overflowY: "auto",
+            }}
+          >
+            {boundariesText}
+          </pre>
         </div>
       )}
     </div>

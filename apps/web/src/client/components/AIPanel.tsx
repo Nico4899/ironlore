@@ -11,8 +11,9 @@ import {
   revertJob,
   submitDryRunVerdict,
 } from "../lib/api.js";
-import { type ContextPill, useAIPanelStore } from "../stores/ai-panel.js";
-import { useAppStore } from "../stores/app.js";
+import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
+import { type ContextPill, type ConversationMessage, useAIPanelStore } from "../stores/ai-panel.js";
+import { AI_PANEL_MAX_WIDTH, AI_PANEL_MIN_WIDTH, useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
 import { ContextBudgetChip } from "./ai-composer/ContextBudgetChip.js";
 import { type MentionCandidate, MentionPicker } from "./ai-composer/MentionPicker.js";
@@ -48,6 +49,12 @@ export function AIPanel() {
   const isStreaming = useAIPanelStore((s) => s.isStreaming);
   const contexts = useAIPanelStore((s) => s.contexts);
   const removeContext = useAIPanelStore((s) => s.removeContext);
+  // Block IDs covered by the current ProseMirror selection — fires
+  //  whenever the user highlights paragraphs in the editor. Drives
+  //  the "N blocks selected" pill in the composer and the
+  //  highlight-context payload sent on the next prompt
+  //  (docs/03-editor.md §Selection as AI context).
+  const selectedBlockIds = useEditorStore((s) => s.selectedBlockIds);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -117,17 +124,25 @@ export function AIPanel() {
   // skip it. sessionStorage clears on tab close, so reopening the
   // app re-shows the estimate — intentional since pricing could
   // change between sessions.
-  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [costDialogOpen, setCostDialogOpen] = useState(false);
 
   const doSend = useCallback(
-    (fullPrompt: string) => {
-      sendMessage(fullPrompt);
+    (displayText: string, serverPrompt: string, attachmentLabels: string[]) => {
+      sendMessage(displayText, serverPrompt, attachmentLabels);
       setInputDraft("");
       useAIPanelStore.getState().clearContexts();
     },
     [sendMessage, setInputDraft],
   );
+
+  // Cost-estimate gate stashes the entire send payload (display +
+  // server + attachments) so handleCostConfirm can replay all three
+  // after the user acknowledges the price.
+  const [pendingSend, setPendingSend] = useState<{
+    display: string;
+    server: string;
+    attachments: string[];
+  } | null>(null);
 
   const handleSend = useCallback(() => {
     const draft = inputDraft.trim();
@@ -137,7 +152,7 @@ export function AIPanel() {
     //  transient context pill for this send only. We read from the
     //  editor store at send time (not via subscription) so the
     //  composer doesn't re-render every time the user edits.
-    const { filePath, markdown } = useEditorStore.getState();
+    const { filePath, markdown, selectedBlockIds: ids } = useEditorStore.getState();
     const include = useAIPanelStore.getState().includeActiveFileAsContext;
     const sendContexts: ContextPill[] = [...contexts];
     if (include && filePath) {
@@ -151,13 +166,31 @@ export function AIPanel() {
         path: filePath,
       });
     }
+    // Selection-as-AI-context (docs/03-editor.md §Selection as AI
+    //  context). When the editor has block-IDed paragraphs selected,
+    //  send their IDs so the agent can call `kb.read_block` to scope
+    //  its answer to specific paragraphs without re-reading the
+    //  whole page.
+    if (ids.length > 0 && filePath) {
+      sendContexts.push({
+        kind: "highlight",
+        label: `${ids.length} block${ids.length === 1 ? "" : "s"} selected`,
+        body: ids.map((id) => `[[${filePath}#${id}]]`).join(", "),
+        path: filePath,
+      });
+    }
 
-    // Build the full prompt including all context pills.
+    // Build the server-bound prompt including all context pills —
+    // the agent needs the full file body etc. to reason about it.
+    // The locally-displayed message stays as just the typed draft so
+    // the chat transcript doesn't become a wall of inlined files;
+    // attachment labels render as chips alongside the bubble.
     const contextBlock =
       sendContexts.length > 0
         ? `${sendContexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n")}\n\n`
         : "";
-    const fullPrompt = contextBlock + draft;
+    const serverPrompt = contextBlock + draft;
+    const attachmentLabels = sendContexts.map((c) => c.label);
 
     // Cost-estimate gate: show on the first send per agent per
     // session. Any read/write failure of sessionStorage just skips
@@ -170,12 +203,12 @@ export function AIPanel() {
     }
 
     if (!alreadyAcknowledged) {
-      setPendingPrompt(fullPrompt);
+      setPendingSend({ display: draft, server: serverPrompt, attachments: attachmentLabels });
       setCostDialogOpen(true);
       return;
     }
 
-    doSend(fullPrompt);
+    doSend(draft, serverPrompt, attachmentLabels);
   }, [inputDraft, contexts, activeAgent, doSend]);
 
   const handleCostConfirm = useCallback(() => {
@@ -185,15 +218,15 @@ export function AIPanel() {
       /* storage denied — don't block the send */
     }
     setCostDialogOpen(false);
-    if (pendingPrompt !== null) {
-      doSend(pendingPrompt);
-      setPendingPrompt(null);
+    if (pendingSend !== null) {
+      doSend(pendingSend.display, pendingSend.server, pendingSend.attachments);
+      setPendingSend(null);
     }
-  }, [activeAgent, pendingPrompt, doSend]);
+  }, [activeAgent, pendingSend, doSend]);
 
   const handleCostCancel = useCallback(() => {
     setCostDialogOpen(false);
-    setPendingPrompt(null);
+    setPendingSend(null);
   }, []);
 
   /**
@@ -406,15 +439,90 @@ export function AIPanel() {
   const { agents } = useWorkspaceActivity();
   const stepLabel = agents.find((a) => a.slug === activeAgent)?.stepLabel ?? null;
 
+  // Independently resizable, persisted, clamped 220..420 — same
+  //  grammar as the sidebar's drag handle but on the AI panel's
+  //  LEFT edge (drag leftward = wider panel since the panel grows
+  //  toward the viewport's interior). State lives in the store as
+  //  `aiPanelWidth` so a refresh restores the user's last size.
+  const aiPanelWidth = useAppStore((s) => s.aiPanelWidth);
+  const resizeState = useRef<{ dragging: boolean }>({ dragging: false });
+
+  const handleResizeDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    resizeState.current.dragging = true;
+    (e.target as Element).setPointerCapture(e.pointerId);
+    e.preventDefault();
+  }, []);
+  const handleResizeMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeState.current.dragging) return;
+    // The AI panel's right edge sits at the viewport's right edge,
+    //  so the live width is `viewportWidth - clientX`. Snap to the
+    //  minimum if the user drags past it (forgiving collapse intent
+    //  rather than leaving a sub-spec sliver). The store clamps to
+    //  AI_PANEL_MIN..AI_PANEL_MAX before persisting.
+    const viewportWidth = window.innerWidth;
+    const raw = viewportWidth - e.clientX;
+    const next = raw < AI_PANEL_MIN_WIDTH - 20 ? AI_PANEL_MIN_WIDTH : raw;
+    useAppStore.getState().setAiPanelWidth(next);
+  }, []);
+  const handleResizeUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    resizeState.current.dragging = false;
+    (e.target as Element).releasePointerCapture(e.pointerId);
+  }, []);
+  const handleResizeKey = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const step = e.shiftKey ? 20 : 5;
+      // ArrowLeft widens the panel, ArrowRight narrows it — the
+      //  panel sits on the right, so the gesture follows the same
+      //  direction as the visible edge motion.
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        useAppStore.getState().setAiPanelWidth(aiPanelWidth + step);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        useAppStore.getState().setAiPanelWidth(aiPanelWidth - step);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        useAppStore.getState().setAiPanelWidth(AI_PANEL_MAX_WIDTH);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        useAppStore.getState().setAiPanelWidth(AI_PANEL_MIN_WIDTH);
+      }
+    },
+    [aiPanelWidth],
+  );
+
   return (
     <aside
-      className="flex shrink-0 flex-col border-l border-border bg-ironlore-slate-elevated"
+      className="relative flex shrink-0 flex-col border-l border-border bg-ironlore-slate-elevated"
       style={{
-        width: "380px",
+        width: aiPanelWidth,
         boxShadow: "inset 1px 0 0 var(--color-border), -4px 0 12px oklch(0 0 0 / 0.15)",
       }}
       aria-label="AI panel"
     >
+      {/*
+       * Left-edge resize handle — mirrors the sidebar's right-edge
+       * handle (docs/09-ui-and-brand.md §Sidebar resize). 1 px at
+       * rest, thickens to 3 px `var(--il-blue)` on hover/focus, 6 px
+       * absolute-positioned hit target. ArrowLeft/Right ±5 (±20 with
+       * Shift), Home/End jump to max/min (Home widens because the
+       * "open" direction for a right-anchored panel is leftward).
+       */}
+      {/* biome-ignore lint/a11y/useSemanticElements: <hr> has no interactive affordance; this separator must accept pointer, focus, and key events */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize AI panel"
+        aria-valuemin={AI_PANEL_MIN_WIDTH}
+        aria-valuemax={AI_PANEL_MAX_WIDTH}
+        aria-valuenow={aiPanelWidth}
+        tabIndex={0}
+        onPointerDown={handleResizeDown}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeUp}
+        onKeyDown={handleResizeKey}
+        className="il-ai-panel-resize"
+      />
       {/* Header — matches screen-editor.jsx AI panel header:
        *   · StatusPip (Reuleaux inside) for running/idle state
        *   · agent slug as a button → opens detail page
@@ -451,6 +559,7 @@ export function AIPanel() {
             </span>
           )}
           <span className="flex-1" />
+          <ResolutionChip />
           <NetworkLockedBadge />
           <Key>⌘⇧A</Key>
         </div>
@@ -476,12 +585,33 @@ export function AIPanel() {
        * whole composer while streaming.
        */}
       <AgentPulse active={isStreaming} className="border-t border-border p-3">
-        {contexts.length > 0 && (
+        {(contexts.length > 0 || selectedBlockIds.length > 0) && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {contexts.map((ctx, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: pills are append-only and never reorder
               <ContextChip key={i} ctx={ctx} onRemove={() => removeContext(i)} />
             ))}
+            {selectedBlockIds.length > 0 && (
+              <span
+                className="font-mono"
+                title="Highlight a different range or click outside to clear."
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "2px 8px",
+                  fontSize: 10.5,
+                  letterSpacing: "0.04em",
+                  background: "color-mix(in oklch, var(--il-amber) 14%, transparent)",
+                  border: "1px solid color-mix(in oklch, var(--il-amber) 30%, transparent)",
+                  color: "var(--il-amber)",
+                  borderRadius: 3,
+                }}
+              >
+                <span aria-hidden="true">◆</span>
+                {selectedBlockIds.length} block{selectedBlockIds.length === 1 ? "" : "s"} selected
+              </span>
+            )}
           </div>
         )}
         <div
@@ -1058,49 +1188,15 @@ function MessageList() {
       {messages.map((msg, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: messages are append-only, no stable ID yet
         <div key={i} className="mb-3 text-sm">
-          {msg.type === "user" && <UserBubble text={msg.text} timestamp={msg.timestamp} />}
+          {msg.type === "user" && (
+            <UserBubble text={msg.text} attachments={msg.attachments} timestamp={msg.timestamp} />
+          )}
           {msg.type === "assistant" && <AssistantReply text={msg.text} />}
           {msg.type === "tool_call" && <ToolCallCard msg={msg} />}
           {msg.type === "journal" && (
             <JournalCard text={msg.text} step={msg.step} totalSteps={msg.totalSteps} />
           )}
-          {msg.type === "diff_preview" && (
-            <DiffPreview
-              pageId={msg.pageId}
-              blockId={msg.blockId}
-              commitSha={msg.commitSha}
-              diff={msg.diff}
-              approved={msg.approved}
-              onApprove={() => {
-                const jobId = useAIPanelStore.getState().jobId;
-                if (!jobId || !msg.toolCallId) return;
-                // Mark locally before the round-trip so the buttons
-                // hide immediately; the server call is best-effort,
-                // because if the bridge has already timed out there's
-                // nothing the user can do to un-timeout it.
-                const msgs = useAIPanelStore.getState().messages;
-                const target = msgs[i];
-                if (target?.type === "diff_preview") {
-                  (target as { approved: boolean | null }).approved = true;
-                  useAIPanelStore.setState({ messages: [...msgs] });
-                }
-                void submitDryRunVerdict(jobId, msg.toolCallId, "approve").catch(() => {
-                  // Swallow — the verdict is a best-effort unblock.
-                });
-              }}
-              onReject={() => {
-                const jobId = useAIPanelStore.getState().jobId;
-                if (!jobId || !msg.toolCallId) return;
-                const msgs = useAIPanelStore.getState().messages;
-                const target = msgs[i];
-                if (target?.type === "diff_preview") {
-                  (target as { approved: boolean | null }).approved = false;
-                  useAIPanelStore.setState({ messages: [...msgs] });
-                }
-                void submitDryRunVerdict(jobId, msg.toolCallId, "reject").catch(() => {});
-              }}
-            />
-          )}
+          {msg.type === "diff_preview" && <DiffPreviewItem msg={msg} index={i} />}
           {msg.type === "error" && (
             <div className="rounded-lg bg-signal-red/10 px-3 py-2 text-signal-red">{msg.text}</div>
           )}
@@ -1122,6 +1218,87 @@ function MessageList() {
 }
 
 /**
+ * Wraps the AI-panel `DiffPreview` card with the approve/reject + open-page
+ * affordances. Phase-11 inline-diff plugin (docs/03-editor.md §Pending-edit
+ * decorations) routes diff_preview events to the editor when the target
+ * page is open; this component only renders when the page is NOT open
+ * OR the run is older than the structured-fields rollout. The "Open
+ * page" button bridges the two surfaces — clicking it sets the active
+ * path so ContentArea remounts the editor on the target file, and the
+ * pending-edit re-fires through `useAgentSession` because the underlying
+ * `diff_preview` message is still pinned to the conversation; on next
+ * render the inline plugin picks it up.
+ */
+function DiffPreviewItem({
+  msg,
+  index,
+}: {
+  msg: Extract<ConversationMessage, { type: "diff_preview" }>;
+  index: number;
+}) {
+  const editorFilePath = useEditorStore((s) => s.filePath);
+  const pageIsOpen = msg.pageId.length > 0 && editorFilePath === msg.pageId;
+  return (
+    <DiffPreview
+      pageId={msg.pageId}
+      blockId={msg.blockId}
+      commitSha={msg.commitSha}
+      diff={msg.diff}
+      approved={msg.approved}
+      showOpenPageButton={!pageIsOpen && msg.pageId.length > 0 && msg.approved === null}
+      onOpenPage={() => {
+        // Switch the active path; ContentArea remounts the editor
+        //  on the target file and the diff_preview event already in
+        //  the conversation will route to the inline plugin once
+        //  `useEditorStore.filePath` matches. We also push the edit
+        //  to the editor store directly so the user doesn't have to
+        //  wait for a fresh round-trip.
+        if (msg.op !== undefined && msg.blockId !== undefined && msg.toolCallId.length > 0) {
+          useEditorStore.getState().pushPendingEdit({
+            toolCallId: msg.toolCallId,
+            op: msg.op,
+            blockId: msg.blockId,
+            pageId: msg.pageId,
+            currentMd: msg.currentMd,
+            proposedMd: msg.proposedMd,
+            agentSlug: useAIPanelStore.getState().activeAgent,
+          });
+        }
+        useAppStore.getState().setActivePath(msg.pageId);
+      }}
+      onApprove={() => {
+        const jobId = useAIPanelStore.getState().jobId;
+        if (!jobId || !msg.toolCallId) return;
+        // Mark locally before the round-trip so the buttons hide
+        //  immediately; the server call is best-effort, because if
+        //  the bridge has already timed out there's nothing the
+        //  user can do to un-timeout it.
+        const msgs = useAIPanelStore.getState().messages;
+        const target = msgs[index];
+        if (target?.type === "diff_preview") {
+          (target as { approved: boolean | null }).approved = true;
+          useAIPanelStore.setState({ messages: [...msgs] });
+        }
+        void submitDryRunVerdict(jobId, msg.toolCallId, "approve").catch(() => {
+          // Swallow — the verdict is a best-effort unblock.
+        });
+      }}
+      onReject={() => {
+        const jobId = useAIPanelStore.getState().jobId;
+        if (!jobId || !msg.toolCallId) return;
+        const msgs = useAIPanelStore.getState().messages;
+        const target = msgs[index];
+        if (target?.type === "diff_preview") {
+          (target as { approved: boolean | null }).approved = false;
+          useAIPanelStore.setState({ messages: [...msgs] });
+        }
+        void submitDryRunVerdict(jobId, msg.toolCallId, "reject").catch(() => {});
+      }}
+    />
+  );
+}
+
+/**
  * User bubble per docs/09-ui-and-brand.md §AI panel user bubble:
  * right-aligned (max-width 85 %), 16 % blue tint, 28 % blue border,
  * `3px 3px 0 3px` corner radii so the bottom-right corner forms a
@@ -1129,9 +1306,46 @@ function MessageList() {
  * uses `Intl.DateTimeFormat` so we always show local-time HH:MM,
  * rendered only when the message carries a `timestamp`.
  */
-function UserBubble({ text, timestamp }: { text: string; timestamp?: number }) {
+function UserBubble({
+  text,
+  attachments,
+  timestamp,
+}: {
+  text: string;
+  attachments: string[];
+  timestamp?: number;
+}) {
   return (
-    <div className="flex flex-col items-end">
+    <div className="flex flex-col items-end gap-1">
+      {/* Attachments ride above the bubble as compact chips so the
+       *  user can see what context was sent (file body, selection
+       *  block-refs) without the entire body inlined into the
+       *  message text. The `attachments` field carries just labels;
+       *  the full bodies were sent only to the agent (via the
+       *  serverPrompt arg of sendMessage). */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap justify-end gap-1" style={{ maxWidth: "85%" }}>
+          {attachments.map((label, idx) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: labels can repeat (same file attached twice); index is the only stable identity within a single message
+              key={`${label}-${idx}`}
+              className="font-mono"
+              style={{
+                fontSize: 11,
+                letterSpacing: "0.02em",
+                padding: "1px 6px",
+                background: "color-mix(in oklch, var(--il-blue) 8%, transparent)",
+                border: "1px solid color-mix(in oklch, var(--il-blue) 22%, transparent)",
+                borderRadius: 2,
+                color: "var(--il-text3)",
+              }}
+              title={`Attached: ${label}`}
+            >
+              📎 {label}
+            </span>
+          ))}
+        </div>
+      )}
       <div
         style={{
           maxWidth: "85%",
@@ -1152,7 +1366,6 @@ function UserBubble({ text, timestamp }: { text: string; timestamp?: number }) {
             fontSize: 10.5,
             letterSpacing: "0.04em",
             color: "var(--il-text4)",
-            marginTop: 2,
           }}
         >
           {formatClockShort(timestamp)}
@@ -1175,7 +1388,19 @@ function AssistantReply({ text }: { text: string }) {
   // to be worth saving (skip the streaming-empty case where the
   // header renders before the first token lands).
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
   const showSave = text.trim().length > 24;
+
+  // Proactive filing suggestion per docs/04-ai-and-agents.md
+  //  §Default agents — Librarian: "When an answer synthesises
+  //  multiple pages (≥3 cited sources), the General agent
+  //  proactively suggests filing." We count distinct *cited pages*
+  //  (not raw `[[…]]` matches) so a reply that cites the same page
+  //  three times via different blocks doesn't tip the threshold —
+  //  the doc's bar is breadth, not depth.
+  const distinctCitedPages = countDistinctCitedPages(text);
+  const showFilingSuggestion =
+    showSave && distinctCitedPages >= 3 && !saveDialogOpen && !suggestionDismissed;
 
   return (
     <div className="leading-relaxed text-primary" style={{ fontSize: 13, lineHeight: 1.55 }}>
@@ -1209,10 +1434,102 @@ function AssistantReply({ text }: { text: string }) {
           </button>
         )}
       </div>
+      {showFilingSuggestion && (
+        <FilingSuggestion
+          pageCount={distinctCitedPages}
+          onSave={() => setSaveDialogOpen(true)}
+          onDismiss={() => setSuggestionDismissed(true)}
+        />
+      )}
       <CitationText text={text} />
       {saveDialogOpen && (
         <SaveAsWikiDialog markdown={text} onClose={() => setSaveDialogOpen(false)} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Distinct cited pages in an assistant reply. Citations are
+ * `[[page#blk_…]]` (or `[[page]]`); we group by `page` so multiple
+ * blockrefs into the same source count as one page. The doc's
+ * threshold is breadth across pages, not depth within one. Mirrors
+ * the regex `CitationText` uses for rendering so the count and the
+ * rendered chips can never disagree.
+ */
+function countDistinctCitedPages(text: string): number {
+  const re = /\[\[([^\]#|]+)(?:#blk_[A-Za-z0-9]+)?(?:\s*\|\s*[a-z][a-z0-9_]*)?\]\]/g;
+  const pages = new Set<string>();
+  let m: RegExpExecArray | null = re.exec(text);
+  while (m !== null) {
+    const page = m[1]?.trim();
+    if (page) pages.add(page.toLowerCase());
+    m = re.exec(text);
+  }
+  return pages.size;
+}
+
+/**
+ * Inline "save this reply as a wiki page" suggestion. Surfaces only
+ * when an assistant reply cites ≥3 distinct pages — the moment a
+ * reply genuinely synthesises across the KB and is worth promoting
+ * out of chat history. Per-reply dismissible (the dismiss state
+ * lives in the parent's hook so the prompt doesn't re-appear after
+ * a follow-up token streams in).
+ */
+function FilingSuggestion({
+  pageCount,
+  onSave,
+  onDismiss,
+}: {
+  pageCount: number;
+  onSave: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      className="mb-2 flex items-center gap-2 rounded"
+      role="status"
+      style={{
+        padding: "6px 10px",
+        background: "color-mix(in oklch, var(--il-blue) 8%, transparent)",
+        border: "1px solid color-mix(in oklch, var(--il-blue) 25%, transparent)",
+        fontSize: 12,
+      }}
+    >
+      <Reuleaux size={6} color="var(--il-blue)" aria-hidden="true" />
+      <span style={{ color: "var(--il-text2)", lineHeight: 1.45 }}>
+        This pulls together {pageCount} pages — want to save it as a wiki page?
+      </span>
+      <span className="flex-1" />
+      <button
+        type="button"
+        onClick={onSave}
+        className="rounded font-mono uppercase hover:bg-ironlore-blue/15"
+        style={{
+          fontSize: 10,
+          letterSpacing: "0.06em",
+          padding: "2px 8px",
+          color: "var(--il-blue)",
+          border: "1px solid color-mix(in oklch, var(--il-blue) 35%, transparent)",
+        }}
+      >
+        save
+      </button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss filing suggestion"
+        className="rounded font-mono uppercase hover:text-primary"
+        style={{
+          fontSize: 10,
+          letterSpacing: "0.06em",
+          padding: "2px 6px",
+          color: "var(--il-text4)",
+        }}
+      >
+        ×
+      </button>
     </div>
   );
 }
@@ -1322,11 +1639,21 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Derive the `(page · #block)` target-label for a tool-call header
- * from its `args` payload. `kb.replace_block` / `kb.insert_after` /
- * `kb.delete_block` all carry `{ page / pageId, blockId }`; other
- * tools (kb.search etc.) get a null target and the header degrades
- * to the bare tool name.
+ * Derive the `(page · #block)` / `("query")` target-label for a
+ * tool-call header from its `args` payload.
+ *
+ * Resolution order (first match wins):
+ *   1. `{ page / pageId / path } + blockId` → `page · #block` (kb mutations)
+ *   2. `{ page / pageId / path }` alone     → bare path (kb.read_page etc.)
+ *   3. `blockId` alone                       → `#block`
+ *   4. `{ query }`                           → `"query"` (kb.search,
+ *      kb.semantic_search, kb.global_search)
+ *   5. `{ text }`                            → `"text snippet"` (agent.journal)
+ *
+ * Without #4/#5, repeat `kb.search` calls in the AI panel were
+ * indistinguishable — every row read just `kb.search` with no hint
+ * of what was being searched for. The user couldn't tell five
+ * identical calls apart without expanding each one.
  */
 function deriveToolTarget(args: unknown): string | null {
   if (!args || typeof args !== "object") return null;
@@ -1343,11 +1670,60 @@ function deriveToolTarget(args: unknown): string | null {
   if (page && block) return `${truncate(page, 22)} · #${block}`;
   if (page) return truncate(page, 28);
   if (block) return `#${block}`;
+  if (typeof bag.query === "string" && bag.query.length > 0) {
+    return `"${truncate(bag.query, 36)}"`;
+  }
+  if (typeof bag.text === "string" && bag.text.length > 0) {
+    // Strip newlines so multi-line journals don't break the row.
+    const single = bag.text.replace(/\s+/g, " ");
+    return `"${truncate(single, 36)}"`;
+  }
   return null;
 }
 
 function truncate(s: string, max: number): string {
   return s.length > max ? `…${s.slice(-(max - 1))}` : s;
+}
+
+/**
+ * Compact suffix for tool-call rows. Today only the search family
+ * surfaces a useful summary (`N results` / `no results`); everything
+ * else returns null so the row stays uncluttered. Defensive against
+ * the wire shape changing — bad parses fall through to null and the
+ * header just omits the suffix.
+ */
+function deriveResultSummary(tool: string, result: unknown): string | null {
+  if (tool !== "kb.search" && tool !== "kb.semantic_search" && tool !== "kb.global_search") {
+    return null;
+  }
+  // Tool results are JSON strings (per dispatcher contract) or
+  // already-parsed objects. Try both.
+  let parsed: unknown = result;
+  if (typeof result === "string") {
+    try {
+      parsed = JSON.parse(result);
+    } catch {
+      return null;
+    }
+  }
+  // The agent tool returns hits as a bare array (e.g.
+  // `[{path, title, snippet, ...}, ...]`), not the wrapped
+  // `{results: [...]}` envelope the HTTP search endpoint uses.
+  // Accept both so this works regardless of which side the result
+  // came from — and so future shape changes don't silently regress
+  // the count chip.
+  if (Array.isArray(parsed)) {
+    const n = parsed.length;
+    return n === 0 ? "no results" : `${n} result${n === 1 ? "" : "s"}`;
+  }
+  if (parsed && typeof parsed === "object") {
+    const bag = parsed as { results?: unknown };
+    if (Array.isArray(bag.results)) {
+      const n = bag.results.length;
+      return n === 0 ? "no results" : `${n} result${n === 1 ? "" : "s"}`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -1396,6 +1772,12 @@ function ToolCallCard({
   // Duration — rendered alongside the right-edge pip per
   //  screen-editor.jsx. Omitted while in-flight (no finishedAt yet).
   const durationLabel = msg.durationMs != null ? formatDuration(msg.durationMs) : undefined;
+  // Suffix the row header with `→ N results` for tools that return a
+  // result-count-shaped payload (kb.search, kb.semantic_search,
+  // kb.global_search). Without this every kb.search row reads
+  // identically — the user couldn't tell whether a search produced
+  // hits or came back empty without expanding the drawer.
+  const resultSummary = hasResult ? deriveResultSummary(msg.tool, msg.result) : null;
 
   return (
     <div
@@ -1432,6 +1814,11 @@ function ToolCallCard({
         {target && (
           <span className="font-mono truncate" style={{ fontSize: 10.5, color: "var(--il-text3)" }}>
             ({target})
+          </span>
+        )}
+        {resultSummary && (
+          <span className="font-mono truncate" style={{ fontSize: 10.5, color: "var(--il-text4)" }}>
+            → {resultSummary}
           </span>
         )}
         <span className="ml-auto">
@@ -1487,6 +1874,7 @@ function RunFinalizedCard({
     commitShaEnd: string;
     filesChanged: string[];
     revertedAt: number | null;
+    inboxBranch?: string | null;
   };
 }) {
   const [reverting, setReverting] = useState(false);
@@ -1526,28 +1914,85 @@ function RunFinalizedCard({
         timestamp="just now"
         sources={sourceChips}
         trust={reverted ? "stale" : "fresh"}
+        // The default `FRESH` / `STALE` labels read as content
+        // provenance ("data is fresh / has gone stale"). In the
+        // run-finalized card the underlying state is the run's
+        // lifecycle — applied (still in the working tree) vs.
+        // reverted. Override so the badge says what's actually
+        // true here.
+        trustLabelOverride={{ fresh: "APPLIED", stale: "REVERTED" }}
       />
       <div className="px-3 py-2">
         <div className="flex items-center justify-between">
-          <div className="font-semibold text-primary">Run finalized</div>
-          {!reverted && msg.commitShaStart && msg.commitShaEnd && (
-            <button
-              type="button"
-              disabled={reverting}
-              onClick={handleRevert}
-              className="rounded border border-border px-2 py-0.5 text-[10px] text-secondary hover:bg-ironlore-slate hover:text-primary disabled:opacity-50"
-            >
-              {reverting ? "Reverting\u2026" : "Revert this run"}
-            </button>
-          )}
+          <div className="flex items-baseline gap-2">
+            <span className="font-semibold text-primary">Run finalized</span>
+            {/* Routing pill: inbox-staged vs. direct-to-main. Without
+             * this the user couldn't tell whether the run had merged
+             * already or was waiting for them to approve in /inbox —
+             * the same surface ambiguity Bug 9 in the audit
+             * called out. */}
+            {msg.filesChanged.length > 0 && (
+              <span
+                className="font-mono uppercase"
+                style={{
+                  fontSize: 10,
+                  letterSpacing: "0.04em",
+                  padding: "1px 5px",
+                  borderRadius: 2,
+                  color: msg.inboxBranch ? "var(--il-amber)" : "var(--il-text3)",
+                  background: msg.inboxBranch
+                    ? "color-mix(in oklch, var(--il-amber) 12%, transparent)"
+                    : "var(--il-slate-elev)",
+                  border: msg.inboxBranch
+                    ? "1px solid color-mix(in oklch, var(--il-amber) 28%, transparent)"
+                    : "1px solid var(--il-border-soft)",
+                }}
+                title={
+                  msg.inboxBranch
+                    ? `Awaiting your review on staging branch ${msg.inboxBranch}`
+                    : "Committed directly to the project's default branch"
+                }
+              >
+                {msg.inboxBranch ? "pending review" : "merged"}
+              </span>
+            )}
+          </div>
+          {/* Only show the revert button when there's actually
+           * something to revert: a real commit range (start \u2260 end)
+           * AND at least one changed file. A chat-only turn that
+           * produced zero commits used to render "Revert this run"
+           * even though clicking it would have nothing to undo. */}
+          {!reverted &&
+            msg.commitShaStart &&
+            msg.commitShaEnd &&
+            msg.commitShaStart !== msg.commitShaEnd &&
+            msg.filesChanged.length > 0 && (
+              <button
+                type="button"
+                disabled={reverting}
+                onClick={handleRevert}
+                className="rounded border border-border px-2 py-0.5 text-[10px] text-secondary hover:bg-ironlore-slate hover:text-primary disabled:opacity-50"
+              >
+                {reverting ? "Reverting\u2026" : "Revert this run"}
+              </button>
+            )}
         </div>
         <div className="mt-0.5 text-secondary">
-          {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
-          {" \u00B7 version "}
-          <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
-          {"\u2026"}
-          <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
-          {reverted && " \u00B7 reverted"}
+          {msg.commitShaStart === msg.commitShaEnd || msg.filesChanged.length === 0 ? (
+            // No commits produced \u2014 saying "0 files \u00B7 version abc\u2026abc"
+            // was misleading (suggested a frozen empty version). Just
+            // say what actually happened.
+            "no files changed"
+          ) : (
+            <>
+              {msg.filesChanged.length} file{msg.filesChanged.length === 1 ? "" : "s"}
+              {" \u00B7 version "}
+              <code className="font-mono">{msg.commitShaStart.slice(0, 7)}</code>
+              {"\u2026"}
+              <code className="font-mono">{msg.commitShaEnd.slice(0, 7)}</code>
+              {reverted && " \u00B7 reverted"}
+            </>
+          )}
         </div>
         {revertError && <div className="mt-1 text-signal-red">{revertError}</div>}
       </div>
@@ -1584,6 +2029,80 @@ function RunFinalizedCard({
  * banner uses, so any future change to event handling stays
  * coherent across both surfaces. Renders nothing pre-downgrade.
  */
+/**
+ * Resolution chip — surfaces the per-run provider/model/effort triple
+ * that the four-level resolver chose for the current turn, plus the
+ * source level (action / runtime / persona / global) for each field.
+ *
+ * Renders nothing until the first `provider.resolved` event lands —
+ * before that there's nothing to display. The tooltip carries the
+ * full breakdown so a glance reads "haiku" while a hover reveals
+ * "model from action; effort from persona; provider from global +
+ * note: 'effort dropped on Haiku'".
+ *
+ * Wired through `useAIPanelStore.lastResolution` — see
+ * `useAgentSession`'s `provider.resolved` handler.
+ */
+function ResolutionChip() {
+  const resolution = useAIPanelStore((s) => s.lastResolution);
+  if (!resolution) return null;
+  const { model, source, notes, provider, effort } = resolution;
+  // Compact display — full model name in mono, with a small badge
+  //  marking which level set the model. Tooltip carries the full
+  //  three-field breakdown + any normalization notes.
+  const sourceBadge = source.model.charAt(0).toUpperCase(); // A / R / P / G
+  const tooltip = [
+    `provider: ${provider} (from ${source.provider})`,
+    `model: ${model} (from ${source.model})`,
+    `effort: ${effort} (from ${source.effort})`,
+    ...notes.map((n) => `note: ${n}`),
+  ].join("\n");
+  return (
+    <span
+      role="status"
+      aria-label={`Resolved as ${provider} ${model} ${effort}; model source ${source.model}`}
+      title={tooltip}
+      className="flex items-center gap-1 rounded-sm font-mono"
+      style={{
+        fontSize: 10,
+        letterSpacing: "0.04em",
+        padding: "2px 6px",
+        background: "color-mix(in oklch, var(--il-blue) 10%, transparent)",
+        border: "1px solid color-mix(in oklch, var(--il-blue) 25%, transparent)",
+        color: "var(--il-text2)",
+        maxWidth: 180,
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span aria-hidden="true" style={{ color: "var(--il-blue)", fontSize: 9, letterSpacing: 0 }}>
+        {sourceBadge}
+      </span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{shortModelName(model)}</span>
+    </span>
+  );
+}
+
+/**
+ * Trim a long model name down to the chip's width budget without
+ * losing the recognizable family/version. `claude-sonnet-4-20250514`
+ * → `sonnet-4`. `llama3.2:latest` → `llama3.2`. Provider-specific
+ * heuristics — keeping it small and explicit beats a generic
+ * truncation that hides the part the user actually cares about.
+ */
+function shortModelName(model: string): string {
+  // Anthropic: claude-<family>-<version>-<date> → <family>-<version>
+  const claudeMatch = /^claude-([^-]+)-([^-]+)/.exec(model);
+  if (claudeMatch?.[1] && claudeMatch[2]) return `${claudeMatch[1]}-${claudeMatch[2]}`;
+  // OpenAI: gpt-4o-mini → gpt-4o-mini (already short)
+  if (model.startsWith("gpt-") && model.length <= 16) return model;
+  // Ollama: llama3.2:latest → llama3.2 (drop the tag)
+  const colonIdx = model.indexOf(":");
+  if (colonIdx > 0) return model.slice(0, colonIdx);
+  return model.length <= 16 ? model : `${model.slice(0, 14)}…`;
+}
+
 function NetworkLockedBadge() {
   const downgraded = useAIPanelStore((s) => s.messages.some((m) => m.type === "egress_downgraded"));
   if (!downgraded) return null;
@@ -1648,38 +2167,94 @@ function EgressDowngradedBanner({ reason, at }: { reason: string; at: string | n
 }
 
 /**
- * Render text with clickable `[[Page#blk_…]]` citations.
- * Clicking a citation opens the provenance pane scrolled to that block.
+ * Render the assistant's reply text as **markdown** (headings, lists,
+ * bold, code, etc.) while preserving clickable `[[Page#blk_…]]`
+ * citations as `<Blockref>` chips.
+ *
+ * Strategy: pre-replace citations in the markdown source with
+ * sentinel placeholders, run the result through `renderMarkdownSafe`,
+ * then split the rendered HTML on the same placeholders and
+ * interleave React `<Blockref>` components at each cut. The
+ * placeholder uses an HTML-comment shape so the markdown processor
+ * passes it through untouched (sanitiser strips comments after this
+ * function's split, but our split runs before sanitisation could
+ * matter — `renderMarkdownSafe` keeps the placeholder as plain text).
+ *
+ * The previous implementation rendered the entire reply as inline
+ * `<span>` text with no markdown parsing, which is why agent
+ * responses with `## Headings`, `**bold**`, and bullet lists
+ * collapsed into a single wall of text.
  */
 function CitationText({ text }: { text: string }) {
   const CITATION_RE = /\[\[([^\]#]+)(?:#(blk_[A-Za-z0-9]+))?\]\]/g;
+  // Sentinel pair fences each citation's index in the masked
+  //  markdown. Plain ASCII so the markdown processor + sanitiser
+  //  pass it through untouched; the verbose CAPS prefix + suffix
+  //  rule out any realistic agent-text collision. Verbatim match
+  //  on render-output is what `SPLIT_RE` below relies on.
+  const CITE_OPEN = "IRONLORE__CITE__OPEN__";
+  const CITE_CLOSE = "__IRONLORE__CITE__CLOSE";
+  const SPLIT_RE = /IRONLORE__CITE__OPEN__(\d+)__IRONLORE__CITE__CLOSE/g;
 
-  const parts: Array<
-    { kind: "text"; value: string } | { kind: "citation"; page: string; blockId: string }
+  // Pre-extract every citation; replace each with a unique sentinel
+  //  the markdown processor + sanitiser leave intact.
+  const citations: Array<{ page: string; blockId: string }> = [];
+  const masked = text.replace(CITATION_RE, (_full, page: string, blockId?: string) => {
+    const i = citations.push({ page: page ?? "", blockId: blockId ?? "" }) - 1;
+    return `${CITE_OPEN}${i}${CITE_CLOSE}`;
+  });
+
+  // No markdown features to render and no citations? Cheap path.
+  if (citations.length === 0 && !/[#*`>[\]-]|\n\n/.test(masked)) {
+    return <span style={{ whiteSpace: "pre-wrap" }}>{text}</span>;
+  }
+
+  const html = renderMarkdownSafe(masked);
+
+  // No citations: render the full markdown HTML in one shot.
+  if (citations.length === 0) {
+    return (
+      <div
+        className="il-assistant-md"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: output passes through renderMarkdownSafe
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+
+  // Split the rendered HTML on the placeholders and interleave
+  //  Blockref components at each cut. Each text chunk is its own
+  //  div so the markdown rendering (block-level headings, lists)
+  //  flows correctly between chips.
+  const segments: Array<
+    { kind: "html"; html: string } | { kind: "cite"; page: string; blockId: string }
   > = [];
-  let lastIndex = 0;
-  let match: RegExpExecArray | null = CITATION_RE.exec(text);
-
-  while (match !== null) {
-    if (match.index > lastIndex) {
-      parts.push({ kind: "text", value: text.slice(lastIndex, match.index) });
+  let cursor = 0;
+  let m: RegExpExecArray | null = SPLIT_RE.exec(html);
+  while (m !== null) {
+    if (m.index > cursor) {
+      segments.push({ kind: "html", html: html.slice(cursor, m.index) });
     }
-    parts.push({ kind: "citation", page: match[1] ?? "", blockId: match[2] ?? "" });
-    lastIndex = match.index + match[0].length;
-    match = CITATION_RE.exec(text);
+    const idx = Number.parseInt(m[1] ?? "0", 10);
+    const cite = citations[idx];
+    if (cite) segments.push({ kind: "cite", page: cite.page, blockId: cite.blockId });
+    cursor = m.index + m[0].length;
+    m = SPLIT_RE.exec(html);
   }
-  if (lastIndex < text.length) {
-    parts.push({ kind: "text", value: text.slice(lastIndex) });
+  if (cursor < html.length) {
+    segments.push({ kind: "html", html: html.slice(cursor) });
   }
-
-  if (parts.length === 0) return <>{text}</>;
 
   return (
-    <>
-      {parts.map((p, i) =>
-        p.kind === "text" ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
-          <span key={i}>{p.value}</span>
+    <div className="il-assistant-md">
+      {segments.map((seg, i) =>
+        seg.kind === "html" ? (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
+            key={i}
+            // biome-ignore lint/security/noDangerouslySetInnerHtml: output passes through renderMarkdownSafe
+            dangerouslySetInnerHTML={{ __html: seg.html }}
+          />
         ) : (
           <span
             // biome-ignore lint/suspicious/noArrayIndexKey: deterministic regex split
@@ -1687,15 +2262,23 @@ function CitationText({ text }: { text: string }) {
             className="mx-0.5 inline-flex"
           >
             <Blockref
-              page={p.page}
-              block={p.blockId || undefined}
-              onClick={() => useAppStore.getState().openProvenance(p.page, p.blockId)}
-              title={`Open ${p.page}${p.blockId ? `#${p.blockId}` : ""}`}
+              page={seg.page}
+              block={seg.blockId || undefined}
+              // Click opens the cited page in the editor (not the
+              //  provenance pane). Users want the file, not the
+              //  metadata — provenance is still reachable via the
+              //  editor toolbar's Provenance button. The native
+              //  `title` attr is intentionally omitted: the custom
+              //  `BlockrefPreview` card already announces the target,
+              //  and stacking a browser tooltip above it produced
+              //  the "Open maintenance/…" double-ghost surface users
+              //  were seeing.
+              onClick={() => useAppStore.getState().setActivePath(seg.page)}
             />
           </span>
         ),
       )}
-    </>
+    </div>
   );
 }
 

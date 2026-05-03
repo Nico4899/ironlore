@@ -32,6 +32,55 @@ function cacheKey(pagePath: string, blockId: string): string {
   return `${pagePath}#${blockId}`;
 }
 
+// ─── exported helpers for non-React consumers ────────────────────
+//
+// The ProseMirror wikilink nodeView lives in plain DOM (not a React
+// tree) and can't call the `useBlockPreview` hook, but it still
+// wants the same hover-preview behaviour the AI panel's `Blockref`
+// chip provides. Expose the cache + fetcher so the editor's
+// nodeView can read the same in-memory store this hook backs.
+//
+// Keeping the cache as a single module-level Map across both
+// consumers means a page hovered first in the AI panel and then
+// in the editor (or vice versa) hits the cache on the second hover
+// and avoids a duplicate fetch.
+
+/**
+ * Synchronous lookup against the in-memory cache. Returns the
+ * cached text for a `<page>#<block>` citation, or for a page-only
+ * `<page>` ref (falls back to the first block / body head).
+ * Returns `null` on cache miss; the caller should kick off
+ * `ensurePageLoadedExternal` and try again after the promise
+ * resolves.
+ */
+export function lookupBlockPreview(pagePath: string, blockId: string | undefined): string | null {
+  if (blockId) {
+    const hit = BLOCK_CACHE.get(cacheKey(pagePath, blockId));
+    if (hit) return hit;
+    return PAGE_HEAD_CACHE.get(pagePath) ?? null;
+  }
+  return PAGE_HEAD_CACHE.get(pagePath) ?? null;
+}
+
+/**
+ * Fetch the page (if not already in flight or cached) and populate
+ * both block + page-head caches. Resolves once the cache is filled
+ * — callers should `lookupBlockPreview` again afterwards. Errors
+ * are swallowed; the consumer just keeps showing whatever it had.
+ */
+export function ensurePageLoadedExternal(pagePath: string): Promise<void> {
+  return ensurePageLoaded(pagePath);
+}
+
+/** Hover delay before the preview tooltip appears. Mirrors the
+ *  React `Blockref` chip's behaviour (200 ms is short enough to
+ *  feel responsive, long enough to avoid drive-by tooltips on
+ *  every cursor sweep across a paragraph). */
+export const PREVIEW_HOVER_DELAY_MS = 200;
+/** Hard cap on rendered preview body length so a 5 KB block
+ *  doesn't blow the tooltip out. Mirrors `Blockref.tsx`. */
+export const PREVIEW_MAX_CHARS = 240;
+
 function rememberBlocks(pagePath: string, content: string): void {
   // Block markers are HTML comments: `<!-- #blk_ULID -->`. The
   //  convention is that the block content follows the marker up to
@@ -133,7 +182,19 @@ export function useBlockPreview(
       void ensurePageLoaded(pagePath).then(() => {
         if (cancelled) return;
         const hit = BLOCK_CACHE.get(key);
-        if (hit) setText(hit);
+        if (hit) {
+          setText(hit);
+          return;
+        }
+        // The block ID couldn't be resolved on the page — usually
+        //  because the page was edited and the agent's cited ID is
+        //  stale, OR because the page predates the seeder's
+        //  block-ID retrofit and has no `<!-- #blk_… -->` markers.
+        //  Either way, the page-head text is the best we can show
+        //  and is strictly better than leaving the preview stuck on
+        //  "Loading…" forever.
+        const headFallback = PAGE_HEAD_CACHE.get(pagePath);
+        if (headFallback) setText(headFallback);
       });
       return () => {
         cancelled = true;
