@@ -686,6 +686,9 @@ export class SearchIndex {
     for (const s of sources) {
       for (const key of linkTargetCandidates(s.path)) sourceByKey.set(key, s);
     }
+    // `linkTargetCandidates` already emits lowercase variants; lookups
+    //  must lowercase the link target so case-insensitive resolution
+    //  matches Obsidian-compat (docs/01-content-model.md §Obsidian).
 
     const getOutlinks = this.db.prepare(
       "SELECT DISTINCT target_path AS target FROM backlinks WHERE source_path = ?",
@@ -701,7 +704,7 @@ export class SearchIndex {
       const links = getOutlinks.all(wiki.path) as Array<{ target: string }>;
       const seen = new Set<string>();
       for (const { target } of links) {
-        const source = sourceByKey.get(target);
+        const source = sourceByKey.get(linkLookupKey(target));
         if (!source) continue;
         if (seen.has(source.path)) continue;
         seen.add(source.path);
@@ -760,11 +763,15 @@ export class SearchIndex {
       .all() as Array<{ target: string }>;
     const targets = new Set(targetRows.map((r) => r.target));
 
+    // Lowercase the cited-target set once so the orphan check is
+    //  case-insensitive (docs/01-content-model.md §Obsidian).
+    const targetsLc = new Set<string>();
+    for (const t of targets) targetsLc.add(linkLookupKey(t));
     const out: Array<{ path: string; updatedAt: string }> = [];
     for (const page of pages) {
       if (excludePrefixes.some((pre) => page.path.startsWith(pre))) continue;
       const candidates = linkTargetCandidates(page.path);
-      const linked = candidates.some((c) => targets.has(c));
+      const linked = candidates.some((c) => targetsLc.has(linkLookupKey(c)));
       if (!linked) out.push(page);
     }
     out.sort((a, b) => a.path.localeCompare(b.path));
@@ -821,7 +828,10 @@ export class SearchIndex {
     const grouped = new Map<string, Set<string>>();
     for (const r of rows) {
       if (excludePrefixes.some((pre) => r.source.startsWith(pre))) continue;
-      if (resolvedTargets.has(r.target)) continue;
+      // Case-insensitive resolution per docs/01-content-model.md
+      //  §Obsidian — `[[research]]` and `[[Research]]` both resolve
+      //  to a page at `Research.md`.
+      if (resolvedTargets.has(linkLookupKey(r.target))) continue;
       let bucket = grouped.get(r.target);
       if (!bucket) {
         bucket = new Set();
@@ -1452,11 +1462,35 @@ function cosineSimilarity(
  * `.md` (`notes/spoke`), and just the basename stem (`spoke`). Used by
  * `findOrphans` to decide whether a page has any inbound link under
  * any of those spellings.
+ *
+ * **Case handling.** Each spelling is also emitted in its lowercased
+ * form so resolution stays Obsidian-compatible per
+ * docs/01-content-model.md §Obsidian compatibility ("`[[wiki-links]]`
+ * resolve the same way (page title, case-insensitive)"). Callers that
+ * lookup against the returned set should `linkLookupKey()` the link
+ * target so the lower-case key matches.
  */
 function linkTargetCandidates(pagePath: string): string[] {
   const noExt = pagePath.replace(/\.md$/, "");
   const slashIdx = noExt.lastIndexOf("/");
   const basename = slashIdx === -1 ? noExt : noExt.slice(slashIdx + 1);
-  const candidates = new Set<string>([pagePath, noExt, basename]);
+  const candidates = new Set<string>([
+    pagePath,
+    noExt,
+    basename,
+    pagePath.toLowerCase(),
+    noExt.toLowerCase(),
+    basename.toLowerCase(),
+  ]);
   return [...candidates];
+}
+
+/**
+ * Normalize a wiki-link target string for case-insensitive resolution
+ * against the candidate set produced by `linkTargetCandidates`. Always
+ * lowercases — leaves the target shape (path / no-ext / basename)
+ * intact because the candidate set carries every spelling.
+ */
+function linkLookupKey(target: string): string {
+  return target.toLowerCase();
 }
