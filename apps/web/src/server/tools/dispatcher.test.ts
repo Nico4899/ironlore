@@ -368,12 +368,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     await writer.write("findme.md", markdown, null);
     index.indexPage("findme.md", markdown, "test");
 
-    const result = await dispatcher.call(
-      "kb.search",
-      { query: "Findable" },
-      ctx,
-      budget,
-    );
+    const result = await dispatcher.call("kb.search", { query: "Findable" }, ctx, budget);
     expect(result.isError).toBe(false);
     const parsed = JSON.parse(result.result) as unknown;
     expect(Array.isArray(parsed)).toBe(true);

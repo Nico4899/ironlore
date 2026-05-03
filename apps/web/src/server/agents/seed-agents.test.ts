@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openJobsDb } from "../jobs/schema.js";
 import { seedAgents } from "./seed-agents.js";
@@ -76,14 +76,7 @@ describe("seedAgents — default agents + library templates", () => {
 
   it("seeds the Researcher's agent-local thesis.md skill", () => {
     seedAgents(dataDir, jobsDb);
-    const skillPath = join(
-      dataDir,
-      ".agents",
-      ".library",
-      "researcher",
-      "skills",
-      "thesis.md",
-    );
+    const skillPath = join(dataDir, ".agents", ".library", "researcher", "skills", "thesis.md");
     expect(existsSync(skillPath)).toBe(true);
     const content = readFileSync(skillPath, "utf-8");
     // Frontmatter shape so the skill loader can pick it up.
@@ -110,14 +103,7 @@ describe("seedAgents — default agents + library templates", () => {
 
   it("is non-destructive — running seedAgents twice does not overwrite the thesis skill", () => {
     seedAgents(dataDir, jobsDb);
-    const skillPath = join(
-      dataDir,
-      ".agents",
-      ".library",
-      "researcher",
-      "skills",
-      "thesis.md",
-    );
+    const skillPath = join(dataDir, ".agents", ".library", "researcher", "skills", "thesis.md");
     const first = readFileSync(skillPath, "utf-8");
     seedAgents(dataDir, jobsDb);
     const second = readFileSync(skillPath, "utf-8");

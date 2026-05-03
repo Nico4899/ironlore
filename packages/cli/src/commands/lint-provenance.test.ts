@@ -137,9 +137,7 @@ describe("lintProvenance", () => {
     writeSidecar(fx.dataRoot, ".agents/internal.md", [
       { id: "blk_INTERNAL", agent: "wiki-gardener" },
     ]);
-    writeSidecar(fx.dataRoot, "wiki/real.md", [
-      { id: "blk_REAL_GAP", agent: "wiki-gardener" },
-    ]);
+    writeSidecar(fx.dataRoot, "wiki/real.md", [{ id: "blk_REAL_GAP", agent: "wiki-gardener" }]);
 
     lintProvenance({ project: "main", cwd: fx.cwd });
 

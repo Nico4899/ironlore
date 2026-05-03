@@ -58,9 +58,7 @@ function makeFixture(): Fixture {
 
 function seedPages(dbPath: string, pages: Array<{ path: string; type?: string }>): void {
   const db = new Database(dbPath);
-  const stmt = db.prepare(
-    "INSERT INTO pages (path, name, parent, file_type) VALUES (?, ?, ?, ?)",
-  );
+  const stmt = db.prepare("INSERT INTO pages (path, name, parent, file_type) VALUES (?, ?, ?, ?)");
   for (const p of pages) {
     const slashIdx = p.path.lastIndexOf("/");
     const name = slashIdx === -1 ? p.path : p.path.slice(slashIdx + 1);
@@ -70,10 +68,7 @@ function seedPages(dbPath: string, pages: Array<{ path: string; type?: string }>
   db.close();
 }
 
-function seedBacklinks(
-  dbPath: string,
-  links: Array<{ source: string; target: string }>,
-): void {
+function seedBacklinks(dbPath: string, links: Array<{ source: string; target: string }>): void {
   const db = new Database(dbPath);
   const stmt = db.prepare(
     "INSERT INTO backlinks (source_path, target_path, link_text) VALUES (?, ?, ?)",

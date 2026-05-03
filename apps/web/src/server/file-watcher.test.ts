@@ -109,9 +109,7 @@ describe("FileWatcher", () => {
     const filePath = join(fx.dataRoot, "external.md");
     writeFileSync(filePath, "# external edit\n", "utf-8");
 
-    const entries = await waitForWal(fx.wal, (rows) =>
-      rows.some((r) => r.path === "external.md"),
-    );
+    const entries = await waitForWal(fx.wal, (rows) => rows.some((r) => r.path === "external.md"));
     const hit = entries.find((r) => r.path === "external.md");
     expect(hit).toBeDefined();
     expect(hit?.author).toBe("system");

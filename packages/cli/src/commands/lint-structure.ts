@@ -92,9 +92,9 @@ function findOrphans(db: Database.Database): OrphanRow[] {
 }
 
 function findCoverageGaps(db: Database.Database, minMentions = 3): CoverageGapRow[] {
-  const pages = db
-    .prepare("SELECT path FROM pages WHERE file_type = 'markdown'")
-    .all() as Array<{ path: string }>;
+  const pages = db.prepare("SELECT path FROM pages WHERE file_type = 'markdown'").all() as Array<{
+    path: string;
+  }>;
   const resolved = new Set<string>();
   for (const p of pages) {
     for (const c of linkTargetCandidates(p.path)) resolved.add(linkLookupKey(c));
@@ -131,9 +131,7 @@ export function lintStructure(opts: LintStructureOptions): void {
   const indexPath = join(projectDir, ".ironlore", "index.sqlite");
 
   if (!existsSync(indexPath)) {
-    console.log(
-      "    No index found. Run 'ironlore lint --fix --check index-consistency' first.",
-    );
+    console.log("    No index found. Run 'ironlore lint --fix --check index-consistency' first.");
     return;
   }
 

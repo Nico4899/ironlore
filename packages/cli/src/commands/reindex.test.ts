@@ -163,9 +163,11 @@ describe("reindex — schema parity with server SearchIndex", () => {
       db.prepare(
         "INSERT INTO chunk_contexts (path, chunk_idx, context, model) VALUES (?, ?, ?, ?)",
       ).run("stale.md", 0, "stale ctx", "test");
-      db.prepare(
-        "INSERT INTO chunk_contexts_fts (path, chunk_idx, context) VALUES (?, ?, ?)",
-      ).run("stale.md", 0, "stale ctx");
+      db.prepare("INSERT INTO chunk_contexts_fts (path, chunk_idx, context) VALUES (?, ?, ?)").run(
+        "stale.md",
+        0,
+        "stale ctx",
+      );
     } finally {
       db.close();
     }
@@ -176,14 +178,14 @@ describe("reindex — schema parity with server SearchIndex", () => {
     db = new Database(dbPath, { readonly: true });
     try {
       const vecCount = (
-        db
-          .prepare("SELECT COUNT(*) AS cnt FROM chunk_vectors WHERE path = ?")
-          .get("stale.md") as { cnt: number }
+        db.prepare("SELECT COUNT(*) AS cnt FROM chunk_vectors WHERE path = ?").get("stale.md") as {
+          cnt: number;
+        }
       ).cnt;
       const ctxCount = (
-        db
-          .prepare("SELECT COUNT(*) AS cnt FROM chunk_contexts WHERE path = ?")
-          .get("stale.md") as { cnt: number }
+        db.prepare("SELECT COUNT(*) AS cnt FROM chunk_contexts WHERE path = ?").get("stale.md") as {
+          cnt: number;
+        }
       ).cnt;
       const ftsCount = (
         db

@@ -70,12 +70,7 @@ export function seedAgents(dataDir: string, jobsDb: Database.Database): void {
   //  anti-confirmation-bias rule is the load-bearing piece — without
   //  it the agent rationalises the prior round instead of stress-testing
   //  it.
-  seedLibrarySkill(
-    dataDir,
-    "researcher",
-    "thesis.md",
-    THESIS_SKILL_BODY,
-  );
+  seedLibrarySkill(dataDir, "researcher", "thesis.md", THESIS_SKILL_BODY);
 
   // Shared skills directory.
   const sharedSkillsDir = join(dataDir, AGENTS_SHARED_DIR, "skills");
@@ -140,12 +135,7 @@ function seedLibraryTemplate(dataDir: string, slug: string, meta: Record<string,
  * `.agents/.library/<slug>/skills/<filename>`. Non-destructive: an
  * existing file is left untouched so a user's edits survive a restart.
  */
-function seedLibrarySkill(
-  dataDir: string,
-  slug: string,
-  filename: string,
-  body: string,
-): void {
+function seedLibrarySkill(dataDir: string, slug: string, filename: string, body: string): void {
   const skillsDir = join(dataDir, AGENTS_LIBRARY_DIR, slug, "skills");
   const skillPath = join(skillsDir, filename);
   if (existsSync(skillPath)) return;
@@ -255,4 +245,3 @@ rationalising the prior round instead of stress-testing it.
   thesis-driven investigation reads best as an interactive
   conversation, not a scheduled batch.
 `;
-

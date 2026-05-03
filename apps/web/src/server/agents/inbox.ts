@@ -522,9 +522,9 @@ export class AgentInbox {
    * row-only check the audit's Bug D fix introduced.
    */
   entryExists(id: string, projectDir?: string): boolean {
-    const row = this.db
-      .prepare("SELECT branch, status FROM inbox_entries WHERE id = ?")
-      .get(id) as { branch: string; status: InboxEntry["status"] } | undefined;
+    const row = this.db.prepare("SELECT branch, status FROM inbox_entries WHERE id = ?").get(id) as
+      | { branch: string; status: InboxEntry["status"] }
+      | undefined;
     if (!row) return false;
     // `stale` is a tombstone status — the row exists but the branch
     // is gone and there's nothing meaningful to do with it. Treat
@@ -552,9 +552,7 @@ export class AgentInbox {
    */
   pruneStaleEntries(projectId: string, projectDir: string): number {
     const rows = this.db
-      .prepare(
-        "SELECT id, branch FROM inbox_entries WHERE project_id = ? AND status = 'pending'",
-      )
+      .prepare("SELECT id, branch FROM inbox_entries WHERE project_id = ? AND status = 'pending'")
       .all(projectId) as Array<{ id: string; branch: string }>;
     let demoted = 0;
     for (const row of rows) {

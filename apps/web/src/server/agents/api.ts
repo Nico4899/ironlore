@@ -450,10 +450,7 @@ export function createJobApi(
       try {
         const parsed = JSON.parse(job.result) as { filesChanged?: unknown };
         if (Array.isArray(parsed.filesChanged) && parsed.filesChanged.length === 0) {
-          return c.json(
-            { error: "Nothing to revert: this run produced no file changes." },
-            400,
-          );
+          return c.json({ error: "Nothing to revert: this run produced no file changes." }, 400);
         }
       } catch {
         /* unstructured result — fall through to revertAgentRun */

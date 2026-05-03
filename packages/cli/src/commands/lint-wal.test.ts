@@ -200,9 +200,7 @@ describe("lintWalIntegrity", () => {
     });
 
     const cwd = fx.cwd;
-    expect(() => lintWalIntegrity({ project: "main", cwd, fix: true })).toThrow(
-      "process.exit",
-    );
+    expect(() => lintWalIntegrity({ project: "main", cwd, fix: true })).toThrow("process.exit");
     expect(exitSpy).toHaveBeenCalledWith(1);
 
     // The on-disk file must be UNTOUCHED — the spec forbids

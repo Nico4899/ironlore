@@ -52,11 +52,11 @@ import { TerminalManager } from "./terminal.js";
 import { createAgentJournal } from "./tools/agent-journal.js";
 import { ToolDispatcher } from "./tools/dispatcher.js";
 import { createKbAppendMemory } from "./tools/kb-append-memory.js";
+import { createKbCheckContradictions } from "./tools/kb-check-contradictions.js";
 import { createKbCreatePage } from "./tools/kb-create-page.js";
 import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
 import { createKbGlobalSearch } from "./tools/kb-global-search.js";
 import { createKbInsertAfter } from "./tools/kb-insert-after.js";
-import { createKbCheckContradictions } from "./tools/kb-check-contradictions.js";
 import { createKbLintContradictions } from "./tools/kb-lint-contradictions.js";
 import { createKbLintCoverageGaps } from "./tools/kb-lint-coverage-gaps.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
@@ -228,7 +228,9 @@ async function start() {
     try {
       const demoted = inbox.pruneStaleEntries(projectId, services.projectDir);
       if (demoted > 0) {
-        console.log(`Inbox: pruned ${demoted} stale entr${demoted === 1 ? "y" : "ies"} in ${projectId}`);
+        console.log(
+          `Inbox: pruned ${demoted} stale entr${demoted === 1 ? "y" : "ies"} in ${projectId}`,
+        );
       }
     } catch (err) {
       console.warn(

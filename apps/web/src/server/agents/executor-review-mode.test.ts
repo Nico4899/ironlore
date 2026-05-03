@@ -17,6 +17,7 @@ function makeDispatcherWithJournal(dataRoot: string): ToolDispatcher {
   d.register(createAgentJournal(dataRoot));
   return d;
 }
+
 import { executeAgentRun } from "./executor.js";
 
 /**
@@ -164,7 +165,10 @@ describe("executor — required_tools gate (anti-fabrication)", () => {
         },
         { type: "done", stopReason: "tool_use" },
       ],
-      [{ type: "text", text: "ok" }, { type: "done", stopReason: "end_turn" }],
+      [
+        { type: "text", text: "ok" },
+        { type: "done", stopReason: "end_turn" },
+      ],
     ]);
 
     await executeAgentRun(makeJob({ owner_id: "evolver" }), jobCtx, {
@@ -227,7 +231,10 @@ describe("executor — required_tools gate (anti-fabrication)", () => {
         },
         { type: "done", stopReason: "tool_use" },
       ],
-      [{ type: "text", text: "ok" }, { type: "done", stopReason: "end_turn" }],
+      [
+        { type: "text", text: "ok" },
+        { type: "done", stopReason: "end_turn" },
+      ],
     ]);
 
     await executeAgentRun(makeJob({ owner_id: "evolver" }), makeJobCtx(), {
@@ -259,7 +266,10 @@ describe("executor — required_tools gate (anti-fabrication)", () => {
         },
         { type: "done", stopReason: "tool_use" },
       ],
-      [{ type: "text", text: "ok" }, { type: "done", stopReason: "end_turn" }],
+      [
+        { type: "text", text: "ok" },
+        { type: "done", stopReason: "end_turn" },
+      ],
     ]);
 
     await executeAgentRun(makeJob({ owner_id: "general" }), makeJobCtx(), {

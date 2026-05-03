@@ -1388,7 +1388,19 @@ function AssistantReply({ text }: { text: string }) {
   // to be worth saving (skip the streaming-empty case where the
   // header renders before the first token lands).
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
   const showSave = text.trim().length > 24;
+
+  // Proactive filing suggestion per docs/04-ai-and-agents.md
+  //  §Default agents — Librarian: "When an answer synthesises
+  //  multiple pages (≥3 cited sources), the General agent
+  //  proactively suggests filing." We count distinct *cited pages*
+  //  (not raw `[[…]]` matches) so a reply that cites the same page
+  //  three times via different blocks doesn't tip the threshold —
+  //  the doc's bar is breadth, not depth.
+  const distinctCitedPages = countDistinctCitedPages(text);
+  const showFilingSuggestion =
+    showSave && distinctCitedPages >= 3 && !saveDialogOpen && !suggestionDismissed;
 
   return (
     <div className="leading-relaxed text-primary" style={{ fontSize: 13, lineHeight: 1.55 }}>
@@ -1422,10 +1434,102 @@ function AssistantReply({ text }: { text: string }) {
           </button>
         )}
       </div>
+      {showFilingSuggestion && (
+        <FilingSuggestion
+          pageCount={distinctCitedPages}
+          onSave={() => setSaveDialogOpen(true)}
+          onDismiss={() => setSuggestionDismissed(true)}
+        />
+      )}
       <CitationText text={text} />
       {saveDialogOpen && (
         <SaveAsWikiDialog markdown={text} onClose={() => setSaveDialogOpen(false)} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Distinct cited pages in an assistant reply. Citations are
+ * `[[page#blk_…]]` (or `[[page]]`); we group by `page` so multiple
+ * blockrefs into the same source count as one page. The doc's
+ * threshold is breadth across pages, not depth within one. Mirrors
+ * the regex `CitationText` uses for rendering so the count and the
+ * rendered chips can never disagree.
+ */
+function countDistinctCitedPages(text: string): number {
+  const re = /\[\[([^\]#|]+)(?:#blk_[A-Za-z0-9]+)?(?:\s*\|\s*[a-z][a-z0-9_]*)?\]\]/g;
+  const pages = new Set<string>();
+  let m: RegExpExecArray | null = re.exec(text);
+  while (m !== null) {
+    const page = m[1]?.trim();
+    if (page) pages.add(page.toLowerCase());
+    m = re.exec(text);
+  }
+  return pages.size;
+}
+
+/**
+ * Inline "save this reply as a wiki page" suggestion. Surfaces only
+ * when an assistant reply cites ≥3 distinct pages — the moment a
+ * reply genuinely synthesises across the KB and is worth promoting
+ * out of chat history. Per-reply dismissible (the dismiss state
+ * lives in the parent's hook so the prompt doesn't re-appear after
+ * a follow-up token streams in).
+ */
+function FilingSuggestion({
+  pageCount,
+  onSave,
+  onDismiss,
+}: {
+  pageCount: number;
+  onSave: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      className="mb-2 flex items-center gap-2 rounded"
+      role="status"
+      style={{
+        padding: "6px 10px",
+        background: "color-mix(in oklch, var(--il-blue) 8%, transparent)",
+        border: "1px solid color-mix(in oklch, var(--il-blue) 25%, transparent)",
+        fontSize: 12,
+      }}
+    >
+      <Reuleaux size={6} color="var(--il-blue)" aria-hidden="true" />
+      <span style={{ color: "var(--il-text2)", lineHeight: 1.45 }}>
+        This pulls together {pageCount} pages — want to save it as a wiki page?
+      </span>
+      <span className="flex-1" />
+      <button
+        type="button"
+        onClick={onSave}
+        className="rounded font-mono uppercase hover:bg-ironlore-blue/15"
+        style={{
+          fontSize: 10,
+          letterSpacing: "0.06em",
+          padding: "2px 8px",
+          color: "var(--il-blue)",
+          border: "1px solid color-mix(in oklch, var(--il-blue) 35%, transparent)",
+        }}
+      >
+        save
+      </button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss filing suggestion"
+        className="rounded font-mono uppercase hover:text-primary"
+        style={{
+          fontSize: 10,
+          letterSpacing: "0.06em",
+          padding: "2px 6px",
+          color: "var(--il-text4)",
+        }}
+      >
+        ×
+      </button>
     </div>
   );
 }

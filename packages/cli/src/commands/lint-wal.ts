@@ -90,7 +90,9 @@ export function lintWalIntegrity(opts: LintWalOptions): void {
     return;
   }
 
-  console.log(`    ${uncommitted.length} uncommitted WAL entr${uncommitted.length === 1 ? "y" : "ies"}.`);
+  console.log(
+    `    ${uncommitted.length} uncommitted WAL entr${uncommitted.length === 1 ? "y" : "ies"}.`,
+  );
 
   let repaired = 0;
   const ambiguous: Array<{ entry: WalRow; current: string }> = [];
@@ -144,18 +146,10 @@ export function lintWalIntegrity(opts: LintWalOptions): void {
     console.log(
       `    ${ambiguous.length} ambiguous entr${ambiguous.length === 1 ? "y" : "ies"} — needs human review (see hashes above).`,
     );
-    console.log(
-      "    Per docs/02-storage-and-sync.md §WAL crash recovery, the on-disk state may",
-    );
-    console.log(
-      "    be a legitimate external edit; auto-overwriting from the WAL would clobber",
-    );
-    console.log(
-      "    real work. Pick the resolution by hand — keep the on-disk file (delete the",
-    );
-    console.log(
-      "    WAL row) or restore from WAL (replace the file with the entry's content).",
-    );
+    console.log("    Per docs/02-storage-and-sync.md §WAL crash recovery, the on-disk state may");
+    console.log("    be a legitimate external edit; auto-overwriting from the WAL would clobber");
+    console.log("    real work. Pick the resolution by hand — keep the on-disk file (delete the");
+    console.log("    WAL row) or restore from WAL (replace the file with the entry's content).");
     process.exit(1);
   }
 }
@@ -171,7 +165,11 @@ function classify(entry: WalRow, dataRoot: string): ClassifiedState {
 
   if (entry.op === "delete") {
     if (existsSync(absPath)) {
-      return { kind: "delete-pending", currentHash: "(file present)", toString: () => "delete-pending" };
+      return {
+        kind: "delete-pending",
+        currentHash: "(file present)",
+        toString: () => "delete-pending",
+      };
     }
     return { kind: "delete-done", currentHash: "(file absent)", toString: () => "delete-done" };
   }

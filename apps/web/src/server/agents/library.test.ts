@@ -179,11 +179,7 @@ heartbeat: "0 6 * * 0"`,
   it("does not surface `_*` files as library templates", () => {
     const libDir = join(dataDir, ".agents", ".library");
     mkdirSync(libDir, { recursive: true });
-    writeFileSync(
-      join(libDir, "_notes.md"),
-      "---\nname: Internal Notes\n---\n",
-      "utf-8",
-    );
+    writeFileSync(join(libDir, "_notes.md"), "---\nname: Internal Notes\n---\n", "utf-8");
     writeFlat(dataDir, "wiki-gardener", `name: Wiki Gardener`);
 
     const rows = listLibraryTemplates(dataDir);
