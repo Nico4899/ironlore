@@ -161,9 +161,98 @@ function buildFrontmatter(slug: string, meta: Record<string, unknown>): string {
   if (meta.role) lines.push(`role: "${meta.role}"`);
   if (meta.provider) lines.push(`provider: ${meta.provider}`);
   lines.push(`active: ${meta.active ?? false}`);
+  if (Array.isArray(meta.skills) && (meta.skills as string[]).length > 0) {
+    lines.push(`skills: [${(meta.skills as string[]).join(", ")}]`);
+  }
   if (meta.scope)
     lines.push(`scope:\n  pages: ${JSON.stringify((meta.scope as { pages: string[] }).pages)}`);
   if (meta.writable_kinds) lines.push(`writable_kinds: ${JSON.stringify(meta.writable_kinds)}`);
   lines.push("---");
   return lines.join("\n");
 }
+
+/**
+ * `thesis.md` — the researcher persona's dedicated skill. Encodes
+ * thesis-driven investigation per docs/04-ai-and-agents.md §Default
+ * agents → Library trio:
+ *
+ *   "decompose a claim into key variables → search for supporting
+ *    evidence → search for opposing evidence → compile with evidence
+ *    tables → produce a verdict (`supported` / `contradicted` / `mixed`
+ *    / `insufficient`). An anti-confirmation-bias rule … forces
+ *    follow-up rounds to focus on the *weaker* side of the prior
+ *    round's evidence."
+ *
+ * Non-destructive seeding: a user's edits to this file survive
+ * restart — `seedLibrarySkill` no-ops when the file exists.
+ */
+const THESIS_SKILL_BODY = `---
+name: Thesis-driven investigation
+description: Decompose a claim → gather supporting + opposing evidence → produce a verdict.
+---
+
+# Thesis-driven investigation
+
+The Researcher persona's working method. Use this skill when the user
+poses a claim that needs grounding rather than a question with a
+single factual answer.
+
+## Workflow
+
+1. **Decompose the claim** into 3–5 key variables. Each variable is a
+   sub-claim that, taken together, decides the verdict. Write them
+   as a short bulleted list at the top of your response so the user
+   can see the shape of the investigation before any evidence
+   arrives.
+
+2. **Search for supporting evidence.** For each variable run
+   \`kb.search\` (and \`kb.semantic_search\` when an embedding
+   provider is configured) for blocks that argue *for* the claim.
+   Cite each finding as \`[[page#blk_…]]\`. Stop at ~5 strong
+   citations per variable — the goal is calibrated coverage, not
+   exhaustive collection.
+
+3. **Search for opposing evidence.** Same protocol, opposite stance.
+   This is the load-bearing step — most failures of this skill come
+   from skipping it because the supporting evidence "looked
+   convincing." Spend at least as much retrieval budget here as on
+   step 2.
+
+4. **Compile evidence tables.** One per variable, with columns
+   \`Claim\`, \`Source\`, \`Strength (low/medium/high)\`. Strength
+   reflects the source's credibility (peer review > primary
+   research > secondary synthesis > aggregator) crossed with the
+   directness of the citation. Include opposing rows.
+
+5. **Produce a verdict** with one of four labels:
+   - \`supported\` — supporting evidence dominates and the strongest
+     opposing citations have been addressed.
+   - \`contradicted\` — opposing evidence dominates.
+   - \`mixed\` — both sides carry strong citations; the claim depends
+     on context the investigation surfaced explicitly.
+   - \`insufficient\` — no side carries enough citations to ground a
+     verdict; recommend specific sources to ingest.
+
+## Anti-confirmation-bias rule
+
+When the user asks a follow-up round on a claim you've already
+investigated, **focus the round on the *weaker* side of the prior
+verdict's evidence**. If the prior round landed \`supported\` with
+8 supporting and 3 opposing citations, the follow-up reads opposing
+sources first. Without this rule the persona drifts into
+rationalising the prior round instead of stress-testing it.
+
+## What this skill does NOT do
+
+- Write new \`kind: source\` pages. Source ingestion is
+  \`ingest.md\`'s job; this skill only *reads* sources and produces
+  a synthesis page citing them.
+- Resolve contradictions. When opposing evidence is itself in
+  contradiction (Source A says X, Source B says ¬X, both look
+  credible), surface both in the evidence table and label the
+  verdict \`mixed\` — let the human reviewer decide.
+- Run autonomously. The persona ships with \`active: false\` because
+  thesis-driven investigation reads best as an interactive
+  conversation, not a scheduled batch.
+`;
+

@@ -86,10 +86,132 @@ export function StatusBar() {
             </span>
           </button>
         )}
+        <GitActions />
         <EditorStatusPill status={editorStatus} savedLabel={savedLabel} />
         <ConnectionPill connected={wsConnected} reconnecting={wsReconnecting} />
       </div>
     </footer>
+  );
+}
+
+/**
+ * "Commit now" + "Push" — the SPA half of the
+ * docs/02-storage-and-sync.md §Surfaces parity with `ironlore flush`
+ * and `ironlore push`. Both bypass the 30 s grouping window via the
+ * `/git/flush` and `/git/push` endpoints. Transient toast (2 s) shows
+ * the outcome inline so the user doesn't have to open the terminal
+ * to confirm; failure surfaces stay until the next click.
+ */
+function GitActions() {
+  const [busy, setBusy] = useState<null | "flush" | "push">(null);
+  const [feedback, setFeedback] = useState<{
+    kind: "ok" | "warn" | "error";
+    text: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!feedback || feedback.kind !== "ok") return;
+    const t = setTimeout(() => setFeedback(null), 2000);
+    return () => clearTimeout(t);
+  }, [feedback]);
+
+  const onFlush = async () => {
+    if (busy) return;
+    setBusy("flush");
+    setFeedback(null);
+    try {
+      const { committed } = await flushCommits();
+      setFeedback({
+        kind: "ok",
+        text: committed === 0 ? "Nothing to commit" : `Committed ${committed}`,
+      });
+    } catch (err) {
+      setFeedback({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onPush = async () => {
+    if (busy) return;
+    setBusy("push");
+    setFeedback(null);
+    try {
+      const { drained } = await pushCommits();
+      setFeedback({
+        kind: "ok",
+        text: drained > 0 ? `Pushed (${drained} flushed)` : "Pushed",
+      });
+    } catch (err) {
+      if (err instanceof PushError) {
+        if (err.noRemote) {
+          setFeedback({ kind: "warn", text: "Configure a git remote first" });
+        } else if (err.conflict) {
+          setFeedback({ kind: "warn", text: "Push rejected — pull / resolve first" });
+        } else {
+          setFeedback({ kind: "error", text: err.message });
+        }
+      } else {
+        setFeedback({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+      }
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const feedbackColor =
+    feedback?.kind === "error"
+      ? "var(--il-red)"
+      : feedback?.kind === "warn"
+        ? "var(--il-amber)"
+        : "var(--il-text2)";
+
+  return (
+    <span className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onFlush}
+        disabled={busy !== null}
+        className="flex items-center gap-1 uppercase outline-none hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 disabled:opacity-50"
+        style={{ color: "var(--il-text2)", letterSpacing: "0.04em" }}
+        aria-label="Commit pending changes now"
+        title="Commit pending changes (bypass grouping window)"
+      >
+        {busy === "flush" ? (
+          <Reuleaux size={7} color="var(--il-blue)" spin aria-label="Committing" />
+        ) : (
+          <GitCommit className="h-2.5 w-2.5" />
+        )}
+        Commit
+      </button>
+      <button
+        type="button"
+        onClick={onPush}
+        disabled={busy !== null}
+        className="flex items-center gap-1 uppercase outline-none hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 disabled:opacity-50"
+        style={{ color: "var(--il-text2)", letterSpacing: "0.04em" }}
+        aria-label="Push committed changes to remote"
+        title="Drain WAL, then git push"
+      >
+        {busy === "push" ? (
+          <Reuleaux size={7} color="var(--il-blue)" spin aria-label="Pushing" />
+        ) : (
+          <UploadCloud className="h-2.5 w-2.5" />
+        )}
+        Push
+      </button>
+      {feedback && (
+        <span
+          role="status"
+          aria-live="polite"
+          className="truncate"
+          style={{ color: feedbackColor, maxWidth: 220 }}
+          title={feedback.text}
+        >
+          {feedback.text}
+        </span>
+      )}
+    </span>
   );
 }
 
