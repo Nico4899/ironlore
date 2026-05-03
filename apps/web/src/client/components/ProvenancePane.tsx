@@ -1,8 +1,9 @@
 import { X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchPage } from "../lib/api.js";
+import { type BlockProvenanceRow, fetchPage, fetchPageProvenance } from "../lib/api.js";
 import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
 import { MOTION } from "../styles/motion.js";
+import { BlockProvenanceStrip } from "./BlockProvenanceStrip.js";
 import { Key } from "./primitives/index.js";
 
 /**

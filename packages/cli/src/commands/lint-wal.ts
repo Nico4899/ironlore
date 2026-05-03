@@ -98,7 +98,9 @@ export function lintWalIntegrity(opts: LintWalOptions): void {
   for (const entry of uncommitted) {
     const state = classify(entry, dataRoot);
     const stateLabel = describeState(state);
-    console.log(`      [${state.padEnd(15)}] ${entry.op.padEnd(6)} ${entry.path}  (entry ${entry.id})`);
+    console.log(
+      `      [${stateLabel.padEnd(15)}] ${entry.op.padEnd(6)} ${entry.path}  (entry ${entry.id})`,
+    );
 
     if (!opts.fix) continue;
 

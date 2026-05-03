@@ -76,6 +76,11 @@ export function lint(options: LintOptions): void {
 
   for (const cat of categories) {
     switch (cat) {
+      case "wal-integrity":
+        console.log(`\n  [${cat}]`);
+        lintWalIntegrity({ project: options.project, fix: options.fix });
+        break;
+
       case "index-consistency":
         console.log(`\n  [${cat}]`);
         if (options.fix) {
