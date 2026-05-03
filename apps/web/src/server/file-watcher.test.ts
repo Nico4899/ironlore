@@ -36,10 +36,17 @@ interface Fixture {
   events: WsEventInput[];
 }
 
+// Chokidar's `awaitWriteFinish` (200 ms stability) + the watcher's
+//  own 200 ms debounce combine into ≥400 ms before the WAL row lands.
+//  Under full-suite parallel load this can drift further; 5 s gives
+//  comfortable slack without slowing the happy path (each helper
+//  short-circuits the moment the predicate matches).
+const WAIT_TIMEOUT_MS = 5000;
+
 async function waitForWal(
   wal: Wal,
   predicate: (entries: ReturnType<Wal["getUncommitted"]>) => boolean,
-  timeoutMs = 2000,
+  timeoutMs = WAIT_TIMEOUT_MS,
 ): Promise<ReturnType<Wal["getUncommitted"]>> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -55,7 +62,7 @@ async function waitForWal(
 async function waitForBroadcast(
   events: WsEventInput[],
   predicate: (e: WsEventInput) => boolean,
-  timeoutMs = 2000,
+  timeoutMs = WAIT_TIMEOUT_MS,
 ): Promise<WsEventInput | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -66,7 +73,7 @@ async function waitForBroadcast(
   return null;
 }
 
-function makeFixture(): Fixture {
+async function makeFixture(): Promise<Fixture> {
   const cwd = join(tmpdir(), `file-watcher-test-${randomBytes(4).toString("hex")}`);
   const dataRoot = join(cwd, "data");
   mkdirSync(dataRoot, { recursive: true });
@@ -82,14 +89,20 @@ function makeFixture(): Fixture {
   //  attribution / debounce / filter logic is independent of indexing.
   const watcher = new FileWatcher(dataRoot, wal, undefined, broadcast);
   watcher.start();
+  // Chokidar's first scan + readdir happens lazily after `start()` —
+  //  if we writeFileSync before it's mounted, the create event is
+  //  silently dropped under heavy parallel test load. 250 ms gives
+  //  chokidar comfortable headroom to walk the (empty) tree and
+  //  attach its OS-level watch handles before the first test mutation.
+  await new Promise((r) => setTimeout(r, 250));
   return { cwd, dataRoot, wal, watcher, events };
 }
 
 describe("FileWatcher", () => {
   let fx: Fixture | null = null;
 
-  beforeEach(() => {
-    fx = makeFixture();
+  beforeEach(async () => {
+    fx = await makeFixture();
   });
 
   afterEach(() => {
