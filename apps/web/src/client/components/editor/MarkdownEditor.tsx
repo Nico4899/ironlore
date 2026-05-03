@@ -46,6 +46,29 @@ import { wikiMarkdownParser, wikiMarkdownSerializer } from "./wiki-markdown.js";
 import "./editor.css";
 
 // ---------------------------------------------------------------------------
+// Wiki-link target resolution
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a typed wiki-link target (the text inside `[[…]]` plus
+ * `.md`) to an actual page path in the tree. Tries literal-match
+ * first, then falls back to case-insensitive lookup so an Obsidian
+ * user typing `[[research notes]]` opens `Research Notes.md` per
+ * docs/01-content-model.md §Obsidian compatibility.
+ *
+ * Returns the original target unchanged if no match exists — the
+ * caller's `setActivePath` will then surface a "page not found"
+ * state, which is preferable to silently rewriting the link to the
+ * lowercased form (and creating a phantom file on the next write).
+ */
+function resolveWikiLinkPath(target: string, nodes: ReadonlyArray<{ path: string }>): string {
+  if (nodes.some((n) => n.path === target)) return target;
+  const targetLc = target.toLowerCase();
+  const hit = nodes.find((n) => n.path.toLowerCase() === targetLc);
+  return hit ? hit.path : target;
+}
+
+// ---------------------------------------------------------------------------
 // Block-ID preservation
 // ---------------------------------------------------------------------------
 
@@ -532,7 +555,8 @@ export function MarkdownEditor({
             window.open(href, "_blank", "noopener,noreferrer");
           } else {
             const withExt = href.endsWith(".md") ? href : `${href}.md`;
-            useAppStore.getState().setActivePath(withExt);
+            const resolved = resolveWikiLinkPath(withExt, useTreeStore.getState().nodes);
+            useAppStore.getState().setActivePath(resolved);
           }
           return true;
         },
@@ -568,10 +592,15 @@ export function MarkdownEditor({
             e.preventDefault();
             e.stopPropagation();
             if (!pagePart) return;
-            useAppStore.getState().setActivePath(withExt);
+            // Case-insensitive resolution per docs/01-content-model.md
+            //  §Obsidian. `[[research notes]]` opens `Research Notes.md`
+            //  when that's what's on disk; literal-match wins when both
+            //  spellings exist.
+            const resolved = resolveWikiLinkPath(withExt, useTreeStore.getState().nodes);
+            useAppStore.getState().setActivePath(resolved);
             // Cmd/Ctrl-click opens the provenance pane instead of navigating.
             if ((e.metaKey || e.ctrlKey) && blockRaw) {
-              useAppStore.getState().openProvenance(withExt, blockRaw);
+              useAppStore.getState().openProvenance(resolved, blockRaw);
             }
           });
 
