@@ -1,3 +1,5 @@
+import { lintProvenance } from "./lint-provenance.js";
+import { lintStructure } from "./lint-structure.js";
 import { lintWalIntegrity } from "./lint-wal.js";
 import { migrate } from "./migrate.js";
 import { reindex } from "./reindex.js";
@@ -20,6 +22,8 @@ import { repair } from "./repair.js";
  *   index-consistency — rebuild FTS5 + chunk + context indexes
  *                       (delegates to `reindex`)
  *   schema-migration  — run pending DB migrations (delegates to `migrate`)
+ *   structure         — orphan pages + coverage gaps (informational)
+ *   provenance        — agent-authored blocks missing `derived_from` (informational)
  *   data-integrity    — check and repair data (delegates to `repair`)
  */
 
@@ -27,6 +31,8 @@ const CATEGORIES = [
   "wal-integrity",
   "index-consistency",
   "schema-migration",
+  "structure",
+  "provenance",
   "data-integrity",
 ] as const;
 type Category = (typeof CATEGORIES)[number];
@@ -93,6 +99,16 @@ export function lint(options: LintOptions): void {
       case "schema-migration":
         console.log(`\n  [${cat}]`);
         migrate();
+        break;
+
+      case "structure":
+        console.log(`\n  [${cat}]`);
+        lintStructure({ project: options.project, fix: options.fix });
+        break;
+
+      case "provenance":
+        console.log(`\n  [${cat}]`);
+        lintProvenance({ project: options.project, fix: options.fix });
         break;
 
       case "data-integrity":
