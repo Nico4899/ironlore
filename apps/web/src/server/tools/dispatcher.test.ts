@@ -252,7 +252,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       budget,
     );
     expect(replace1.isError).toBe(false);
-    const replace1Data = JSON.parse(replace1.result) as { etag: string };
+    const replace1Data = JSON.parse(replace1.result) as { newEtag: string };
 
     const replace2 = await dispatcher.call(
       "kb.replace_block",
@@ -260,13 +260,13 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
         path: "plan.md",
         blockId: blockIds[1],
         markdown: "Edited second.",
-        etag: replace1Data.etag,
+        etag: replace1Data.newEtag,
       },
       ctx,
       budget,
     );
     expect(replace2.isError).toBe(false);
-    const replace2Data = JSON.parse(replace2.result) as { etag: string };
+    const replace2Data = JSON.parse(replace2.result) as { newEtag: string };
 
     // Call 7: an *external* writer (simulating the user) edits the
     //  page out from under the agent. This invalidates the ETag the
@@ -275,7 +275,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
       "plan.md",
       assignBlockIds("# Plan\n\nUser-edited first.\n\nUser-edited second.\n\nUser-edited third.\n")
         .markdown,
-      replace2Data.etag,
+      replace2Data.newEtag,
     );
 
     // Call 7 (the agent's): replace block-3 with the now-stale ETag
@@ -288,7 +288,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
         path: "plan.md",
         blockId: blockIds[2],
         markdown: "Edited third.",
-        etag: replace2Data.etag,
+        etag: replace2Data.newEtag,
       },
       ctx,
       budget,
@@ -297,7 +297,7 @@ describe("Tool dispatcher — Tier 1 protocol tests", () => {
     const conflictData = JSON.parse(conflict.result) as { error: string; currentEtag: string };
     expect(conflictData.error).toContain("ETag mismatch");
     expect(conflictData.currentEtag).toBeDefined();
-    expect(conflictData.currentEtag).not.toBe(replace2Data.etag);
+    expect(conflictData.currentEtag).not.toBe(replace2Data.newEtag);
 
     // Recovery: the agent re-reads (NOT re-runs calls 1–2) and uses
     //  the fresh ETag + fresh block IDs to retry the in-flight call.
