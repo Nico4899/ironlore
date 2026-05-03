@@ -1024,7 +1024,10 @@ async function start() {
 
   // Mount /metrics endpoint (Prometheus text format, behind auth, opt-in)
   if (process.env.IRONLORE_METRICS === "true") {
-    const metricsApi = createMetricsEndpoint(() => wal);
+    const metricsApi = createMetricsEndpoint(
+      () => wal,
+      () => jobsDb,
+    );
     app.use("/metrics", authMiddleware);
     app.route("/metrics", metricsApi);
   }
