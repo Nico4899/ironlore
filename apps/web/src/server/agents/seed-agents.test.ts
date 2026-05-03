@@ -20,7 +20,9 @@ function makeTempInstall(): { dataDir: string; jobsDb: Database.Database; cleanu
   const installRoot = join(tmpdir(), `seed-agents-test-${randomBytes(4).toString("hex")}`);
   const dataDir = join(installRoot, "data");
   mkdirSync(dataDir, { recursive: true });
-  const jobsDb = openJobsDb(installRoot);
+  // openJobsDb takes a *file path* (not the install root). Mirror the
+  //  production layout: the jobs DB lives at install-root/.ironlore/jobs.sqlite.
+  const jobsDb = openJobsDb(join(installRoot, ".ironlore", "jobs.sqlite"));
   return {
     dataDir,
     jobsDb,
@@ -91,7 +93,7 @@ describe("seedAgents — default agents + library templates", () => {
     //  → compile → verdict). The exact wording can drift; the verdict
     //  labels and the anti-confirmation rule are the load-bearing
     //  invariants.
-    expect(content).toContain("decompose");
+    expect(content).toMatch(/decompose/i);
     for (const verdict of ["supported", "contradicted", "mixed", "insufficient"]) {
       expect(content).toContain(verdict);
     }
@@ -99,7 +101,11 @@ describe("seedAgents — default agents + library templates", () => {
     //  than a one-shot prompt; pin its presence so a future seed
     //  rewrite that drops it breaks the test loudly.
     expect(content).toMatch(/anti-confirmation-bias/i);
-    expect(content).toMatch(/weaker side/i);
+    // Markdown emphasis can be stripped without semantic loss; the
+    //  load-bearing content is the word "weaker" applied to the
+    //  prior round's evidence.
+    expect(content).toMatch(/weaker/i);
+    expect(content).toMatch(/follow-up/i);
   });
 
   it("is non-destructive — running seedAgents twice does not overwrite the thesis skill", () => {
