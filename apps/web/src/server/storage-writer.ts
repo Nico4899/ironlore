@@ -497,7 +497,7 @@ export class StorageWriter {
           // Neither matches — external edit happened during crash window
           warn(
             entry.path,
-            `hash matches neither pre nor post — run 'ironlore repair' to resolve (entry ${entry.id})`,
+            `hash matches neither pre nor post — run 'ironlore lint --fix --check wal-integrity' to resolve (entry ${entry.id})`,
           );
         }
       } catch (err) {

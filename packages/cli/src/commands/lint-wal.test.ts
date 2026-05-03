@@ -89,14 +89,22 @@ function isCommitted(fx: Fixture, id: number): boolean {
 
 describe("lintWalIntegrity", () => {
   let fx: Fixture | null = null;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+  // Use any here — vi's mockImplementation generic vs. process.exit's
+  // never-return type don't unify cleanly, and the mock just throws so
+  // the runtime contract is satisfied either way.
+  // biome-ignore lint/suspicious/noExplicitAny: mock-typing escape hatch
+  let exitSpy: any;
 
   beforeEach(() => {
     // Stub process.exit so we can assert it was called without
-    // tearing down the test runner.
-    exitSpy = vi.spyOn(process, "exit").mockImplementation(((_code?: number) => {
-      throw new Error("process.exit");
-    }) as never);
+    // tearing down the test runner. Throwing is the standard vitest
+    // pattern — the production caller never expects exit to return.
+    exitSpy = vi
+      .spyOn(process, "exit")
+      // biome-ignore lint/suspicious/noExplicitAny: mock-typing escape hatch
+      .mockImplementation(((_code?: number) => {
+        throw new Error("process.exit");
+      }) as any);
   });
 
   afterEach(() => {
@@ -121,7 +129,8 @@ describe("lintWalIntegrity", () => {
     fx.walDb.close();
     rmSync(fx.walPath); // remove the file we just created
     // No throw, no exit.
-    expect(() => lintWalIntegrity({ project: "main", cwd: fx.cwd })).not.toThrow();
+    const cwd = fx.cwd;
+    expect(() => lintWalIntegrity({ project: "main", cwd })).not.toThrow();
   });
 
   it("no-op when the WAL has no uncommitted entries", () => {
@@ -129,7 +138,8 @@ describe("lintWalIntegrity", () => {
     insertWal(fx, { path: "a.md", op: "write", preHash: null, postHash: "x", content: "x" });
     // Mark as committed
     fx.walDb.prepare("UPDATE wal_entries SET committed = 1").run();
-    expect(() => lintWalIntegrity({ project: "main", cwd: fx.cwd })).not.toThrow();
+    const cwd = fx.cwd;
+    expect(() => lintWalIntegrity({ project: "main", cwd })).not.toThrow();
   });
 
   it("CASE 1 (post-write match): --fix marks the entry committed", () => {
@@ -189,7 +199,8 @@ describe("lintWalIntegrity", () => {
       content: postContent,
     });
 
-    expect(() => lintWalIntegrity({ project: "main", cwd: fx.cwd, fix: true })).toThrow(
+    const cwd = fx.cwd;
+    expect(() => lintWalIntegrity({ project: "main", cwd, fix: true })).toThrow(
       "process.exit",
     );
     expect(exitSpy).toHaveBeenCalledWith(1);
