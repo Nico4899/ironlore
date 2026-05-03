@@ -227,4 +227,54 @@ describe("WorkerPool", () => {
     pool2.stop();
     db.close();
   });
+
+  it("gracefulStop() requeues every active job back to 'queued'", async () => {
+    // Two jobs that each park for several seconds inside the handler —
+    //  long enough that the gracefulStop() call below catches them
+    //  mid-run. The poll cycle is 1 s; the handler must outlast that
+    //  plus the test's wait window.
+    let started = 0;
+    pool.register("test.long", async (_job, ctx) => {
+      started++;
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, 5_000);
+        ctx.signal.addEventListener("abort", () => {
+          clearTimeout(t);
+          resolve();
+        });
+      });
+      return { status: "done" };
+    });
+
+    const id1 = pool.enqueue({ projectId: "main", kind: "test.long" });
+    const id2 = pool.enqueue({ projectId: "main", kind: "test.long" });
+    pool.start();
+
+    // Wait through ≥2 poll cycles. The poll claims one job at a time
+    //  (`LIMIT 1` in the atomic UPDATE), so two enqueued jobs need
+    //  two ticks before both are running. The 1 s tick + ~300 ms
+    //  slack puts us safely past that.
+    await new Promise((r) => setTimeout(r, 2_400));
+    expect(started).toBe(2);
+
+    const requeued = pool.gracefulStop();
+    expect(requeued).toBe(2);
+
+    // Both rows should now be back in 'queued' with cleared lease state
+    //  so the next process pickup retries them.
+    const j1 = pool.getJob(id1);
+    const j2 = pool.getJob(id2);
+    expect(j1?.status).toBe("queued");
+    expect(j1?.worker_id).toBeNull();
+    expect(j1?.lease_until).toBeNull();
+    expect(j2?.status).toBe("queued");
+    expect(j2?.worker_id).toBeNull();
+    expect(j2?.lease_until).toBeNull();
+  });
+
+  it("gracefulStop() returns 0 when no jobs are in flight", () => {
+    pool.start();
+    const requeued = pool.gracefulStop();
+    expect(requeued).toBe(0);
+  });
 });

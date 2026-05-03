@@ -1163,7 +1163,7 @@ async function start() {
       for (const scheduler of schedulers) scheduler.stop();
       for (const worker of embeddingWorkers.values()) worker.stop();
       for (const worker of contextualizationWorkers.values()) worker.stop();
-      backpressure.stop?.();
+      backpressure.stop();
 
       // 3. Pool: abort active jobs + reset their rows back to `queued`
       //    so the next process pickup re-runs them. Returns the count
