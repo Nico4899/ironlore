@@ -843,6 +843,47 @@ async function start() {
         contextualizationWorker: contextualizationWorkers.get(projectId) ?? null,
       }),
     );
+
+    // Git "Commit now" + "Push" surfaces — docs/02-storage-and-sync.md
+    //  §Surfaces (CLI ↔ SPA parity). Both bypass the 30 s grouping
+    //  window: `flush` calls `gitWorker.drain()`, `push` drains then
+    //  shells `git push`. Same auth gate as every other per-project
+    //  route via the `/api/projects/*` middleware mounted above.
+    app.post(`/api/projects/${projectId}/git/flush`, async (c) => {
+      try {
+        const committed = await services.drainGit();
+        return c.json({ ok: true, committed });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ ok: false, error: message }, 500);
+      }
+    });
+    app.post(`/api/projects/${projectId}/git/push`, async (c) => {
+      try {
+        const result = await services.pushGit();
+        if (result.noRemote) {
+          return c.json(
+            { ok: false, error: result.output, noRemote: true, drained: result.drained },
+            400,
+          );
+        }
+        if (!result.ok) {
+          return c.json(
+            {
+              ok: false,
+              error: result.output,
+              conflict: result.conflict ?? false,
+              drained: result.drained,
+            },
+            409,
+          );
+        }
+        return c.json({ ok: true, drained: result.drained, output: result.output });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ ok: false, error: message }, 500);
+      }
+    });
   }
   console.log(`Search index: ${totalIndexed} pages indexed across ${servicesById.size} projects`);
 

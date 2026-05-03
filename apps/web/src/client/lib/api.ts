@@ -860,6 +860,70 @@ export async function kickEmbeddingsBackfill(): Promise<{
 }
 
 /**
+ * "Commit now" — drain the per-project git worker, bypassing the
+ * 30 s grouping window. Returns the count of WAL entries committed
+ * in this pass. Powers the StatusBar button (docs/02-storage-and-sync.md
+ * §Surfaces — CLI ↔ SPA parity).
+ */
+export async function flushCommits(): Promise<{ committed: number }> {
+  const res = await apiFetch(`${base()}/git/flush`, { method: "POST" });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const body = (await res.json()) as { ok: boolean; committed: number; error?: string };
+  if (!body.ok) throw new ApiError(res.status, body.error ?? "flush failed");
+  return { committed: body.committed };
+}
+
+/**
+ * "Push" — drains first (so the snapshot is current), then runs
+ * `git push` on the project repo. The server returns 400 with
+ * `noRemote: true` when the project has no `origin` configured (the
+ * UI should hint "Configure a remote first" instead of treating it
+ * as an error). 409 with `conflict: true` when the push was rejected
+ * for a non-fast-forward / lock reason — the UI should prompt the
+ * user to pull / resolve.
+ */
+export interface PushResult {
+  drained: number;
+  output: string;
+}
+export class PushError extends Error {
+  readonly status: number;
+  readonly conflict: boolean;
+  readonly noRemote: boolean;
+  readonly drained: number;
+  constructor(
+    status: number,
+    message: string,
+    opts: { conflict?: boolean; noRemote?: boolean; drained?: number } = {},
+  ) {
+    super(message);
+    this.status = status;
+    this.conflict = opts.conflict ?? false;
+    this.noRemote = opts.noRemote ?? false;
+    this.drained = opts.drained ?? 0;
+  }
+}
+export async function pushCommits(): Promise<PushResult> {
+  const res = await apiFetch(`${base()}/git/push`, { method: "POST" });
+  const body = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    drained?: number;
+    output?: string;
+    error?: string;
+    conflict?: boolean;
+    noRemote?: boolean;
+  };
+  if (!res.ok || !body.ok) {
+    throw new PushError(res.status, body.error ?? body.output ?? res.statusText, {
+      conflict: body.conflict,
+      noRemote: body.noRemote,
+      drained: body.drained,
+    });
+  }
+  return { drained: body.drained ?? 0, output: body.output ?? "" };
+}
+
+/**
  * Activate a library persona template. On success the agent is live
  * under `data/.agents/<slug>/` with `active: true` in its frontmatter
  * and a corresponding `agent_state` row. 409 when already activated,

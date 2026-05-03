@@ -59,7 +59,23 @@ export function seedAgents(dataDir: string, jobsDb: Database.Database): void {
     active: false,
     scope: { pages: ["/**"] },
     writable_kinds: ["source", "wiki"],
+    skills: ["thesis"],
   });
+
+  // Researcher's agent-local `thesis.md` skill — the dedicated tooling
+  //  that earns the persona its place in the curated library per
+  //  docs/04-ai-and-agents.md §Default agents. Encodes thesis-driven
+  //  investigation: decompose → search supporting → search opposing →
+  //  compile with evidence tables → produce verdict. The
+  //  anti-confirmation-bias rule is the load-bearing piece — without
+  //  it the agent rationalises the prior round instead of stress-testing
+  //  it.
+  seedLibrarySkill(
+    dataDir,
+    "researcher",
+    "thesis.md",
+    THESIS_SKILL_BODY,
+  );
 
   // Shared skills directory.
   const sharedSkillsDir = join(dataDir, AGENTS_SHARED_DIR, "skills");
@@ -117,6 +133,24 @@ function seedLibraryTemplate(dataDir: string, slug: string, meta: Record<string,
 
   const frontmatter = buildFrontmatter(slug, meta);
   writeFileSync(personaPath, frontmatter, "utf-8");
+}
+
+/**
+ * Seed an agent-local skill file under
+ * `.agents/.library/<slug>/skills/<filename>`. Non-destructive: an
+ * existing file is left untouched so a user's edits survive a restart.
+ */
+function seedLibrarySkill(
+  dataDir: string,
+  slug: string,
+  filename: string,
+  body: string,
+): void {
+  const skillsDir = join(dataDir, AGENTS_LIBRARY_DIR, slug, "skills");
+  const skillPath = join(skillsDir, filename);
+  if (existsSync(skillPath)) return;
+  mkdirSync(skillsDir, { recursive: true });
+  writeFileSync(skillPath, body, "utf-8");
 }
 
 function buildFrontmatter(slug: string, meta: Record<string, unknown>): string {
