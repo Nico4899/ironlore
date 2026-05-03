@@ -1122,25 +1122,112 @@ async function start() {
     }
   });
 
-  // Graceful shutdown — `tsx watch` (and any `kill <pid>` / Ctrl-C
-  //  in the dev terminal) sends SIGTERM/SIGINT. Without an explicit
-  //  handler, Node prints the signal but the listening socket stays
-  //  half-bound, so the next watch-restart fails immediately with
-  //  `EADDRINUSE: address already in use 127.0.0.1:3000`. Closing
-  //  the server releases the port; the `setTimeout` is a hard cap
-  //  so a wedged in-flight request can't keep the process alive
-  //  forever (5 s is plenty for a local dev request to finish or
-  //  be abandoned).
+  // Graceful shutdown per docs/07-tech-stack.md §Process supervision:
+  //  stop accepting new connections, drain in-flight HTTP responses
+  //  (10 s cap), flush the WAL to git, mark running jobs as `queued`
+  //  (so the next start retries them), then exit 0.
+  //
+  //  Note for `tsx watch` and Ctrl-C: closing the server releases the
+  //  port so the next watch-restart doesn't bounce off EADDRINUSE.
+  //  Hard cap is 15 s (10 s drain + 5 s slack for git + DB close).
+  let shuttingDown = false;
   const shutdown = (signal: NodeJS.Signals): void => {
-    console.log(`Received ${signal}, closing server…`);
-    server.close((err) => {
-      if (err) console.error("server.close error:", err);
-      process.exit(err ? 1 : 0);
-    });
-    setTimeout(() => {
-      console.warn("server.close timed out after 5s, forcing exit.");
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // Flip /ready to 503 so external supervisors stop routing traffic
+    // before the listener actually closes. Symmetric with startup.
+    ready = false;
+    readyReason = `Shutting down (${signal})`;
+    console.log(`Received ${signal}, draining…`);
+
+    const hardCap = setTimeout(() => {
+      console.warn("Graceful shutdown timed out after 15s, forcing exit.");
       process.exit(1);
-    }, 5000).unref();
+    }, 15_000);
+    hardCap.unref();
+
+    const cleanup = async (): Promise<number> => {
+      // 1. Stop accepting new HTTP connections. Wraps the callback in
+      //    a promise so we can `await` it and proceed only after the
+      //    last in-flight request has finished (server.close fires the
+      //    callback with no error on clean drain).
+      await new Promise<void>((resolve) => {
+        server.close((err) => {
+          if (err) console.error("server.close error:", err);
+          resolve();
+        });
+      });
+
+      // 2. Stop background timers — heartbeat schedulers, embedding +
+      //    contextualization workers. Each `stop()` is sync + idempotent.
+      for (const scheduler of schedulers) scheduler.stop();
+      for (const worker of embeddingWorkers.values()) worker.stop();
+      for (const worker of contextualizationWorkers.values()) worker.stop();
+      backpressure.stop?.();
+
+      // 3. Pool: abort active jobs + reset their rows back to `queued`
+      //    so the next process pickup re-runs them. Returns the count
+      //    so we can log it.
+      const requeued = pool.gracefulStop();
+      if (requeued > 0) {
+        console.log(`Requeued ${requeued} in-flight job${requeued === 1 ? "" : "s"}`);
+      }
+
+      // 4. Drain each project's WAL to git so SIGTERM is a clean
+      //    commit point. Use Promise.allSettled so one project's git
+      //    failure (e.g. detached HEAD) doesn't block another's
+      //    cleanup. Sum the drained-counts for the log line.
+      const drainResults = await Promise.allSettled(
+        Array.from(servicesById.entries()).map(async ([projectId, services]) => {
+          try {
+            const committed = await services.drainGit();
+            return { projectId, committed, error: null as Error | null };
+          } catch (err) {
+            return {
+              projectId,
+              committed: 0,
+              error: err instanceof Error ? err : new Error(String(err)),
+            };
+          }
+        }),
+      );
+      let totalDrained = 0;
+      for (const r of drainResults) {
+        if (r.status === "fulfilled") {
+          totalDrained += r.value.committed;
+          if (r.value.error) {
+            console.warn(`drainGit(${r.value.projectId}) failed:`, r.value.error.message);
+          }
+        }
+      }
+      if (totalDrained > 0) {
+        console.log(`Flushed ${totalDrained} WAL entr${totalDrained === 1 ? "y" : "ies"} to git`);
+      }
+
+      // 5. Stop MCP bridges so stdio child processes get SIGTERM
+      //    instead of being orphaned to the OS reaper.
+      await Promise.all(
+        Array.from(mcpBridgesById.values()).map((b) => b.close().catch(() => undefined)),
+      );
+
+      // 6. Close every project's DB handles (writer, search-index,
+      //    links-registry). Idempotent — `services.stop()` checks the
+      //    started flag.
+      await Promise.allSettled(Array.from(servicesById.values()).map((s) => s.stop()));
+
+      return drainResults.length;
+    };
+
+    cleanup()
+      .then(() => {
+        clearTimeout(hardCap);
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error("Graceful shutdown error:", err);
+        clearTimeout(hardCap);
+        process.exit(1);
+      });
   };
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);

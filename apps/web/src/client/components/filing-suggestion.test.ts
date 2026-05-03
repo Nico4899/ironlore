@@ -59,9 +59,7 @@ describe("countDistinctCitedPages — proactive filing-suggestion threshold", ()
   });
 
   it("strips the typed-relation pipe form so [[A | supports]] still counts page A", () => {
-    expect(countDistinctCitedPages("Both [[A | supports]] and [[B | refutes]] the claim.")).toBe(
-      2,
-    );
+    expect(countDistinctCitedPages("Both [[A | supports]] and [[B | refutes]] the claim.")).toBe(2);
   });
 
   it("handles a synthesis-style paragraph at the threshold (≥3 distinct)", () => {
