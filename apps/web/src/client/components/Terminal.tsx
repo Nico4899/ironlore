@@ -117,12 +117,38 @@ export default function Terminal() {
     };
     window.addEventListener("resize", handleResize);
 
+    // Programmatic command injection — listened to by RecoveryBanner
+    // so the "Run lint" action can pre-fill `ironlore lint --fix
+    // --check wal-integrity` rather than dropping the user into a
+    // raw shell. The PTY waits for a newline, so we send the command
+    // followed by `\r`. If the PTY isn't ready yet (just opened),
+    // queue with a small delay — the bash prompt typically appears
+    // within ~50ms but xterm-on-mobile can be slower.
+    const handleCommand = (e: Event): void => {
+      const detail = (e as CustomEvent<{ command: string }>).detail;
+      if (!detail?.command) return;
+      const send = () => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(`${detail.command}\r`);
+        }
+      };
+      if (ws.readyState === WebSocket.OPEN) {
+        // Brief delay so the shell prompt has time to appear when
+        // the terminal was just opened by the same user gesture.
+        setTimeout(send, 100);
+      } else {
+        ws.addEventListener("open", () => setTimeout(send, 200), { once: true });
+      }
+    };
+    window.addEventListener("ironlore:terminal-command", handleCommand);
+
     // Observe container size changes
     const ro = new ResizeObserver(() => fit.fit());
     ro.observe(container);
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      window.removeEventListener("ironlore:terminal-command", handleCommand);
       ro.disconnect();
       ws.close();
       term.dispose();

@@ -15,9 +15,11 @@ interface RecoveryWarning {
  * docs/02-storage-and-sync.md §User-visible recovery surface).
  *
  * A pure console log is invisible to the person running Ironlore, so
- * this banner surfaces the affected paths and exposes a **Run repair**
- * action that opens the embedded terminal (via the existing sidebar
- * toggle), where the user can run `ironlore repair`.
+ * this banner surfaces the affected paths and exposes a **Run lint**
+ * action that opens the embedded terminal AND pre-fills
+ * `ironlore lint --fix --check wal-integrity` (per the doc's link
+ * target). The pre-fill is dispatched via a window CustomEvent the
+ * Terminal component subscribes to — no direct DOM coupling.
  *
  * Dismissible per-session. A new `recovery:pending` event re-shows
  * the banner because it pushes a fresh warning list into state.
@@ -47,10 +49,20 @@ export function RecoveryBanner() {
       : `${warnings.length} files need repair after a crash`;
 
   const openRepair = () => {
-    // Opens the embedded terminal so the user can run `ironlore repair`.
-    // The repair CLI lives in packages/cli and prints per-file output.
+    // Open the terminal (if not already open) and pre-fill the lint
+    // command the doc names. Terminal.tsx subscribes to the
+    // `ironlore:terminal-command` window event.
     const store = useAppStore.getState();
     if (!store.terminalOpen) store.toggleTerminal();
+    // Slight delay so the Terminal component has a chance to mount
+    // and wire up the listener if it was previously closed.
+    setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("ironlore:terminal-command", {
+          detail: { command: "ironlore lint --fix --check wal-integrity" },
+        }),
+      );
+    }, 50);
   };
 
   return (
@@ -78,7 +90,7 @@ export function RecoveryBanner() {
         onClick={openRepair}
         className="rounded border border-signal-amber px-2 py-0.5 font-medium hover:bg-signal-amber/20"
       >
-        Run repair
+        Run lint
       </button>
       <button
         type="button"
