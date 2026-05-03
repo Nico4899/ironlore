@@ -49,8 +49,8 @@ describe("lint CLI", () => {
     ).toBe(true);
   });
 
-  it("accepts valid --check category (schema-migration)", () => {
-    expect(() => lint({ project: "main", check: "schema-migration" })).not.toThrow();
+  it("accepts valid --check category (schema-compliance)", () => {
+    expect(() => lint({ project: "main", check: "schema-compliance" })).not.toThrow();
   });
 
   it("accepts valid --check category (data-integrity)", () => {
@@ -60,7 +60,7 @@ describe("lint CLI", () => {
   it("runs all categories when no --check is specified", () => {
     expect(() => lint({ project: "main" })).not.toThrow();
     // All three section headers should print
-    for (const cat of ["index-consistency", "schema-migration", "data-integrity"]) {
+    for (const cat of ["index-consistency", "schema-compliance", "data-integrity"]) {
       expect(
         logSpy.mock.calls.some((call: unknown[]) =>
           String((call as unknown[])[0]).includes(`[${cat}]`),
@@ -70,14 +70,14 @@ describe("lint CLI", () => {
   });
 
   it("prints the --fix flag in the header when set", () => {
-    expect(() => lint({ project: "main", fix: false, check: "schema-migration" })).not.toThrow();
+    expect(() => lint({ project: "main", fix: false, check: "schema-compliance" })).not.toThrow();
     const headerCall = logSpy.mock.calls.find((call: unknown[]) =>
       String((call as unknown[])[0]).startsWith("\nironlore lint"),
     );
     expect(String(headerCall?.[0])).not.toContain("--fix");
 
     logSpy.mockClear();
-    expect(() => lint({ project: "main", fix: true, check: "schema-migration" })).not.toThrow();
+    expect(() => lint({ project: "main", fix: true, check: "schema-compliance" })).not.toThrow();
     const fixHeader = logSpy.mock.calls.find((call: unknown[]) =>
       String((call as unknown[])[0]).startsWith("\nironlore lint"),
     );

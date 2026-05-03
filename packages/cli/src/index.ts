@@ -32,7 +32,7 @@ program
   .option("--fix", "Auto-repair issues (default: report only)")
   .option(
     "--check <category>",
-    "Run a single check category (wal-integrity, index-consistency, schema-migration, structure, provenance, data-integrity)",
+    "Run a single check category (wal-integrity, index-consistency, schema-compliance, structure, provenance, data-integrity)",
   )
   .option(
     "--all-projects",

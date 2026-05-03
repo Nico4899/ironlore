@@ -13,7 +13,8 @@ import { repair } from "./repair.js";
  * report-only mode. `--fix` auto-repairs what it can. `--check <cat>`
  * scopes to a single category.
  *
- * Categories (per docs/02-storage-and-sync.md §Lint-as-migration):
+ * Categories (per docs/02-storage-and-sync.md §Lint-as-migration and
+ * docs/07-tech-stack.md §Update procedure):
  *   wal-integrity     — uncommitted WAL entries from a crash; --fix
  *                       replays writes / marks committed for the
  *                       recoverable cases. The "neither hash matches"
@@ -21,7 +22,11 @@ import { repair } from "./repair.js";
  *                       doc's no-clobber rule.
  *   index-consistency — rebuild FTS5 + chunk + context indexes
  *                       (delegates to `reindex`)
- *   schema-migration  — run pending DB migrations (delegates to `migrate`)
+ *   schema-compliance — run pending DB migrations so the on-disk
+ *                       schema matches the shipped version (delegates
+ *                       to `migrate`). Renamed from `schema-migration`
+ *                       to match the spec — three docs use the
+ *                       compliance spelling.
  *   structure         — orphan pages + coverage gaps (informational)
  *   provenance        — agent-authored blocks missing `derived_from` (informational)
  *   data-integrity    — check and repair data (delegates to `repair`)
@@ -30,7 +35,7 @@ import { repair } from "./repair.js";
 const CATEGORIES = [
   "wal-integrity",
   "index-consistency",
-  "schema-migration",
+  "schema-compliance",
   "structure",
   "provenance",
   "data-integrity",
@@ -96,7 +101,7 @@ export function lint(options: LintOptions): void {
         }
         break;
 
-      case "schema-migration":
+      case "schema-compliance":
         console.log(`\n  [${cat}]`);
         migrate();
         break;
