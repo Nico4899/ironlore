@@ -372,6 +372,26 @@ export function SidebarNew() {
     }
   }, [sidebarFolder]);
 
+  // Global ⌘N / Ctrl+N — invoke the same flow the bottom rail's
+  //  click triggers. Suppressed when the user is typing in an input,
+  //  textarea, or contentEditable surface (the editor) so the chord
+  //  doesn't steal a literal "N" keystroke. The browser may still
+  //  intercept ⌘N on its own to open a new window — preventDefault
+  //  is best-effort; the rail's click is the guaranteed path.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "n") {
+        const ae = document.activeElement as HTMLElement | null;
+        const tag = ae?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || ae?.isContentEditable) return;
+        e.preventDefault();
+        void handleNewPageFromSidebar();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleNewPageFromSidebar]);
+
   // Rename (optimistic). The tree store moves the node right away
   //  so the label flips in place; server failure rolls it back.
   //  Captures the original node's `type` before the move so the
@@ -841,19 +861,10 @@ export function SidebarNew() {
             })}
           </div>
 
-          {/* "+ New page" sits as the last row of the file list, directly
-           *  under the lowermost file. Scrolls with the tree (lives in the
-           *  same scroll container) but is a sibling of role="tree" so it
-           *  doesn't violate aria-required-children. */}
-          <button
-            type="button"
-            onClick={handleNewPageFromSidebar}
-            className="mt-0.5 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-tertiary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-            title="Create a new page in this folder"
-          >
-            <FilePlus className="h-3.5 w-3.5 shrink-0" />
-            <span className="flex-1 truncate">New page</span>
-          </button>
+          {/* "+ New page" used to live as the last row of the file list,
+           *  but it gets buried below the fold in long trees. The trigger
+           *  has moved to the sticky bottom rail (see NewPageRail below);
+           *  this comment is retained for orientation. */}
         </div>
       )}
 
@@ -893,6 +904,12 @@ export function SidebarNew() {
           />
         </div>
       )}
+
+      {/* ─── Sticky "New page" rail ─── full-width primary action that
+       *  always sits at the bottom of the sidebar regardless of how
+       *  long the tree gets. The chord chip mirrors the global ⌘N
+       *  binding wired below in a useEffect. */}
+      {!collapsed && <NewPageRail onClick={handleNewPageFromSidebar} />}
 
       {/* ─── Context menu ─── */}
       {contextMenu && (
@@ -1408,5 +1425,48 @@ function AgentsPanel({ collapsed }: { collapsed: boolean }) {
         <span className="font-mono uppercase">add agent</span>
       </button>
     </div>
+  );
+}
+
+/**
+ * NewPageRail — full-width sticky bottom action that creates a new
+ * page in the current `sidebarFolder` (or at the vault root when
+ * none is drilled into). Mirrors the click target wired into the
+ * global ⌘N keymap. Larger than tree rows on purpose: this is the
+ * primary creation affordance for the whole sidebar.
+ */
+function NewPageRail({ onClick }: { onClick: () => void }) {
+  const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  const chord = isMac ? "⌘N" : "Ctrl+N";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full shrink-0 items-center gap-2 px-3 outline-none transition-colors hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      style={{
+        height: 36,
+        borderTop: "1px solid var(--il-border-soft)",
+        background: "var(--il-slate)",
+        color: "var(--il-text)",
+        fontSize: 13.5,
+        fontWeight: 500,
+        textAlign: "left",
+      }}
+      title={`Create a new page (${chord})`}
+    >
+      <FilePlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className="flex-1 truncate">New page</span>
+      <span
+        aria-hidden="true"
+        className="font-mono"
+        style={{
+          fontSize: 11,
+          color: "var(--il-text3)",
+          letterSpacing: "0.04em",
+        }}
+      >
+        {chord}
+      </span>
+    </button>
   );
 }
