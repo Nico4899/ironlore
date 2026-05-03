@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { WsEventInput } from "@ironlore/core";
+import { simpleGit } from "simple-git";
 import { FileWatcher } from "./file-watcher.js";
 import { GitWorker } from "./git-worker.js";
 import { LinksRegistry } from "./links-registry.js";

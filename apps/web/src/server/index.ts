@@ -56,6 +56,7 @@ import { createKbCreatePage } from "./tools/kb-create-page.js";
 import { createKbDeleteBlock } from "./tools/kb-delete-block.js";
 import { createKbGlobalSearch } from "./tools/kb-global-search.js";
 import { createKbInsertAfter } from "./tools/kb-insert-after.js";
+import { createKbCheckContradictions } from "./tools/kb-check-contradictions.js";
 import { createKbLintContradictions } from "./tools/kb-lint-contradictions.js";
 import { createKbLintCoverageGaps } from "./tools/kb-lint-coverage-gaps.js";
 import { createKbLintOrphans } from "./tools/kb-lint-orphans.js";
@@ -311,6 +312,12 @@ async function start() {
     dispatcher.register(createKbLintOrphans(services.searchIndex));
     dispatcher.register(createKbLintStaleSources(services.searchIndex));
     dispatcher.register(createKbLintContradictions(services.searchIndex));
+    // Phase-4 no-op stub for the LLM-classifier contradiction tool.
+    //  Doc promises agents can call it and handle absence gracefully;
+    //  registering a structured-empty-array stub honors that. The
+    //  Phase-11 follow-up will swap in the real classifier (embed →
+    //  retrieve → classify → cache to .ironlore/contradictions.sqlite).
+    dispatcher.register(createKbCheckContradictions());
     dispatcher.register(createKbLintCoverageGaps(services.searchIndex));
     dispatcher.register(createKbLintProvenanceGaps(services.getDataRoot()));
     // Phase-11 evolver-agent helper. Reads from the install-level
