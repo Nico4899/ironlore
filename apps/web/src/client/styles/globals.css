@@ -930,60 +930,59 @@ kbd {
 }
 
 /*
- * AgentsCube — 6-face 3D cube on the Agents tab. Each face is a
- * 240×240 px square, the cube depth is 240 px (so each face's
- * `translateZ(120px)` sits flush at the cube edge), and the
- * surrounding host carries the perspective so children share the
- * same vanishing point.
- *
- * The cube itself is a positioned ancestor (`absolute inset: 0`)
- * with `transform-style: preserve-3d` so its child face transforms
- * are honoured in 3D. Its `transform` is driven from React state
- * (rotation X/Y degrees); a CSS transition kicks in only during
- * snap-on-release (toggled inline via the `transition` style prop).
+ * Agents flippable card — replaces the prior 3D cube. Each face has
+ * the column's natural width and a content-driven height; only one
+ * face is rendered at a time. The visible face carries a constant
+ * subtle 3D tilt so it reads as a tilted card. Navigation animates
+ * a two-phase rotateY/rotateX flip — current face rotates out, the
+ * next face content swaps in, then the new face rotates back to
+ * rest. Inline-driven from `AgentsCube.tsx`; the only CSS hooks
+ * here are the cursor + transform-origin so the flip pivots feel
+ * consistent.
  */
+.il-agents-card-host {
+  cursor: grab;
+}
+.il-agents-card-host:active {
+  cursor: grabbing;
+}
+.il-agents-card {
+  transform-origin: center center;
+  will-change: transform;
+}
+
+/*
+ * Real 3D cube — the host carries the perspective; the cube itself
+ * is the rotated `transform-style: preserve-3d` group; six faces
+ * are statically positioned at `translateZ(W/2)` from the center.
+ * Each face is the same width × height as the column container so
+ * the cube reads as a real volume rather than a flat card flip.
+ * Cursor mirrors `.il-agents-card-host` so the gesture affordance
+ * is consistent across the two layouts.
+ */
+.il-agents-cube-host {
+  cursor: grab;
+}
+.il-agents-cube-host:active {
+  cursor: grabbing;
+}
 .il-agents-cube {
   position: absolute;
   inset: 0;
   transform-style: preserve-3d;
-  /* Pull the cube center back so the front face lands at z=0 in
-   *  screen space; rotation then orbits around the cube center. */
-  transform: translateZ(-120px);
-  cursor: grab;
+  will-change: transform;
 }
-.il-agents-cube:active {
-  cursor: grabbing;
-}
-
 .il-agents-cube-face {
   position: absolute;
   inset: 0;
+  width: 100%;
   background: var(--il-slate);
   border: 1px solid var(--il-border-soft);
   border-radius: 6px;
-  padding: 10px 10px 12px;
+  padding: 14px 16px;
   box-sizing: border-box;
-  /* Hide back-side of each face so we don't see ghost text from
-   *  the face that's currently behind the cube. */
   backface-visibility: hidden;
-}
-.il-agents-cube-face--front {
-  transform: translateZ(120px);
-}
-.il-agents-cube-face--right {
-  transform: rotateY(90deg) translateZ(120px);
-}
-.il-agents-cube-face--back {
-  transform: rotateY(180deg) translateZ(120px);
-}
-.il-agents-cube-face--left {
-  transform: rotateY(-90deg) translateZ(120px);
-}
-.il-agents-cube-face--top {
-  transform: rotateX(90deg) translateZ(120px);
-}
-.il-agents-cube-face--bottom {
-  transform: rotateX(-90deg) translateZ(120px);
+  overflow: hidden;
 }
 
 /*
