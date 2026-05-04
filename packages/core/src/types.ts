@@ -129,4 +129,12 @@ export interface ProjectConfig {
    * project's own `kb.search` is unaffected.
    */
   trust?: "normal" | "strict";
+  /**
+   * docs/08-projects-and-isolation.md §Promotion. List of source
+   * project IDs whose pages may be copied INTO this project via the
+   * "Copy to project…" workflow. `undefined` (field absent) =
+   * accept-from-any (backwards-compat). `[]` = accept-from-none
+   * (strict, the canonical research-project default).
+   */
+  accept_promotions_from?: string[];
 }

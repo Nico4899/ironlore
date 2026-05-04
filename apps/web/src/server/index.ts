@@ -924,10 +924,32 @@ async function start() {
   app.use("/api/projects/*/agents/*", authMiddleware);
   app.use("/api/projects/*/jobs/*", authMiddleware);
 
-  // Top-level list endpoint for the project switcher.
+  // Top-level list endpoint for the project switcher + cross-project
+  //  copy modal. We surface `accept_promotions_from` per row so the
+  //  client can filter the copy-to-project picker (per
+  //  docs/08-projects-and-isolation.md §Cross-project copy workflow:
+  //  "Only projects whose `accept_promotions_from` includes the source
+  //  project appear in the list"). `undefined` = "no allowlist
+  //  declared", which the client treats as accept-from-anywhere
+  //  for backwards-compat with installs scaffolded before the field
+  //  existed.
   app.get("/api/projects", (c) => {
     const list = projectRegistry.list();
-    return c.json({ projects: list });
+    const enriched = list.map((p) => {
+      const services = servicesById.get(p.id);
+      let acceptPromotionsFrom: string[] | undefined;
+      if (services) {
+        try {
+          const cfg = loadProjectConfig(services.projectDir);
+          acceptPromotionsFrom = cfg.accept_promotions_from;
+        } catch {
+          // Missing / malformed project.yaml → leave undefined; the
+          //  client will fall back to allow-all for this row.
+        }
+      }
+      return { ...p, acceptPromotionsFrom };
+    });
+    return c.json({ projects: enriched });
   });
 
   // Install-global providers API (list / save key / test) —

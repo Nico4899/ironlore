@@ -1171,6 +1171,14 @@ export interface ProjectListEntry {
   name: string;
   preset: "main" | "research" | "sandbox";
   createdAt: string;
+  /**
+   * docs/08-projects-and-isolation.md §Promotion: list of source
+   * project IDs whose pages may be copied INTO this project. Absent
+   * (`undefined`) = backwards-compat allow-from-any. `[]` = strict
+   * (no promotions accepted). The Copy-to-Project modal filters its
+   * picker against this field.
+   */
+  acceptPromotionsFrom?: string[];
 }
 
 /** List every installed project. Powers the Cmd+P switcher. */

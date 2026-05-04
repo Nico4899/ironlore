@@ -41,8 +41,16 @@ export function CopyToProjectDialog({ srcPath, onClose }: CopyToProjectDialogPro
     fetchProjects()
       .then((list) => {
         if (cancelled) return;
-        // The switcher spec disallows same-project copy; filter here.
-        const candidates = list.filter((p) => p.id !== srcProjectId);
+        // Two filters per docs/08 §Cross-project copy workflow:
+        //   1. Same-project copies are nonsensical.
+        //   2. Targets must accept promotions from this source. Absent
+        //      `acceptPromotionsFrom` = backwards-compat (allow any);
+        //      explicit `[]` = strict (no promotions).
+        const candidates = list.filter((p) => {
+          if (p.id === srcProjectId) return false;
+          if (p.acceptPromotionsFrom === undefined) return true;
+          return p.acceptPromotionsFrom.includes(srcProjectId);
+        });
         setProjects(candidates);
         if (candidates[0]) setTargetProjectId(candidates[0].id);
       })
@@ -171,7 +179,9 @@ export function CopyToProjectDialog({ srcPath, onClose }: CopyToProjectDialogPro
           )}
           {empty && !error && (
             <div style={{ fontSize: 12.5, color: "var(--il-text3)" }}>
-              No other projects available. Run <code>ironlore new-project</code>.
+              No projects accept promotions from <code>{srcProjectId}</code>. Add this project's id
+              to a target's <code>accept_promotions_from</code> list in its{" "}
+              <code>project.yaml</code>.
             </div>
           )}
           {projects && !empty && (

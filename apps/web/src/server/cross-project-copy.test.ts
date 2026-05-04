@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, realpathSync, rmSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
+import { simpleGit } from "simple-git";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCrossProjectCopyApi, stampProvenance } from "./cross-project-copy.js";
 import { ProjectServices } from "./project-services.js";

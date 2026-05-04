@@ -99,6 +99,19 @@ export const ProjectConfigSchema = z.object({
    * access; the two policies cover orthogonal risks.
    */
   trust: z.enum(["normal", "strict"]).default("normal"),
+  /**
+   * Per docs/08-projects-and-isolation.md §Promotion: list of source
+   * project IDs whose pages may be copied INTO this project via the
+   * "Copy to project…" workflow. The cross-project copy endpoint
+   * refuses any request where the source isn't in this list.
+   *
+   * `undefined` (field absent) is treated as "allow any source" for
+   * backwards-compat with installs created before the field existed —
+   * those projects keep accepting promotions until the user opts in.
+   * `[]` (empty list) is the strictest setting: no promotions accepted
+   * at all (the canonical research-project default per the doc table).
+   */
+  accept_promotions_from: z.array(z.string()).optional(),
 });
 
 /** Zod schema for the bootstrap install record. */

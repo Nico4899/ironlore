@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { simpleGit } from "simple-git";
+import { loadProjectConfig } from "./fetch-for-project.js";
 import type { ProjectServices } from "./project-services.js";
 
 /**
@@ -69,6 +71,29 @@ export function createCrossProjectCopyApi(options: CrossProjectCopyOptions): Hon
       return c.json({ error: `Unknown target project '${body.targetProjectId}'` }, 404);
     }
 
+    // Promotion allow-list gate (per docs/08 §Cross-project copy
+    //  workflow + §Promotion: the only crossing point). The target's
+    //  `accept_promotions_from` lists which sources may copy IN.
+    //  Absent field = backwards-compat allow-from-anywhere; present
+    //  field is enforced strictly. Refusing here is the server-side
+    //  half of the modal's filtered picker — defense-in-depth so a
+    //  raw curl can't bypass the UI.
+    try {
+      const dstCfg = loadProjectConfig(dst.projectDir);
+      if (dstCfg.accept_promotions_from !== undefined && !dstCfg.accept_promotions_from.includes(srcId)) {
+        return c.json(
+          {
+            error: `Project '${body.targetProjectId}' does not accept promotions from '${srcId}'`,
+            acceptPromotionsFrom: dstCfg.accept_promotions_from,
+          },
+          403,
+        );
+      }
+    } catch {
+      // Missing / malformed project.yaml on the destination → no
+      //  allow-list to enforce; fall through (backwards-compat).
+    }
+
     // Read source page. Only markdown pages are supported in 1.0 — the
     //  modal restricts to `.md`; defense-in-depth here.
     if (!srcPath.endsWith(".md")) {
@@ -111,6 +136,27 @@ export function createCrossProjectCopyApi(options: CrossProjectCopyOptions): Hon
       } else {
         result = await dst.writer.write(finalPath, stamped, null);
       }
+
+      // Audit trail (per docs/08 §Cross-project copy workflow #6):
+      //  the source repo gets a content-free `copy to <dst>` commit
+      //  so `git log` reads the full crossing trail without having
+      //  to cross-reference projects. Failure here is non-fatal —
+      //  the destination write already succeeded; we just log a
+      //  warning so the operator can investigate.
+      try {
+        await writeSourceAuditCommit({
+          srcDir: src.projectDir,
+          srcPath,
+          targetProjectId: body.targetProjectId,
+          targetPath: finalPath,
+        });
+      } catch (err) {
+        console.warn(
+          `[cross-project-copy] source audit commit failed for ${srcId}/${srcPath}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+
       const resp: CopyResponse = {
         targetProjectId: body.targetProjectId,
         targetPath: finalPath,
@@ -124,6 +170,31 @@ export function createCrossProjectCopyApi(options: CrossProjectCopyOptions): Hon
   });
 
   return api;
+}
+
+/**
+ * Stamp an empty (content-free) commit on the source repo so the
+ * crossing is auditable from either side of the boundary. The
+ * commit message follows the spec's `copy to <dst>/<dst-path>`
+ * convention so `git log --grep="^copy to"` reveals every promotion
+ * out of the project.
+ *
+ * `--allow-empty` is required: by definition a `copy to` commit
+ * makes no on-disk change to the source; the commit IS the audit
+ * artifact. Authored as the calling user (we don't have a session
+ * here yet — falls back to git's configured user.email; multi-user
+ * attribution is a Phase-9 follow-up).
+ */
+async function writeSourceAuditCommit(params: {
+  srcDir: string;
+  srcPath: string;
+  targetProjectId: string;
+  targetPath: string;
+}): Promise<void> {
+  const git = simpleGit(params.srcDir);
+  await git.commit(`copy to ${params.targetProjectId}/${params.targetPath}`, [], {
+    "--allow-empty": null,
+  });
 }
 
 /** Read HEAD commit SHA for the project. Returns null on any error. */
