@@ -883,6 +883,27 @@ kbd {
 }
 
 /*
+ * Project-switcher modal slide-up. The modal is anchored above the
+ * sidebar's bottom project tile (per the redesign brief — clicking
+ * the tile pops a list right above it, not centred on the screen).
+ * The animation rides `--motion-transit` (180ms) so it shares the
+ * cadence of the rest of the app's modal entrances.
+ */
+@keyframes ilSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.il-project-switcher-popup {
+  animation: ilSlideUp var(--motion-transit) ease-out forwards;
+}
+
+/*
  * AI panel resize handle — mirror of `.il-sidebar-resize` but
  * anchored to the LEFT edge of the AI panel (which sits on the
  * right side of the viewport, so the user-facing edge is its left).

@@ -204,16 +204,23 @@ export function ProjectSwitcher() {
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[15vh]"
+      className="fixed inset-0 z-50 flex items-end justify-start bg-black/60"
+      style={{ paddingLeft: 8, paddingBottom: 64 }}
       onClick={handleOverlayClick}
       onKeyDown={handleKey}
       role="dialog"
       aria-modal="true"
       aria-label="Switch project"
     >
+      {/* Anchored above the project tile (bottom-left of the
+       *  sidebar) instead of centred. The slide-up + fade animation
+       *  lives in `.il-project-switcher-popup` (globals.css). Width
+       *  caps at the typical sidebar width band so the modal feels
+       *  attached to the tile that opened it; on wider sidebars or
+       *  smaller viewports the cap kicks in first. */}
       <div
         ref={dialogRef}
-        className="w-full max-w-lg overflow-hidden rounded-md shadow-2xl"
+        className="il-project-switcher-popup w-full max-w-sm overflow-hidden rounded-md shadow-2xl"
         style={{ background: "var(--il-slate)", border: "1px solid var(--il-border)" }}
       >
         {stage === "list" && (

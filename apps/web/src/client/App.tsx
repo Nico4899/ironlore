@@ -244,11 +244,11 @@ function AppShell() {
         Skip to content
       </a>
 
-      {/* Top app header — logo + breadcrumb + theme / search /
-       *  inbox / profile cluster. Lives above the sidebar so the
-       *  right cluster (⌘K, inbox, profile) is always above the
-       *  fold regardless of which surface is active. */}
-      <AppHeader />
+      {/* Top platform header retired per the sidebar redesign — its
+       *  three controls (Settings, Search, Theme) plus the logo +
+       *  wordmark moved into the sidebar's top chrome row. The
+       *  Inbox indicator now lives on the sidebar's Inbox tab pill
+       *  itself; the breadcrumb moved into the editor toolbar. */}
 
       {/* Shell body — sidebar on the left, content + panels on the right. */}
       <div className="flex min-h-0 flex-1">
