@@ -1059,16 +1059,24 @@ function SidebarTabs({
   onSelect: (tab: "files" | "agents" | "inbox") => void;
 }) {
   if (collapsed) {
+    // Clicking any collapsed-state tab icon expands the sidebar AND
+    //  switches to that tab in one motion (`openSidebarTab` does
+    //  both via the existing store helper). Mirrors the sidebar
+    //  redesign's "click any icon while collapsed → re-open" rule.
+    const openTab = (tab: "files" | "agents" | "inbox") => {
+      useAppStore.getState().openSidebarTab(tab);
+      onSelect(tab);
+    };
     return (
       <div className="flex flex-col items-center gap-0.5 border-b border-border px-1 py-1.5">
-        <SidebarBottomTab icon={Home} label="Files" collapsed onClick={() => onSelect("files")} />
-        <SidebarBottomTab icon={Bot} label="Agents" collapsed onClick={() => onSelect("agents")} />
+        <SidebarBottomTab icon={Home} label="Files" collapsed onClick={() => openTab("files")} />
+        <SidebarBottomTab icon={Bot} label="Agents" collapsed onClick={() => openTab("agents")} />
         <SidebarBottomTab
           icon={InboxIcon}
           label="Inbox"
           collapsed
           badge={inboxCount > 0 ? inboxCount : undefined}
-          onClick={() => onSelect("inbox")}
+          onClick={() => openTab("inbox")}
         />
       </div>
     );
@@ -1389,13 +1397,20 @@ function ProjectTile({ collapsed }: { collapsed: boolean }) {
 
   if (!currentProjectId) return null;
   const onClick = () => useAppStore.getState().toggleProjectSwitcher();
+  // Collapsed-state click also expands the sidebar so the redesign
+  //  rule "any icon click while collapsed re-opens the sidebar"
+  //  holds for the project switcher tile too.
+  const onClickCollapsed = () => {
+    useAppStore.getState().setSidebarOpen(true);
+    onClick();
+  };
 
   if (collapsed) {
     return (
       <div className="flex items-center justify-center border-b border-border px-2 py-2">
         <button
           type="button"
-          onClick={onClick}
+          onClick={onClickCollapsed}
           title={`${currentProjectId} — switch project (⌘P)`}
           aria-label="Switch project"
           className="h-6 w-6 rounded-[3px] outline-none transition-opacity hover:opacity-80 focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
@@ -1539,7 +1554,13 @@ function AgentsPanel({ collapsed, expanded }: { collapsed: boolean; expanded?: b
     return (
       <button
         type="button"
-        onClick={() => useAppStore.getState().setActiveAgentSlug(target?.slug ?? null)}
+        onClick={() => {
+          // Click while collapsed → expand sidebar AND open the
+          //  Agents tab; jumping straight to a single agent's detail
+          //  page from the collapsed rail loses the surrounding
+          //  context. Per redesign: "any icon click → re-open."
+          useAppStore.getState().openSidebarTab("agents");
+        }}
         className="mx-2 my-2 flex items-center justify-center rounded-[3px] py-1 outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
         title={runningCount > 0 ? `${runningCount} running` : `${agents.length} agents`}
         style={

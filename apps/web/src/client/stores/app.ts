@@ -335,6 +335,11 @@ interface AppStore {
   sidebarTab: "files" | "agents" | "inbox";
 
   toggleSidebar: () => void;
+  /** Explicitly open or close the sidebar — used by collapsed-state
+   *  icon clicks that need to guarantee an expand regardless of
+   *  current state (the user's "click any collapsed icon to expand"
+   *  affordance per the sidebar redesign brief). */
+  setSidebarOpen: (open: boolean) => void;
   toggleAIPanel: () => void;
   /** Explicitly open or close the AI panel — used by the inline editor
    *  composer to auto-open the panel on send so the user sees the
@@ -472,6 +477,7 @@ export const useAppStore = create<AppStore>((set) => ({
   sidebarTab: "files",
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleAIPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
   setAiPanelOpen: (open) => set({ aiPanelOpen: open }),
   toggleSearchDialog: () => set((s) => ({ searchDialogOpen: !s.searchDialogOpen })),
