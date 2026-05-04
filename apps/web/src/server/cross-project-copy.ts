@@ -23,9 +23,20 @@ import type { ProjectServices } from "./project-services.js";
  * translating `[[Target]]` into target-project URLs would mask broken
  * references; users see the broken-link indicator and decide.
  *
- * Binary asset copying is deferred to a follow-up; the spec describes
- * it but single-page copy is the shipping 1.0 cut — the modal
- * surfaces what's missing rather than silently failing.
+ * Binary assets referenced by the page (`![alt](assets/foo.png)`) are
+ * copied alongside the page — `copyReferencedAssets` walks the
+ * markdown for image refs and copies each one through the destination
+ * writer, mirroring the page-relative directory layout. The same
+ * rename/overwrite conflict flow applies per asset; broken references
+ * are flagged in the response (`{ skipped: true }`) but don't fail
+ * the page copy.
+ *
+ * Audit trail: every successful copy stamps a content-free
+ * `copy to <dst>/<path>` commit on the SOURCE repo (per §6) so
+ * `git log --grep="^copy to"` reveals every promotion out of a
+ * project; the destination's git history captures the inbound side
+ * via the standard page-write commit + the `copied_from` frontmatter
+ * stamp.
  */
 export interface CrossProjectCopyOptions {
   resolveProject: (projectId: string) => ProjectServices | null;
@@ -89,7 +100,10 @@ export function createCrossProjectCopyApi(options: CrossProjectCopyOptions): Hon
     //  raw curl can't bypass the UI.
     try {
       const dstCfg = loadProjectConfig(dst.projectDir);
-      if (dstCfg.accept_promotions_from !== undefined && !dstCfg.accept_promotions_from.includes(srcId)) {
+      if (
+        dstCfg.accept_promotions_from !== undefined &&
+        !dstCfg.accept_promotions_from.includes(srcId)
+      ) {
         return c.json(
           {
             error: `Project '${body.targetProjectId}' does not accept promotions from '${srcId}'`,
@@ -294,7 +308,12 @@ async function copyReferencedAssets(params: {
       await params.dstServices.writer.writeBinary(assetFinal, bytes);
       out.push({ srcPath: srcRelPath, targetPath: assetFinal, renamed: assetRenamed });
     } catch {
-      out.push({ srcPath: srcRelPath, targetPath: assetFinal, renamed: assetRenamed, skipped: true });
+      out.push({
+        srcPath: srcRelPath,
+        targetPath: assetFinal,
+        renamed: assetRenamed,
+        skipped: true,
+      });
     }
   }
 
