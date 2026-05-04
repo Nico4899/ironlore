@@ -98,8 +98,7 @@ export function InlineAIComposerLauncher() {
 }
 
 function CollapsedLauncher({ onClick }: { onClick: () => void }) {
-  const isMac =
-    typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
   const chord = isMac ? "⌘L" : "Ctrl+L";
   return (
     <button
@@ -117,7 +116,11 @@ function CollapsedLauncher({ onClick }: { onClick: () => void }) {
       }}
       title={`Ask AI (${chord})`}
     >
-      <Sparkles className="h-4 w-4 shrink-0" style={{ color: "var(--il-blue)" }} aria-hidden="true" />
+      <Sparkles
+        className="h-4 w-4 shrink-0"
+        style={{ color: "var(--il-blue)" }}
+        aria-hidden="true"
+      />
       <span className="flex-1 truncate">Ask AI</span>
       <span
         aria-hidden="true"
