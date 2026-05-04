@@ -336,6 +336,10 @@ interface AppStore {
 
   toggleSidebar: () => void;
   toggleAIPanel: () => void;
+  /** Explicitly open or close the AI panel — used by the inline editor
+   *  composer to auto-open the panel on send so the user sees the
+   *  streaming reply land in the conversation surface. */
+  setAiPanelOpen: (open: boolean) => void;
   toggleSearchDialog: () => void;
   /** Toggle the Settings dialog. Passing a tab opens it (if closed)
    *  or switches tabs (if already open). */
@@ -469,6 +473,7 @@ export const useAppStore = create<AppStore>((set) => ({
 
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleAIPanel: () => set((s) => ({ aiPanelOpen: !s.aiPanelOpen })),
+  setAiPanelOpen: (open) => set({ aiPanelOpen: open }),
   toggleSearchDialog: () => set((s) => ({ searchDialogOpen: !s.searchDialogOpen })),
   toggleSettings: (tab) =>
     set((s) => {
