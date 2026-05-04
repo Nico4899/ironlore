@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   ACL_DEFAULT,
   AclViolation,
+  AclWideningError,
   assertCanAccess,
+  assertNoAclWidening,
   canAccess,
   parsePageAcl,
   stampOwner,
@@ -153,5 +155,82 @@ describe("stampOwner", () => {
   it("is a no-op on pages without frontmatter", () => {
     const md = "# Plain page\n\nbody\n";
     expect(stampOwner(md, "alice")).toBe(md);
+  });
+});
+
+/**
+ * "Leaf cannot widen ancestor" guard — docs/08-projects-and-isolation.md
+ * §Multi-user mode #6.
+ *
+ * The constraint: a page under a directory whose `index.md` declares a
+ * non-default ACL can NARROW that ACL but not BROADEN it. Concretely:
+ *   - read: [alice]   ancestor → leaf may NOT declare read: everyone
+ *   - read: [alice]   ancestor → leaf may NOT declare read: [alice, bob]
+ *   - read: [alice]   ancestor → leaf MAY declare read: [alice]   (same)
+ *   - read: [alice]   ancestor → leaf MAY declare read: []        (narrower)
+ *   - read: [everyone] ancestor → leaf can declare anything (no ceiling)
+ *   - default ancestor → no constraint; leaf is free
+ *
+ * Plus the by-omission footgun: a leaf that declares `acl: { write: [...] }`
+ * with no `read:` field implicitly resolves read to "everyone" via
+ * default — that IS a widening if the ancestor restricts read. The
+ * guard fires.
+ */
+describe("assertNoAclWidening", () => {
+  it("permits when ancestor ACL is fully default", () => {
+    const ancestor = { ...ACL_DEFAULT };
+    const leaf = { owner: null, read: ["alice"], write: ["alice"] };
+    expect(() => assertNoAclWidening(leaf, ancestor)).not.toThrow();
+  });
+
+  it("permits when leaf has no acl block (default ⇒ inheritance handles it)", () => {
+    const ancestor = { owner: null, read: ["alice"], write: ["alice"] };
+    const leaf = { owner: "alice", read: null, write: null };
+    expect(() => assertNoAclWidening(leaf, ancestor)).not.toThrow();
+  });
+
+  it("permits when leaf is identical to ancestor", () => {
+    const ancestor = { owner: null, read: ["alice"], write: ["alice"] };
+    const leaf = { owner: null, read: ["alice"], write: ["alice"] };
+    expect(() => assertNoAclWidening(leaf, ancestor)).not.toThrow();
+  });
+
+  it("permits when leaf is a strict subset (narrower) of ancestor", () => {
+    const ancestor = { owner: null, read: ["alice", "bob"], write: ["alice", "bob"] };
+    const leaf = { owner: null, read: ["alice"], write: ["alice"] };
+    expect(() => assertNoAclWidening(leaf, ancestor)).not.toThrow();
+  });
+
+  it("rejects leaf granting read=everyone under a read-restricted ancestor", () => {
+    const ancestor = { owner: null, read: ["alice"], write: null };
+    const leaf = { owner: null, read: ["everyone"], write: null };
+    expect(() => assertNoAclWidening(leaf, ancestor)).toThrow(AclWideningError);
+  });
+
+  it("rejects leaf adding a user not in the ancestor's read list", () => {
+    const ancestor = { owner: null, read: ["alice"], write: null };
+    const leaf = { owner: null, read: ["alice", "bob"], write: null };
+    expect(() => assertNoAclWidening(leaf, ancestor)).toThrow(AclWideningError);
+  });
+
+  it("rejects by-omission widening: declared write but null read under read-restricted ancestor", () => {
+    // This is the footgun: writing only `acl: { write: [alice] }` leaves
+    //  read=null, which resolves to "everyone" by default. That widens
+    //  any ancestor that restricts read.
+    const ancestor = { owner: null, read: ["alice"], write: null };
+    const leaf = { owner: null, read: null, write: ["alice"] };
+    expect(() => assertNoAclWidening(leaf, ancestor)).toThrow(AclWideningError);
+  });
+
+  it("permits anything when ancestor read=everyone (no ceiling)", () => {
+    const ancestor = { owner: null, read: ["everyone"], write: ["alice"] };
+    const leaf = { owner: null, read: ["alice", "bob", "carol"], write: ["alice"] };
+    expect(() => assertNoAclWidening(leaf, ancestor)).not.toThrow();
+  });
+
+  it("rejects leaf widening write to include a user the ancestor disallows", () => {
+    const ancestor = { owner: null, read: null, write: ["alice"] };
+    const leaf = { owner: null, read: null, write: ["alice", "bob"] };
+    expect(() => assertNoAclWidening(leaf, ancestor)).toThrow(AclWideningError);
   });
 });

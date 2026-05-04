@@ -175,6 +175,70 @@ export function loadEffectiveAcl(
 }
 
 /**
+ * Thrown when a page's declared ACL would grant access wider than
+ * its ancestor `index.md`'s ACL allows. Per docs/08-projects-and-isolation.md
+ * §Multi-user mode and per-page ACLs §6: "Leaf pages can override but
+ * not widen — a page under a read-private directory cannot declare
+ * `read: everyone`." Caught at the HTTP route boundary and surfaced
+ * as a 403 alongside the offending op.
+ */
+export class AclWideningError extends Error {
+  readonly status = 403 as const;
+  constructor(readonly op: AclOp) {
+    super(
+      `ACL violation: cannot widen ancestor ${op} ACL — leaf pages may narrow but not broaden inherited permissions`,
+    );
+    this.name = "AclWideningError";
+  }
+}
+
+/**
+ * Returns true iff the leaf list grants access wider than the ancestor
+ * list. Null lists resolve to their per-op defaults (read = everyone,
+ * write = owner-only) BEFORE comparison, so a leaf that omits a field
+ * is treated as the maximally permissive value for that op.
+ *
+ *   - Ancestor `[everyone]` → leaf can never widen further.
+ *   - Leaf `[everyone]` while ancestor isn't → widens.
+ *   - Otherwise: every entry in leaf must appear in ancestor.
+ */
+function isWiderList(leaf: string[] | null, ancestor: string[] | null, op: AclOp): boolean {
+  const ancEffective = ancestor ?? (op === "read" ? ["everyone"] : ["owner"]);
+  if (ancEffective.includes("everyone")) return false;
+  const leafEffective = leaf ?? (op === "read" ? ["everyone"] : ["owner"]);
+  if (leafEffective.includes("everyone")) return true;
+  for (const entry of leafEffective) {
+    if (!ancEffective.includes(entry)) return true;
+  }
+  return false;
+}
+
+/**
+ * Reject a write whose declared ACL would widen the inherited
+ * (ancestor `index.md`) ACL. No-op when the ancestor ACL is fully
+ * default (nothing to widen) OR when the leaf doesn't declare its own
+ * `acl:` block (inheritance handles it via `loadEffectiveAcl`).
+ *
+ * Note: a leaf that declares `acl: { write: [alice] }` without a
+ * `read:` field has `read = null`, which resolves to "everyone" by
+ * default — that IS a widening if the ancestor restricts read. Callers
+ * who want to inherit one field but override the other must declare
+ * BOTH fields explicitly to avoid the by-omission widening footgun.
+ */
+export function assertNoAclWidening(newAcl: PageAcl, ancestor: PageAcl): void {
+  if (isDefaultAcl(ancestor)) return;
+  // Leaf with no `acl:` block at all → inheritance applies; nothing to check.
+  const leafDeclaresAcl = newAcl.read !== null || newAcl.write !== null;
+  if (!leafDeclaresAcl) return;
+  if (isWiderList(newAcl.read, ancestor.read, "read")) {
+    throw new AclWideningError("read");
+  }
+  if (isWiderList(newAcl.write, ancestor.write, "write")) {
+    throw new AclWideningError("write");
+  }
+}
+
+/**
  * On first write of a page (no `owner:` in frontmatter yet), stamp
  * the calling user's ID. Returns the (possibly modified) markdown.
  * Already-owned pages are returned unchanged so a foreign editor

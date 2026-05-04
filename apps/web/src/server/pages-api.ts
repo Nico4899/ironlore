@@ -5,7 +5,16 @@ import { detectPageType, isBinaryExtension, ulid } from "@ironlore/core";
 import { ForbiddenError, parseEtag } from "@ironlore/core/server";
 import { createPatch } from "diff";
 import { Hono } from "hono";
-import { type AclOp, AclViolation, assertCanAccess, parsePageAcl, stampOwner } from "./acl.js";
+import {
+  type AclOp,
+  AclViolation,
+  AclWideningError,
+  assertCanAccess,
+  assertNoAclWidening,
+  loadEffectiveAcl,
+  parsePageAcl,
+  stampOwner,
+} from "./acl.js";
 import { assignBlockIds, parseBlocks, readBlocksSidecar, writeBlocksSidecar } from "./block-ids.js";
 import { computePageBlockTrust } from "./block-trust.js";
 import type { SearchIndex } from "./search-index.js";
@@ -459,6 +468,33 @@ export function createPagesApi(
             annotated = stamped;
             blocks = assignBlockIds(stamped).blocks;
           }
+        }
+
+        // ACL widening guard (docs/08-projects-and-isolation.md
+        //  §Multi-user mode #6): a leaf page whose declared `acl:`
+        //  block grants more access than its ancestor `index.md`
+        //  ACL is rejected at the route boundary. Default-ACL pages
+        //  fall through (inheritance handles them via
+        //  `loadEffectiveAcl`); pages without ancestors with a
+        //  non-default ACL fall through too.
+        try {
+          const newAcl = parsePageAcl(annotated);
+          const reader = (path: string): string | null => {
+            if (path === pagePath) return null; // don't inherit from self
+            try {
+              return writer.read(path).content;
+            } catch (err) {
+              if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+              throw err;
+            }
+          };
+          const ancestor = loadEffectiveAcl(pagePath, reader);
+          assertNoAclWidening(newAcl, ancestor);
+        } catch (err) {
+          if (err instanceof AclWideningError) {
+            return c.json({ error: err.message, op: err.op }, 403);
+          }
+          throw err;
         }
       }
 
