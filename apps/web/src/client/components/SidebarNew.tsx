@@ -32,11 +32,14 @@ import type React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
+  activateAgent,
   createFolder,
   createPage,
   deleteFolder,
   deletePage,
+  fetchLibraryTemplates,
   fetchTree,
+  type LibraryTemplate,
   movePage,
 } from "../lib/api.js";
 import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app.js";
@@ -1643,6 +1646,15 @@ function AgentsPanel({ collapsed, expanded }: { collapsed: boolean; expanded?: b
         </div>
       )}
 
+      {/* Library templates — un-activated personas curated under
+       *  `.agents/.library/` (Researcher, Wiki Gardener, Evolver per
+       *  docs/04-ai-and-agents.md §Default agents). Surfacing them
+       *  here gives the Agents tab content even when only the
+       *  default seeded agents are installed and turns "agent list
+       *  looks empty" into a clear next action: pick a template →
+       *  one-click Activate. */}
+      {expanded && <LibraryTemplatesSection />}
+
       {/* Primary "New agent" rail per the sidebar redesign — same
        *  visual contract as Files-tab "New page", scaffolds the
        *  same persona template so the engine picks it up on next
@@ -1650,6 +1662,112 @@ function AgentsPanel({ collapsed, expanded }: { collapsed: boolean; expanded?: b
        *  in favour of this larger, lighter-bg primary action so the
        *  Agents tab grows a proper bottom-aligned creation surface. */}
       {expanded && <NewAgentRail onClick={onAdd} />}
+    </div>
+  );
+}
+
+/**
+ * LibraryTemplatesSection — surfaces inert library personas
+ * (`.agents/.library/<slug>/persona.md`) as one-click "Activate"
+ * cards beneath the active-agents list. The Agents tab can otherwise
+ * read empty for users who only have the seeded Librarian + Editor
+ * defaults; this section turns that empty space into a discovery
+ * surface. Activation calls `POST /agents/<slug>/activate`, which
+ * scaffolds the persona under `.agents/<slug>/`; on success the
+ * activity poller picks the new agent up and the row promotes itself
+ * into the active list above.
+ */
+function LibraryTemplatesSection() {
+  const [templates, setTemplates] = useState<LibraryTemplate[] | null>(null);
+  const [activating, setActivating] = useState<string | null>(null);
+
+  const refresh = useCallback(() => {
+    void fetchLibraryTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const onActivate = useCallback(
+    async (slug: string) => {
+      setActivating(slug);
+      try {
+        await activateAgent(slug);
+        refresh();
+      } catch (err) {
+        window.alert(
+          err instanceof Error ? err.message : "Couldn't activate that template.",
+        );
+      } finally {
+        setActivating(null);
+      }
+    },
+    [refresh],
+  );
+
+  if (templates === null) return null;
+  if (templates.length === 0) return null;
+
+  return (
+    <div className="mt-4">
+      <div
+        className="mb-2 flex items-center gap-2 font-mono uppercase"
+        style={{ fontSize: 10.5, color: "var(--il-text3)", letterSpacing: "0.08em" }}
+      >
+        <span>Templates</span>
+        <span className="flex-1" />
+        <span style={{ color: "var(--il-text3)" }}>{templates.length}</span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {templates.map((tpl) => (
+          <div
+            key={tpl.slug}
+            className="rounded border"
+            style={{
+              padding: "8px 10px",
+              borderColor: "var(--il-border-soft)",
+              background: "color-mix(in oklch, var(--il-slate-elev) 50%, transparent)",
+            }}
+          >
+            <div className="flex items-center gap-2">
+              {tpl.emoji && <span style={{ fontSize: 14 }}>{tpl.emoji}</span>}
+              <span
+                className="truncate"
+                style={{ fontSize: 12.5, fontWeight: 500, color: "var(--il-text)" }}
+              >
+                {tpl.name ?? tpl.slug}
+              </span>
+              <span className="flex-1" />
+              <button
+                type="button"
+                onClick={() => onActivate(tpl.slug)}
+                disabled={activating === tpl.slug}
+                className="rounded px-2 py-0.5 font-mono uppercase outline-none transition-colors hover:bg-ironlore-blue/15 focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 disabled:opacity-50"
+                style={{
+                  fontSize: 10,
+                  letterSpacing: "0.06em",
+                  border: "1px solid color-mix(in oklch, var(--il-blue) 35%, transparent)",
+                  color: "var(--il-blue)",
+                }}
+              >
+                {activating === tpl.slug ? "…" : "Activate"}
+              </button>
+            </div>
+            {(tpl.description || tpl.role) && (
+              <p
+                className="mt-1 truncate"
+                style={{ fontSize: 11, color: "var(--il-text3)", lineHeight: 1.4 }}
+                title={tpl.description ?? tpl.role ?? ""}
+              >
+                {tpl.description ?? tpl.role}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
