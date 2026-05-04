@@ -44,6 +44,7 @@ import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
 import { MOTION } from "../styles/motion.js";
 import { FolderPeekButton } from "./FolderPeek.js";
+import { InboxPanel } from "./InboxPanel.js";
 import { Logo } from "./Logo.js";
 import { Reuleaux as ReuleauxIcon } from "./primitives/index.js";
 
@@ -672,7 +673,7 @@ export function SidebarNew() {
        *  Agents tab (which fully owns the sidebar body); kept on the
        *  Inbox tab so the tree stays visible behind the content-area
        *  inbox surface. */}
-      {!collapsed && sidebarTab !== "agents" && sidebarFolder && (
+      {!collapsed && sidebarTab === "files" && sidebarFolder && (
         <div className="flex items-center gap-1 border-b border-border px-2 py-1.5 text-xs text-secondary">
           <button
             type="button"
@@ -724,7 +725,7 @@ export function SidebarNew() {
        * sidebar body); rendered for Files + Inbox (Inbox still shows
        * the tree behind the content-area inbox surface).
        */}
-      {!collapsed && sidebarTab !== "agents" && (
+      {!collapsed && sidebarTab === "files" && (
         <div
           className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ease-in-out ${
             slideDir === "left"

@@ -16,7 +16,6 @@ import { MarkdownEditor } from "./editor/MarkdownEditor.js";
 import { MarkdownPreview } from "./editor/MarkdownPreview.js";
 import { SourceEditor } from "./editor/SourceEditor.js";
 import { HomePanel } from "./HomePanel.js";
-import { InboxPanel } from "./InboxPanel.js";
 import { Meta, StatusPip } from "./primitives/index.js";
 import { SplitPane } from "./SplitPane.js";
 import { TabBar } from "./TabBar.js";
@@ -74,8 +73,6 @@ const RAW_TEXT_TYPES = new Set(["source-code", "csv", "mermaid", "text", "transc
 export function ContentArea() {
   const activePath = useAppStore((s) => s.activePath);
   const activeAgentSlug = useAppStore((s) => s.activeAgentSlug);
-  const sidebarTab = useAppStore((s) => s.sidebarTab);
-  const inboxActive = sidebarTab === "inbox";
   const filePath = useEditorStore((s) => s.filePath);
   const fileType = useEditorStore((s) => s.fileType);
   const markdown = useEditorStore((s) => s.markdown);
@@ -225,27 +222,11 @@ export function ContentArea() {
 
   // No active file — show Home or the agent-detail page. The
   //  three-tab sidebar (`files | agents | inbox`) does not change
-  //  this dispatch: `agents` and `files` both leave the canvas on
-  //  Home (or the agent-detail page when an agent is selected),
-  //  `inbox` is handled by the early return above.
-  // Inbox takes precedence over every other surface. Selecting the
-  //  sidebar INBOX tab routes the whole content area to the Inbox
-  //  canvas — matching screen-more.jsx ScreenInbox, where the sidebar
-  //  stays on files while the main view is the pending-runs list.
-  if (inboxActive) {
-    return (
-      <main
-        id="main-content"
-        aria-label="Agent Inbox"
-        className="relative flex flex-1 flex-col overflow-hidden"
-        style={{ minWidth: "480px" }}
-      >
-        <TabBar />
-        <InboxPanel />
-      </main>
-    );
-  }
-
+  //  this dispatch: `files` / `agents` / `inbox` all leave the
+  //  canvas on Home (or the agent-detail page when an agent is
+  //  selected). The inbox previously took over the canvas; per the
+  //  sidebar redesign it now lives inside the sidebar's Inbox tab,
+  //  so the content area stays on whatever the user was working in.
   if (!activePath || !filePath) {
     return (
       <main
