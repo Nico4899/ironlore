@@ -865,6 +865,24 @@ kbd {
 }
 
 /*
+ * Sidebar primary-action rail (New page / New agent). Lighter-than-
+ * sidebar background per docs/09-ui-and-brand.md, with a hover lift
+ * and an active-press depth so the button reads as the primary
+ * creation affordance rather than another row. Motion stays inside
+ * the documented `--motion-snap` (80ms) token.
+ */
+.il-sidebar-action-rail:hover {
+  background: color-mix(in oklch, var(--il-slate-elev) 80%, var(--il-blue) 10%);
+  border-color: color-mix(in oklch, var(--il-border) 60%, var(--il-blue) 30%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px oklch(0 0 0 / 0.18);
+}
+.il-sidebar-action-rail:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.20) inset;
+}
+
+/*
  * AI panel resize handle — mirror of `.il-sidebar-resize` but
  * anchored to the LEFT edge of the AI panel (which sits on the
  * right side of the viewport, so the user-facing edge is its left).

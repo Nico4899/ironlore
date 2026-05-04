@@ -1542,69 +1542,99 @@ function AgentsPanel({ collapsed, expanded }: { collapsed: boolean; expanded?: b
         </div>
       )}
 
-      {/* + Add agent — scaffolds `.agents/<slug>/persona.md` from a
-       *  template so the persona engine picks it up on next poll. */}
-      <button
-        type="button"
-        onClick={onAdd}
-        className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-[3px] border border-dashed outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-        style={{
-          padding: "4px 6px",
-          borderColor: "var(--il-border-soft)",
-          fontSize: 10.5,
-          color: "var(--il-text3)",
-          letterSpacing: "0.04em",
-        }}
-        title="Create a new agent persona"
-      >
-        <span aria-hidden="true" style={{ fontFamily: "var(--font-mono)" }}>
-          +
-        </span>
-        <span className="font-mono uppercase">add agent</span>
-      </button>
+      {/* Primary "New agent" rail per the sidebar redesign — same
+       *  visual contract as Files-tab "New page", scaffolds the
+       *  same persona template so the engine picks it up on next
+       *  poll. The legacy dashed-border `+ add agent` row was retired
+       *  in favour of this larger, lighter-bg primary action so the
+       *  Agents tab grows a proper bottom-aligned creation surface. */}
+      {expanded && <NewAgentRail onClick={onAdd} />}
     </div>
   );
 }
 
 /**
- * NewPageRail — full-width sticky bottom action that creates a new
- * page in the current `sidebarFolder` (or at the vault root when
- * none is drilled into). Mirrors the click target wired into the
- * global ⌘N keymap. Larger than tree rows on purpose: this is the
- * primary creation affordance for the whole sidebar.
+ * NewPageRail — primary action row pinned beneath the lowermost
+ * file in the Files tab. Centered label, larger font + height, bg
+ * lighter than the sidebar (slate-elev > slate per
+ * docs/09-ui-and-brand.md), with a transit-snap hover lift and
+ * active-press depth so the button reads as the primary creation
+ * affordance for the whole tab. Mirrors the global ⌘N keymap.
  */
 function NewPageRail({ onClick }: { onClick: () => void }) {
   const isMac = typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
   const chord = isMac ? "⌘N" : "Ctrl+N";
+  return <PrimaryActionRail icon={FilePlus} label="New page" chord={chord} onClick={onClick} />;
+}
+
+/**
+ * NewAgentRail — sibling of NewPageRail for the Agents tab. Same
+ * shape; the only difference is the icon + label + the click handler
+ * (delegates to whatever the parent supplies — typically the same
+ * `onAdd` callback the AgentsPanel exposes via its `+ add agent`
+ * button so both surfaces ship to the same place).
+ */
+function NewAgentRail({ onClick }: { onClick: () => void }) {
+  return <PrimaryActionRail icon={Bot} label="New agent" onClick={onClick} />;
+}
+
+/**
+ * Shared visual contract for both the Files and Agents bottom
+ * action rails. Centered text, lighter-than-sidebar bg, hover lift,
+ * active-press depth — the primary creation affordance per
+ * docs/09-ui-and-brand.md §Buttons. Optional chord chip floats to
+ * the right; when omitted the label centers visually. Sized larger
+ * than tree rows so the button reads as a deliberate primary
+ * action, not just another row.
+ */
+function PrimaryActionRail({
+  icon: Icon,
+  label,
+  chord,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  chord?: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full shrink-0 items-center gap-2 px-3 outline-none transition-colors hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      className="il-sidebar-action-rail group relative flex w-full shrink-0 items-center justify-center outline-none transition-all duration-(--motion-snap) focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
       style={{
-        height: 36,
-        borderTop: "1px solid var(--il-border-soft)",
-        background: "var(--il-slate)",
+        height: 44,
+        margin: "8px 10px",
+        width: "calc(100% - 20px)",
+        borderRadius: 6,
+        // Lighter than the sidebar per the user's spec — slate-elev
+        //  is the documented "card / elevated surface" tier.
+        background: "var(--il-slate-elev)",
+        border: "1px solid var(--il-border-soft)",
         color: "var(--il-text)",
-        fontSize: 13.5,
+        fontFamily: "var(--font-sans)",
+        fontSize: 14,
         fontWeight: 500,
-        textAlign: "left",
       }}
-      title={`Create a new page (${chord})`}
+      title={chord ? `${label} (${chord})` : label}
     >
-      <FilePlus className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span className="flex-1 truncate">New page</span>
-      <span
-        aria-hidden="true"
-        className="font-mono"
-        style={{
-          fontSize: 11,
-          color: "var(--il-text3)",
-          letterSpacing: "0.04em",
-        }}
-      >
-        {chord}
-      </span>
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className="ml-2">{label}</span>
+      {chord && (
+        <span
+          aria-hidden="true"
+          className="absolute font-mono"
+          style={{
+            right: 12,
+            fontSize: 10.5,
+            color: "var(--il-text3)",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {chord}
+        </span>
+      )}
     </button>
   );
 }
