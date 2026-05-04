@@ -537,6 +537,39 @@ export async function fetchInbox(): Promise<{
   return res.json();
 }
 
+// ───────── Agent clusters (Home §01 cube layout) ─────────
+
+export type ClusterFaceId = "front" | "right" | "back" | "left" | "top" | "bottom";
+
+export interface AgentClustersDoc {
+  names: Record<ClusterFaceId, string>;
+  agents: Record<ClusterFaceId, string[]>;
+  bootstrapped: boolean;
+  updatedAt: number;
+}
+
+/** Read the persisted cluster doc for the active project. */
+export async function fetchAgentClusters(): Promise<AgentClustersDoc> {
+  const res = await apiFetch(`${base()}/agent-clusters`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** Save the cluster doc whole — the server replaces the file on disk. */
+export async function saveAgentClusters(doc: {
+  names: Record<ClusterFaceId, string>;
+  agents: Record<ClusterFaceId, string[]>;
+  bootstrapped: boolean;
+}): Promise<AgentClustersDoc> {
+  const res = await apiFetch(`${base()}/agent-clusters`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(doc),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
 /** Read an agent's rails state — whether it can enqueue a run + reason. */
 export async function fetchAgentState(
   slug: string,

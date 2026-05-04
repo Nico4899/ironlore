@@ -1,15 +1,18 @@
 import { create } from "zustand";
+import { fetchAgentClusters, saveAgentClusters } from "../lib/api.js";
 
 /**
- * Agent clusters — the per-face state for the Agents-tab cube
- * (`AgentsCube.tsx`). Six named slots, each holding up to four
- * agent slugs. Persists to localStorage so the user's manual
- * cluster organisation survives reload.
+ * Agent clusters — the per-face state for the Home §01 Active-runs
+ * cube (`AgentsCube.tsx`). Six named slots, each holding up to four
+ * agent slugs.
  *
- * Client-only model in v1: clusters live in browser storage, not
- * in `.agents/<slug>/persona.md`. This keeps the on-disk persona
- * shape unchanged while the cube UX is exercised. A follow-up can
- * promote the mapping to a per-project sidecar if it sticks.
+ * **Persistence (Phase 2).** Server-backed: the canonical layout
+ * lives in `<projectDir>/.ironlore/agent-clusters.json`. The client
+ * fetches it once on first read (`syncFromServer()`) and PUTs the
+ * whole doc back on a 600 ms debounce after any local mutation.
+ * localStorage stays as a tiny startup-paint cache so the cube
+ * doesn't flash with default names while the network round-trip
+ * lands.
  *
  * Cube topology — from each face, the 4 swipe directions point at
  * specific neighbours (think of unfolding a die). The graph below
@@ -63,6 +66,13 @@ interface ClustersStore {
   ensureBootstrap: (allInstalledSlugs: string[]) => void;
   /** Remove an agent from whatever face it's on. */
   remove: (slug: string) => void;
+  /**
+   * Hydrate from the server. Idempotent — safe to call on every
+   * mount; the in-memory state is replaced wholesale with the
+   * server's view (which is itself the last value the client wrote
+   * via the debounced PUT).
+   */
+  syncFromServer: () => Promise<void>;
 }
 
 const STORAGE_KEY = "ironlore.agentClusters.v1";
@@ -111,6 +121,26 @@ function saveToStorage(state: PersistedShape): void {
   }
 }
 
+/**
+ * Debounced server PUT — every mutation calls `schedulePush()` which
+ * resets a 600 ms timer; the actual round-trip fires once the user
+ * has stopped editing. Failures are silent: the localStorage cache
+ * already has the new state, and the next mutation will re-attempt
+ * the PUT.
+ */
+let pushTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePush(state: PersistedShape): void {
+  if (typeof window === "undefined") return;
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    void saveAgentClusters(state).catch(() => {
+      /* network failed — localStorage holds the change; the next
+       *  edit will retry. Not surfaced to the user since the cube
+       *  itself reflects the new state immediately. */
+    });
+  }, 600);
+}
+
 const initialAgents: Record<FaceId, string[]> = {
   front: [],
   right: [],
@@ -129,9 +159,11 @@ export const useAgentClustersStore = create<ClustersStore>((set, get) => ({
 
   setName: (face, name) => {
     set((s) => {
-      const next = { names: { ...s.names, [face]: name }, agents: s.agents };
-      saveToStorage({ ...next, bootstrapped: s.bootstrapped });
-      return next;
+      const nextNames = { ...s.names, [face]: name };
+      const persisted = { names: nextNames, agents: s.agents, bootstrapped: s.bootstrapped };
+      saveToStorage(persisted);
+      schedulePush(persisted);
+      return { names: nextNames };
     });
   },
 
@@ -149,7 +181,9 @@ export const useAgentClustersStore = create<ClustersStore>((set, get) => ({
         return { agents: stripped };
       }
       stripped[face] = [...targetList, slug];
-      saveToStorage({ names: s.names, agents: stripped, bootstrapped: s.bootstrapped });
+      const persisted = { names: s.names, agents: stripped, bootstrapped: s.bootstrapped };
+      saveToStorage(persisted);
+      schedulePush(persisted);
       return { agents: stripped };
     });
   },
@@ -180,6 +214,7 @@ export const useAgentClustersStore = create<ClustersStore>((set, get) => ({
     }
     const nextState = { names: s.names, agents: nextAgents, bootstrapped: true };
     saveToStorage(nextState);
+    schedulePush(nextState);
     set({ agents: nextAgents, bootstrapped: true });
   },
 
@@ -189,9 +224,30 @@ export const useAgentClustersStore = create<ClustersStore>((set, get) => ({
       for (const f of FACES) {
         next[f] = next[f].filter((sl) => sl !== slug);
       }
-      saveToStorage({ names: s.names, agents: next, bootstrapped: s.bootstrapped });
+      const persisted = { names: s.names, agents: next, bootstrapped: s.bootstrapped };
+      saveToStorage(persisted);
+      schedulePush(persisted);
       return { agents: next };
     });
+  },
+
+  syncFromServer: async () => {
+    try {
+      const doc = await fetchAgentClusters();
+      // Server is authoritative — replace in-memory state. The
+      //  localStorage cache is rewritten so a subsequent reload
+      //  paints with the freshest known layout before the next
+      //  fetch lands.
+      const persisted: PersistedShape = {
+        names: doc.names,
+        agents: doc.agents,
+        bootstrapped: doc.bootstrapped,
+      };
+      saveToStorage(persisted);
+      set({ names: doc.names, agents: doc.agents, bootstrapped: doc.bootstrapped });
+    } catch {
+      /* offline / 404 — keep whatever localStorage gave us. */
+    }
   },
 }));
 

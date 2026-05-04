@@ -47,6 +47,17 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
   const names = useAgentClustersStore((s) => s.names);
   const agentsByFace = useAgentClustersStore((s) => s.agents);
   const ensureBootstrap = useAgentClustersStore((s) => s.ensureBootstrap);
+  const syncFromServer = useAgentClustersStore((s) => s.syncFromServer);
+  const setName = useAgentClustersStore((s) => s.setName);
+  const assign = useAgentClustersStore((s) => s.assign);
+
+  // Hydrate from `<projectDir>/.ironlore/agent-clusters.json` once on
+  //  mount. Server is authoritative; localStorage was the paint cache
+  //  while the round-trip was in flight. Failures are silent — the
+  //  cache already has the layout.
+  useEffect(() => {
+    void syncFromServer();
+  }, [syncFromServer]);
 
   // First-run migration — drop every installed agent onto the
   //  front face so the cube starts populated rather than empty.
@@ -82,6 +93,16 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
   const [rotation, setRotation] = useState(FACE_ROTATIONS.front);
   const [animating, setAnimating] = useState(false);
 
+  // First-paint tilt only — the cube renders with a small 3D tilt
+  //  on mount so the user can see it's a 3D object, but the moment
+  //  they interact (drag OR arrow click) the tilt fades and every
+  //  subsequent state is a strict horizontal/vertical canonical
+  //  orientation. Per the user's brief: "the slight tilt should
+  //  only be initially. When the user actually clicks and drags the
+  //  box to the desired side it should snap directly to strict
+  //  horizontal or vertical rotation."
+  const [userInteracted, setUserInteracted] = useState(false);
+
   type Direction = "up" | "down" | "left" | "right";
   const dragRef = useRef<{
     active: boolean;
@@ -96,10 +117,6 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
     axis: "x" | "y" | null;
   } | null>(null);
 
-  // Subtle resting tilt — small constant 3D offset on the live
-  //  cube transform so the front face doesn't read as a flat
-  //  panel. Per the user's brief: "the tilt should be smaller"
-  //  (was -12 / +18 in the prior cube; now -5 / +8).
   const TILT_X = -5;
   const TILT_Y = 8;
   const SNAP_MS = 320;
@@ -107,8 +124,11 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
   const NAVIGATE_PX = 50;
 
   /** Animate the cube to the canonical rotation of `target`, then
-   *  commit the new face-id once the transition completes. */
+   *  commit the new face-id once the transition completes. The first
+   *  call retires the resting tilt so subsequent navigations land at
+   *  strict horizontal/vertical orientations. */
   const navigateTo = useCallback((target: FaceId) => {
+    setUserInteracted(true);
     setAnimating(true);
     setRotation(FACE_ROTATIONS[target]);
     setCurrentFace(target);
@@ -119,6 +139,15 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLElement>) => {
       if (animating) return;
+      // The drag-rotate gesture starts on the cube body itself, never
+      //  on an agent strip — we want strips to remain HTML5-draggable
+      //  to other faces. The handle attribute marks strips so we can
+      //  bail out before pointer-capturing.
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-cube-strip]")) return;
+      // Inline-rename input also shouldn't trigger drag.
+      if (target?.closest("[data-cube-rename]")) return;
+      setUserInteracted(true);
       dragRef.current = {
         active: true,
         startX: e.clientX,
@@ -258,17 +287,45 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
   //  the constant tilt. `translateZ(-W/2)` pulls the cube center
   //  back so the front face (at +W/2) sits at z=0 in screen space.
   const halfDepth = cubeW / 2;
+  // Tilt is a one-shot first-paint hint. Once `userInteracted`
+  //  flips, every transform composes only the canonical rotation
+  //  state — strict horizontal/vertical orientations as the user
+  //  asked for. The transition that fades the tilt out runs on the
+  //  same `transform` property so the move feels continuous.
+  const tiltX = userInteracted ? 0 : TILT_X;
+  const tiltY = userInteracted ? 0 : TILT_Y;
   const cubeStyle: CSSProperties = {
-    transform: `translateZ(-${halfDepth}px) rotateX(${rotation.x + TILT_X}deg) rotateY(${rotation.y + TILT_Y}deg)`,
-    transition: animating ? `transform ${SNAP_MS}ms ease-out` : "none",
+    transform: `translateZ(-${halfDepth}px) rotateX(${rotation.x + tiltX}deg) rotateY(${rotation.y + tiltY}deg)`,
+    transition: animating || userInteracted ? `transform ${SNAP_MS}ms ease-out` : "none",
   };
 
-  // The host's height needs to be tall enough for the longest
-  //  face's content; otherwise the cube clips. Pick the max of the
-  //  six face heights as an estimate (each strip ≈ 76 px + 24 px
-  //  header + new-job ≈ 36 px). Caps prevent absurd heights.
-  const maxAgentsOnAnyFace = Math.max(...FACES.map((f) => agentsByFace[f]?.length ?? 0), 1);
-  const hostHeight = Math.min(560, Math.max(180, 24 + maxAgentsOnAnyFace * 76 + 14 + 36 + 28));
+  // The host's height needs to be tall enough for the longest face's
+  //  content; otherwise the cube clips. Each ActiveAgentCard is
+  //  ~108 px (content + padding + progress-bar headroom) + 12 px
+  //  gap; header is ~30 px (incl. divider + margin); face padding is
+  //  14 px top/bottom; the optional new-job button adds 36 + 12 px.
+  //  The previous estimate (76 px/strip, cap 560) cut off the 4th
+  //  strip — bumped to 112 px/strip and cap 720 to hold a full face
+  //  + new-job button comfortably.
+  const STRIP_H = 112;
+  const HEADER_H = 30;
+  const FACE_PAD = 28;
+  const GAP_H = 12;
+  const NEW_JOB_H = 36;
+  const measuredHeights = FACES.map((f) => {
+    const n = agentsByFace[f]?.length ?? 0;
+    const showNewJob = n < MAX_AGENTS_PER_FACE;
+    const items = n + (showNewJob ? 1 : 0);
+    if (items === 0) return FACE_PAD + HEADER_H;
+    return (
+      FACE_PAD +
+      HEADER_H +
+      n * STRIP_H +
+      (showNewJob ? NEW_JOB_H : 0) +
+      Math.max(0, items - 1) * GAP_H
+    );
+  });
+  const hostHeight = Math.min(720, Math.max(220, Math.max(...measuredHeights)));
 
   return (
     <section

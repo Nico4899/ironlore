@@ -13,6 +13,7 @@ import {
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { loadClusters, saveClusters } from "./agent-clusters.js";
 import { createAgentApi, createInboxApi, createJobApi } from "./agents/api.js";
 import { DryRunBridge } from "./agents/dry-run-bridge.js";
 import { executeAgentRun } from "./agents/executor.js";
@@ -857,6 +858,30 @@ async function start() {
     //  window: `flush` calls `gitWorker.drain()`, `push` drains then
     //  shells `git push`. Same auth gate as every other per-project
     //  route via the `/api/projects/*` middleware mounted above.
+    // Agent-clusters JSON — persists the §01 Active runs cube
+    //  layout (face names + per-face slug lists) to a per-project
+    //  `.ironlore/agent-clusters.json` file. GET returns the doc;
+    //  PUT writes it whole. Lossy-write is acceptable: derived state,
+    //  client re-runs `ensureBootstrap()` on first read after a
+    //  truncation.
+    app.get(`/api/projects/${projectId}/agent-clusters`, (c) => {
+      try {
+        return c.json(loadClusters(services.projectDir));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ ok: false, error: message }, 500);
+      }
+    });
+    app.put(`/api/projects/${projectId}/agent-clusters`, async (c) => {
+      try {
+        const body = await c.req.json();
+        return c.json(saveClusters(services.projectDir, body));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ ok: false, error: message }, 400);
+      }
+    });
+
     app.post(`/api/projects/${projectId}/git/flush`, async (c) => {
       try {
         const committed = await services.drainGit();
