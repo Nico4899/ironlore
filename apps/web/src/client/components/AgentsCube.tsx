@@ -63,7 +63,22 @@ export function AgentsCube() {
     startX: number;
     startY: number;
     pointerId: number;
+    /** Becomes true once total movement exceeds a small threshold —
+     *  separates real drags from clicks-with-jitter so an agent
+     *  strip's onClick still fires when the user clicks without
+     *  dragging. */
+    moved: boolean;
   } | null>(null);
+
+  // Constant cube tilt — applied as a visual offset to every
+  //  rotation state so the cube always reads as a 3D object even
+  //  when no face is mid-rotation. Without this, the front face
+  //  renders straight-on and the cube looks like a flat panel. The
+  //  values are baked into the visual transform only; logical
+  //  rotation state stays at canonical face values (0, ±90, etc.)
+  //  so drag math + snap continue to work cleanly.
+  const TILT_X = -12;
+  const TILT_Y = 18;
 
   /** Animate the cube to the canonical rotation of `target`, then
    *  commit the new face-id once the transition completes. */
@@ -76,19 +91,26 @@ export function AgentsCube() {
   }, []);
 
   // ─── Pointer drag → rotate → snap ───────────────────────────────
+  //  Click-vs-drag disambiguation: pointerdown ALWAYS starts a
+  //  potential drag (even on agent strips), but the rotation
+  //  preview only kicks in once the cursor has moved past
+  //  `DRAG_BEGIN_PX`. If the user releases without crossing that
+  //  threshold, we let the click event bubble naturally so the
+  //  strip's onClick fires (opens the agent detail page). If they
+  //  did drag, we suppress the synthesised click via a one-shot
+  //  capture-phase listener on the document.
+  const DRAG_BEGIN_PX = 4;
+  const NAVIGATE_PX = 50;
+
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (animating) return;
-      // Don't hijack clicks on the inner agent strips / new-agent
-      //  buttons; only react when the press starts on the cube
-      //  background.
-      const target = e.target as HTMLElement;
-      if (target.closest("[data-cube-cell]")) return;
       dragRef.current = {
         active: true,
         startX: e.clientX,
         startY: e.clientY,
         pointerId: e.pointerId,
+        moved: false,
       };
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     },
@@ -101,16 +123,19 @@ export function AgentsCube() {
       if (!drag?.active) return;
       const dx = e.clientX - drag.startX;
       const dy = e.clientY - drag.startY;
+      // Below the begin-threshold, treat as a still-press — no
+      //  rotation preview, no commitment to a drag. This lets a
+      //  press-with-tiny-jitter on a strip resolve as a click.
+      if (!drag.moved && Math.max(Math.abs(dx), Math.abs(dy)) < DRAG_BEGIN_PX) return;
+      drag.moved = true;
       const base = FACE_ROTATIONS[currentFace];
       // Sign convention — swipe-carousel semantics:
       //  - Drag right (dx > 0) → user wants to navigate right →
-      //    cube must rotate toward the right-neighbour's canonical
+      //    cube rotates toward the right-neighbour's canonical
       //    rotation, which sits at y = -90 from front. So as dx
       //    grows positive, rotation.y must DECREASE.
       //  - Drag down (dy > 0) → navigate down → bottom face's
       //    canonical x = +90. So rotation.x INCREASES with dy.
-      //  Per-pixel ratio of 0.5°/px gives a comfortable preview at
-      //  the 50 px commit threshold (≈25° tilt before snap fires).
       setRotation({ x: base.x + dy * 0.5, y: base.y - dx * 0.5 });
     },
     [currentFace],
@@ -127,14 +152,30 @@ export function AgentsCube() {
       }
       const dx = e.clientX - drag.startX;
       const dy = e.clientY - drag.startY;
+      const wasDrag = drag.moved;
       dragRef.current = null;
 
-      const THRESHOLD = 50; // pixels to commit a navigation
+      // No drag → let the click event bubble naturally to the
+      //  strip / new-agent button that was pressed. This is the
+      //  click branch of the disambiguation.
+      if (!wasDrag) return;
+
+      // Drag happened — suppress the synthesised click so the
+      //  underlying strip doesn't fire its onClick after a rotate.
+      //  Capture-phase + once: the next click anywhere is eaten
+      //  before any other handler sees it.
+      const suppress = (clickEvent: Event) => {
+        clickEvent.preventDefault();
+        clickEvent.stopPropagation();
+      };
+      document.addEventListener("click", suppress, { capture: true, once: true });
+
       const absX = Math.abs(dx);
       const absY = Math.abs(dy);
 
-      if (Math.max(absX, absY) < THRESHOLD) {
-        // Below threshold — snap back to current face.
+      if (Math.max(absX, absY) < NAVIGATE_PX) {
+        // Drag was too short to commit a navigation — snap back
+        //  to current face.
         setAnimating(true);
         setRotation(FACE_ROTATIONS[currentFace]);
         setTimeout(() => setAnimating(false), 220);
@@ -143,8 +184,7 @@ export function AgentsCube() {
 
       // Dominant axis decides the direction. Map drag → neighbour
       //  via the topology graph: drag right = swipe-carousel right
-      //  = navigate to the right-neighbour face (cube rotates so
-      //  that neighbour comes to the front).
+      //  = navigate to the right-neighbour face.
       const direction: "up" | "down" | "left" | "right" =
         absX > absY ? (dx > 0 ? "right" : "left") : dy > 0 ? "down" : "up";
       const target = NEIGHBORS[currentFace][direction];
@@ -215,7 +255,13 @@ export function AgentsCube() {
   // The cube's display CSS — rotation transform with conditional
   //  transition (active during snap, off during drag for 1:1 feel).
   const cubeStyle: CSSProperties = {
-    transform: `translateZ(-120px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,
+    // Visual rotation = logical face state + constant tilt. The
+    //  tilt is what makes the front face read as "this is a cube
+    //  you can rotate" rather than "this is a flat panel" — the
+    //  side faces peek through at the edges. Logical state in
+    //  `rotation` stays at canonical 90° increments so drag math
+    //  + face snap stay clean.
+    transform: `translateZ(-120px) rotateX(${rotation.x + TILT_X}deg) rotateY(${rotation.y + TILT_Y}deg)`,
     transition: animating ? "transform var(--motion-transit) ease-out" : "none",
   };
 

@@ -2,26 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
   type AgentHistogramResponse,
-  ApiError,
   createPage,
   fetchAgentHistogram,
   fetchInbox,
   fetchPage,
   fetchRecentEdits,
   type RecentEdit,
-  startAutonomousRun,
 } from "../lib/api.js";
 import { useAppStore } from "../stores/app.js";
 import { useAuthStore } from "../stores/auth.js";
-import {
-  AgentPulse,
-  DisplayNum,
-  Key,
-  Meta,
-  Reuleaux,
-  SectionLabel,
-  Venn,
-} from "./primitives/index.js";
+import { AgentsCube } from "./AgentsCube.js";
+import { DisplayNum, Key, Reuleaux, SectionLabel, Venn } from "./primitives/index.js";
 
 /**
  * HomePanel — the §Home canvas-grammar landing surface.
@@ -470,25 +461,21 @@ export function HomePanel() {
           {!isFreshProject && (
             <section>
               <SectionLabel index={1} title="Active runs" meta={activeRunsMeta} />
-              <div style={{ display: "grid", gap: 12 }}>
-                {!activity.loaded ? (
-                  <LoadingRow />
-                ) : activity.agents.length === 0 ? (
-                  <EmptyCard>No agents installed yet.</EmptyCard>
-                ) : (
-                  orderedForHome(activity.agents).map((a) => (
-                    <ActiveAgentCard
-                      key={a.slug}
-                      slug={a.slug}
-                      running={a.running}
-                      paused={a.status === "paused"}
-                      stepLabel={a.stepLabel}
-                      note={a.lastNote}
-                      displaySerif={displaySerif}
-                    />
-                  ))
-                )}
-              </div>
+              {/* 3D agents cube — six clusters × four agent strips,
+               *  drag-to-rotate navigation + edge-hover affordances.
+               *  Per the design brief, every face's name and its 4
+               *  cells stay visible at the same depth; empty slots
+               *  render "New agent" placeholders sized identically
+               *  to the agent strips so the cube grid is consistent.
+               *  See [`AgentsCube.tsx`](./AgentsCube.tsx) for the
+               *  rotation + drag mechanics. */}
+              {!activity.loaded ? (
+                <LoadingRow />
+              ) : activity.agents.length === 0 ? (
+                <EmptyCard>No agents installed yet.</EmptyCard>
+              ) : (
+                <AgentsCube />
+              )}
             </section>
           )}
 
@@ -570,16 +557,10 @@ export function HomePanel() {
   );
 }
 
-/**
- * Sort active agents for the Home screen: running first, then
- * non-paused, then paused at the bottom. Deterministic across polls.
- */
-function orderedForHome(
-  agents: ReturnType<typeof useWorkspaceActivity>["agents"],
-): ReturnType<typeof useWorkspaceActivity>["agents"] {
-  const rank = (a: (typeof agents)[number]) => (a.running ? 0 : a.status === "paused" ? 2 : 1);
-  return [...agents].sort((a, b) => rank(a) - rank(b));
-}
+// `orderedForHome` retired alongside `ActiveAgentCard` — the cube
+//  surface owns running/paused/idle ordering through the Reuleaux
+//  pip on each strip; the Home column no longer renders the flat
+//  card list that needed deterministic per-poll sorting.
 
 /**
  * §01 section-meta formatter. Matches the JSX spec grammar
@@ -627,269 +608,6 @@ function EmptyCard({ children }: { children: React.ReactNode }) {
     >
       {children}
     </div>
-  );
-}
-
-/**
- * Active-agent card matching `screen-home.jsx` AgentRunCard:
- *  · AgentPulse wrapper (live sweep while running)
- *  · Reuleaux + slug + status + step-meta row
- *  · Action line from the most-recent run's `note` (when present)
- *  · 2 px blue-left rail when live, neutral rail otherwise
- *  · "Run now" CTA in the idle state — autonomous `POST /agents/:slug/run`
- *
- * Target path + progress bar from the JSX mock are intentionally
- * skipped: we don't have a `totalSteps` feed or a per-run "current
- * target" field yet. They'll light up the moment the executor
- * surfaces them; meanwhile decoration stays off.
- */
-function ActiveAgentCard({
-  slug,
-  running,
-  paused,
-  stepLabel,
-  note,
-  displaySerif,
-}: {
-  slug: string;
-  running: boolean;
-  paused: boolean;
-  stepLabel: string | null;
-  note: string | null;
-  displaySerif: boolean;
-}) {
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const onOpen = () => useAppStore.getState().setActiveAgentSlug(slug);
-
-  const onRunNow = useCallback(async () => {
-    if (starting || running) return;
-    setStarting(true);
-    setError(null);
-    try {
-      await startAutonomousRun(slug);
-    } catch (err) {
-      setStarting(false);
-      if (err instanceof ApiError) {
-        if (err.status === 429) {
-          setError("rate-limited · try again later");
-        } else {
-          setError(err.body.slice(0, 60) || `error ${err.status}`);
-        }
-      } else {
-        setError("failed to start");
-      }
-    }
-  }, [slug, running, starting]);
-
-  useEffect(() => {
-    if (!starting) return;
-    if (running) {
-      setStarting(false);
-      return;
-    }
-    const id = window.setTimeout(() => setStarting(false), 20_000);
-    return () => window.clearTimeout(id);
-  }, [starting, running]);
-
-  const showRunNow = !running && !paused;
-  const live = running || starting;
-
-  // ── Progress bar data ──────────────────────────────────────────
-  // `stepLabel` is of the shape "NN/MM" (e.g. "04/12"); the bar
-  //  spans the card width at 2 px with a blue glow, mirroring
-  //  screen-home.jsx. Parsing fails cleanly → `pct === null` →
-  //  no bar rendered. We also suppress the bar when the agent
-  //  isn't live — a paused/idle progress bar would misread as
-  //  "this is still happening."
-  const pct = live ? parseStepPct(stepLabel) : null;
-
-  // ── Target-path mono line ──────────────────────────────────────
-  // State-driven content per the spec silhouette. We don't have a
-  //  real `currentTarget` field yet, so we derive the best signal
-  //  available: a parseable file-ish token from the note when
-  //  running, or a state placeholder otherwise. Keeps the line
-  //  honest rather than inventing a path.
-  const target = deriveTargetLine({ live, paused, note, starting });
-
-  return (
-    <AgentPulse
-      active={live}
-      style={{
-        // Cards sit on the sidebar's slate tone so they read as
-        //  elevated over Home's pure-black canvas. Matches the
-        //  current design direction per the screenshot review.
-        background: "var(--il-slate)",
-        border: "1px solid var(--il-border-soft)",
-        borderLeft: `2px solid ${live ? "var(--il-blue)" : "var(--il-border)"}`,
-        borderRadius: 4,
-        padding: "16px 18px",
-      }}
-    >
-      <div className="flex w-full items-baseline gap-3">
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex flex-1 items-baseline gap-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-          style={{ background: "transparent", border: "none", cursor: "pointer", minWidth: 0 }}
-          aria-label={`Open ${slug} detail page`}
-        >
-          <Reuleaux
-            size={9}
-            color={live ? "var(--il-blue)" : paused ? "var(--il-amber)" : "var(--il-text3)"}
-            spin={live}
-          />
-          {/* Serif-italic subject in display-variant, Inter 600 in
-           *  safe — matches screen-home.jsx AgentRunCard + the
-           *  §Typography "serif-italic name + mono meta + inter
-           *  sentence" triad. */}
-          <span
-            className="truncate"
-            style={
-              displaySerif
-                ? {
-                    fontFamily: "var(--font-serif)",
-                    fontSize: 20,
-                    fontWeight: 400,
-                    fontStyle: "italic",
-                    letterSpacing: "-0.01em",
-                    lineHeight: 1.15,
-                    color: "var(--il-text)",
-                  }
-                : {
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    letterSpacing: "-0.01em",
-                    color: "var(--il-text)",
-                  }
-            }
-          >
-            {slug}
-          </span>
-          {/* Status word dropped per spec — the Reuleaux colour
-           *  (blue-spin / amber-static / neutral) and the `step`
-           *  meta's own colour already encode the state. A separate
-           *  word was redundant. */}
-          <span style={{ flex: 1 }} />
-          <Meta k="step" v={stepLabel ?? "—"} color={live ? "var(--il-blue)" : "var(--il-text3)"} />
-        </button>
-
-        {showRunNow && (
-          <button
-            type="button"
-            onClick={onRunNow}
-            disabled={starting}
-            className="flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-0.75 text-xs outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 disabled:opacity-50"
-            style={{
-              background: "var(--il-slate-elev)",
-              border: "1px solid var(--il-border-soft)",
-              color: "var(--il-text)",
-              cursor: starting ? "progress" : "pointer",
-            }}
-            aria-label={`Run ${slug} now`}
-            title="Start an autonomous run for this agent"
-          >
-            <span
-              className="font-mono uppercase"
-              style={{
-                fontSize: 10.5,
-                letterSpacing: "0.04em",
-                color: starting ? "var(--il-text3)" : "var(--il-text2)",
-              }}
-            >
-              {starting ? "starting…" : "run now"}
-            </span>
-            {!starting && <Key>⌘R</Key>}
-          </button>
-        )}
-      </div>
-
-      {/* Action line — always renders per screen-home.jsx
-       *  AgentRunCard (every card shows one sentence of context).
-       *    · Live run + note → Inter 12.5 text2, the run's current
-       *      note verbatim.
-       *    · Idle + note → mono uppercase `last · <note>` so the user
-       *      can see what the agent was last up to.
-       *    · Idle + no runs yet → `no recent activity`.
-       *    · Paused → `paused`. */}
-      <div
-        className={live && note ? "truncate" : "font-mono truncate"}
-        style={
-          live && note
-            ? { marginTop: 6, fontSize: 12.5, color: "var(--il-text2)" }
-            : {
-                marginTop: 6,
-                fontSize: 10.5,
-                color: "var(--il-text3)",
-                letterSpacing: "0.02em",
-                textTransform: "uppercase",
-              }
-        }
-      >
-        {live && note ? note : paused ? "paused" : note ? `last · ${note}` : "no recent activity"}
-      </div>
-
-      {/* Target-path line — mono `→ <target>` per the JSX schematic.
-       *  Content is state-driven (parsed token, `queued`, `paused`,
-       *  `working…`); rendering unconditionally keeps the card's
-       *  silhouette the same regardless of which agent is shown. */}
-      <div
-        className="font-mono truncate"
-        style={{
-          marginTop: 4,
-          fontSize: 10.5,
-          letterSpacing: "0.02em",
-          color: "var(--il-text3)",
-        }}
-      >
-        → {target}
-      </div>
-
-      {/* Progress bar — 2 px blue rail with a matching glow, only
-       *  shown while the agent is live AND the step label parses.
-       *  Non-running agents don't get a progress bar; a static bar
-       *  would misread as "still happening." */}
-      {pct !== null && (
-        <div
-          aria-hidden="true"
-          style={{
-            height: 2,
-            background: "var(--il-border-soft)",
-            borderRadius: 1,
-            marginTop: 10,
-            position: "relative",
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              right: `${100 - pct}%`,
-              background: "var(--il-blue)",
-              borderRadius: 1,
-              boxShadow: "0 0 8px var(--il-blue-glow)",
-              transition: "right var(--motion-transit) ease",
-            }}
-          />
-        </div>
-      )}
-
-      {error && (
-        <div
-          className="font-mono"
-          style={{
-            marginTop: 6,
-            fontSize: 10.5,
-            color: "var(--il-red)",
-            letterSpacing: "0.02em",
-          }}
-        >
-          {error}
-        </div>
-      )}
-    </AgentPulse>
   );
 }
 
@@ -1289,75 +1007,12 @@ function QuickAction({ label, shortcut, disabled, onClick }: QuickActionProps) {
 
 // ───────────── helpers ─────────────
 
-/**
- * Parse a `"NN/MM"` step label (e.g. `"04/12"`) into a 0–100 %
- * completion ratio. Clamps to `[0, 100]` so a server-side off-by-one
- * doesn't overflow the progress bar. Returns `null` when the label
- * can't be parsed so the caller suppresses the bar cleanly.
- */
-function parseStepPct(label: string | null): number | null {
-  if (!label) return null;
-  const match = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(label);
-  if (!match?.[1] || !match[2]) return null;
-  const step = Number.parseInt(match[1], 10);
-  const total = Number.parseInt(match[2], 10);
-  if (!Number.isFinite(step) || !Number.isFinite(total) || total <= 0) return null;
-  return Math.max(0, Math.min(100, (step / total) * 100));
-}
-
-/**
- * Derive the mono `→ <target>` line for an AgentRunCard. We lack a
- * real `currentTarget` data field, so we fall back to these rules
- * in order:
- *   · starting → `working…` (transient)
- *   · running + note carries a path-ish token → that token
- *   · running without a parseable token → `working…`
- *   · paused → `paused`
- *   · otherwise → `queued`
- * Keeps the line's silhouette consistent across states without
- * inventing a target path.
- */
-function deriveTargetLine({
-  live,
-  paused,
-  note,
-  starting,
-}: {
-  live: boolean;
-  paused: boolean;
-  note: string | null;
-  starting: boolean;
-}): string {
-  if (starting) return "working…";
-  if (live) {
-    const token = note ? extractPathToken(note) : null;
-    return token ?? "working…";
-  }
-  if (paused) return "paused";
-  return "queued";
-}
-
-/**
- * Pull the most likely file reference out of a free-text note. The
- * executor's notes often contain a `<name>.<ext>` or a
- * `<folder>/<file>` substring — we surface that as the target when
- * present. Returns `null` when no path-ish token is found so the
- * caller can fall through to the state placeholder.
- */
-function extractPathToken(text: string): string | null {
-  // Prefer the last `<folder>/<file>` hit since later tokens tend
-  //  to describe the currently-touched target rather than
-  //  introductory context.
-  const slashMatch = text.match(/[\w.-]+\/[\w./-]+/g);
-  if (slashMatch && slashMatch.length > 0) {
-    return slashMatch[slashMatch.length - 1] ?? null;
-  }
-  const extMatch = text.match(/[\w-]+\.(?:md|mdx|ts|tsx|js|jsx|json|yaml|yml|toml|txt|csv)\b/g);
-  if (extMatch && extMatch.length > 0) {
-    return extMatch[extMatch.length - 1] ?? null;
-  }
-  return null;
-}
+// `parseStepPct`, `deriveTargetLine`, and `extractPathToken`
+//  retired alongside `ActiveAgentCard` — the cube's per-strip
+//  Reuleaux pip + step label cover the visual signal those helpers
+//  fed (live progress, target line, paused/idle text). Cube cells
+//  don't render a progress bar today; if it lands later, parse can
+//  come back from history.
 
 /**
  * Render a list of agent slugs as prose:

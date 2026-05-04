@@ -46,7 +46,6 @@ import { SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH, useAppStore } from "../stores/app
 import { useAuthStore } from "../stores/auth.js";
 import { useTreeStore } from "../stores/tree.js";
 import { MOTION } from "../styles/motion.js";
-import { AgentsCube } from "./AgentsCube.js";
 import { FolderPeekButton } from "./FolderPeek.js";
 import { InboxPanel } from "./InboxPanel.js";
 import { Logo } from "./Logo.js";
@@ -1830,27 +1829,7 @@ function AgentsPanel({ collapsed, expanded }: { collapsed: boolean; expanded?: b
         </div>
       )}
 
-      {/* 3D agents cube — six faces × four agent strips, with
-       *  drag-to-rotate navigation and edge-hover affordances.
-       *  Replaces the old flat agent list when the Agents tab is
-       *  expanded; the unexpanded variant (e.g. inside Home's
-       *  active-runs strip) keeps the flat fallback rendering. */}
-      {expanded ? (
-        agents.length === 0 ? (
-          <div
-            style={{
-              fontSize: 11.5,
-              color: "var(--il-text3)",
-              padding: "4px 2px 8px",
-              fontStyle: "italic",
-            }}
-          >
-            No agents installed yet.
-          </div>
-        ) : (
-          <AgentsCube />
-        )
-      ) : agents.length === 0 ? (
+      {agents.length === 0 ? (
         <div
           style={{
             fontSize: 11.5,
@@ -1864,6 +1843,8 @@ function AgentsPanel({ collapsed, expanded }: { collapsed: boolean; expanded?: b
       ) : (
         <div className="flex flex-col gap-0.5">
           {agents.map((a) => {
+            // Pip colour vocabulary matches the rest of the app:
+            //  blue-spin = running, amber = paused, neutral = queued.
             const paused = a.status === "paused";
             const pipColor = a.running
               ? "var(--il-blue)"
