@@ -990,20 +990,6 @@ kbd {
   backface-visibility: hidden;
   overflow: hidden;
 }
-/* Top + bottom faces are square caps (W × W) — overrides come inline
- * from `AgentsCube.tsx` (inset: auto + explicit top/height) so the
- * `inset: 0` rule above doesn't fight them. */
-.il-agents-cube-face.is-cap {
-  inset: auto;
-  width: 100%;
-}
-/* Drop-target highlight while a strip is being dragged across faces.
- * Faint blue tint keeps the affordance discoverable without dominating
- * the cube's restful palette. */
-.il-agents-cube-face.is-drop-target {
-  background: color-mix(in oklch, var(--il-slate) 80%, var(--il-blue) 22%);
-  border-color: var(--il-blue);
-}
 
 /*
  * Edge-hover affordance pulse. The arrow + neighbour name fades
