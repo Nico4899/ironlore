@@ -17,9 +17,13 @@ import {
   Image,
   Inbox as InboxIcon,
   Mail,
+  Moon,
   Music,
   PanelLeftClose,
   PanelLeftOpen,
+  Search as SearchIcon,
+  Settings as SettingsIcon,
+  Sun,
   Terminal as TerminalIcon,
   Video,
   Workflow,
@@ -252,18 +256,6 @@ export function SidebarNew() {
       useAppStore.getState().setSidebarFolder("");
       setSlideDir(null);
     }, MOTION.transit);
-  }, []);
-
-  /**
-   * Top-row logo click — "go home." Clears the active file + active
-   * agent so the content area lands on the HomePanel; keeps the
-   * sidebar on the files tab (the user's existing drill-down context
-   * survives). Same intent the retired Header's logo used to carry.
-   */
-  const goHome = useCallback(() => {
-    const store = useAppStore.getState();
-    store.setActivePath(null);
-    store.setActiveAgentSlug(null);
   }, []);
 
   const openFile = useCallback((path: string) => {
@@ -650,57 +642,14 @@ export function SidebarNew() {
        * Height matches the ProjectTile row so the two stacked panels
        * feel like one block.
        */}
-      {collapsed ? (
-        <button
-          type="button"
-          onClick={() => useAppStore.getState().toggleSidebar()}
-          className="il-sidebar-toptile group relative flex h-10 w-full items-center justify-center border-b border-border outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-          aria-label="Expand sidebar"
-          title="Expand sidebar (⌘B)"
-        >
-          <span
-            className="il-sidebar-toptile__logo"
-            style={{ display: "inline-flex" }}
-            aria-hidden="true"
-          >
-            <Logo size={20} />
-          </span>
-          <span
-            className="il-sidebar-toptile__icon"
-            style={{ display: "inline-flex" }}
-            aria-hidden="true"
-          >
-            <PanelLeftOpen className="h-4 w-4 text-primary" />
-          </span>
-        </button>
-      ) : (
-        <div className="relative flex h-10 items-center justify-between gap-2 border-b border-border px-2">
-          <button
-            type="button"
-            onClick={goHome}
-            className="flex items-center rounded-[3px] p-1 outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-            aria-label="Ironlore home"
-            title="Home"
-          >
-            <Logo size={20} />
-          </button>
-          <button
-            type="button"
-            onClick={() => useAppStore.getState().toggleSidebar()}
-            className="flex h-7 w-7 items-center justify-center rounded text-secondary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar (⌘B)"
-          >
-            <PanelLeftClose className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      {/* ─── Project switcher tile ───
-       *  Full tile per docs/08 §Project switcher UX. Clickable
-       *  surface mirrors the Cmd+P palette. Collapsed sidebar renders
-       *  a compact square with just the gradient mark + pulse. */}
-      <ProjectTile collapsed={collapsed} />
+      {/* ─── Sidebar top chrome ───
+       *  After the AppHeader was retired, this row is the app's only
+       *  identity surface: logo + `ironlore` wordmark + Settings /
+       *  Search / Theme icon buttons. The project switcher used to
+       *  sit here; it moved to the bottom of the sidebar so the
+       *  always-visible chrome is global controls, not project
+       *  context. */}
+      <SidebarTopChrome collapsed={collapsed} />
 
       {/*
        * Primary tabs — `FILES` and `INBOX` per docs/09-ui-and-brand.md
@@ -1000,11 +949,23 @@ export function SidebarNew() {
         </div>
       )}
 
-      {/* ─── Sticky "New page" rail ─── full-width primary action that
-       *  always sits at the bottom of the sidebar regardless of how
-       *  long the tree gets. The chord chip mirrors the global ⌘N
-       *  binding wired below in a useEffect. */}
-      {!collapsed && <NewPageRail onClick={handleNewPageFromSidebar} />}
+      {/* ─── Files-tab "New page" rail ─── primary creation action
+       *  for the Files tab. Pinned beneath the lowermost row in the
+       *  tree. The Agents tab has its own NewAgentRail rendered
+       *  inside AgentsPanel; the Inbox tab has no creation surface,
+       *  so we gate this rail to `sidebarTab === "files"`. */}
+      {!collapsed && sidebarTab === "files" && (
+        <NewPageRail onClick={handleNewPageFromSidebar} />
+      )}
+
+      {/* ─── Project switcher tile ─── moved from the top of the
+       *  sidebar to the bottom per the redesign brief. The top is
+       *  now global chrome (logo + settings + search + theme); the
+       *  bottom is project context. Clicking the tile opens the
+       *  project switcher modal anchored above this tile (see
+       *  ProjectSwitcher). */}
+      {!collapsed && <ProjectTile collapsed={false} />}
+      {collapsed && <ProjectTile collapsed={true} />}
 
       {/* ─── Context menu ─── */}
       {contextMenu && (
@@ -1266,6 +1227,140 @@ function ContextMenuItem({
  * a pulse when agents are working — the full name is hidden behind the
  * expand affordance.
  */
+/**
+ * SidebarTopChrome — replaces the retired top platform header
+ * ([AppHeader.tsx]). Holds the global app identity + chrome:
+ *
+ *   Expanded:  [Logo] ironlore                  [⚙]  [🔍]  [☀/🌙]  [⮜]
+ *   Collapsed: [Logo]      (the whole tile click-expands the sidebar)
+ *
+ * Per the user's sidebar redesign brief: "Remove the top header of
+ * the platform completely and add the settings, search and dark
+ * mode, where the project switcher was. Next to the logo add
+ * 'ironlore'." The collapse chevron is the one chrome control
+ * inherited from the prior logo row — without it the sidebar has
+ * no visible collapse affordance (only ⌘B / drag-to-collapse).
+ *
+ * Click on the logo or wordmark routes to Home (clears `activePath`
+ * + `activeAgentSlug`) so the brand mark always honours the
+ * "click-to-home" convention.
+ */
+function SidebarTopChrome({ collapsed }: { collapsed: boolean }) {
+  const theme = useAppStore((s) => s.theme);
+  const goHome = useCallback(() => {
+    const store = useAppStore.getState();
+    store.setActivePath(null);
+    store.setActiveAgentSlug(null);
+  }, []);
+
+  if (collapsed) {
+    // Collapsed: the whole tile is a click-expand target with the
+    //  Ironlore mark in the centre. Hovering reveals the chevron
+    //  (mirrors the pre-existing collapsed-tile behaviour).
+    return (
+      <button
+        type="button"
+        onClick={() => useAppStore.getState().toggleSidebar()}
+        className="il-sidebar-toptile group relative flex h-10 w-full items-center justify-center border-b border-border outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        aria-label="Expand sidebar"
+        title="Expand sidebar (⌘B)"
+      >
+        <span
+          className="il-sidebar-toptile__logo"
+          style={{ display: "inline-flex" }}
+          aria-hidden="true"
+        >
+          <Logo size={20} />
+        </span>
+        <span
+          className="il-sidebar-toptile__icon"
+          style={{ display: "inline-flex" }}
+          aria-hidden="true"
+        >
+          <PanelLeftOpen className="h-4 w-4 text-primary" />
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="relative flex h-10 items-center gap-1 border-b border-border px-2"
+      style={{ flexShrink: 0 }}
+    >
+      <button
+        type="button"
+        onClick={goHome}
+        className="flex items-center gap-2 rounded-[3px] px-1 py-1 outline-none hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+        aria-label="Ironlore home"
+        title="Home"
+      >
+        <Logo size={18} />
+        <span
+          style={{
+            fontFamily: "var(--font-sans)",
+            fontSize: 13.5,
+            fontWeight: 500,
+            letterSpacing: "-0.02em",
+            color: "var(--il-text)",
+          }}
+        >
+          ironlore
+        </span>
+      </button>
+      <span className="flex-1" />
+      <ChromeIconButton
+        icon={SettingsIcon}
+        ariaLabel="Settings"
+        title="Settings"
+        onClick={() => useAppStore.getState().toggleSettings("general")}
+      />
+      <ChromeIconButton
+        icon={SearchIcon}
+        ariaLabel="Search (⌘K)"
+        title="Search"
+        onClick={() => useAppStore.getState().toggleSearchDialog()}
+      />
+      <ChromeIconButton
+        icon={theme === "dark" ? Sun : Moon}
+        ariaLabel={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        title={theme === "dark" ? "Light mode" : "Dark mode"}
+        onClick={() => useAppStore.getState().toggleTheme()}
+      />
+      <ChromeIconButton
+        icon={PanelLeftClose}
+        ariaLabel="Collapse sidebar"
+        title="Collapse sidebar (⌘B)"
+        onClick={() => useAppStore.getState().toggleSidebar()}
+      />
+    </div>
+  );
+}
+
+function ChromeIconButton({
+  icon: Icon,
+  ariaLabel,
+  title,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  ariaLabel: string;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      title={title}
+      className="flex h-7 w-7 items-center justify-center rounded text-secondary outline-none transition-colors duration-(--motion-snap) hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+    >
+      <Icon className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
 function ProjectTile({ collapsed }: { collapsed: boolean }) {
   const currentProjectId = useAuthStore((s) => s.currentProjectId);
   const [count, setCount] = useState<number | null>(null);
