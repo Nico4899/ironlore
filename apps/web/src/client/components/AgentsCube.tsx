@@ -92,15 +92,15 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
   const [rotation, setRotation] = useState(FACE_ROTATIONS.front);
   const [animating, setAnimating] = useState(false);
 
-  // First-paint tilt only — the cube renders with a small 3D tilt
-  //  on mount so the user can see it's a 3D object, but the moment
-  //  they interact (drag OR arrow click) the tilt fades and every
-  //  subsequent state is a strict horizontal/vertical canonical
-  //  orientation. Per the user's brief: "the slight tilt should
-  //  only be initially. When the user actually clicks and drags the
-  //  box to the desired side it should snap directly to strict
-  //  horizontal or vertical rotation."
+  // Auto-rotation lock. While `false`, an interval auto-navigates
+  //  the cube to a random neighbour every 5 s so a user who lands
+  //  on Home sees motion and learns the cube can rotate. The first
+  //  human interaction (drag start OR arrow click) latches this to
+  //  `true` and the auto-rotation interval clears itself. Per the
+  //  user's brief: "No Initial tilt at the beginning, but random
+  //  rotation (either vertically or horizontally) every 5 seconds".
   const [userInteracted, setUserInteracted] = useState(false);
+  const currentFaceRef = useRef<FaceId>("front");
 
   type Direction = "up" | "down" | "left" | "right";
   const dragRef = useRef<{
@@ -116,11 +116,10 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
     axis: "x" | "y" | null;
   } | null>(null);
 
-  const TILT_X = -5;
-  const TILT_Y = 8;
   const SNAP_MS = 320;
   const DRAG_BEGIN_PX = 4;
   const NAVIGATE_PX = 50;
+  const AUTO_ROTATE_MS = 5000;
 
   /** Animate the cube to the canonical rotation of `target`, then
    *  commit the new face-id once the transition completes. The first
@@ -136,16 +135,39 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
    *  each other" the user reported. We pick the equivalent
    *  canonical-mod-360 value closest to the current rotation so the
    *  animation always takes the 90° short path. */
-  const navigateTo = useCallback((target: FaceId) => {
-    setUserInteracted(true);
+  const navigateTo = useCallback((target: FaceId, opts?: { auto?: boolean }) => {
+    // Auto-rotation calls (`opts.auto === true`) must NOT latch
+    //  `userInteracted` — otherwise the very first auto-tick would
+    //  cancel its own interval. Only human-initiated paths flip
+    //  the flag (drag-commit, arrow click, drag start).
+    if (!opts?.auto) setUserInteracted(true);
     setAnimating(true);
     setRotation((prev) => {
       const canon = FACE_ROTATIONS[target];
       return { x: nearestEquivalent(canon.x, prev.x), y: nearestEquivalent(canon.y, prev.y) };
     });
     setCurrentFace(target);
+    currentFaceRef.current = target;
     setTimeout(() => setAnimating(false), SNAP_MS);
   }, []);
+
+  // ─── Auto-rotation while idle ────────────────────────────────────
+  //  Every 5 s, pick a random direction (up / down / left / right)
+  //  and navigate to the corresponding neighbour. Stops the moment
+  //  the user does anything (drag or arrow click). Replaces the
+  //  prior first-paint tilt as the "this is interactive" cue —
+  //  zero tilt at rest, but the cube quietly cycles so the depth is
+  //  obvious without wasting screen space on a static skew.
+  useEffect(() => {
+    if (userInteracted) return;
+    const id = setInterval(() => {
+      const directions: Direction[] = ["up", "down", "left", "right"];
+      const dir = directions[Math.floor(Math.random() * directions.length)] as Direction;
+      const next = NEIGHBORS[currentFaceRef.current][dir];
+      navigateTo(next, { auto: true });
+    }, AUTO_ROTATE_MS);
+    return () => clearInterval(id);
+  }, [userInteracted, navigateTo]);
 
   // ─── Pointer drag → rotate → snap ───────────────────────────────
   const onPointerDown = useCallback(
@@ -300,22 +322,6 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
     if (hoverEdge !== null) setHoverEdge(null);
   }, [hoverEdge]);
 
-  // The cube's transform composes the logical rotation state with
-  //  the constant tilt. `translateZ(-W/2)` pulls the cube center
-  //  back so the front face (at +W/2) sits at z=0 in screen space.
-  const halfDepth = cubeW / 2;
-  // Tilt is a one-shot first-paint hint. Once `userInteracted`
-  //  flips, every transform composes only the canonical rotation
-  //  state — strict horizontal/vertical orientations as the user
-  //  asked for. The transition that fades the tilt out runs on the
-  //  same `transform` property so the move feels continuous.
-  const tiltX = userInteracted ? 0 : TILT_X;
-  const tiltY = userInteracted ? 0 : TILT_Y;
-  const cubeStyle: CSSProperties = {
-    transform: `translateZ(-${halfDepth}px) rotateX(${rotation.x + tiltX}deg) rotateY(${rotation.y + tiltY}deg)`,
-    transition: animating || userInteracted ? `transform ${SNAP_MS}ms ease-out` : "none",
-  };
-
   // Host height anchors to the FRONT (Defaults) face only — every
   //  other face inherits the same dimensions so no face appears
   //  taller than the default. Per the user's brief: "keep height of
@@ -340,6 +346,23 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
         (frontShowNewJob ? NEW_JOB_H : 0) +
         Math.max(0, frontItems - 1) * GAP_H;
   const hostHeight = Math.min(720, Math.max(220, frontFaceHeight));
+
+  // Per-face depth — front/back/right/left translate by `cubeW/2`,
+  //  top/bottom translate by `hostHeight/2` (since they use the
+  //  taller H dimension as their depth axis). For the visible face
+  //  to always land at z=0 (camera plane, neutral perspective), the
+  //  cube's translateZ has to match whichever face is current. We
+  //  animate that value as part of the cube transform so vertical
+  //  rotations feel as smooth as horizontal ones — without it, the
+  //  top face appeared a few pixels closer to the viewer than the
+  //  front, giving a visible "scale jump" that broke the seamless
+  //  feel the user asked for.
+  const isVerticalFace = currentFace === "top" || currentFace === "bottom";
+  const cubeHalfDepth = isVerticalFace ? hostHeight / 2 : cubeW / 2;
+  const cubeStyle: CSSProperties = {
+    transform: `translateZ(-${cubeHalfDepth}px) rotateX(${rotation.x}deg) rotateY(${rotation.y}deg)`,
+    transition: animating ? `transform ${SNAP_MS}ms ease-out` : "none",
+  };
 
   return (
     <section
@@ -430,13 +453,21 @@ function CubeFace({
   //  tilts the slabs poke out behind the back face, but during the
   //  90° vertical navigation the front face occludes them, so the
   //  user sees clean rectangle-to-rectangle transitions.
+  // The X-rotation sign for top/bottom is the INVERSE of the cube's
+  //  canonical X-rotation that reveals each (`FACE_ROTATIONS.top.x ===
+  //  -90`, so face_local uses `+90`; bottom is the mirror). This makes
+  //  `cube_rot × face_local` compose to identity rotation when the
+  //  face is shown — so the cluster name stays at the upper-left
+  //  corner instead of being flipped 180° (the bug the user reported).
+  //  Front/back/right/left already compose to identity via the
+  //  matching ±Y-axis sign convention.
   const faceStyle: Record<FaceId, CSSProperties> = {
     front: { transform: `translateZ(${halfDepthW}px)` },
     back: { transform: `rotateY(180deg) translateZ(${halfDepthW}px)` },
     right: { transform: `rotateY(90deg) translateZ(${halfDepthW}px)` },
     left: { transform: `rotateY(-90deg) translateZ(${halfDepthW}px)` },
-    top: { transform: `rotateX(-90deg) translateZ(${halfDepthH}px)` },
-    bottom: { transform: `rotateX(90deg) translateZ(${halfDepthH}px)` },
+    top: { transform: `rotateX(90deg) translateZ(${halfDepthH}px)` },
+    bottom: { transform: `rotateX(-90deg) translateZ(${halfDepthH}px)` },
   };
   const canAddMore = agents.length < MAX_AGENTS_PER_FACE;
 
