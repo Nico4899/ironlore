@@ -188,7 +188,21 @@ export function SidebarNew() {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [editingPath, setEditingPath] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState("");
-  const [slideDir, setSlideDir] = useState<"left" | "right" | null>(null);
+  // ─── Drill animation ────────────────────────────────────────────
+  //  Two-phase: the OLD folder's tree slides out (translateX 0 →
+  //  ±100%, ease-in-out, MOTION.transit), then the NEW folder's
+  //  tree slides in from the opposite edge (translateX ±100% → 0,
+  //  same duration). The phase change is driven by `setTimeout`;
+  //  React's `key={...phase + folder}` forces a fresh DOM mount
+  //  for the entering phase so the entry keyframe restarts cleanly.
+  //
+  //  Direction:
+  //   - "into": old slides off LEFT, new arrives from RIGHT
+  //   - "back": old slides off RIGHT, new arrives from LEFT
+  const [transition, setTransition] = useState<{
+    phase: "leaving" | "entering";
+    direction: "into" | "back";
+  } | null>(null);
   // DnD state — the string is either a folder path (drop-into), or one of
   // the sentinels "__root__" / "__up__" for breadcrumb targets, or a file
   // path when the cursor is over a file row (in which case `dropEdge`
@@ -230,45 +244,54 @@ export function SidebarNew() {
 
   // Navigation
   /**
-   * Drill into a folder — the current list slides LEFT off-screen
-   * (ease-in-out, `--motion-transit`); when the timer matches the
-   * transition we swap the folder and slide the new list in from
-   * the right. Semantically a stack push.
+   * Drill into a folder — two-phase animation (per docs/03-editor.md
+   * §Drill animation): the current list slides LEFT off-screen first,
+   * then after the same duration the new list arrives from the RIGHT.
+   * Total runtime is 2 × MOTION.transit. Semantically a stack push.
    */
   const drillInto = useCallback((folderPath: string) => {
-    setSlideDir("left");
+    setTransition({ phase: "leaving", direction: "into" });
     setTimeout(() => {
+      // Commit the new folder + flip into the entering phase. The
+      //  fresh `key` on the tree container forces React to remount,
+      //  which restarts the slide-in keyframe from its `from` state.
       useAppStore.getState().setSidebarFolder(folderPath);
-      setSlideDir(null);
+      setTransition({ phase: "entering", direction: "into" });
+      setTimeout(() => setTransition(null), MOTION.transit);
     }, MOTION.transit);
   }, []);
 
-  /** Drill up — mirror of `drillInto`; stack pop. */
+  /** Drill up — mirror of `drillInto`; stack pop. Old slides off
+   *  RIGHT, new (parent) arrives from LEFT. */
   const drillUp = useCallback(() => {
-    setSlideDir("right");
+    if (!sidebarFolder) return;
+    setTransition({ phase: "leaving", direction: "back" });
     setTimeout(() => {
       const parts = sidebarFolder.split("/");
       parts.pop();
       useAppStore.getState().setSidebarFolder(parts.join("/"));
-      setSlideDir(null);
+      setTransition({ phase: "entering", direction: "back" });
+      setTimeout(() => setTransition(null), MOTION.transit);
     }, MOTION.transit);
   }, [sidebarFolder]);
 
   const drillToRoot = useCallback(() => {
-    setSlideDir("right");
+    if (!sidebarFolder) return;
+    setTransition({ phase: "leaving", direction: "back" });
     setTimeout(() => {
       useAppStore.getState().setSidebarFolder("");
-      setSlideDir(null);
+      setTransition({ phase: "entering", direction: "back" });
+      setTimeout(() => setTransition(null), MOTION.transit);
     }, MOTION.transit);
-  }, []);
+  }, [sidebarFolder]);
 
   // ─── Touchpad two-finger horizontal swipe → drill / back ─────────
   //  Per the redesign brief: swipe right-to-left (positive deltaX in
-  //  macOS wheel events) shows sub-content (drill into the focused
-  //  directory if any); swipe left-to-right (negative deltaX) goes
-  //  back to the parent. The animation directions match the
-  //  click-driven `slideDir` so touchpad nav is indistinguishable
-  //  from click nav.
+  //  macOS wheel events) drills *into the folder the cursor is
+  //  currently hovering*; swipe left-to-right (negative deltaX) goes
+  //  back to the parent. Hover-scoped (not focus-scoped) so the
+  //  affordance reads from where the user is *looking*, not from
+  //  whatever row was last keyboard-arrowed.
   //
   //  We only treat the gesture as horizontal when the X-axis delta
   //  dominates the Y-axis (1.5×) — this avoids hijacking vertical
@@ -281,6 +304,11 @@ export function SidebarNew() {
     lastTs: 0,
     lockedUntil: 0,
   });
+  // Path of the directory row the cursor is currently hovering, or
+  //  null. Mouse-driven (mouseenter/mouseleave on each row), not
+  //  keyboard-driven — the swipe reads from this so the gesture is
+  //  always "drill into the folder I'm pointing at."
+  const hoveredFolderRef = useRef<string | null>(null);
   const SWIPE_THRESHOLD_PX = 80;
   const SWIPE_LOCK_MS = 600;
   const SWIPE_IDLE_RESET_MS = 200;
@@ -726,13 +754,45 @@ export function SidebarNew() {
        */}
       {!collapsed && sidebarTab === "files" && (
         <div
-          className={`flex-1 overflow-y-auto px-1 py-1 transition-transform duration-(--motion-transit) ease-in-out ${
-            slideDir === "left"
-              ? "-translate-x-full opacity-0"
-              : slideDir === "right"
-                ? "translate-x-full opacity-0"
-                : "translate-x-0 opacity-100"
-          }`}
+          // Fresh `key` on every phase change forces React to drop
+          //  + remount the subtree DOM, which lets CSS keyframes
+          //  restart cleanly for the entering phase. During the
+          //  leaving phase the existing DOM stays mounted and slides
+          //  away via a transition. `static-${sidebarFolder}` keeps
+          //  the no-transition state on the same key as long as the
+          //  user isn't navigating.
+          key={
+            transition === null
+              ? `static-${sidebarFolder}`
+              : transition.phase === "leaving"
+                ? `leaving-${sidebarFolder}-${transition.direction}`
+                : `entering-${sidebarFolder}-${transition.direction}`
+          }
+          className="flex-1 overflow-y-auto px-1 py-1"
+          style={(() => {
+            if (transition === null) return { transform: "translateX(0)" };
+            if (transition.phase === "leaving") {
+              // Old content slides OUT. Direction "into" → off the
+              //  left edge; direction "back" → off the right edge.
+              //  Uses a CSS transition so the existing DOM animates
+              //  in place from 0 → ±100%.
+              return {
+                transform:
+                  transition.direction === "into" ? "translateX(-100%)" : "translateX(100%)",
+                transition: "transform var(--motion-transit) ease-in-out",
+              };
+            }
+            // Entering — the DOM was just remounted via the fresh
+            //  `key`, so the keyframe runs from its `from` state.
+            //  Direction "into" → arrives from the right; direction
+            //  "back" → arrives from the left.
+            return {
+              animation:
+                transition.direction === "into"
+                  ? "ilSlideInFromRight var(--motion-transit) ease-in-out forwards"
+                  : "ilSlideInFromLeft var(--motion-transit) ease-in-out forwards",
+            };
+          })()}
           onWheel={(e) => {
             // Touchpad two-finger horizontal swipe → drill / back.
             //  Only fires when |deltaX| dominates |deltaY| by 1.5×
@@ -749,18 +809,23 @@ export function SidebarNew() {
             accum.deltaX += e.deltaX;
             accum.lastTs = now;
             if (accum.deltaX >= SWIPE_THRESHOLD_PX) {
-              // R→L swipe (deltaX > 0) → drill into the focused
-              //  directory if there is one. Without a focused dir
-              //  we no-op rather than guess; the user keeps clicking
-              //  to drill in.
-              const focused = visibleItems[focusedTreeIdx];
-              if (focused?.type === "directory") drillInto(focused.path);
+              // R→L swipe (deltaX > 0) → drill into the folder the
+              //  cursor is currently hovering. Hover-scoped (not
+              //  focus-scoped) so the gesture reads from where the
+              //  user is pointing — no guessing. Without a hovered
+              //  directory we no-op; the user keeps clicking or
+              //  hovers a folder first.
+              const hoveredPath = hoveredFolderRef.current;
+              const hovered = hoveredPath
+                ? visibleItems.find((it) => it.path === hoveredPath)
+                : undefined;
+              if (hovered?.type === "directory") drillInto(hovered.path);
               accum.deltaX = 0;
               accum.lockedUntil = now + SWIPE_LOCK_MS;
             } else if (accum.deltaX <= -SWIPE_THRESHOLD_PX) {
-              // L→R swipe (deltaX < 0) → drillUp (parent). No-op at
-              //  the root; the breadcrumb's Home anchor handles deep
-              //  drill-back.
+              // L→R swipe (deltaX < 0) → drillUp (parent). Hover
+              //  position is irrelevant for going back; we just pop
+              //  the breadcrumb stack. No-op at the root.
               if (sidebarFolder) drillUp();
               accum.deltaX = 0;
               accum.lockedUntil = now + SWIPE_LOCK_MS;
@@ -863,6 +928,20 @@ export function SidebarNew() {
                   onDragOver={(e) => handleRowDragOver(e, item)}
                   onDragLeave={handleDragLeave}
                   onDrop={(e) => void handleRowDrop(e, item)}
+                  onMouseEnter={() => {
+                    // Hover-scoped touchpad swipe: tracks which
+                    //  directory row the cursor is currently over so
+                    //  a R→L wheel swipe can drill into it. Files
+                    //  populate the ref too (it's harmless — the
+                    //  swipe handler only acts when the hovered
+                    //  item is a directory).
+                    hoveredFolderRef.current = item.path;
+                  }}
+                  onMouseLeave={() => {
+                    if (hoveredFolderRef.current === item.path) {
+                      hoveredFolderRef.current = null;
+                    }
+                  }}
                   onClick={() => {
                     if (isEditing) return;
                     setFocusedTreeIdx(itemIdx);

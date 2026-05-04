@@ -904,6 +904,32 @@ kbd {
 }
 
 /*
+ * Sidebar drill-in / drill-back tree transitions. The folder tree's
+ * leaving phase uses an inline `transition` (0 → ±100%); the
+ * entering phase mounts via a `key` change and runs one of these
+ * keyframes (±100% → 0). Together they produce a two-phase
+ * out-then-in slide that mirrors iOS Settings / Apple Mail drill
+ * navigation: old content fully clears the viewport before the new
+ * content arrives, so the gesture reads as deliberate.
+ */
+@keyframes ilSlideInFromRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes ilSlideInFromLeft {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/*
  * AI panel resize handle — mirror of `.il-sidebar-resize` but
  * anchored to the LEFT edge of the AI panel (which sits on the
  * right side of the viewport, so the user-facing edge is its left).
