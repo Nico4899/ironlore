@@ -2,7 +2,6 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { AgentToastContainer } from "./components/AgentToast.js";
 import { AIPanel } from "./components/AIPanel.js";
 import { AIPanelRail } from "./components/AIPanelRail.js";
-import { AppHeader } from "./components/AppHeader.js";
 import { ChangePasswordPage } from "./components/ChangePasswordPage.js";
 import { ContentArea } from "./components/ContentArea.js";
 import { CopyToProjectDialog } from "./components/CopyToProjectDialog.js";

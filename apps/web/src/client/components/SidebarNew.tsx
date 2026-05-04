@@ -915,11 +915,16 @@ export function SidebarNew() {
       {/* Collapsed: no list shown — the bottom rail still renders. */}
       {collapsed && <div className="flex-1" />}
 
-      {/* Inbox is a full-screen surface routed via the content
-       *  area (ContentArea reads `sidebarTab === "inbox"` and renders
-       *  <InboxPanel /> in place of the editor). The sidebar's INBOX
-       *  tab is the trigger + state indicator; the tree stays
-       *  visible behind it. */}
+      {/* ─── Inbox tab body ─── moved from the content area into the
+       *  sidebar per the redesign brief. The full InboxPanel renders
+       *  here; users widen the sidebar via the resize handle when
+       *  reviewing a busy inbox. The content area no longer routes
+       *  to InboxPanel. */}
+      {!collapsed && sidebarTab === "inbox" && (
+        <div className="flex-1 overflow-hidden">
+          <InboxPanel />
+        </div>
+      )}
 
       {/* ─── Agents tab body ─── promoted from a footer section to a
        *  full-body sidebar surface. Renders only when the AGENTS tab
