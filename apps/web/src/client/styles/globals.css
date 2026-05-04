@@ -930,6 +930,79 @@ kbd {
 }
 
 /*
+ * AgentsCube — 6-face 3D cube on the Agents tab. Each face is a
+ * 240×240 px square, the cube depth is 240 px (so each face's
+ * `translateZ(120px)` sits flush at the cube edge), and the
+ * surrounding host carries the perspective so children share the
+ * same vanishing point.
+ *
+ * The cube itself is a positioned ancestor (`absolute inset: 0`)
+ * with `transform-style: preserve-3d` so its child face transforms
+ * are honoured in 3D. Its `transform` is driven from React state
+ * (rotation X/Y degrees); a CSS transition kicks in only during
+ * snap-on-release (toggled inline via the `transition` style prop).
+ */
+.il-agents-cube {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  /* Pull the cube center back so the front face lands at z=0 in
+   *  screen space; rotation then orbits around the cube center. */
+  transform: translateZ(-120px);
+  cursor: grab;
+}
+.il-agents-cube:active {
+  cursor: grabbing;
+}
+
+.il-agents-cube-face {
+  position: absolute;
+  inset: 0;
+  background: var(--il-slate);
+  border: 1px solid var(--il-border-soft);
+  border-radius: 6px;
+  padding: 10px 10px 12px;
+  box-sizing: border-box;
+  /* Hide back-side of each face so we don't see ghost text from
+   *  the face that's currently behind the cube. */
+  backface-visibility: hidden;
+}
+.il-agents-cube-face--front {
+  transform: translateZ(120px);
+}
+.il-agents-cube-face--right {
+  transform: rotateY(90deg) translateZ(120px);
+}
+.il-agents-cube-face--back {
+  transform: rotateY(180deg) translateZ(120px);
+}
+.il-agents-cube-face--left {
+  transform: rotateY(-90deg) translateZ(120px);
+}
+.il-agents-cube-face--top {
+  transform: rotateX(90deg) translateZ(120px);
+}
+.il-agents-cube-face--bottom {
+  transform: rotateX(-90deg) translateZ(120px);
+}
+
+/*
+ * Edge-hover affordance pulse. The arrow + neighbour name fades
+ * its border-glow on a 1.4 s cycle so it reads as "this is a
+ * navigation hint" rather than a static decoration.
+ */
+@keyframes ilEdgePulse {
+  0%, 100% {
+    box-shadow: 0 0 0 oklch(0 0 0 / 0);
+    opacity: 0.85;
+  }
+  50% {
+    box-shadow: 0 0 12px var(--il-blue-glow);
+    opacity: 1;
+  }
+}
+
+/*
  * AI panel resize handle — mirror of `.il-sidebar-resize` but
  * anchored to the LEFT edge of the AI panel (which sits on the
  * right side of the viewport, so the user-facing edge is its left).

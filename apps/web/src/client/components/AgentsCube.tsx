@@ -2,9 +2,9 @@ import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from "lucide-
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
-  type FaceId,
   FACE_ROTATIONS,
   FACES,
+  type FaceId,
   MAX_AGENTS_PER_FACE,
   NEIGHBORS,
   useAgentClustersStore,
@@ -102,11 +102,16 @@ export function AgentsCube() {
       const dx = e.clientX - drag.startX;
       const dy = e.clientY - drag.startY;
       const base = FACE_ROTATIONS[currentFace];
-      // Live rotation: 1 px ≈ 0.5° on each axis. The drag is
-      //  visually previewing a rotation toward the dominant-axis
-      //  neighbour, but we update both axes proportionally so a
-      //  diagonal drag tilts both ways before snap.
-      setRotation({ x: base.x - dy * 0.5, y: base.y + dx * 0.5 });
+      // Sign convention — swipe-carousel semantics:
+      //  - Drag right (dx > 0) → user wants to navigate right →
+      //    cube must rotate toward the right-neighbour's canonical
+      //    rotation, which sits at y = -90 from front. So as dx
+      //    grows positive, rotation.y must DECREASE.
+      //  - Drag down (dy > 0) → navigate down → bottom face's
+      //    canonical x = +90. So rotation.x INCREASES with dy.
+      //  Per-pixel ratio of 0.5°/px gives a comfortable preview at
+      //  the 50 px commit threshold (≈25° tilt before snap fires).
+      setRotation({ x: base.x + dy * 0.5, y: base.y - dx * 0.5 });
     },
     [currentFace],
   );
@@ -215,7 +220,7 @@ export function AgentsCube() {
   };
 
   return (
-    <div
+    <section
       ref={containerRef}
       className="il-agents-cube-host relative mx-auto"
       style={{ width: 240, height: 240, perspective: 800, marginTop: 12, marginBottom: 12 }}
@@ -225,6 +230,7 @@ export function AgentsCube() {
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      aria-label="Agent clusters cube"
     >
       {hoverEdge && (
         <EdgeAffordance edge={hoverEdge} neighbourName={names[NEIGHBORS[currentFace][hoverEdge]]} />
@@ -240,7 +246,7 @@ export function AgentsCube() {
           />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -291,6 +297,7 @@ function CubeFace({
               alreadyPlaced={placedSlugs.has(slug)}
             />
           ) : (
+            // biome-ignore lint/suspicious/noArrayIndexKey: empty slots have no stable identifier — index is the only meaningful key
             <NewAgentSlot key={`empty-${faceId}-${idx}`} faceId={faceId} />
           ),
         )}
