@@ -262,6 +262,29 @@ export function SidebarNew() {
     }, MOTION.transit);
   }, []);
 
+  // ─── Touchpad two-finger horizontal swipe → drill / back ─────────
+  //  Per the redesign brief: swipe right-to-left (positive deltaX in
+  //  macOS wheel events) shows sub-content (drill into the focused
+  //  directory if any); swipe left-to-right (negative deltaX) goes
+  //  back to the parent. The animation directions match the
+  //  click-driven `slideDir` so touchpad nav is indistinguishable
+  //  from click nav.
+  //
+  //  We only treat the gesture as horizontal when the X-axis delta
+  //  dominates the Y-axis (1.5×) — this avoids hijacking vertical
+  //  scrolls that happen to have a small X component. After firing,
+  //  we lock for 600ms so a single sustained swipe doesn't drill
+  //  multiple levels in one motion. The accumulator also resets
+  //  between swipes via a 200ms idle reset.
+  const swipeAccumRef = useRef<{ deltaX: number; lastTs: number; lockedUntil: number }>({
+    deltaX: 0,
+    lastTs: 0,
+    lockedUntil: 0,
+  });
+  const SWIPE_THRESHOLD_PX = 80;
+  const SWIPE_LOCK_MS = 600;
+  const SWIPE_IDLE_RESET_MS = 200;
+
   const openFile = useCallback((path: string) => {
     useAppStore.getState().setActivePath(path);
   }, []);
@@ -710,6 +733,39 @@ export function SidebarNew() {
                 ? "translate-x-full opacity-0"
                 : "translate-x-0 opacity-100"
           }`}
+          onWheel={(e) => {
+            // Touchpad two-finger horizontal swipe → drill / back.
+            //  Only fires when |deltaX| dominates |deltaY| by 1.5×
+            //  so vertical scrolls with a hint of X drift don't
+            //  hijack folder nav.
+            const accum = swipeAccumRef.current;
+            const now = Date.now();
+            if (now < accum.lockedUntil) return;
+            if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 1.5) return;
+            // Idle-reset: a long pause between wheel events restarts
+            //  the accumulator so a slow back-and-forth gesture
+            //  doesn't sum to a phantom swipe.
+            if (now - accum.lastTs > SWIPE_IDLE_RESET_MS) accum.deltaX = 0;
+            accum.deltaX += e.deltaX;
+            accum.lastTs = now;
+            if (accum.deltaX >= SWIPE_THRESHOLD_PX) {
+              // R→L swipe (deltaX > 0) → drill into the focused
+              //  directory if there is one. Without a focused dir
+              //  we no-op rather than guess; the user keeps clicking
+              //  to drill in.
+              const focused = visibleItems[focusedTreeIdx];
+              if (focused?.type === "directory") drillInto(focused.path);
+              accum.deltaX = 0;
+              accum.lockedUntil = now + SWIPE_LOCK_MS;
+            } else if (accum.deltaX <= -SWIPE_THRESHOLD_PX) {
+              // L→R swipe (deltaX < 0) → drillUp (parent). No-op at
+              //  the root; the breadcrumb's Home anchor handles deep
+              //  drill-back.
+              if (sidebarFolder) drillUp();
+              accum.deltaX = 0;
+              accum.lockedUntil = now + SWIPE_LOCK_MS;
+            }
+          }}
         >
           <div
             role="tree"
@@ -936,9 +992,7 @@ export function SidebarNew() {
        *  tree. The Agents tab has its own NewAgentRail rendered
        *  inside AgentsPanel; the Inbox tab has no creation surface,
        *  so we gate this rail to `sidebarTab === "files"`. */}
-      {!collapsed && sidebarTab === "files" && (
-        <NewPageRail onClick={handleNewPageFromSidebar} />
-      )}
+      {!collapsed && sidebarTab === "files" && <NewPageRail onClick={handleNewPageFromSidebar} />}
 
       {/* ─── Project switcher tile ─── moved from the top of the
        *  sidebar to the bottom per the redesign brief. The top is
@@ -1636,11 +1690,12 @@ function AgentsPanel({ collapsed, expanded }: { collapsed: boolean; expanded?: b
 
   if (collapsed) {
     // Collapsed rail: single pip summarising any running agents.
-    //  Clicking jumps to the first running (or any) agent's detail
-    //  so the collapsed state still surfaces agent activity.
+    //  Clicking opens the Agents tab in the expanded sidebar (the
+    //  redesign rule "any icon click → re-open" — see onClick
+    //  below); the previous "jump to first running agent's detail"
+    //  behaviour was lossy because there's no signal a user wants
+    //  that specific agent vs. the list.
     if (agents.length === 0) return null;
-    const running = agents.find((a) => a.running);
-    const target = running ?? agents[0];
     return (
       <button
         type="button"
@@ -1809,9 +1864,7 @@ function LibraryTemplatesSection() {
         await activateAgent(slug);
         refresh();
       } catch (err) {
-        window.alert(
-          err instanceof Error ? err.message : "Couldn't activate that template.",
-        );
+        window.alert(err instanceof Error ? err.message : "Couldn't activate that template.");
       } finally {
         setActivating(null);
       }
