@@ -672,50 +672,23 @@ export function SidebarNew() {
         onSelect={(tab) => useAppStore.getState().setSidebarTab(tab)}
       />
 
-      {/* ─── Folder breadcrumb (when drilled in). Hidden on the
-       *  Agents tab (which fully owns the sidebar body); kept on the
-       *  Inbox tab so the tree stays visible behind the content-area
-       *  inbox surface. */}
+      {/* ─── Folder breadcrumb ─── upgraded for visibility per the
+       *  redesign brief: each segment renders as a clickable pill on
+       *  a `--il-slate-elev` row with a left ↑ "up" / Home anchor
+       *  and the current folder name at higher contrast + size. The
+       *  drop targets behind Home / ↑ are preserved; the segment
+       *  pills don't accept drops (single-jump nav rather than
+       *  drag-into-arbitrary-ancestor). */}
       {!collapsed && sidebarTab === "files" && sidebarFolder && (
-        <div className="flex items-center gap-1 border-b border-border px-2 py-1.5 text-xs text-secondary">
-          <button
-            type="button"
-            onClick={drillToRoot}
-            onDragOver={(e) => handleDragOver(e, "__root__", true)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => void handleDrop(e, "")}
-            className={`rounded p-0.5 hover:bg-ironlore-slate-hover hover:text-primary ${
-              dropTarget === "__root__"
-                ? "ring-1 ring-ironlore-blue bg-ironlore-slate-hover text-primary"
-                : ""
-            }`}
-            title="Go to root (drop here to move to root)"
-          >
-            <Home className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={drillUp}
-            onDragOver={(e) => handleDragOver(e, "__up__", true)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => {
-              const parts = sidebarFolder.split("/");
-              parts.pop();
-              void handleDrop(e, parts.join("/"));
-            }}
-            className={`rounded p-0.5 hover:bg-ironlore-slate-hover hover:text-primary ${
-              dropTarget === "__up__"
-                ? "ring-1 ring-ironlore-blue bg-ironlore-slate-hover text-primary"
-                : ""
-            }`}
-            title="Go up one level (drop here to move up)"
-          >
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </button>
-          <span className="truncate font-medium text-primary">
-            {sidebarFolder.split("/").pop()}
-          </span>
-        </div>
+        <SidebarBreadcrumb
+          folder={sidebarFolder}
+          drillToRoot={drillToRoot}
+          drillUp={drillUp}
+          dropTarget={dropTarget}
+          handleDragOver={handleDragOver}
+          handleDragLeave={handleDragLeave}
+          handleDrop={handleDrop}
+        />
       )}
 
       {/*
@@ -1244,6 +1217,123 @@ function ContextMenuItem({
  * a pulse when agents are working — the full name is hidden behind the
  * expand affordance.
  */
+/**
+ * SidebarBreadcrumb — the in-tab navigator for the Files surface.
+ *
+ * Upgraded for visibility per the redesign brief: a 28px-tall row on
+ * `var(--il-slate-elev)` with a Home anchor (root), an Up arrow
+ * (parent), and one pill per path segment. The current folder pill
+ * is highlighted (`var(--il-text)` + bold); ancestor segments are
+ * clickable and drill straight to that level. Drop targets behind
+ * Home + Up are preserved; segment pills don't accept drops to keep
+ * the drag interaction model simple.
+ */
+function SidebarBreadcrumb({
+  folder,
+  drillToRoot,
+  drillUp,
+  dropTarget,
+  handleDragOver,
+  handleDragLeave,
+  handleDrop,
+}: {
+  folder: string;
+  drillToRoot: () => void;
+  drillUp: () => void;
+  dropTarget: string | null;
+  handleDragOver: (e: React.DragEvent, target: string, valid: boolean) => void;
+  handleDragLeave: () => void;
+  handleDrop: (e: React.DragEvent, targetDir: string) => Promise<void> | void;
+}) {
+  const segments = folder.split("/");
+  // Pre-compute each segment's cumulative path so clicking jumps
+  //  directly to that level (rather than walking up one-by-one).
+  const segmentPaths = segments.map((_, i) => segments.slice(0, i + 1).join("/"));
+  return (
+    <div
+      className="flex items-center gap-1 overflow-x-auto border-b border-border"
+      style={{
+        padding: "6px 8px",
+        background: "var(--il-slate-elev)",
+        fontSize: 13,
+      }}
+    >
+      <button
+        type="button"
+        onClick={drillToRoot}
+        onDragOver={(e) => handleDragOver(e, "__root__", true)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => void handleDrop(e, "")}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded outline-none transition-colors hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 ${
+          dropTarget === "__root__"
+            ? "bg-ironlore-slate-hover text-primary ring-1 ring-ironlore-blue"
+            : "text-secondary"
+        }`}
+        title="Go to root (drop here to move to root)"
+      >
+        <Home className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={drillUp}
+        onDragOver={(e) => handleDragOver(e, "__up__", true)}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => {
+          const parts = folder.split("/");
+          parts.pop();
+          void handleDrop(e, parts.join("/"));
+        }}
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded outline-none transition-colors hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 ${
+          dropTarget === "__up__"
+            ? "bg-ironlore-slate-hover text-primary ring-1 ring-ironlore-blue"
+            : "text-secondary"
+        }`}
+        title="Go up one level (drop here to move up)"
+      >
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
+      <span aria-hidden="true" style={{ color: "var(--il-text4)" }}>
+        ·
+      </span>
+      {segments.map((seg, i) => {
+        const isLast = i === segments.length - 1;
+        const targetPath = segmentPaths[i] ?? "";
+        return (
+          <span key={targetPath} className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() =>
+                isLast ? undefined : useAppStore.getState().setSidebarFolder(targetPath)
+              }
+              disabled={isLast}
+              className={`shrink-0 rounded px-1.5 py-0.5 outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ironlore-blue/50 ${
+                isLast ? "" : "hover:bg-ironlore-slate-hover hover:text-primary"
+              }`}
+              style={{
+                color: isLast ? "var(--il-text)" : "var(--il-text2)",
+                fontWeight: isLast ? 600 : 400,
+                cursor: isLast ? "default" : "pointer",
+                maxWidth: 120,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={targetPath}
+            >
+              {seg}
+            </button>
+            {!isLast && (
+              <span aria-hidden="true" style={{ color: "var(--il-text4)" }}>
+                /
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * SidebarTopChrome — replaces the retired top platform header
  * ([AppHeader.tsx]). Holds the global app identity + chrome:
