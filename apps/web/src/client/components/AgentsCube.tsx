@@ -1,5 +1,21 @@
+/**
+ * biome-ignore-all lint/a11y/noStaticElementInteractions: this file
+ * uses HTML5 drag-and-drop on `<div>` cube-faces and agent-strips —
+ * making them `<button>`s would nest interactive controls (invalid
+ * HTML, since each strip already contains its own buttons). Keyboard
+ * users are served by the buttons inside each strip + the visible
+ * edge-affordance navigation arrows; drag is a mouse-only enhancement.
+ */
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from "lucide-react";
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import { ApiError, startAutonomousRun } from "../lib/api.js";
 import {
@@ -365,7 +381,10 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
             agents={agentsByFace[faceId]}
             workspaceAgents={activity.agents}
             cubeW={cubeW}
+            hostHeight={hostHeight}
             displaySerif={displaySerif}
+            onRename={(next) => setName(faceId, next)}
+            onDropAgent={(slug) => assign(faceId, slug)}
           />
         ))}
       </div>
@@ -389,67 +408,239 @@ function CubeFace({
   agents,
   workspaceAgents,
   cubeW,
+  hostHeight,
   displaySerif,
+  onRename,
+  onDropAgent,
 }: {
   faceId: FaceId;
   name: string;
   agents: string[];
   workspaceAgents: ReturnType<typeof useWorkspaceActivity>["agents"];
   cubeW: number;
+  hostHeight: number;
   displaySerif: boolean;
+  onRename: (next: string) => void;
+  onDropAgent: (slug: string) => void;
 }) {
-  const halfDepth = cubeW / 2;
-  // Each face is statically positioned at one of the six cube
-  //  vertices via translateZ(W/2) plus a rotateX/Y for the
-  //  off-front faces. Width = column width; height = content.
-  const faceTransform: Record<FaceId, string> = {
-    front: `translateZ(${halfDepth}px)`,
-    back: `rotateY(180deg) translateZ(${halfDepth}px)`,
-    right: `rotateY(90deg) translateZ(${halfDepth}px)`,
-    left: `rotateY(-90deg) translateZ(${halfDepth}px)`,
-    top: `rotateX(90deg) translateZ(${halfDepth}px)`,
-    bottom: `rotateX(-90deg) translateZ(${halfDepth}px)`,
+  const halfDepthW = cubeW / 2;
+  const halfDepthH = hostHeight / 2;
+  // Rectangular cuboid geometry — depth = cubeW, so the box reads
+  //  as W × H × W.
+  //  - Front/back/right/left fill the host (W × H), translated by W/2
+  //    along the appropriate axis.
+  //  - Top/bottom are W × W square caps positioned at the top + bottom
+  //    of the cube. They're laid out vertically-centered in the cube
+  //    container (so their rotation pivot lands at host center) and
+  //    then translateZ(H/2) lifts/drops them onto the proper plane.
+  //  Without this, top/bottom inherited the host height and extended
+  //  beyond the actual depth of the cube — visible as a gap when the
+  //  cube was tilted.
+  const faceStyle: Record<FaceId, CSSProperties> = {
+    front: { transform: `translateZ(${halfDepthW}px)` },
+    back: { transform: `rotateY(180deg) translateZ(${halfDepthW}px)` },
+    right: { transform: `rotateY(90deg) translateZ(${halfDepthW}px)` },
+    left: { transform: `rotateY(-90deg) translateZ(${halfDepthW}px)` },
+    top: {
+      top: Math.max(0, (hostHeight - cubeW) / 2),
+      left: 0,
+      height: cubeW,
+      transform: `rotateX(90deg) translateZ(${halfDepthH}px)`,
+    },
+    bottom: {
+      top: Math.max(0, (hostHeight - cubeW) / 2),
+      left: 0,
+      height: cubeW,
+      transform: `rotateX(-90deg) translateZ(${halfDepthH}px)`,
+    },
   };
   const canAddMore = agents.length < MAX_AGENTS_PER_FACE;
+  const isCap = faceId === "top" || faceId === "bottom";
+  const [isDropTarget, setIsDropTarget] = useState(false);
+
+  // ─── HTML5 drop target ────────────────────────────────────────
+  //  Every face accepts a `text/x-il-agent-slug` payload. On drop
+  //  we call `assign(faceId, slug)` (which bumps the slug off any
+  //  prior face). dragenter/dragleave manage the visual highlight;
+  //  dragover preventDefault is required for the browser to fire
+  //  drop at all.
+  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes("text/x-il-agent-slug")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    }
+  }, []);
+  const onDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes("text/x-il-agent-slug")) {
+      e.preventDefault();
+      setIsDropTarget(true);
+    }
+  }, []);
+  const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    // dragleave fires when the cursor crosses ANY child boundary;
+    //  guard with relatedTarget containment to avoid flicker.
+    const next = e.relatedTarget as Node | null;
+    if (next && e.currentTarget.contains(next)) return;
+    setIsDropTarget(false);
+  }, []);
+  const onDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      const slug = e.dataTransfer.getData("text/x-il-agent-slug");
+      setIsDropTarget(false);
+      if (!slug) return;
+      e.preventDefault();
+      onDropAgent(slug);
+    },
+    [onDropAgent],
+  );
 
   return (
     <div
-      className="il-agents-cube-face"
-      style={{
-        transform: faceTransform[faceId],
-      }}
+      className={`il-agents-cube-face${isCap ? " is-cap" : ""}${isDropTarget ? " is-drop-target" : ""}`}
+      style={faceStyle[faceId]}
+      onDragOver={onDragOver}
+      onDragEnter={onDragEnter}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
     >
-      <header
-        className="font-mono uppercase truncate"
-        style={{
-          fontSize: 11,
-          letterSpacing: "0.08em",
-          color: "var(--il-text3)",
-          paddingBottom: 8,
-          borderBottom: "1px solid var(--il-border-soft)",
-          marginBottom: 10,
-        }}
-        title={name}
-      >
-        {name}
-      </header>
+      <RenameableHeader name={name} onRename={onRename} />
       <div style={{ display: "grid", gap: 12 }}>
         {agents.map((slug) => {
           const agent = workspaceAgents.find((a) => a.slug === slug);
           return (
-            <ActiveAgentCard
-              key={slug}
-              slug={slug}
-              running={agent?.running ?? false}
-              paused={agent?.status === "paused"}
-              stepLabel={agent?.stepLabel ?? null}
-              note={agent?.lastNote ?? null}
-              displaySerif={displaySerif}
-            />
+            <DraggableStrip key={slug} slug={slug}>
+              <ActiveAgentCard
+                slug={slug}
+                running={agent?.running ?? false}
+                paused={agent?.status === "paused"}
+                stepLabel={agent?.stepLabel ?? null}
+                note={agent?.lastNote ?? null}
+                displaySerif={displaySerif}
+              />
+            </DraggableStrip>
           );
         })}
         {canAddMore && <NewJobSlot faceId={faceId} />}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Click-to-edit cluster name. Single-line input swap on click;
+ * commits on blur or Enter, reverts on Escape. The input is
+ * tagged `data-cube-rename` so the parent's pointerdown handler
+ * skips cube-rotation while the user is editing.
+ */
+function RenameableHeader({ name, onRename }: { name: string; onRename: (next: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Sync external updates (e.g. server hydration) when not editing.
+  useEffect(() => {
+    if (!editing) setDraft(name);
+  }, [editing, name]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed.length > 0 && trimmed !== name) onRename(trimmed.slice(0, 64));
+    setEditing(false);
+  };
+  const cancel = () => {
+    setDraft(name);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        data-cube-rename
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          else if (e.key === "Escape") cancel();
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="font-mono uppercase"
+        style={{
+          width: "100%",
+          fontSize: 11,
+          letterSpacing: "0.08em",
+          color: "var(--il-text)",
+          background: "transparent",
+          border: "none",
+          borderBottom: "1px solid var(--il-blue)",
+          outline: "none",
+          paddingBottom: 8,
+          marginBottom: 10,
+        }}
+        maxLength={64}
+        aria-label="Cluster name"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-cube-rename
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditing(true);
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      className="font-mono uppercase truncate text-left"
+      style={{
+        display: "block",
+        width: "100%",
+        fontSize: 11,
+        letterSpacing: "0.08em",
+        color: "var(--il-text3)",
+        background: "transparent",
+        border: "none",
+        paddingBottom: 8,
+        borderBottom: "1px solid var(--il-border-soft)",
+        marginBottom: 10,
+        cursor: "text",
+      }}
+      title={`Rename "${name}"`}
+    >
+      {name}
+    </button>
+  );
+}
+
+/**
+ * HTML5-draggable wrapper for an agent strip. Drag carries the slug
+ * via the `text/x-il-agent-slug` MIME type so a CubeFace `onDrop`
+ * can move the agent. Tagged `data-cube-strip` so the cube's
+ * pointerdown rotation gesture skips the strip — strips drag
+ * between faces, never the cube itself.
+ */
+function DraggableStrip({ slug, children }: { slug: string; children: ReactNode }) {
+  return (
+    <div
+      data-cube-strip
+      draggable
+      title={`Drag to move ${slug} to another cluster`}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/x-il-agent-slug", slug);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      style={{ cursor: "grab" }}
+    >
+      {children}
     </div>
   );
 }
