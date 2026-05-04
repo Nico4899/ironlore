@@ -8,6 +8,7 @@ import { useEditorStore } from "../stores/editor.js";
 import { useTreeStore } from "../stores/tree.js";
 import { AgentDetailPage } from "./AgentDetailPage.js";
 import { BlockProvenancePanel } from "./BlockProvenancePanel.js";
+import { InlineAIComposerLauncher } from "./editor/InlineAIComposerLauncher.js";
 import { ConflictBanner } from "./editor/ConflictBanner.js";
 import { getEditorCommands } from "./editor/editor-commands.js";
 import { HighlightToolbar } from "./editor/HighlightToolbar.js";
@@ -576,6 +577,13 @@ function MarkdownContent({
           right={<MarkdownPreview markdown={markdown} />}
         />
       )}
+
+      {/* Inline AI composer — markdown-only chrome below the editor
+       *  surface per docs/03-editor.md §Inline AI composer. Renders a
+       *  collapsed "Ask AI · ⌘L" bar by default; expanding swaps in
+       *  the full AIComposer surface. Does NOT modify file content —
+       *  this is editor chrome, the .md bytes on disk are untouched. */}
+      <InlineAIComposerLauncher />
     </>
   );
 }
