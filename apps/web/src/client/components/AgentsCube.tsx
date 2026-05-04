@@ -132,11 +132,24 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
   /** Animate the cube to the canonical rotation of `target`, then
    *  commit the new face-id once the transition completes. The first
    *  call retires the resting tilt so subsequent navigations land at
-   *  strict horizontal/vertical orientations. */
+   *  strict horizontal/vertical orientations.
+   *
+   *  Important: rotations accumulate (front → right → back → left
+   *  → front is 0 → -90 → -180 → -270 → -360, NOT a wrap to 0). If
+   *  we jumped straight to the canonical FACE_ROTATIONS value here,
+   *  going from `back` (rotY = -180) to `left` (canonical +90) would
+   *  spin the cube 270° BACKWARDS through right and front — visible
+   *  as the "weird behavior when rotating more than 2 sides behind
+   *  each other" the user reported. We pick the equivalent
+   *  canonical-mod-360 value closest to the current rotation so the
+   *  animation always takes the 90° short path. */
   const navigateTo = useCallback((target: FaceId) => {
     setUserInteracted(true);
     setAnimating(true);
-    setRotation(FACE_ROTATIONS[target]);
+    setRotation((prev) => {
+      const canon = FACE_ROTATIONS[target];
+      return { x: nearestEquivalent(canon.x, prev.x), y: nearestEquivalent(canon.y, prev.y) };
+    });
     setCurrentFace(target);
     setTimeout(() => setAnimating(false), SNAP_MS);
   }, []);
@@ -228,9 +241,14 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
       const dominant = axis === "y" ? absX : absY;
 
       if (dominant < NAVIGATE_PX) {
-        // Snap back to current face.
+        // Snap back to current face — same shortest-path logic as
+        //  `navigateTo` so a small drag that accumulated past ±180°
+        //  doesn't unwind through every face on the way home.
         setAnimating(true);
-        setRotation(FACE_ROTATIONS[currentFace]);
+        setRotation((prev) => {
+          const canon = FACE_ROTATIONS[currentFace];
+          return { x: nearestEquivalent(canon.x, prev.x), y: nearestEquivalent(canon.y, prev.y) };
+        });
         setTimeout(() => setAnimating(false), SNAP_MS);
         return;
       }
@@ -305,33 +323,30 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
     transition: animating || userInteracted ? `transform ${SNAP_MS}ms ease-out` : "none",
   };
 
-  // The host's height needs to be tall enough for the longest face's
-  //  content; otherwise the cube clips. Each ActiveAgentCard is
-  //  ~108 px (content + padding + progress-bar headroom) + 12 px
-  //  gap; header is ~30 px (incl. divider + margin); face padding is
-  //  14 px top/bottom; the optional new-job button adds 36 + 12 px.
-  //  The previous estimate (76 px/strip, cap 560) cut off the 4th
-  //  strip — bumped to 112 px/strip and cap 720 to hold a full face
-  //  + new-job button comfortably.
+  // Host height anchors to the FRONT (Defaults) face only — every
+  //  other face inherits the same dimensions so no face appears
+  //  taller than the default. Per the user's brief: "keep height of
+  //  default side as standard". Faces that hold more agents than
+  //  fit clip via `overflow: hidden` (set in globals.css on the face
+  //  rule); the user can rebalance via the per-cluster New Job
+  //  button.
   const STRIP_H = 112;
   const HEADER_H = 30;
   const FACE_PAD = 28;
   const GAP_H = 12;
   const NEW_JOB_H = 36;
-  const measuredHeights = FACES.map((f) => {
-    const n = agentsByFace[f]?.length ?? 0;
-    const showNewJob = n < MAX_AGENTS_PER_FACE;
-    const items = n + (showNewJob ? 1 : 0);
-    if (items === 0) return FACE_PAD + HEADER_H;
-    return (
-      FACE_PAD +
-      HEADER_H +
-      n * STRIP_H +
-      (showNewJob ? NEW_JOB_H : 0) +
-      Math.max(0, items - 1) * GAP_H
-    );
-  });
-  const hostHeight = Math.min(720, Math.max(220, Math.max(...measuredHeights)));
+  const frontCount = agentsByFace.front?.length ?? 0;
+  const frontShowNewJob = frontCount < MAX_AGENTS_PER_FACE;
+  const frontItems = frontCount + (frontShowNewJob ? 1 : 0);
+  const frontFaceHeight =
+    frontItems === 0
+      ? FACE_PAD + HEADER_H
+      : FACE_PAD +
+        HEADER_H +
+        frontCount * STRIP_H +
+        (frontShowNewJob ? NEW_JOB_H : 0) +
+        Math.max(0, frontItems - 1) * GAP_H;
+  const hostHeight = Math.min(720, Math.max(220, frontFaceHeight));
 
   return (
     <section
@@ -490,6 +505,9 @@ function RenameableHeader({ name, onRename }: { name: string; onRename: (next: s
     setEditing(false);
   };
 
+  // Name field — 25 % of the face width, left-aligned. Per the
+  //  user's brief: "Text field for changing cluster name (on every
+  //  side) should be aligned left and only cover 25% of the width".
   if (editing) {
     return (
       <input
@@ -505,7 +523,9 @@ function RenameableHeader({ name, onRename }: { name: string; onRename: (next: s
         onPointerDown={(e) => e.stopPropagation()}
         className="font-mono uppercase"
         style={{
-          width: "100%",
+          display: "block",
+          width: "25%",
+          textAlign: "left",
           fontSize: 11,
           letterSpacing: "0.08em",
           color: "var(--il-text)",
@@ -534,7 +554,8 @@ function RenameableHeader({ name, onRename }: { name: string; onRename: (next: s
       className="font-mono uppercase truncate text-left"
       style={{
         display: "block",
-        width: "100%",
+        width: "25%",
+        textAlign: "left",
         fontSize: 11,
         letterSpacing: "0.08em",
         color: "var(--il-text3)",
@@ -867,6 +888,12 @@ function EdgeAffordance({
   return (
     <button
       type="button"
+      data-cube-arrow
+      // Stop pointerdown bubbling so the cube host's drag-rotate
+      //  gesture never starts when the user is clicking an arrow.
+      //  Without this, the host's `setPointerCapture` swallowed the
+      //  click event entirely and the navigation never fired.
+      onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -893,6 +920,17 @@ function EdgeAffordance({
 }
 
 // ───────────── helpers (restored from prior Home renderer) ─────────────
+
+/**
+ * Pick the rotation equivalent (canonical + 360k for some integer
+ * k) that's closest to `current`. Used so a 90° navigation animates
+ * along the 90° short path rather than spinning the long way round
+ * when the rotation accumulator has drifted to ±360 / ±720 / etc.
+ */
+function nearestEquivalent(canonical: number, current: number): number {
+  const k = Math.round((current - canonical) / 360);
+  return canonical + k * 360;
+}
 
 /**
  * Derive the mono `→ <target>` line for an ActiveAgentCard. We
