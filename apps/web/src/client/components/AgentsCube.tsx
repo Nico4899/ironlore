@@ -1,15 +1,6 @@
-/**
- * biome-ignore-all lint/a11y/noStaticElementInteractions: this file
- * uses HTML5 drag-and-drop on `<div>` cube-faces and agent-strips —
- * making them `<button>`s would nest interactive controls (invalid
- * HTML, since each strip already contains its own buttons). Keyboard
- * users are served by the buttons inside each strip + the visible
- * edge-affordance navigation arrows; drag is a mouse-only enhancement.
- */
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Plus } from "lucide-react";
 import {
   type CSSProperties,
-  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -65,7 +56,6 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
   const ensureBootstrap = useAgentClustersStore((s) => s.ensureBootstrap);
   const syncFromServer = useAgentClustersStore((s) => s.syncFromServer);
   const setName = useAgentClustersStore((s) => s.setName);
-  const assign = useAgentClustersStore((s) => s.assign);
 
   // Hydrate from `<projectDir>/.ironlore/agent-clusters.json` once on
   //  mount. Server is authoritative; localStorage was the paint cache
@@ -384,7 +374,6 @@ export function AgentsCube({ displaySerif = false }: { displaySerif?: boolean })
             hostHeight={hostHeight}
             displaySerif={displaySerif}
             onRename={(next) => setName(faceId, next)}
-            onDropAgent={(slug) => assign(faceId, slug)}
           />
         ))}
       </div>
@@ -411,7 +400,6 @@ function CubeFace({
   hostHeight,
   displaySerif,
   onRename,
-  onDropAgent,
 }: {
   faceId: FaceId;
   name: string;
@@ -421,94 +409,37 @@ function CubeFace({
   hostHeight: number;
   displaySerif: boolean;
   onRename: (next: string) => void;
-  onDropAgent: (slug: string) => void;
 }) {
   const halfDepthW = cubeW / 2;
   const halfDepthH = hostHeight / 2;
-  // Rectangular cuboid geometry — depth = cubeW, so the box reads
-  //  as W × H × W.
-  //  - Front/back/right/left fill the host (W × H), translated by W/2
-  //    along the appropriate axis.
-  //  - Top/bottom are W × W square caps positioned at the top + bottom
-  //    of the cube. They're laid out vertically-centered in the cube
-  //    container (so their rotation pivot lands at host center) and
-  //    then translateZ(H/2) lifts/drops them onto the proper plane.
-  //  Without this, top/bottom inherited the host height and extended
-  //  beyond the actual depth of the cube — visible as a gap when the
-  //  cube was tilted.
+  // All six faces inherit the host's W × H footprint via the CSS
+  //  `inset: 0` rule — that way every face has identical screen
+  //  dimensions, so the cross-section never shrinks during a
+  //  rotation and we don't get visible gaps as one face spins out
+  //  and the next spins in. Top/bottom translate by H/2 (their
+  //  CSS-height-derived depth) instead of W/2; this is geometrically
+  //  a "cuboid with extended top+bottom slabs" — at the rare extreme
+  //  tilts the slabs poke out behind the back face, but during the
+  //  90° vertical navigation the front face occludes them, so the
+  //  user sees clean rectangle-to-rectangle transitions.
   const faceStyle: Record<FaceId, CSSProperties> = {
     front: { transform: `translateZ(${halfDepthW}px)` },
     back: { transform: `rotateY(180deg) translateZ(${halfDepthW}px)` },
     right: { transform: `rotateY(90deg) translateZ(${halfDepthW}px)` },
     left: { transform: `rotateY(-90deg) translateZ(${halfDepthW}px)` },
-    top: {
-      top: Math.max(0, (hostHeight - cubeW) / 2),
-      left: 0,
-      height: cubeW,
-      transform: `rotateX(90deg) translateZ(${halfDepthH}px)`,
-    },
-    bottom: {
-      top: Math.max(0, (hostHeight - cubeW) / 2),
-      left: 0,
-      height: cubeW,
-      transform: `rotateX(-90deg) translateZ(${halfDepthH}px)`,
-    },
+    top: { transform: `rotateX(-90deg) translateZ(${halfDepthH}px)` },
+    bottom: { transform: `rotateX(90deg) translateZ(${halfDepthH}px)` },
   };
   const canAddMore = agents.length < MAX_AGENTS_PER_FACE;
-  const isCap = faceId === "top" || faceId === "bottom";
-  const [isDropTarget, setIsDropTarget] = useState(false);
-
-  // ─── HTML5 drop target ────────────────────────────────────────
-  //  Every face accepts a `text/x-il-agent-slug` payload. On drop
-  //  we call `assign(faceId, slug)` (which bumps the slug off any
-  //  prior face). dragenter/dragleave manage the visual highlight;
-  //  dragover preventDefault is required for the browser to fire
-  //  drop at all.
-  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer.types.includes("text/x-il-agent-slug")) {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "move";
-    }
-  }, []);
-  const onDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer.types.includes("text/x-il-agent-slug")) {
-      e.preventDefault();
-      setIsDropTarget(true);
-    }
-  }, []);
-  const onDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    // dragleave fires when the cursor crosses ANY child boundary;
-    //  guard with relatedTarget containment to avoid flicker.
-    const next = e.relatedTarget as Node | null;
-    if (next && e.currentTarget.contains(next)) return;
-    setIsDropTarget(false);
-  }, []);
-  const onDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      const slug = e.dataTransfer.getData("text/x-il-agent-slug");
-      setIsDropTarget(false);
-      if (!slug) return;
-      e.preventDefault();
-      onDropAgent(slug);
-    },
-    [onDropAgent],
-  );
 
   return (
-    <div
-      className={`il-agents-cube-face${isCap ? " is-cap" : ""}${isDropTarget ? " is-drop-target" : ""}`}
-      style={faceStyle[faceId]}
-      onDragOver={onDragOver}
-      onDragEnter={onDragEnter}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
+    <div className="il-agents-cube-face" style={faceStyle[faceId]}>
       <RenameableHeader name={name} onRename={onRename} />
       <div style={{ display: "grid", gap: 12 }}>
         {agents.map((slug) => {
           const agent = workspaceAgents.find((a) => a.slug === slug);
           return (
-            <DraggableStrip key={slug} slug={slug}>
+            <div key={slug} data-cube-strip>
               <ActiveAgentCard
                 slug={slug}
                 running={agent?.running ?? false}
@@ -517,7 +448,7 @@ function CubeFace({
                 note={agent?.lastNote ?? null}
                 displaySerif={displaySerif}
               />
-            </DraggableStrip>
+            </div>
           );
         })}
         {canAddMore && <NewJobSlot faceId={faceId} />}
@@ -618,30 +549,6 @@ function RenameableHeader({ name, onRename }: { name: string; onRename: (next: s
     >
       {name}
     </button>
-  );
-}
-
-/**
- * HTML5-draggable wrapper for an agent strip. Drag carries the slug
- * via the `text/x-il-agent-slug` MIME type so a CubeFace `onDrop`
- * can move the agent. Tagged `data-cube-strip` so the cube's
- * pointerdown rotation gesture skips the strip — strips drag
- * between faces, never the cube itself.
- */
-function DraggableStrip({ slug, children }: { slug: string; children: ReactNode }) {
-  return (
-    <div
-      data-cube-strip
-      draggable
-      title={`Drag to move ${slug} to another cluster`}
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/x-il-agent-slug", slug);
-        e.dataTransfer.effectAllowed = "move";
-      }}
-      style={{ cursor: "grab" }}
-    >
-      {children}
-    </div>
   );
 }
 
