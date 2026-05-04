@@ -67,11 +67,14 @@ function FolderPeekPopover({
   const inputRef = useRef<HTMLInputElement>(null);
   const leaveTimer = useRef<number | null>(null);
 
-  // Flatten descendants — anything under `<folder.path>/`.
+  // Flatten descendants — anything under `<folder.path>/`. Only
+  //  files are surfaced; sub-folders are filtered out so the peek
+  //  popover is a flat "all files in this folder" search rather
+  //  than a navigator (the sidebar tree itself is the navigator).
   const descendants = useMemo(() => {
     const prefix = `${folder.path}/`;
     return nodes
-      .filter((n) => n.path.startsWith(prefix))
+      .filter((n) => n.path.startsWith(prefix) && n.type !== "directory")
       .map((n) => {
         const rel = n.path.slice(prefix.length);
         const depth = rel.split("/").length - 1;
@@ -200,31 +203,24 @@ function FolderPeekPopover({
           </div>
         )}
         {visible.map((n, idx) => {
-          const isFolder = n.type === "directory";
+          // Peek surfaces files only — sub-folders are filtered above
+          //  so the list is a flat searchable file index. The sidebar
+          //  tree is the navigator; this popover is purely "find a
+          //  file inside <folder>".
           const isActive = idx === activeIdx;
           return (
             <button
               key={n.path}
               type="button"
-              onClick={() => {
-                if (isFolder) return; // peek doesn't drill — files only
-                open(n.path);
-              }}
+              onClick={() => open(n.path)}
               onMouseEnter={() => setActiveIdx(idx)}
               className={`flex w-full items-center gap-2 px-2 py-1 text-left text-sm outline-none ${
                 isActive
                   ? "bg-ironlore-slate-hover text-primary"
                   : "text-secondary hover:bg-ironlore-slate-hover"
-              } ${isFolder ? "cursor-default" : ""}`}
+              }`}
               style={{ paddingLeft: 8 + Math.min(n.depth, 4) * 10 }}
-              disabled={isFolder}
             >
-              <span
-                className="font-mono shrink-0 text-tertiary"
-                style={{ fontSize: 10.5, letterSpacing: "0.04em" }}
-              >
-                {isFolder ? "DIR" : "FILE"}
-              </span>
               <span className="flex-1 truncate" style={{ fontSize: 12.5 }}>
                 {n.rel}
               </span>

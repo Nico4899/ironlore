@@ -20,9 +20,12 @@ interface DescendantRow extends TreeNode {
 }
 
 function flattenDescendants(folderPath: string, nodes: TreeNode[]): DescendantRow[] {
+  // Peek surfaces files only — sub-folders are filtered out so the
+  //  popover is a flat "all files in this folder" search rather than
+  //  a navigator. The sidebar tree itself is the navigator.
   const prefix = `${folderPath}/`;
   return nodes
-    .filter((n) => n.path.startsWith(prefix))
+    .filter((n) => n.path.startsWith(prefix) && n.type !== "directory")
     .map((n) => {
       const rel = n.path.slice(prefix.length);
       const depth = rel.split("/").length - 1;
@@ -65,11 +68,10 @@ const NODES: TreeNode[] = [
 ];
 
 describe("FolderPeek — flattenDescendants", () => {
-  it("returns every node strictly under the folder", () => {
+  it("returns every file under the folder (sub-folders filtered out)", () => {
     const rows = flattenDescendants("research", NODES);
     expect(rows.map((r) => r.path)).toEqual([
       "research/notes.md",
-      "research/sources",
       "research/sources/paper.pdf",
       "research/sources/transcript.txt",
     ]);
@@ -78,6 +80,12 @@ describe("FolderPeek — flattenDescendants", () => {
   it("does not include the folder row itself", () => {
     const rows = flattenDescendants("research", NODES);
     expect(rows.find((r) => r.path === "research")).toBeUndefined();
+  });
+
+  it("does not include sub-folders (peek is files-only, not a navigator)", () => {
+    const rows = flattenDescendants("research", NODES);
+    expect(rows.find((r) => r.path === "research/sources")).toBeUndefined();
+    expect(rows.find((r) => r.type === "directory")).toBeUndefined();
   });
 
   it("does not include sibling folders that share a name prefix (no slash boundary)", () => {
@@ -108,9 +116,9 @@ describe("FolderPeek — flattenDescendants", () => {
 describe("FolderPeek — filterByQuery", () => {
   const rows = flattenDescendants("research", NODES);
 
-  it("returns all rows for an empty query", () => {
-    expect(filterByQuery(rows, "")).toHaveLength(4);
-    expect(filterByQuery(rows, "   ")).toHaveLength(4);
+  it("returns all rows for an empty query (3 files in the fixture)", () => {
+    expect(filterByQuery(rows, "")).toHaveLength(3);
+    expect(filterByQuery(rows, "   ")).toHaveLength(3);
   });
 
   it("filters by basename substring (case-insensitive)", () => {

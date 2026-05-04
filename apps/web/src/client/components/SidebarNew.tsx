@@ -1104,23 +1104,36 @@ function SidebarTabs({
     );
   }
 
+  // Full-width tabs that span the sidebar — each cell is 1/3 of the
+  //  bar. Active tab fills with `var(--il-slate-elev)` AND shows its
+  //  label; inactive tabs show only the icon (the full label only
+  //  appears on the selected tab so the bar reads cleanly even at
+  //  narrow widths). Mirrors mobile-bottom-nav patterns where the
+  //  active label provides the "you are here" cue and the inactive
+  //  icons stay scannable.
   return (
-    <div className="flex items-end gap-2 border-b border-border px-3" style={{ height: 30 }}>
+    <div
+      className="grid border-b border-border"
+      style={{
+        gridTemplateColumns: "1fr 1fr 1fr",
+        height: 36,
+      }}
+    >
       <SidebarTabPill
         icon={Home}
-        label="files"
+        label="Files"
         active={active === "files"}
         onClick={() => onSelect("files")}
       />
       <SidebarTabPill
         icon={Bot}
-        label="agents"
+        label="Agents"
         active={active === "agents"}
         onClick={() => onSelect("agents")}
       />
       <SidebarTabPill
         icon={InboxIcon}
-        label="inbox"
+        label="Inbox"
         active={active === "inbox"}
         badge={inboxCount > 0 ? inboxCount : undefined}
         onClick={() => onSelect("inbox")}
@@ -1147,18 +1160,24 @@ function SidebarTabPill({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="flex items-center gap-1.5 bg-transparent font-mono uppercase outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+      aria-label={label}
+      className="flex items-center justify-center gap-1.5 outline-none transition-colors duration-(--motion-snap) focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
       style={{
-        padding: "6px 4px 7px",
-        marginBottom: -1,
-        fontSize: 10.5,
-        letterSpacing: "0.06em",
+        background: active ? "var(--il-slate-elev)" : "transparent",
         color: active ? "var(--il-text)" : "var(--il-text3)",
-        borderBottom: `1.5px solid ${active ? "var(--il-blue)" : "transparent"}`,
+        fontFamily: "var(--font-sans)",
+        fontSize: 12.5,
+        fontWeight: active ? 500 : 400,
+        // Subtle bottom rule on active so the tab still reads as
+        //  "selected" even when the bg-color tint is muted.
+        boxShadow: active ? "inset 0 -1.5px 0 var(--il-blue)" : "none",
       }}
     >
-      {Icon && <Icon className="h-3 w-3 shrink-0" />}
-      {label}
+      {Icon && <Icon className="h-4 w-4 shrink-0" />}
+      {/* Active tab shows the label; inactive tabs are icon-only.
+       *  The icon's `aria-label` (set on the button) carries the
+       *  semantic name for screen readers regardless. */}
+      {active && <span className="truncate">{label}</span>}
       {badge !== undefined && (
         <span
           aria-hidden="true"
@@ -1168,7 +1187,7 @@ function SidebarTabPill({
             height: 14,
             padding: "0 4px",
             borderRadius: 7,
-            fontSize: 10.5,
+            fontSize: 10,
             background: "var(--il-amber)",
             color: "var(--il-bg)",
             letterSpacing: 0,
