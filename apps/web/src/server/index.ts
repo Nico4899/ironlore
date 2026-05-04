@@ -804,6 +804,12 @@ async function start() {
         // BM25 when an embedding provider is registered. Null → old
         // two-channel (original + lex) behavior stays intact.
         embeddingProvider: embeddingRegistry.resolve(),
+        // Phase-9 multi-user ACL filter on /search results — gates
+        //  the user-facing search the same way `kb.search` is gated
+        //  for agents. Single-user projects skip the filter entirely
+        //  via the mode arg.
+        mode: projectMode,
+        writer: services.writer,
         // ?scope=all fan-out: capture the live `servicesById` map by
         // closure so projects added later become searchable without
         // restarting this route. The agent tool path

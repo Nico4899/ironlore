@@ -369,3 +369,86 @@ describe("search-api — Phase-11 ?semantic=true toggle", () => {
     expect(body.results[0]?.path).toBe("a.md");
   });
 });
+
+/**
+ * Phase-9 multi-user ACL filter on the HTTP /search route. Mirror of
+ * the agent-tool gate in `tools/acl-gate.ts`'s `filterReadableForTool`
+ * — pages the calling user can't read must NOT appear in results, AND
+ * must not inflate the visible count (per docs/08 §Search scope
+ * "results the caller can't read don't appear, not even in counts").
+ *
+ * The Hono test helper below stubs the auth middleware by setting
+ * `userId` + `username` on the context with a tiny app-level
+ * middleware before mounting the search route.
+ */
+describe("search-api — multi-user ACL filter (Phase 9)", () => {
+  let main: ProjectFx;
+
+  beforeEach(() => {
+    main = makeProject("acl");
+  });
+
+  afterEach(() => {
+    teardown(main);
+  });
+
+  function appAs(userId: string, username: string): Hono {
+    const app = new Hono();
+    app.use("*", async (c, next) => {
+      // Hono's `c.set` is typed against an empty Variables map by
+      //  default. The real auth middleware populates these via the
+      //  framework-level Hono<{ Variables: ... }> generic; for the
+      //  test we cast through unknown because injecting the same
+      //  generic here would couple the test to auth.ts's internals.
+      (c as unknown as { set: (k: string, v: unknown) => void }).set("userId", userId);
+      (c as unknown as { set: (k: string, v: unknown) => void }).set("username", username);
+      await next();
+    });
+    app.route(
+      "/search",
+      createSearchApi(main.searchIndex, {
+        mode: "multi-user",
+        writer: main.writer,
+      }),
+    );
+    return app;
+  }
+
+  it("hides pages the caller cannot read in multi-user mode", async () => {
+    // Two pages, both match "rendezvous": a public note + a private
+    //  note Alice owns. Bob is the calling user; ACL should hide the
+    //  private one from Bob entirely.
+    const publicMd = "---\nid: pub\n---\n# Public\nrendezvous at noon.\n";
+    const privateMd =
+      "---\nid: pri\nowner: alice\nacl:\n  read: [alice]\n---\n# Private\nrendezvous at midnight.\n";
+    await main.writer.write("public.md", publicMd, null);
+    await main.writer.write("private.md", privateMd, null);
+    main.searchIndex.indexPage("public.md", publicMd, "test");
+    main.searchIndex.indexPage("private.md", privateMd, "test");
+
+    const bob = appAs("bob-id", "bob");
+    const { results } = await get(bob, "/search/search?q=rendezvous");
+    const paths = results.map((r) => r.path);
+    expect(paths).toContain("public.md");
+    expect(paths).not.toContain("private.md");
+    // Counts honor the filter — the spec says "not even in counts".
+    expect(results.length).toBe(1);
+
+    const alice = appAs("alice-id", "alice");
+    const { results: aliceResults } = await get(alice, "/search/search?q=rendezvous");
+    expect(aliceResults.map((r) => r.path).sort()).toEqual(["private.md", "public.md"]);
+  });
+
+  it("permits everything in single-user mode (default) regardless of ACL frontmatter", async () => {
+    const privateMd =
+      "---\nid: pri\nowner: alice\nacl:\n  read: [alice]\n---\n# Private\nrendezvous at midnight.\n";
+    await main.writer.write("private.md", privateMd, null);
+    main.searchIndex.indexPage("private.md", privateMd, "test");
+
+    // No mode/writer wired ⇒ single-user → no filter.
+    const app = new Hono();
+    app.route("/search", createSearchApi(main.searchIndex));
+    const { results } = await get(app, "/search/search?q=rendezvous");
+    expect(results.map((r) => r.path)).toEqual(["private.md"]);
+  });
+});

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { canAccess, isDefaultAcl, loadEffectiveAcl, parsePageAcl } from "./acl.js";
 import { fetchForProject } from "./fetch-for-project.js";
 import type { EmbeddingProvider } from "./providers/embedding-types.js";
 import { ProviderRegistry } from "./providers/registry.js";
@@ -6,6 +7,7 @@ import type { ProjectContext, Provider } from "./providers/types.js";
 import { expandQuery, searchWithExpansion } from "./search/query-expansion.js";
 import { rerankResults } from "./search/rerank.js";
 import type { SearchIndex, SearchResult } from "./search-index.js";
+import type { StorageWriter } from "./storage-writer.js";
 
 export interface SearchApiOptions {
   provider?: Provider | null;
@@ -15,6 +17,19 @@ export interface SearchApiOptions {
   projectDir?: string;
   /** Default model for query expansion + rerank LLM calls. */
   defaultModel?: string;
+  /**
+   * Per-project mode + writer for ACL filtering. In `multi-user`
+   * projects the route filters every result list against the calling
+   * user's ACL — pages they can't read don't appear in results, and
+   * the visible count reflects the filtered total (per
+   * docs/08-projects-and-isolation.md §Search scope: "results the
+   * caller can't read don't appear, not even in counts"). The
+   * `writer` is used to read each candidate page's frontmatter +
+   * inherit ACL from ancestor `index.md`. Single-user mode skips the
+   * filter entirely; the cost is zero.
+   */
+  mode?: "single-user" | "multi-user";
+  writer?: StorageWriter;
   /**
    * When configured, enables the Phase-11 hybrid-retrieval path:
    * `vec` + `hyde` query rewrites are embedded and fused into the
@@ -72,6 +87,48 @@ export function createSearchApi(searchIndex: SearchIndex, opts?: SearchApiOption
   // embedding-registry lookup never changes per request.
   const semanticAvailable = Boolean(opts?.embeddingProvider);
 
+  const aclMode = opts?.mode ?? "single-user";
+  const aclWriter = opts?.writer ?? null;
+
+  /**
+   * Filter a result list against the calling user's ACL when this
+   * project is in multi-user mode. No-op (returns input) in
+   * single-user mode or when no writer is wired (e.g. early-boot
+   * surface; the writer is always present on the per-project mount).
+   *
+   * Per docs/08-projects-and-isolation.md §Search scope, the count
+   * the user sees must reflect the filtered total — so callers run
+   * this BEFORE the final `.slice(0, limit)`, not after.
+   */
+  function aclFilter<T extends { path: string }>(
+    c: { get: (key: string) => unknown },
+    hits: readonly T[],
+  ): T[] {
+    if (aclMode === "single-user" || !aclWriter) return [...hits];
+    const userId = (c.get("userId") as string | undefined) ?? "";
+    const username = (c.get("username") as string | undefined) ?? "";
+    if (!userId && !username) return [...hits];
+
+    const reader = (path: string): string | null => {
+      try {
+        return aclWriter.read(path).content;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+        return null;
+      }
+    };
+
+    const out: T[] = [];
+    for (const hit of hits) {
+      const own = reader(hit.path);
+      if (own === null) continue;
+      const ownAcl = parsePageAcl(own);
+      const acl = isDefaultAcl(ownAcl) ? loadEffectiveAcl(hit.path, reader) : ownAcl;
+      if (canAccess(acl, userId, username, "read")) out.push(hit);
+    }
+    return out;
+  }
+
   api.get("/search", async (c) => {
     const query = c.req.query("q") ?? "";
     const limit = Number(c.req.query("limit") ?? "20");
@@ -126,10 +183,29 @@ export function createSearchApi(searchIndex: SearchIndex, opts?: SearchApiOption
             merged.set(key, { score: rrfScore, result: { ...r, projectId: pid } });
           }
         }
+        // Caller-project ACL filter on the merged set. We can only
+        //  filter the current-project hits (the writer + session map to
+        //  this project); foreign-project hits are surfaced as-is — the
+        //  user's identity doesn't span projects (per
+        //  docs/08-projects-and-isolation.md §Multi-user mode).
+        const callerHits = [...merged.values()]
+          .filter((e) => e.result.projectId === opts.projectId)
+          .map((e) => e.result);
+        const foreignHits = [...merged.values()]
+          .filter((e) => e.result.projectId !== opts.projectId)
+          .map((e) => e.result);
+        const filteredCaller = aclFilter(c, callerHits);
+        const filteredKeys = new Set(filteredCaller.map((r) => `${r.projectId}:${r.path}`));
         const results = [...merged.values()]
+          .filter(
+            (e) =>
+              e.result.projectId !== opts.projectId ||
+              filteredKeys.has(`${e.result.projectId}:${e.result.path}`),
+          )
           .sort((a, b) => b.score - a.score)
           .slice(0, limit)
           .map((e) => e.result);
+        void foreignHits; // documented above; kept for clarity
         // semanticAvailable surfaced even on scope=all so the Cmd+K
         // toggle stays consistent across modes; semantic + scope=all
         // is documented future work — current-project only for v1.
@@ -197,7 +273,13 @@ export function createSearchApi(searchIndex: SearchIndex, opts?: SearchApiOption
         results = await rerankResults(query, results, provider, projectContext, opts.defaultModel);
       }
 
-      return c.json({ results: results.slice(0, limit), semanticAvailable });
+      // Stage 4: ACL filter (multi-user mode). Runs BEFORE the final
+      //  slice so the visible count matches the filtered total — per
+      //  docs/08 §Search scope ("results the caller can't read don't
+      //  appear, not even in counts"). No-op in single-user mode.
+      const filtered = aclFilter(c, results);
+
+      return c.json({ results: filtered.slice(0, limit), semanticAvailable });
     } catch {
       // FTS5 query syntax error — return empty rather than 500
       return c.json({ results: [], semanticAvailable });
