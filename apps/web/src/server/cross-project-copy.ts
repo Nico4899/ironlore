@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join as pathJoin, posix } from "node:path";
 import { Hono } from "hono";
 import { simpleGit } from "simple-git";
 import { loadProjectConfig } from "./fetch-for-project.js";
@@ -40,6 +42,13 @@ interface CopyResponse {
   targetPath: string;
   etag: string;
   renamed: boolean;
+  /**
+   * Per-asset copy outcomes (per docs/08 §Cross-project copy workflow
+   * #5: "Same rename-or-skip conflict flow applies to each asset").
+   * Empty when the page references no assets. `renamed` mirrors the
+   * page's collision flow.
+   */
+  assets: Array<{ srcPath: string; targetPath: string; renamed: boolean; skipped?: boolean }>;
 }
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
@@ -137,6 +146,22 @@ export function createCrossProjectCopyApi(options: CrossProjectCopyOptions): Hon
         result = await dst.writer.write(finalPath, stamped, null);
       }
 
+      // Walk the page's markdown for `![alt](path)` image references
+      //  and copy each binary asset alongside the page (per docs/08
+      //  §Cross-project copy workflow #5). Same rename/overwrite
+      //  conflict flow applies per asset; failures are non-fatal
+      //  (the page is already in the destination — surface them in
+      //  the response so the user can investigate). Asset paths are
+      //  resolved relative to the SOURCE page's directory.
+      const assets = await copyReferencedAssets({
+        srcServices: src,
+        dstServices: dst,
+        srcPagePath: srcPath,
+        srcMarkdown: sourceRead.content,
+        dstPagePath: finalPath,
+        onConflict,
+      });
+
       // Audit trail (per docs/08 §Cross-project copy workflow #6):
       //  the source repo gets a content-free `copy to <dst>` commit
       //  so `git log` reads the full crossing trail without having
@@ -162,6 +187,7 @@ export function createCrossProjectCopyApi(options: CrossProjectCopyOptions): Hon
         targetPath: finalPath,
         etag: result.etag,
         renamed,
+        assets,
       };
       return c.json(resp);
     } catch (err) {
@@ -170,6 +196,140 @@ export function createCrossProjectCopyApi(options: CrossProjectCopyOptions): Hon
   });
 
   return api;
+}
+
+/**
+ * Extract every `![alt](path)` image reference from a markdown blob.
+ * Skips absolute URLs (http://, https://, data:) — only relative
+ * paths get resolved against the source vault. Duplicate paths are
+ * collapsed (a page citing the same asset twice copies it once).
+ */
+function extractMarkdownAssetRefs(markdown: string): string[] {
+  const out = new Set<string>();
+  // Match `![...](path)` — the path is anything that isn't a closing
+  //  paren or whitespace. The capturing group strips title attrs
+  //  (`...](path "title")`) by stopping at the first space.
+  const re = /!\[[^\]]*\]\(([^)\s]+)/g;
+  let match: RegExpExecArray | null = re.exec(markdown);
+  while (match !== null) {
+    const ref = match[1];
+    if (ref) out.add(ref);
+    match = re.exec(markdown);
+  }
+  return [...out].filter((ref) => {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(ref)) return false; // http://, https://, data:, etc.
+    if (ref.startsWith("//")) return false; // protocol-relative
+    if (ref.startsWith("#")) return false; // fragment-only
+    return true;
+  });
+}
+
+/**
+ * Copy every binary asset referenced by the source page into the
+ * destination project. Asset paths are resolved relative to the
+ * source page's directory in BOTH projects so the resulting
+ * destination layout mirrors the source (a page that references
+ * `assets/foo.png` lands with `<dst>/assets/foo.png` populated).
+ *
+ * Each asset is read with `node:fs` (assets bypass the source's
+ * StorageWriter — they're already on disk and we don't want to load
+ * binary contents through a markdown-shaped reader) and written
+ * through the destination's `writer.writeBinary`. Conflicts honour
+ * the same `onConflict` strategy the page uses; rename appends
+ * `-copy` / `-copy-2` suffixes to the basename.
+ */
+async function copyReferencedAssets(params: {
+  srcServices: ProjectServices;
+  dstServices: ProjectServices;
+  srcPagePath: string;
+  srcMarkdown: string;
+  dstPagePath: string;
+  onConflict: "rename" | "overwrite";
+}): Promise<CopyResponse["assets"]> {
+  const refs = extractMarkdownAssetRefs(params.srcMarkdown);
+  if (refs.length === 0) return [];
+
+  const srcDataRoot = params.srcServices.writer.getDataRoot();
+  const srcPageDir = posix.dirname(params.srcPagePath);
+  const dstPageDir = posix.dirname(params.dstPagePath);
+
+  const out: CopyResponse["assets"] = [];
+
+  for (const ref of refs) {
+    // Resolve the source asset path relative to the page directory.
+    //  Use posix joins so the relative path stays portable even on
+    //  Windows checkouts.
+    const srcRelPath = posix.normalize(posix.join(srcPageDir, ref));
+    if (srcRelPath.startsWith("..")) {
+      // Path escapes the data root — refuse and skip rather than
+      //  silently leaking out-of-tree files.
+      out.push({ srcPath: ref, targetPath: "", renamed: false, skipped: true });
+      continue;
+    }
+    const srcAbsPath = pathJoin(srcDataRoot, srcRelPath);
+    if (!existsSync(srcAbsPath)) {
+      // Broken reference — flag it but don't fail the page copy.
+      out.push({ srcPath: srcRelPath, targetPath: "", renamed: false, skipped: true });
+      continue;
+    }
+
+    let bytes: Buffer;
+    try {
+      bytes = readFileSync(srcAbsPath);
+    } catch {
+      out.push({ srcPath: srcRelPath, targetPath: "", renamed: false, skipped: true });
+      continue;
+    }
+
+    // Destination path: same basename, mirrored under the destination
+    //  page's directory. Conflict handling per the spec uses the
+    //  same `-copy` suffix algorithm the page uses.
+    const desiredAssetPath = posix.normalize(posix.join(dstPageDir, ref));
+    const { finalPath: assetFinal, renamed: assetRenamed } = resolveAssetCollision(
+      params.dstServices,
+      desiredAssetPath,
+      params.onConflict,
+    );
+    try {
+      await params.dstServices.writer.writeBinary(assetFinal, bytes);
+      out.push({ srcPath: srcRelPath, targetPath: assetFinal, renamed: assetRenamed });
+    } catch {
+      out.push({ srcPath: srcRelPath, targetPath: assetFinal, renamed: assetRenamed, skipped: true });
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Like `resolveCollision` for pages, but for binary assets — same
+ * `-copy` / `-copy-N` rename algorithm + `existsSync` probe through
+ * the destination's data root. We use the writer's ENOENT-on-read
+ * via `safeReadBinaryEtag` to mirror the page path's collision
+ * detection.
+ */
+function resolveAssetCollision(
+  dst: ProjectServices,
+  desiredPath: string,
+  onConflict: "rename" | "overwrite",
+): { finalPath: string; renamed: boolean } {
+  if (onConflict === "overwrite") {
+    return { finalPath: desiredPath, renamed: false };
+  }
+  const dataRoot = dst.writer.getDataRoot();
+  if (!existsSync(pathJoin(dataRoot, desiredPath))) {
+    return { finalPath: desiredPath, renamed: false };
+  }
+  const dot = desiredPath.lastIndexOf(".");
+  const stem = dot === -1 ? desiredPath : desiredPath.slice(0, dot);
+  const ext = dot === -1 ? "" : desiredPath.slice(dot);
+  for (let i = 1; i < 1000; i++) {
+    const candidate = `${stem}-copy${i === 1 ? "" : `-${i}`}${ext}`;
+    if (!existsSync(pathJoin(dataRoot, candidate))) {
+      return { finalPath: candidate, renamed: true };
+    }
+  }
+  throw new Error("Too many colliding assets — clean the target manually");
 }
 
 /**

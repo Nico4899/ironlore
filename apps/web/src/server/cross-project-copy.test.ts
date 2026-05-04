@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
@@ -182,5 +182,156 @@ describe("createCrossProjectCopyApi", () => {
   it("400 on non-markdown source", async () => {
     const res = await post("alpha", "image.png", { targetProjectId: "beta" });
     expect(res.status).toBe(400);
+  });
+});
+
+/**
+ * Phase-9 promotion gate (docs/08 §Promotion: the only crossing point
+ * + §Cross-project copy workflow). When the destination project's
+ * `project.yaml` declares an `accept_promotions_from` allowlist, the
+ * cross-project copy endpoint refuses any source NOT on it. Absent
+ * field = backwards-compat allow-from-anywhere.
+ *
+ * Plus: every successful copy stamps a content-free `copy to <dst>`
+ * commit on the source repo so `git log --grep="^copy to"` reveals
+ * every promotion out of a project (audit trail #6).
+ */
+describe("createCrossProjectCopyApi — accept_promotions_from gate + source-side audit", () => {
+  let install: ReturnType<typeof makeInstall>;
+  let alpha: ProjectServices;
+  let beta: ProjectServices;
+  let app: Hono;
+
+  beforeEach(async () => {
+    install = makeInstall();
+    alpha = seed(install.installRoot, "alpha");
+    beta = seed(install.installRoot, "beta");
+    // Start the project services so the GitWorker initialises a real
+    //  git repo on each project — the audit commit needs something
+    //  to commit against.
+    // biome-ignore lint/suspicious/noExplicitAny: noop stand-in for WS broadcaster
+    await alpha.start((() => {}) as any);
+    // biome-ignore lint/suspicious/noExplicitAny: noop stand-in for WS broadcaster
+    await beta.start((() => {}) as any);
+    app = new Hono();
+    app.route(
+      "/api/projects",
+      createCrossProjectCopyApi({
+        resolveProject: (id) => (id === "alpha" ? alpha : id === "beta" ? beta : null),
+      }),
+    );
+  });
+
+  afterEach(async () => {
+    await alpha.stop();
+    await beta.stop();
+    install.cleanup();
+  });
+
+  function writeBetaConfig(yaml: string): void {
+    writeFileSync(join(beta.projectDir, "project.yaml"), yaml, "utf-8");
+  }
+
+  async function post(srcId: string, srcPath: string, body: unknown): Promise<Response> {
+    return app.request(`/api/projects/${srcId}/pages/${srcPath}/copy-to`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("permits the copy when destination omits accept_promotions_from (backwards-compat)", async () => {
+    // No project.yaml at all on beta → loadProjectConfig throws and
+    //  the endpoint falls through to the legacy allow-everything
+    //  behaviour.
+    await alpha.writer.write("note.md", "# n\n", null);
+    const res = await post("alpha", "note.md", { targetProjectId: "beta" });
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects with 403 when destination declares an explicit allow-list excluding the source", async () => {
+    writeBetaConfig(
+      "schema: 1\nname: beta\npreset: research\negress:\n  policy: open\naccept_promotions_from: []\n",
+    );
+    await alpha.writer.write("note.md", "# n\n", null);
+    const res = await post("alpha", "note.md", { targetProjectId: "beta" });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string; acceptPromotionsFrom: string[] };
+    expect(body.acceptPromotionsFrom).toEqual([]);
+    expect(body.error).toContain("does not accept promotions from 'alpha'");
+  });
+
+  it("permits when destination's allow-list explicitly includes the source", async () => {
+    writeBetaConfig(
+      "schema: 1\nname: beta\npreset: main\negress:\n  policy: allowlist\naccept_promotions_from:\n  - alpha\n",
+    );
+    await alpha.writer.write("note.md", "# n\n", null);
+    const res = await post("alpha", "note.md", { targetProjectId: "beta" });
+    expect(res.status).toBe(200);
+  });
+
+  it("stamps a content-free 'copy to <dst>/<path>' commit on the source repo", async () => {
+    await alpha.writer.write("note.md", "# n\n", null);
+    const res = await post("alpha", "note.md", { targetProjectId: "beta" });
+    expect(res.status).toBe(200);
+
+    // The source's git log should now contain a commit whose subject
+    //  starts with "copy to beta/" — the audit trail per §6.
+    const git = simpleGit(alpha.projectDir);
+    const log = await git.log();
+    const copyTo = log.all.find((c) => c.message.startsWith("copy to beta/"));
+    expect(copyTo).toBeDefined();
+    expect(copyTo?.message).toContain("note.md");
+  });
+
+  it("walks `![alt](path)` references and copies each binary asset alongside the page", async () => {
+    // Seed an asset in the source vault, then write a page that
+    //  references it. The endpoint should copy both the page AND
+    //  the binary asset into the destination, mirroring the
+    //  page-relative directory layout.
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); // PNG magic bytes
+    await alpha.writer.writeBinary("assets/diagram.png", png);
+    await alpha.writer.write("note.md", "# Title\n\n![diagram](assets/diagram.png)\n", null);
+
+    const res = await post("alpha", "note.md", { targetProjectId: "beta" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      assets: Array<{ srcPath: string; targetPath: string; renamed: boolean; skipped?: boolean }>;
+    };
+
+    expect(body.assets).toHaveLength(1);
+    expect(body.assets[0]?.srcPath).toBe("assets/diagram.png");
+    expect(body.assets[0]?.targetPath).toBe("assets/diagram.png");
+    expect(body.assets[0]?.renamed).toBe(false);
+    expect(body.assets[0]?.skipped).toBeUndefined();
+
+    // Asset must exist in beta and match source bytes.
+    const dstAbsPath = join(beta.projectDir, "data", "assets", "diagram.png");
+    expect(existsSync(dstAbsPath)).toBe(true);
+    const { readFileSync } = await import("node:fs");
+    expect(readFileSync(dstAbsPath).equals(png)).toBe(true);
+  });
+
+  it("flags broken asset references as skipped without failing the page copy", async () => {
+    await alpha.writer.write("note.md", "# Title\n\n![missing](assets/ghost.png)\n", null);
+    const res = await post("alpha", "note.md", { targetProjectId: "beta" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      assets: Array<{ srcPath: string; skipped?: boolean }>;
+    };
+    expect(body.assets).toHaveLength(1);
+    expect(body.assets[0]?.skipped).toBe(true);
+  });
+
+  it("ignores absolute-URL image references (no copy, no skip entry)", async () => {
+    await alpha.writer.write(
+      "note.md",
+      "# Title\n\n![remote](https://example.com/img.png)\n",
+      null,
+    );
+    const res = await post("alpha", "note.md", { targetProjectId: "beta" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { assets: unknown[] };
+    expect(body.assets).toHaveLength(0);
   });
 });
