@@ -1,10 +1,7 @@
-import { ArrowUp, ChevronDown, Highlighter, Lightbulb, Settings, Sparkles, X } from "lucide-react";
+import { ChevronDown, Highlighter, Lightbulb, Settings, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAgentSession } from "../hooks/useAgentSession.js";
 import { useWorkspaceActivity } from "../hooks/useWorkspaceActivity.js";
 import {
-  type AgentConfigResponse,
-  fetchAgentConfig,
   fetchAgents,
   fetchProviders,
   getApiProject,
@@ -12,16 +9,10 @@ import {
   submitDryRunVerdict,
 } from "../lib/api.js";
 import { renderMarkdownSafe } from "../lib/render-markdown-safe.js";
-import { type ContextPill, type ConversationMessage, useAIPanelStore } from "../stores/ai-panel.js";
+import { type ConversationMessage, useAIPanelStore } from "../stores/ai-panel.js";
 import { AI_PANEL_MAX_WIDTH, AI_PANEL_MIN_WIDTH, useAppStore } from "../stores/app.js";
 import { useEditorStore } from "../stores/editor.js";
-import { ContextBudgetChip } from "./ai-composer/ContextBudgetChip.js";
-import { type MentionCandidate, MentionPicker } from "./ai-composer/MentionPicker.js";
-import { MicButton } from "./ai-composer/MicButton.js";
-import { OpenedFileToggle } from "./ai-composer/OpenedFileToggle.js";
-import { PlusMenu } from "./ai-composer/PlusMenu.js";
-import { type SlashAction, SlashMenu } from "./ai-composer/SlashMenu.js";
-import { CostEstimateDialog } from "./CostEstimateDialog.js";
+import { AIComposer } from "./AIComposer.js";
 import { DiffPreview } from "./DiffPreview.js";
 import {
   AgentPulse,
@@ -33,404 +24,19 @@ import {
 } from "./primitives/index.js";
 import { SaveAsWikiDialog } from "./SaveAsWikiDialog.js";
 
-/**
- * Storage key pattern for cost-estimate acknowledgement per agent slug.
- * Once the user confirms the estimate for an agent, the dialog skips
- * for the rest of the session — the intent is a heads-up on first
- * use, not a ceremony on every message.
- */
-const COST_ACK_KEY = (slug: string) => `ironlore.costEstimate.acknowledged.${slug}`;
-
 export function AIPanel() {
   const messages = useAIPanelStore((s) => s.messages);
   const activeAgent = useAIPanelStore((s) => s.activeAgent);
-  const inputDraft = useAIPanelStore((s) => s.inputDraft);
-  const setInputDraft = useAIPanelStore((s) => s.setInputDraft);
+  const _inputDraft = useAIPanelStore((s) => s.inputDraft);
+  const _setInputDraft = useAIPanelStore((s) => s.setInputDraft);
   const isStreaming = useAIPanelStore((s) => s.isStreaming);
-  const contexts = useAIPanelStore((s) => s.contexts);
-  const removeContext = useAIPanelStore((s) => s.removeContext);
-  // Block IDs covered by the current ProseMirror selection — fires
-  //  whenever the user highlights paragraphs in the editor. Drives
-  //  the "N blocks selected" pill in the composer and the
-  //  highlight-context payload sent on the next prompt
-  //  (docs/03-editor.md §Selection as AI context).
-  const selectedBlockIds = useEditorStore((s) => s.selectedBlockIds);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Composer popover visibility. Opened on button click AND on
-  //  first-char keystroke (`+` / `/`) from an empty draft. Typing
-  //  `@` anywhere opens the mention picker instead.
-  const [plusOpen, setPlusOpen] = useState(false);
-  const [slashOpen, setSlashOpen] = useState(false);
-  // Mention picker state — active when the caret is inside an
-  //  `@query` token. `mentionRange` stores the `[start, end]` char
-  //  offsets of the token so we can replace it on pick.
-  const [mentionOpen, setMentionOpen] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState("");
-  const [mentionRange, setMentionRange] = useState<[number, number] | null>(null);
-
-  const openFilePicker = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
-
-  /**
-   * Insert `@` at the caret and open the mention picker. Used by
-   * the `+` menu's "Add context" item and the `/` menu's "Mention"
-   * item. The picker's keystroke detection will pick up the new
-   * `@` token on the next render.
-   */
-  const insertAtCaret = useCallback(
-    (ch: string) => {
-      const el = textareaRef.current;
-      if (!el) {
-        setInputDraft(inputDraft + ch);
-        return;
-      }
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      const next = inputDraft.slice(0, start) + ch + inputDraft.slice(end);
-      setInputDraft(next);
-      // Restore caret to the char immediately after the insert.
-      queueMicrotask(() => {
-        el.focus();
-        el.setSelectionRange(start + ch.length, start + ch.length);
-      });
-    },
-    [inputDraft, setInputDraft],
-  );
-
-  const onFilesPicked = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    const { addContext } = useAIPanelStore.getState();
-    for (const file of Array.from(files)) {
-      addContext({
-        kind: "file",
-        label: file.name,
-        body: `Attached file: ${file.name}`,
-        path: file.name,
-      });
-    }
-    // Reset so selecting the same file again re-triggers onChange.
-    e.target.value = "";
-  }, []);
-
-  const { sendMessage } = useAgentSession();
-
-  // Cost-estimate dialog state. The first user send of each session
-  // for a given agent gates through this dialog; subsequent sends
-  // skip it. sessionStorage clears on tab close, so reopening the
-  // app re-shows the estimate — intentional since pricing could
-  // change between sessions.
-  const [costDialogOpen, setCostDialogOpen] = useState(false);
-
-  const doSend = useCallback(
-    (displayText: string, serverPrompt: string, attachmentLabels: string[]) => {
-      sendMessage(displayText, serverPrompt, attachmentLabels);
-      setInputDraft("");
-      useAIPanelStore.getState().clearContexts();
-    },
-    [sendMessage, setInputDraft],
-  );
-
-  // Cost-estimate gate stashes the entire send payload (display +
-  // server + attachments) so handleCostConfirm can replay all three
-  // after the user acknowledges the price.
-  const [pendingSend, setPendingSend] = useState<{
-    display: string;
-    server: string;
-    attachments: string[];
-  } | null>(null);
-
-  const handleSend = useCallback(() => {
-    const draft = inputDraft.trim();
-    if (!draft && contexts.length === 0) return;
-
-    // If the opened-file toggle is on, append the active file as a
-    //  transient context pill for this send only. We read from the
-    //  editor store at send time (not via subscription) so the
-    //  composer doesn't re-render every time the user edits.
-    const { filePath, markdown, selectedBlockIds: ids } = useEditorStore.getState();
-    const include = useAIPanelStore.getState().includeActiveFileAsContext;
-    const sendContexts: ContextPill[] = [...contexts];
-    if (include && filePath) {
-      const baseName = filePath.split("/").pop() ?? filePath;
-      sendContexts.push({
-        kind: "file",
-        label: baseName,
-        // Body is the live markdown buffer; the agent sees the
-        //  user's working copy, not the on-disk snapshot.
-        body: markdown,
-        path: filePath,
-      });
-    }
-    // Selection-as-AI-context (docs/03-editor.md §Selection as AI
-    //  context). When the editor has block-IDed paragraphs selected,
-    //  send their IDs so the agent can call `kb.read_block` to scope
-    //  its answer to specific paragraphs without re-reading the
-    //  whole page.
-    if (ids.length > 0 && filePath) {
-      sendContexts.push({
-        kind: "highlight",
-        label: `${ids.length} block${ids.length === 1 ? "" : "s"} selected`,
-        body: ids.map((id) => `[[${filePath}#${id}]]`).join(", "),
-        path: filePath,
-      });
-    }
-
-    // Build the server-bound prompt including all context pills —
-    // the agent needs the full file body etc. to reason about it.
-    // The locally-displayed message stays as just the typed draft so
-    // the chat transcript doesn't become a wall of inlined files;
-    // attachment labels render as chips alongside the bubble.
-    const contextBlock =
-      sendContexts.length > 0
-        ? `${sendContexts.map((c) => `[${c.kind}: ${c.label}]\n${c.body}`).join("\n\n")}\n\n`
-        : "";
-    const serverPrompt = contextBlock + draft;
-    const attachmentLabels = sendContexts.map((c) => c.label);
-
-    // Cost-estimate gate: show on the first send per agent per
-    // session. Any read/write failure of sessionStorage just skips
-    // the dialog — estimate is informational, not a safety rail.
-    let alreadyAcknowledged = false;
-    try {
-      alreadyAcknowledged = window.sessionStorage.getItem(COST_ACK_KEY(activeAgent)) === "1";
-    } catch {
-      alreadyAcknowledged = true;
-    }
-
-    if (!alreadyAcknowledged) {
-      setPendingSend({ display: draft, server: serverPrompt, attachments: attachmentLabels });
-      setCostDialogOpen(true);
-      return;
-    }
-
-    doSend(draft, serverPrompt, attachmentLabels);
-  }, [inputDraft, contexts, activeAgent, doSend]);
-
-  const handleCostConfirm = useCallback(() => {
-    try {
-      window.sessionStorage.setItem(COST_ACK_KEY(activeAgent), "1");
-    } catch {
-      /* storage denied — don't block the send */
-    }
-    setCostDialogOpen(false);
-    if (pendingSend !== null) {
-      doSend(pendingSend.display, pendingSend.server, pendingSend.attachments);
-      setPendingSend(null);
-    }
-  }, [activeAgent, pendingSend, doSend]);
-
-  const handleCostCancel = useCallback(() => {
-    setCostDialogOpen(false);
-    setPendingSend(null);
-  }, []);
-
-  /**
-   * Scan the textarea around the caret for an `@mention` token. If
-   * the caret is inside an `@…` run (no whitespace after the `@`),
-   * open the mention picker with the current query; otherwise close
-   * it. Re-invoked on every input change + selection shift.
-   */
-  const updateMentionFromCaret = useCallback(() => {
-    const el = textareaRef.current;
-    if (!el) {
-      setMentionOpen(false);
-      return;
-    }
-    const caret = el.selectionStart;
-    const upto = inputDraft.slice(0, caret);
-    const atIdx = upto.lastIndexOf("@");
-    if (atIdx === -1) {
-      setMentionOpen(false);
-      return;
-    }
-    // The `@` must be at start of line or preceded by whitespace.
-    const prevChar = atIdx === 0 ? " " : inputDraft[atIdx - 1];
-    if (prevChar !== " " && prevChar !== "\n" && prevChar !== "\t") {
-      setMentionOpen(false);
-      return;
-    }
-    const between = inputDraft.slice(atIdx + 1, caret);
-    // Close if the user has crossed whitespace — the `@token` is complete.
-    if (/\s/.test(between)) {
-      setMentionOpen(false);
-      return;
-    }
-    setMentionOpen(true);
-    setMentionQuery(between);
-    setMentionRange([atIdx, caret]);
-  }, [inputDraft]);
-
-  // Re-scan whenever the draft changes.
-  useEffect(() => {
-    updateMentionFromCaret();
-  }, [updateMentionFromCaret]);
-
-  const onPromptKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        handleSend();
-        return;
-      }
-      // First-char triggers — typing `+` or `/` into an empty draft
-      //  opens the corresponding popover INSTEAD of inserting the
-      //  character. The mention `@` picker is handled reactively via
-      //  `updateMentionFromCaret` in the onChange branch, so the
-      //  user does see `@` in the textarea.
-      if (inputDraft.length === 0 && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        if (e.key === "+") {
-          e.preventDefault();
-          setPlusOpen(true);
-          return;
-        }
-        if (e.key === "/") {
-          e.preventDefault();
-          setSlashOpen(true);
-          return;
-        }
-      }
-    },
-    [handleSend, inputDraft.length],
-  );
-
-  /**
-   * Commit a chosen mention — replace the `@query` range with a
-   * pill in `contexts` (not inline text) so the downstream prompt
-   * sees a first-class context block, not a freeform `@slug`
-   * sprinkled in the body. Consistent with how highlight/upload
-   * attachments ride as pills.
-   */
-  const onMentionPick = useCallback(
-    (c: MentionCandidate) => {
-      const range = mentionRange;
-      if (!range) {
-        setMentionOpen(false);
-        return;
-      }
-      const [from, to] = range;
-      // Strip the `@query` — we don't want double-reference with a pill.
-      const next = inputDraft.slice(0, from) + inputDraft.slice(to);
-      setInputDraft(next);
-
-      if (c.kind === "agent") {
-        // Agent mention — fetch the mentioned agent's persona
-        //  summary and drop a *context pill* that carries the
-        //  description / tools / scope. The active agent (still in
-        //  control of the turn) then has the mentioned agent's
-        //  capabilities as reference material, without the
-        //  conversation silently handing off. See the chunk-6 brief:
-        //  "mentions are context, not handoffs."
-        const label = `@${c.path}`;
-        // Seed the pill immediately with a terse body so the user
-        //  sees instant feedback, then upgrade it once the config
-        //  comes back from the server.
-        useAIPanelStore.getState().addContext({
-          kind: "page",
-          label,
-          body: `Reference to agent @${c.path} — loading capabilities…`,
-          path: c.path,
-        });
-        const pillIndex = useAIPanelStore.getState().contexts.length - 1;
-        fetchAgentConfig(c.path)
-          .then((cfg) => {
-            const body = buildAgentContextBody(c.path, cfg);
-            // Mutate the pill in place — store exposes array-index
-            //  helpers but no per-index replace; reach in through
-            //  the current state and reassign.
-            const state = useAIPanelStore.getState();
-            const pills = state.contexts.slice();
-            const target = pills[pillIndex];
-            if (target && target.path === c.path) {
-              pills[pillIndex] = { ...target, body };
-              useAIPanelStore.setState({ contexts: pills });
-            }
-          })
-          .catch(() => {
-            /* keep the seed body */
-          });
-      } else {
-        useAIPanelStore.getState().addContext({
-          kind: "page",
-          label: c.label,
-          body: `Reference to page ${c.path}`,
-          path: c.path,
-        });
-      }
-
-      setMentionOpen(false);
-      setMentionQuery("");
-      setMentionRange(null);
-      queueMicrotask(() => {
-        const el = textareaRef.current;
-        if (el) {
-          el.focus();
-          el.setSelectionRange(from, from);
-        }
-      });
-    },
-    [inputDraft, mentionRange, setInputDraft],
-  );
-
-  /**
-   * Dispatch a slash-menu action. `attach-file` / `mention` share
-   * handlers with the `+` menu; `clear-conversation` and the actual
-   * `/slash` commands mutate the conversation via store actions.
-   * Settings links open the settings dialog (category-specific
-   * deep-linking is a follow-up once the dialog grows tabs beyond
-   * Appearance/Security).
-   */
-  const onSlashAction = useCallback(
-    (action: SlashAction) => {
-      switch (action) {
-        case "attach-file":
-          openFilePicker();
-          break;
-        case "mention":
-          insertAtCaret("@");
-          break;
-        case "clear-conversation":
-        case "slash.clear": {
-          const ok = window.confirm("Clear the conversation? This can't be undone.");
-          if (!ok) return;
-          useAIPanelStore.getState().clearMessages();
-          useAIPanelStore.getState().resetTokens();
-          break;
-        }
-        case "switch-model":
-          // Deep-link into Settings → General where "Switch model"
-          //  controls will land. Today the tab houses provider
-          //  preferences; model selection grows here.
-          useAppStore.getState().toggleSettings("general");
-          break;
-        case "account-usage":
-          // Per-agent scope audit + rate caps live on Security.
-          useAppStore.getState().toggleSettings("security");
-          break;
-        case "slash.summarize":
-          setInputDraft(
-            "Summarize the conversation so far in five bullets, then propose the next step.",
-          );
-          queueMicrotask(() => textareaRef.current?.focus());
-          break;
-        case "slash.retry":
-          setInputDraft("Retry the last turn.");
-          queueMicrotask(() => textareaRef.current?.focus());
-          break;
-        case "slash.continue":
-          setInputDraft("Continue.");
-          queueMicrotask(() => textareaRef.current?.focus());
-          break;
-      }
-    },
-    [openFilePicker, insertAtCaret, setInputDraft],
-  );
-
-  const canSend = inputDraft.trim().length > 0 || contexts.length > 0;
+  // Editor file context — drives the conversation-only / composer-on
+  //  switch per docs/03-editor.md §Inline AI composer. When a
+  //  markdown file is open, the inline editor launcher owns the
+  //  composer surface and the panel renders conversation only.
+  const editorFilePath = useEditorStore((s) => s.filePath);
+  const editorFileType = useEditorStore((s) => s.fileType);
+  const showInlineComposer = Boolean(editorFilePath) && editorFileType === "markdown";
 
   // Pull the step label for the active agent from the shared workspace
   //  poller so the header counter tracks the same "step NN" value the
@@ -574,214 +180,22 @@ export function AIPanel() {
       </div>
 
       {/*
-       * Composer region — two-row well per the redesign brief:
-       *   Row 1: textarea + mic placeholder
-       *   Row 2: [+][/] · opened-file toggle · flex · context-%
-       *          chip · send ↑
-       * Pills (context chips) sit above the well. The `+` and `/`
-       * popovers anchor to their trigger buttons; the mention
-       * picker anchors to the textarea.
-       * AgentPulse wraps everything so the 3.2s sweep crosses the
-       * whole composer while streaming.
+       * Composer region — extracted into a shared `<AIComposer>` per
+       * docs/03-editor.md §Inline AI composer. The same component
+       * also renders inline at the bottom of the editor surface
+       * (InlineAIComposerLauncher); both consumers share composer
+       * state via `useAIPanelStore` so a draft typed in one place
+       * is visible in the other on switch.
+       *
+       * **Conditional render**: when a markdown file is open the
+       * inline-in-editor launcher is the primary input and the panel
+       * goes composer-less (pure conversation history). When no file
+       * is open OR the active file isn't markdown, the panel keeps
+       * the composer as the fallback so the user always has a way
+       * to start a conversation.
        */}
-      <AgentPulse active={isStreaming} className="border-t border-border p-3">
-        {(contexts.length > 0 || selectedBlockIds.length > 0) && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {contexts.map((ctx, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: pills are append-only and never reorder
-              <ContextChip key={i} ctx={ctx} onRemove={() => removeContext(i)} />
-            ))}
-            {selectedBlockIds.length > 0 && (
-              <span
-                className="font-mono"
-                title="Highlight a different range or click outside to clear."
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "2px 8px",
-                  fontSize: 10.5,
-                  letterSpacing: "0.04em",
-                  background: "color-mix(in oklch, var(--il-amber) 14%, transparent)",
-                  border: "1px solid color-mix(in oklch, var(--il-amber) 30%, transparent)",
-                  color: "var(--il-amber)",
-                  borderRadius: 3,
-                }}
-              >
-                <span aria-hidden="true">◆</span>
-                {selectedBlockIds.length} block{selectedBlockIds.length === 1 ? "" : "s"} selected
-              </span>
-            )}
-          </div>
-        )}
-        <div
-          className="relative rounded-lg border border-border bg-background focus-within:border-ironlore-blue"
-          style={{ padding: "6px 8px" }}
-        >
-          {/* Hidden file input — triggered by the `+` menu and the
-           *  `/` menu's Attach file item. Accepts multi-select. */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={onFilesPicked}
-          />
-
-          {/* Row 1 — textarea + mic placeholder. */}
-          <div className="relative flex items-start">
-            <textarea
-              ref={textareaRef}
-              className="flex-1 resize-none bg-transparent py-1 text-sm text-primary placeholder:text-secondary focus:outline-none"
-              placeholder={`Ask ${activeAgent} to…`}
-              value={inputDraft}
-              rows={1}
-              onChange={(e) => setInputDraft(e.target.value)}
-              onKeyDown={onPromptKeyDown}
-              onSelect={updateMentionFromCaret}
-              style={{ minHeight: "24px", maxHeight: "160px" }}
-            />
-            <MicButton />
-          </div>
-
-          {/* Row 2 — toolbar strip. */}
-          <div className="flex items-center" style={{ gap: 4, marginTop: 4, height: 24 }}>
-            {/* Left cluster — `+` and `/` triggers. */}
-            <div className="relative">
-              <ToolbarIconButton
-                glyph="+"
-                ariaLabel="Add to prompt"
-                title="Add to prompt (+)"
-                active={plusOpen}
-                onClick={() => {
-                  setPlusOpen((v) => !v);
-                  setSlashOpen(false);
-                }}
-              />
-              <PlusMenu
-                open={plusOpen}
-                onClose={() => setPlusOpen(false)}
-                onUpload={openFilePicker}
-                onAddContext={() => insertAtCaret("@")}
-              />
-            </div>
-            <div className="relative">
-              <ToolbarIconButton
-                glyph="/"
-                ariaLabel="Commands"
-                title="Commands (/)"
-                active={slashOpen}
-                onClick={() => {
-                  setSlashOpen((v) => !v);
-                  setPlusOpen(false);
-                }}
-              />
-              <SlashMenu
-                open={slashOpen}
-                onClose={() => setSlashOpen(false)}
-                onAction={onSlashAction}
-              />
-            </div>
-
-            {/* Divider · mono 10.5 dim — separates triggers from the
-             *  opened-file toggle. */}
-            <span
-              aria-hidden="true"
-              style={{
-                width: 1,
-                height: 14,
-                background: "var(--il-border-soft)",
-                marginLeft: 2,
-                marginRight: 4,
-              }}
-            />
-            <OpenedFileToggle />
-
-            <span className="flex-1" />
-
-            <ContextBudgetChip />
-
-            {/* Send pill — 20×20 blue rounded-full with an up-arrow.
-             *  Matches the JSX schematic. */}
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={!canSend}
-              aria-label="Send message"
-              title="Send (⌘↵)"
-              className="flex shrink-0 items-center justify-center bg-ironlore-blue text-white shadow-sm transition-opacity hover:bg-ironlore-blue-strong disabled:cursor-not-allowed disabled:opacity-30"
-              style={{ width: 20, height: 20, borderRadius: 9999, marginLeft: 4 }}
-            >
-              <ArrowUp style={{ width: 12, height: 12 }} strokeWidth={2.5} />
-            </button>
-          </div>
-
-          {/* Mention picker — anchored to the composer well so it
-           *  floats above Row 1 when active. Only one popover may
-           *  be open at a time; we dismiss the others when the
-           *  picker opens. */}
-          <MentionPicker
-            open={mentionOpen && !plusOpen && !slashOpen}
-            query={mentionQuery}
-            onPick={onMentionPick}
-            onClose={() => setMentionOpen(false)}
-          />
-        </div>
-      </AgentPulse>
-      {costDialogOpen && (
-        <CostEstimateDialog
-          agentSlug={activeAgent}
-          onConfirm={handleCostConfirm}
-          onCancel={handleCostCancel}
-        />
-      )}
+      {!showInlineComposer && <AIComposer />}
     </aside>
-  );
-}
-
-/**
- * Toolbar trigger — 22×22 slate-elevated cell rendering a single
- * mono glyph (`+` or `/`). Matches the chrome grammar used by the
- * prior `@` chip: mono 12 text3 on slate-elev with a soft border.
- * When `active` is true (its popover is open), the cell brightens
- * to `--il-text` so the user sees which menu owns focus.
- */
-function ToolbarIconButton({
-  glyph,
-  ariaLabel,
-  title,
-  active,
-  onClick,
-}: {
-  glyph: string;
-  ariaLabel: string;
-  title: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={ariaLabel}
-      aria-expanded={active}
-      title={title}
-      className="flex items-center justify-center outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-      style={{
-        width: 22,
-        height: 22,
-        background: active ? "var(--il-slate-elev)" : "transparent",
-        border: `1px solid ${active ? "var(--il-border)" : "var(--il-border-soft)"}`,
-        borderRadius: 3,
-        fontFamily: "var(--font-mono)",
-        fontSize: 12,
-        color: active ? "var(--il-text)" : "var(--il-text3)",
-        lineHeight: 1,
-        cursor: "pointer",
-      }}
-    >
-      {glyph}
-    </button>
   );
 }
 
@@ -1597,32 +1011,6 @@ function formatClockShort(ms: number): string {
 }
 
 /**
- * Compose the context-pill body for an agent mention. The body is
- * the text the active agent receives as context on send — we keep
- * it terse (first-line description, canonical tools list, scope
- * globs) so it costs few tokens but still conveys "who this other
- * agent is + what it's allowed to do." The mentioned agent stays a
- * reference, not a handoff: the active agent replies with this
- * context in mind, it doesn't forward the turn.
- */
-function buildAgentContextBody(slug: string, cfg: AgentConfigResponse): string {
-  const lines: string[] = [`Agent @${slug}`];
-  const desc = cfg.persona?.description?.trim();
-  if (desc) lines.push(desc);
-  const tools = cfg.persona?.tools;
-  if (tools && tools.length > 0) {
-    lines.push(`Tools: ${tools.join(", ")}`);
-  }
-  const pages = cfg.persona?.scope?.pages;
-  if (pages && pages.length > 0) {
-    lines.push(`Scope: ${pages.slice(0, 4).join(", ")}${pages.length > 4 ? ", …" : ""}`);
-  }
-  const review = cfg.persona?.reviewMode;
-  if (review) lines.push(`Review mode: ${review}`);
-  return lines.join("\n");
-}
-
-/**
  * Compact duration label for the ToolCallCard StatusPip — `180ms`,
  * `4.2s`, `1m12s`. Sub-second latencies are the common case for
  * `kb.read_page` / `kb.replace_block`, so we keep ms precision up to
@@ -1843,15 +1231,6 @@ function ToolCallCard({
       )}
     </div>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Context chip above the prompt input.
-// ---------------------------------------------------------------------------
-
-interface ContextChipProps {
-  ctx: ContextPill;
-  onRemove: () => void;
 }
 
 /**
@@ -2278,49 +1657,6 @@ function CitationText({ text }: { text: string }) {
           </span>
         ),
       )}
-    </div>
-  );
-}
-
-/**
- * ContextChip per screen-editor.jsx ContextPill:
- *   · slate-elevated background, `--il-border-soft` border, 2 px
- *     radius (a rect, not a pill — pills are only for counters)
- *   · mono 10.5 text2 0.02em
- *   · leading `@` glyph in `var(--il-blue)` — the mention cue that
- *     the JSX carries in place of kind-specific Lucide icons. Drops
- *     the prior Highlighter / Paperclip / Sparkles trio.
- *   · trailing `×` close keeps the existing dismiss affordance.
- */
-function ContextChip({ ctx, onRemove }: ContextChipProps) {
-  return (
-    <div
-      className="inline-flex max-w-full items-center gap-1"
-      style={{
-        padding: "2px 6px 2px 7px",
-        background: "var(--il-slate-elev)",
-        border: "1px solid var(--il-border-soft)",
-        borderRadius: 2,
-        fontFamily: "var(--font-mono)",
-        fontSize: 10.5,
-        letterSpacing: "0.02em",
-        color: "var(--il-text2)",
-      }}
-    >
-      <span aria-hidden="true" style={{ color: "var(--il-blue)" }}>
-        @
-      </span>
-      <span className="truncate" title={ctx.label} style={{ maxWidth: 180 }}>
-        {ctx.label}
-      </span>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Remove context: ${ctx.label}`}
-        className="flex h-4 w-4 items-center justify-center rounded text-secondary outline-none hover:bg-ironlore-slate-hover hover:text-primary focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
     </div>
   );
 }
