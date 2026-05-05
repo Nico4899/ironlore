@@ -12,7 +12,7 @@ import {
 import { isMockInboxId, MOCK_INBOX_ENTRIES, MOCK_INBOX_FILES } from "../lib/mock-inbox.js";
 import { formatRelative } from "../lib/relative-time.js";
 import { useAppStore } from "../stores/app.js";
-import { Key, Meta, Reuleaux, StatusPip, Venn } from "./primitives/index.js";
+import { Key, Reuleaux, StatusPip, Venn } from "./primitives/index.js";
 
 /**
  * Agent Inbox — batch review surface for inbox-mode agent runs.
@@ -383,8 +383,6 @@ function InboxEntryCard({
   onDecisionChange: (path: string, decision: "approved" | "rejected" | null) => void;
   onJumpToFile: (path: string) => void;
 }) {
-  const typeDisplay = useAppStore((s) => s.typeDisplay);
-  const serif = typeDisplay === "serif";
   const waypoint = entry.branch.split("/").pop() || entry.branch;
   const finalizedLabel = formatRelative(entry.finalizedAt, Date.now());
 
@@ -406,71 +404,134 @@ function InboxEntryCard({
         transition: "background var(--motion-snap), border-color var(--motion-snap)",
       }}
     >
-      {/* Header row — click to expand the diff dropdown. Approve /
-       *  Reject buttons stop propagation so they don't toggle too. */}
-      <button
-        type="button"
-        onClick={onToggleExpanded}
-        aria-expanded={expanded}
-        aria-controls={`inbox-diff-${entry.id}`}
-        className="flex w-full items-center gap-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
-        style={{ padding: "12px 16px" }}
-      >
-        <Reuleaux size={10} color="var(--il-amber)" aria-label="Pending review" />
-        <span
-          className="shrink-0"
-          style={{
-            fontFamily: serif ? "var(--font-display)" : "var(--font-sans)",
-            fontStyle: serif ? "italic" : "normal",
-            fontSize: serif ? 22 : 15,
-            fontWeight: serif ? 400 : 600,
-            letterSpacing: "-0.01em",
-            color: "var(--il-text)",
-          }}
-        >
-          {entry.agentSlug}
-        </span>
-        <Meta
-          k="waypoint"
-          v={waypoint}
-          style={{ maxWidth: "10rem", overflow: "hidden", textOverflow: "ellipsis" }}
-        />
-        <Meta k="finalized" v={finalizedLabel} />
-        <span className="flex-1" />
-        <span
-          aria-hidden="true"
-          className="font-mono"
-          style={{
-            fontSize: 10.5,
-            color: "var(--il-text3)",
-            letterSpacing: "0.04em",
-          }}
-        >
-          {expanded ? "▾" : "▸"}
-        </span>
+      {/* Header — two rows for narrow-sidebar fit:
+       *    Row 1: Reuleaux + agent slug · spacer · chevron
+       *    Row 2: branch · time          · spacer · ✗ ✓ icons
+       *  Row 1's button is the click target that toggles the diff
+       *  dropdown; Row 2's icon buttons are real siblings (no
+       *  nested-button HTML invalidity), each `stopPropagation`-ing
+       *  so a click on Approve/Reject doesn't also toggle expand. */}
+      <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+        {/* Row 1 — slug + chevron */}
         <button
           type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onReject();
-          }}
-          className="rounded px-3 py-1 text-xs font-medium text-secondary transition-colors hover:bg-ironlore-slate-hover"
-          style={{ border: "1px solid var(--il-border)" }}
+          onClick={onToggleExpanded}
+          aria-expanded={expanded}
+          aria-controls={`inbox-diff-${entry.id}`}
+          className="flex w-full items-center gap-2 text-left outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer" }}
         >
-          Reject all
+          <Reuleaux size={9} color="var(--il-amber)" aria-label="Pending review" />
+          <span
+            className="truncate"
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontSize: 13,
+              fontWeight: 600,
+              letterSpacing: "-0.01em",
+              color: "var(--il-text)",
+            }}
+            title={entry.agentSlug}
+          >
+            {entry.agentSlug}
+          </span>
+          <span className="flex-1" />
+          <span
+            aria-hidden="true"
+            className="font-mono shrink-0"
+            style={{
+              fontSize: 10.5,
+              color: "var(--il-text3)",
+              letterSpacing: "0.04em",
+            }}
+          >
+            {expanded ? "▾" : "▸"}
+          </span>
         </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onApprove();
-          }}
-          className="rounded border-none bg-ironlore-blue px-3 py-1 text-xs font-medium text-background hover:bg-ironlore-blue-strong"
-          style={{ boxShadow: "0 0 10px var(--il-blue-glow)" }}
-        >
-          Approve all
-        </button>
-      </button>
+
+        {/* Row 2 — branch · time + actions. Mono spans replace the
+         *  Meta primitive so we don't pay for its key:value padding
+         *  at sidebar widths (matches the Agents-tab status grammar). */}
+        <div className="flex w-full items-center gap-2">
+          <span
+            className="font-mono uppercase truncate"
+            style={{
+              fontSize: 10.5,
+              letterSpacing: "0.04em",
+              color: "var(--il-text3)",
+              maxWidth: "7rem",
+            }}
+            title={waypoint}
+          >
+            {waypoint}
+          </span>
+          <span
+            aria-hidden="true"
+            style={{
+              width: 1,
+              height: 10,
+              background: "var(--il-border)",
+              flexShrink: 0,
+            }}
+          />
+          <span
+            className="font-mono uppercase shrink-0"
+            style={{
+              fontSize: 10.5,
+              letterSpacing: "0.04em",
+              color: "var(--il-text3)",
+            }}
+          >
+            {finalizedLabel}
+          </span>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onReject();
+            }}
+            aria-label="Reject all changes"
+            title="Reject all (r)"
+            className="flex shrink-0 items-center justify-center rounded outline-none transition-colors hover:bg-ironlore-slate-hover focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            style={{
+              width: 24,
+              height: 24,
+              fontSize: 14,
+              lineHeight: 1,
+              fontFamily: "var(--font-mono)",
+              color: "var(--il-text2)",
+              background: "transparent",
+              border: "1px solid var(--il-border)",
+            }}
+          >
+            ✗
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onApprove();
+            }}
+            aria-label="Approve all changes"
+            title="Approve all (a)"
+            className="flex shrink-0 items-center justify-center rounded outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+            style={{
+              width: 24,
+              height: 24,
+              fontSize: 14,
+              lineHeight: 1,
+              fontFamily: "var(--font-mono)",
+              color: "var(--il-bg)",
+              background: "var(--il-blue)",
+              border: "none",
+              boxShadow: "0 0 8px var(--il-blue-glow)",
+            }}
+          >
+            ✓
+          </button>
+        </div>
+      </div>
 
       <InboxEntryFiles
         entry={entry}
