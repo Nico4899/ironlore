@@ -9,6 +9,7 @@ import {
   rejectInboxEntry,
   setInboxFileDecision,
 } from "../lib/api.js";
+import { isMockInboxId, MOCK_INBOX_ENTRIES, MOCK_INBOX_FILES } from "../lib/mock-inbox.js";
 import { formatRelative } from "../lib/relative-time.js";
 import { useAppStore } from "../stores/app.js";
 import { Key, Meta, Reuleaux, StatusPip, Venn } from "./primitives/index.js";
@@ -46,9 +47,6 @@ interface InboxEntry {
 }
 
 export function InboxPanel() {
-  const typeDisplay = useAppStore((s) => s.typeDisplay);
-  const serif = typeDisplay === "serif";
-
   const [entries, setEntries] = useState<InboxEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusIdx, setFocusIdx] = useState(0);
@@ -64,9 +62,24 @@ export function InboxPanel() {
     setLoading(true);
     try {
       const { entries: e } = await fetchInbox();
-      setEntries(e);
+      // Dev-only mock injection — when the real fetch is empty (a
+      //  fresh local install with no agent runs yet), drop in the
+      //  curated mock fixtures so we can eyeball every rendering
+      //  case (timestamps, file counts, partial-review state). The
+      //  mock fileStats are seeded at the same time so the cards
+      //  render their A/D/M rows without a failed network round-trip.
+      if (e.length === 0 && import.meta.env.DEV) {
+        setEntries(MOCK_INBOX_ENTRIES);
+        setFileStats(new Map(MOCK_INBOX_FILES));
+      } else {
+        setEntries(e);
+      }
     } catch {
-      /* leave empty on network error */
+      if (import.meta.env.DEV) {
+        setEntries(MOCK_INBOX_ENTRIES);
+        setFileStats(new Map(MOCK_INBOX_FILES));
+      }
+      /* otherwise leave empty on network error */
     } finally {
       setLoading(false);
     }
@@ -110,6 +123,14 @@ export function InboxPanel() {
   }, [entries.length, focusIdx]);
 
   const handleApprove = useCallback(async (id: string) => {
+    // Mock entries have no server-side row — short-circuit the API
+    //  call and just drop them from local state so the user can
+    //  exercise the approve/reject affordances on the fixtures.
+    if (isMockInboxId(id)) {
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+      setExpandedId((cur) => (cur === id ? null : cur));
+      return;
+    }
     const result = await approveInboxEntry(id);
     if (result.success) {
       setEntries((prev) => prev.filter((e) => e.id !== id));
@@ -118,6 +139,11 @@ export function InboxPanel() {
   }, []);
 
   const handleReject = useCallback(async (id: string) => {
+    if (isMockInboxId(id)) {
+      setEntries((prev) => prev.filter((e) => e.id !== id));
+      setExpandedId((cur) => (cur === id ? null : cur));
+      return;
+    }
     const result = await rejectInboxEntry(id);
     if (result.success) {
       setEntries((prev) => prev.filter((e) => e.id !== id));
@@ -142,6 +168,9 @@ export function InboxPanel() {
         );
         return next;
       });
+      // Mock entries: keep the optimistic local update, skip the
+      //  server round-trip entirely.
+      if (isMockInboxId(entryId)) return;
       try {
         const result = await setInboxFileDecision(entryId, path, decision);
         if (!result.success) throw new Error(result.error ?? "Decision failed");
@@ -257,81 +286,17 @@ export function InboxPanel() {
     return () => window.removeEventListener("keydown", handler);
   }, [entries, focusIdx, handleApprove, handleReject, handleApproveAll, handleRejectAll]);
 
-  const paddedCount = String(entries.length).padStart(2, "0");
-
   return (
-    <section
-      className="flex h-full flex-col overflow-hidden"
-      aria-label="Agent Inbox"
-      style={{ background: "var(--il-bg)" }}
-    >
-      {/* Header — content-area grammar. Mono `NN pending` overline +
-       *  variant-aware H1 (Inter 22 safe / Serif 34 italic with
-       *  trailing italic `awaiting review.` in display) + a
-       *  keyboard-hint row. Matches screen-more.jsx ScreenInbox. */}
-      <header
-        className="shrink-0"
-        style={{
-          padding: "22px 32px 14px",
-          borderBottom: "1px solid var(--il-border-soft)",
-        }}
-      >
-        <div className="flex items-baseline gap-4">
-          <span
-            className="font-mono uppercase"
-            style={{
-              fontSize: 11,
-              letterSpacing: "0.08em",
-              color: "var(--il-text3)",
-            }}
-          >
-            {paddedCount} pending
-          </span>
-          <h1
-            style={{
-              fontFamily: serif ? "var(--font-display)" : "var(--font-sans)",
-              fontWeight: serif ? 400 : 600,
-              fontSize: serif ? 34 : 22,
-              letterSpacing: "-0.025em",
-              lineHeight: 1.1,
-              margin: 0,
-              color: "var(--il-text)",
-            }}
-          >
-            Agent Inbox
-            {serif && (
-              <span style={{ fontStyle: "italic", color: "var(--il-text2)" }}>
-                {" "}
-                — awaiting review.
-              </span>
-            )}
-          </h1>
-        </div>
-        {!loading && entries.length > 0 && (
-          <div
-            className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono uppercase"
-            style={{ fontSize: 10.5, letterSpacing: "0.04em", color: "var(--il-text3)" }}
-          >
-            <span>
-              <Key>j</Key>/<Key>k</Key> navigate
-            </span>
-            <span>
-              <Key>a</Key> approve
-            </span>
-            <span>
-              <Key>r</Key> reject
-            </span>
-            <span>
-              <Key>⇧A</Key> approve all
-            </span>
-            <span>
-              <Key>↵</Key> expand
-            </span>
-          </div>
-        )}
-      </header>
-
-      <div className="flex-1 overflow-y-auto" style={{ padding: "14px 32px" }}>
+    // No `background` override here — the panel inherits the sidebar's
+    //  `--il-slate` so the Inbox tab reads on the same surface as the
+    //  Files / Agents tabs.
+    <section className="flex h-full flex-col overflow-hidden" aria-label="Agent Inbox">
+      {/* Inline keyboard-hint header retired in favour of a sticky
+       *  bottom rail (see below) — the sidebar's tab strip already
+       *  identifies this surface as the Inbox, so the prior 5-span
+       *  flex-wrap row was burning 2-3 lines of vertical budget for
+       *  no payoff at 220-300 px widths. */}
+      <div className="flex-1 overflow-y-auto" style={{ padding: "10px 12px" }}>
         {loading && <div className="py-8 text-center text-xs text-secondary">Loading…</div>}
         {!loading && entries.length === 0 && <InboxEmptyState />}
         {entries.map((entry, idx) => {
@@ -356,6 +321,37 @@ export function InboxPanel() {
           );
         })}
       </div>
+
+      {/* Chord-hint bottom rail — only when there are entries to act
+       *  on. Pinned to the panel's bottom edge so the legend stops
+       *  competing with content; matches the visual silhouette of
+       *  the Files-tab's NewPageRail. We surface only the three
+       *  highest-leverage chords; j/k navigation is muscle-memory. */}
+      {!loading && entries.length > 0 && (
+        <footer
+          className="flex shrink-0 items-center font-mono uppercase"
+          style={{
+            height: 36,
+            padding: "0 12px",
+            gap: 12,
+            borderTop: "1px solid var(--il-border)",
+            background: "var(--il-slate-elev)",
+            fontSize: 10.5,
+            letterSpacing: "0.04em",
+            color: "var(--il-text3)",
+          }}
+        >
+          <span>
+            <Key>a</Key> approve
+          </span>
+          <span>
+            <Key>r</Key> reject
+          </span>
+          <span>
+            <Key>↵</Key> expand
+          </span>
+        </footer>
+      )}
     </section>
   );
 }
@@ -398,9 +394,13 @@ function InboxEntryCard({
       aria-current={focused ? "true" : undefined}
       className="mb-3 overflow-hidden rounded-md"
       style={{
+        // Cards lift to `--il-slate-elev` so they stand out against
+        //  the sidebar's `--il-slate` body. The focused state's blue
+        //  tint sits on top of that elevated surface for an extra
+        //  beat of contrast.
         background: focused
-          ? "color-mix(in oklch, var(--il-blue) 8%, transparent)"
-          : "var(--il-slate)",
+          ? "color-mix(in oklch, var(--il-blue) 8%, var(--il-slate-elev))"
+          : "var(--il-slate-elev)",
         border: focused ? "1px solid var(--il-blue)" : "1px solid var(--il-border-soft)",
         boxShadow: focused ? "0 0 0 3px var(--il-blue-glow)" : undefined,
         transition: "background var(--motion-snap), border-color var(--motion-snap)",
