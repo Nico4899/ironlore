@@ -802,57 +802,54 @@ function DiffBlock({
   return (
     <div style={{ borderBottom: "1px solid var(--il-border-soft)" }}>
       <div
-        className="flex items-center gap-3"
+        className="flex items-center gap-2"
         style={{
-          padding: "8px 16px",
+          padding: "6px 10px",
           background: "var(--il-slate-elev)",
           borderBottom: "1px solid var(--il-border-soft)",
         }}
       >
-        <span
-          className="font-mono uppercase"
-          style={{
-            fontSize: 10.5,
-            letterSpacing: "0.06em",
-            color: "var(--il-text3)",
-          }}
-        >
-          diff
-        </span>
+        {/* `diff` overline retired — the dropdown's surrounding
+         *  context (an indented block under an expanded entry)
+         *  already conveys what it is. The path uses the same
+         *  left-ellipsis treatment as the file rows above so the
+         *  basename stays visible. */}
         <span
           className="truncate font-mono"
-          style={{ fontSize: 11.5, color: "var(--il-text2)" }}
+          style={{
+            fontSize: 11,
+            color: "var(--il-text2)",
+            direction: "rtl",
+            textAlign: "left",
+            unicodeBidi: "plaintext",
+            flex: 1,
+            minWidth: 0,
+          }}
           title={path}
         >
           {path}
         </span>
-        <span className="flex-1" />
-        {/* Jump-to-file CTA — closes the inbox surface + opens the
-         *  changed file in the editor. The explicit arrow glyph
-         *  matches the "→ open first" pattern in the onboarding
-         *  witness step. */}
         <button
           type="button"
           onClick={onJumpToFile}
-          className="inline-flex items-center gap-1.5 rounded outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
+          aria-label="Jump to file"
+          title="Jump to file"
+          className="flex shrink-0 items-center justify-center rounded outline-none focus-visible:ring-1 focus-visible:ring-ironlore-blue/50"
           style={{
-            padding: "4px 10px",
-            fontSize: 11.5,
-            fontFamily: "var(--font-sans)",
-            fontWeight: 500,
+            width: 24,
+            height: 24,
             color: "var(--il-blue)",
             background: "transparent",
             border: "1px solid color-mix(in oklch, var(--il-blue) 40%, transparent)",
           }}
         >
-          <ExternalLink className="h-3 w-3" />
-          Jump to file
+          <ExternalLink className="h-3 w-3" aria-hidden="true" />
         </button>
       </div>
       <div
         style={{
-          padding: "8px 16px",
-          maxHeight: 360,
+          padding: "8px 10px",
+          maxHeight: 240,
           overflowY: "auto",
           background: "var(--il-bg)",
         }}
