@@ -12,7 +12,7 @@ import {
 import { isMockInboxId, MOCK_INBOX_ENTRIES, MOCK_INBOX_FILES } from "../lib/mock-inbox.js";
 import { formatRelative } from "../lib/relative-time.js";
 import { useAppStore } from "../stores/app.js";
-import { Key, Reuleaux, StatusPip, Venn } from "./primitives/index.js";
+import { Key, Reuleaux, Venn } from "./primitives/index.js";
 
 /**
  * Agent Inbox — batch review surface for inbox-mode agent runs.
@@ -632,9 +632,14 @@ function InboxEntryFiles({
             key={f.path}
             className="grid items-center"
             style={{
-              gridTemplateColumns: "20px minmax(0, 1fr) auto auto 72px",
-              columnGap: 12,
-              padding: "10px 16px",
+              // Drop the pending StatusPip cell — pending is the
+              //  implicit default at this scale and the rendered text
+              //  was wasted at sidebar widths. Tighter glyph (14 px)
+              //  + 56 px decision cell + 8 px column gap reclaim
+              //  ~30 px of horizontal budget for the path.
+              gridTemplateColumns: "14px minmax(0, 1fr) auto 56px",
+              columnGap: 8,
+              padding: "8px 10px",
               fontSize: 12,
               background: isApproved
                 ? "color-mix(in oklch, var(--il-green) 8%, transparent)"
@@ -656,12 +661,18 @@ function InboxEntryFiles({
             >
               {f.status}
             </span>
+            {/* Path uses RTL direction + plaintext bidi to ellipsize
+             *  on the LEFT, preserving the basename. The `unicode-bidi:
+             *  plaintext` keeps slashes from reordering visually. */}
             <span
               className="truncate font-mono"
               style={{
                 fontSize: 12,
                 color: "var(--il-text)",
                 textDecoration: isRejected ? "line-through" : undefined,
+                direction: "rtl",
+                textAlign: "left",
+                unicodeBidi: "plaintext",
               }}
             >
               {f.path}
@@ -669,7 +680,6 @@ function InboxEntryFiles({
             <span className="font-mono" style={{ fontSize: 10.5, color: "var(--il-text3)" }}>
               {formatDelta(f)}
             </span>
-            <StatusPip state="idle" label="pending" size={7} />
             <div className="flex justify-end gap-1.5">
               <FileDecisionButton
                 kind="rejected"
@@ -946,10 +956,10 @@ function FileDecisionButton({
         onClick();
       }}
       style={{
-        width: 24,
-        height: 22,
+        width: 20,
+        height: 20,
         padding: 0,
-        fontSize: 13,
+        fontSize: 12,
         lineHeight: 1,
         background: active ? activeBg : "transparent",
         color: active ? (kind === "approved" ? "var(--il-bg)" : color) : color,
