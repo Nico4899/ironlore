@@ -553,10 +553,10 @@ function InboxEntryCard({
 
 function InboxEmptyState() {
   return (
-    <div className="relative mt-10 flex flex-col items-center gap-4 px-6 text-center">
+    <div className="relative mt-6 flex flex-col items-center gap-3 px-3 text-center">
       <div aria-hidden="true" style={{ opacity: 0.55 }}>
         <Venn
-          size={80}
+          size={48}
           color="var(--il-text4)"
           lineWidth={0.7}
           ringOpacity={0.7}
@@ -573,11 +573,7 @@ function InboxEmptyState() {
       >
         inbox · zero
       </div>
-      <p className="text-xs text-secondary">
-        No pending reviews. Runs with{" "}
-        <code className="rounded bg-ironlore-slate-hover px-1">review_mode: inbox</code> will appear
-        here.
-      </p>
+      <p className="text-xs text-secondary">No pending reviews.</p>
     </div>
   );
 }
