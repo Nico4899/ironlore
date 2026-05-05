@@ -9,7 +9,6 @@ import {
   rejectInboxEntry,
   setInboxFileDecision,
 } from "../lib/api.js";
-import { isMockInboxId, MOCK_INBOX_ENTRIES, MOCK_INBOX_FILES } from "../lib/mock-inbox.js";
 import { formatRelative } from "../lib/relative-time.js";
 import { useAppStore } from "../stores/app.js";
 import { Key, Reuleaux, Venn } from "./primitives/index.js";
@@ -62,24 +61,9 @@ export function InboxPanel() {
     setLoading(true);
     try {
       const { entries: e } = await fetchInbox();
-      // Dev-only mock injection — when the real fetch is empty (a
-      //  fresh local install with no agent runs yet), drop in the
-      //  curated mock fixtures so we can eyeball every rendering
-      //  case (timestamps, file counts, partial-review state). The
-      //  mock fileStats are seeded at the same time so the cards
-      //  render their A/D/M rows without a failed network round-trip.
-      if (e.length === 0 && import.meta.env.DEV) {
-        setEntries(MOCK_INBOX_ENTRIES);
-        setFileStats(new Map(MOCK_INBOX_FILES));
-      } else {
-        setEntries(e);
-      }
+      setEntries(e);
     } catch {
-      if (import.meta.env.DEV) {
-        setEntries(MOCK_INBOX_ENTRIES);
-        setFileStats(new Map(MOCK_INBOX_FILES));
-      }
-      /* otherwise leave empty on network error */
+      /* leave empty on network error */
     } finally {
       setLoading(false);
     }
@@ -123,14 +107,6 @@ export function InboxPanel() {
   }, [entries.length, focusIdx]);
 
   const handleApprove = useCallback(async (id: string) => {
-    // Mock entries have no server-side row — short-circuit the API
-    //  call and just drop them from local state so the user can
-    //  exercise the approve/reject affordances on the fixtures.
-    if (isMockInboxId(id)) {
-      setEntries((prev) => prev.filter((e) => e.id !== id));
-      setExpandedId((cur) => (cur === id ? null : cur));
-      return;
-    }
     const result = await approveInboxEntry(id);
     if (result.success) {
       setEntries((prev) => prev.filter((e) => e.id !== id));
@@ -139,11 +115,6 @@ export function InboxPanel() {
   }, []);
 
   const handleReject = useCallback(async (id: string) => {
-    if (isMockInboxId(id)) {
-      setEntries((prev) => prev.filter((e) => e.id !== id));
-      setExpandedId((cur) => (cur === id ? null : cur));
-      return;
-    }
     const result = await rejectInboxEntry(id);
     if (result.success) {
       setEntries((prev) => prev.filter((e) => e.id !== id));
@@ -168,9 +139,6 @@ export function InboxPanel() {
         );
         return next;
       });
-      // Mock entries: keep the optimistic local update, skip the
-      //  server round-trip entirely.
-      if (isMockInboxId(entryId)) return;
       try {
         const result = await setInboxFileDecision(entryId, path, decision);
         if (!result.success) throw new Error(result.error ?? "Decision failed");
